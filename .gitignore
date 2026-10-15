@@ -1,0 +1,22 @@
+node_modules/
+dist/
+artifacts/
+test-data/
+*.log
+.env*
+!.env.example
+
+# Local runtime data and credentials, if copied into the project.
+/vault.json
+/workspace.json
+/shared.json
+/ledger.json
+/settings.json
+/limits.json
+/sessions/
+/events/
+/shared/
+*.pem
+*.key
+*.pfx
+*.p12

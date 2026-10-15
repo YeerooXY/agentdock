@@ -1,0 +1,204 @@
+'use strict';
+const fs = require('node:fs');
+const path = require('node:path');
+const crypto = require('node:crypto');
+const { EventEmitter } = require('node:events');
+const { findProgram, nativeCodex, wslPath } = require('./adapters.cjs');
+const { atomicJson, readJson } = require('./storage.cjs');
+function psQuote(text) { return "'" + text.replaceAll("'", "''") + "'"; }
+function shQuote(text) { return "'" + text.replaceAll("'", "'\"'\"'") + "'"; }
+function validateConsoleDefaults(raw) {
+  if (!['codex', 'claude', 'shell', 'custom'].includes(raw?.provider)) throw new Error('Choose an agent or shell.');
+  const cwd = String(raw.cwd || '').trim();
+  if (!path.isAbsolute(cwd) || !fs.existsSync(cwd) || !fs.statSync(cwd).isDirectory()) throw new Error('Choose an existing project folder.');
+  const command = String(raw.command || '');
+  if (command.length > 4000 || command.includes('\0') || (raw.provider === 'custom' && !command.trim())) throw new Error('Enter a custom command, up to 4,000 characters.');
+  return { provider: raw.provider, cwd, name: String(raw.name || '').trim().slice(0, 64), command };
+}
+class Sessions extends EventEmitter {
+  constructor(root, dependencies = {}) {
+    super(); this.root = root; this.items = new Map(); this.eventTimes = new Map();
+    this.pty = dependencies.pty || require('node-pty');
+    this.findProgram = dependencies.findProgram || findProgram;
+    this.nativeCodex = dependencies.nativeCodex || nativeCodex;
+    this.hub = dependencies.hub;
+    this.claude = dependencies.claude;
+  }
+  list() { return [...this.items.values()].map(({ terminal, buffer, command, claudeTarget, ...session }) => session).sort((a, b) => a.slot - b.slot); }
+  savedConsoles() {
+    return [...this.items.values()].filter(x => (x.alive || x.restoreError) && !x.dismissed).map(x => ({
+      slot: x.slot, name: x.name, cwd: x.cwd, provider: x.provider, permissions: x.permissions,
+      command: x.command || '', model: x.launchModel || '', providerSessionId: ['codex', 'claude'].includes(x.provider) ? x.providerSessionId : null, claudeTarget: x.claudeTarget
+    })).sort((a, b) => a.slot - b.slot);
+  }
+  async restore(entry) {
+    try {
+      return await this.create({ ...entry, permissions: entry.permissions === 'system' ? 'default' : entry.permissions }, { resumeId: entry.providerSessionId, claudeTarget: entry.claudeTarget });
+    } catch (error) {
+      const id = crypto.randomUUID();
+      const item = { ...entry, launchModel: entry.model || '', id, alive: false, state: 'error', restoreError: error.message, buffer: `Could not reopen this console.\r\n${error.message}\r\n`, sequence: 0, cols: 110, rows: 30, createdAt: Date.now(), updatedAt: Date.now(), terminal: null };
+      this.items.set(id, item); this.emit('changed');
+      return this.list().find(x => x.id === id);
+    }
+  }
+  async retry(id) {
+    const item = this.items.get(id);
+    if (!item?.restoreError) throw new Error('This console does not need to be reopened.');
+    const entry = this.savedConsoles().find(x => x.slot === item.slot);
+    this.items.delete(id);
+    return this.restore(entry);
+  }
+  async create(raw, { resumeId = null, claudeTarget = null } = {}) {
+    const occupied = new Set([...this.items.values()].filter(x => x.alive || x.restoreError).map(x => x.slot));
+    const requestedSlot = raw?.slot === undefined ? null : Number(raw.slot);
+    if (requestedSlot !== null && (!Number.isInteger(requestedSlot) || requestedSlot < 1 || requestedSlot > 9)) throw new Error('Choose a console slot from 1 to 9.');
+    if (occupied.has(requestedSlot)) throw new Error('That console is already open.');
+    const slot = requestedSlot ?? Array.from({ length: 9 }, (_, i) => i + 1).find(x => !occupied.has(x));
+    if (!slot) throw new Error('All nine consoles are open. End a console to free a slot.');
+    if (!['codex', 'claude', 'shell', 'custom'].includes(raw?.provider)) throw new Error('Choose a console type.');
+    if (resumeId != null && !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(resumeId)) throw new Error('The saved conversation ID is invalid.');
+    const selectedPermissions = raw.permissions ?? 'default';
+    if (!['default', 'unrestricted'].includes(selectedPermissions)) throw new Error('Choose a supported agent permission mode.');
+    const permissions = ['codex', 'claude'].includes(raw.provider) ? selectedPermissions : 'system';
+    const model = ['codex', 'claude'].includes(raw.provider) ? String(raw.model ?? '').trim() : '';
+    if (model && !/^[a-zA-Z0-9][a-zA-Z0-9._:/\[\]@+-]{0,199}$/.test(model)) throw new Error('Enter a model name or alias, up to 200 characters.');
+    const cwd = String(raw.cwd || '');
+    if (!path.isAbsolute(cwd) || !fs.existsSync(cwd) || !fs.statSync(cwd).isDirectory()) throw new Error('Choose an existing project folder.');
+    const name = String(raw.name || path.basename(cwd)).trim().slice(0, 64);
+    const id = crypto.randomUUID();
+    const dir = path.join(this.root, 'sessions', id); fs.mkdirSync(dir, { recursive: true });
+    const helper = path.join(__dirname, 'agent-event.cjs');
+    const node = this.findProgram('node.exe') || this.findProgram('node');
+    const claudeInstall = claudeTarget || this.claude || (raw.provider === 'claude' && { kind: 'native', path: this.findProgram('claude') });
+    const isWsl = raw.provider === 'claude' && claudeInstall?.kind === 'wsl';
+    const bridgeHelper = path.join(__dirname, 'agent-tools.cjs');
+    const mcpConfig = path.join(dir, 'mcp.json');
+    if (this.hub && node) atomicJson(mcpConfig, { mcpServers: { agent_dock: { type: 'stdio', command: isWsl ? wslPath(node) : node, args: [bridgeHelper], env: { AGENT_DOCK_BRIDGE_URL: '${AGENT_DOCK_BRIDGE_URL}', AGENT_DOCK_BRIDGE_TOKEN: '${AGENT_DOCK_BRIDGE_TOKEN}', ...(isWsl ? { WSLENV: 'AGENT_DOCK_BRIDGE_URL:AGENT_DOCK_BRIDGE_TOKEN' } : {}) } } } });
+    let executable = process.env.SystemRoot ? path.join(process.env.SystemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe') : 'pwsh';
+    let args = ['-NoLogo', '-NoProfile'];
+    if (raw.provider === 'codex') {
+      executable = this.nativeCodex();
+      if (!executable) throw new Error('Codex CLI was not found. Install it, then restart Agent Dock.');
+      if (!node) throw new Error('Node.js is needed for completion notifications.');
+      args = [...(resumeId ? ['resume', resumeId] : []), '-c', `notify=${JSON.stringify([node, helper, 'codex-notify'])}`];
+      if (model) args.push('--model', model);
+      if (this.hub) {
+        const summary = this.hub.summary();
+        const context = JSON.stringify(summary).length < 22000 ? summary : `Before doing any work, call the agent_dock dock_context tool to load the shared user instructions and tool summary. The same instructions are in ${this.hub.summaryPath}. Refresh them at the start of each task. Use dock_tools to discover tools and dock_call to invoke them.`;
+        const values = { developer_instructions: context, 'mcp_servers.agent_dock.command': node, 'mcp_servers.agent_dock.args': [bridgeHelper], 'mcp_servers.agent_dock.env_vars': ['AGENT_DOCK_BRIDGE_URL', 'AGENT_DOCK_BRIDGE_TOKEN'], 'mcp_servers.agent_dock.tool_timeout_sec': 150 };
+        for (const [key, value] of Object.entries(values)) args.push('-c', `${key}=${JSON.stringify(value)}`);
+      }
+      if (permissions === 'unrestricted') args.push('--dangerously-bypass-approvals-and-sandbox');
+    } else if (raw.provider === 'claude') {
+      const claude = claudeInstall?.path;
+      if (!claude) throw new Error('Claude Code was not found. Install it, then restart Agent Dock.');
+      if (!node) throw new Error('Node.js is needed for Claude tracking.');
+      const command = mode => isWsl ? `${shQuote(wslPath(node))} ${shQuote(helper)} ${mode}` : `node "${helper.replaceAll('\\', '/')}" ${mode}`;
+      const hooks = {};
+      for (const type of ['SessionStart', 'UserPromptSubmit', 'Stop', 'PermissionRequest', 'Notification', 'StopFailure', 'SessionEnd']) hooks[type] = [{ hooks: [{ type: 'command', command: command(type), timeout: 5 }] }];
+      const settings = path.join(dir, 'claude-settings.json');
+      atomicJson(settings, { hooks, statusLine: { type: 'command', command: command('statusline') } });
+      const claudeArgs = ['--settings', isWsl ? wslPath(settings) : settings];
+      if (model) claudeArgs.push('--model', model);
+      if (resumeId) claudeArgs.push('--resume', resumeId);
+      if (this.hub) claudeArgs.push('--append-system-prompt-file', isWsl ? wslPath(this.hub.summaryPath) : this.hub.summaryPath, '--mcp-config', isWsl ? wslPath(mcpConfig) : mcpConfig);
+      if (permissions === 'unrestricted') claudeArgs.push('--dangerously-skip-permissions');
+      if (isWsl) { executable = 'wsl.exe'; args = ['-d', claudeInstall.distro, '--cd', cwd, '--exec', claude, ...claudeArgs]; }
+      else if (claude.toLowerCase().endsWith('.exe')) { executable = claude; args = claudeArgs; }
+      else { args.push('-Command', `& ${psQuote(claude)} ${claudeArgs.map(psQuote).join(' ')}`); }
+    } else if (raw.provider === 'custom') {
+      if (typeof raw.command !== 'string' || !raw.command.trim() || raw.command.length > 4000 || raw.command.includes('\0')) throw new Error('Enter the command you want this console to run.');
+      const command = this.hub ? raw.command.replaceAll('{instructions}', psQuote(this.hub.summaryPath)).replaceAll('{mcp_config}', psQuote(mcpConfig)) : raw.command;
+      args.push('-NoExit', '-EncodedCommand', Buffer.from(command, 'utf16le').toString('base64'));
+    }
+    const env = { ...process.env, AGENT_DOCK_DATA_DIR: this.root, AGENT_DOCK_SESSION_ID: id, TERM: 'xterm-256color', COLORTERM: 'truecolor' };
+    delete env.ELECTRON_RUN_AS_NODE;
+    for (const key of ['OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'GOOGLE_API_KEY', 'GEMINI_API_KEY']) delete env[key];
+    if (this.hub) Object.assign(env, this.hub.grant(id), { AGENT_DOCK_MCP_CONFIG: mcpConfig });
+    if (isWsl) env.WSLENV = [...new Set([...(env.WSLENV || '').split(':').filter(Boolean), 'AGENT_DOCK_DATA_DIR', 'AGENT_DOCK_SESSION_ID', 'AGENT_DOCK_BRIDGE_URL', 'AGENT_DOCK_BRIDGE_TOKEN', 'AGENT_DOCK_INSTRUCTIONS/p', 'AGENT_DOCK_MCP_CONFIG/p'])].join(':');
+    let terminal;
+    try { terminal = this.pty.spawn(executable, args, { name: 'xterm-256color', cols: 110, rows: 30, cwd, env, useConpty: true }); }
+    catch (error) { this.hub?.revoke(id); throw error; }
+    for (const [oldId, old] of this.items) if (old.slot === slot && !old.alive) this.items.delete(oldId);
+    const session = { id, slot, name, cwd, provider: raw.provider, permissions, launchModel: model, command: raw.provider === 'custom' ? raw.command : '', claudeTarget: raw.provider === 'claude' ? claudeInstall : undefined, state: 'open', alive: true, cols: 110, rows: 30, createdAt: Date.now(), updatedAt: Date.now(), terminal, buffer: '', sequence: 0, usage: null, providerSessionId: resumeId };
+    this.items.set(id, session);
+    terminal.onData(data => { session.buffer = (session.buffer + data).slice(-250000); this.emit('output', { id, data, sequence: ++session.sequence }); });
+    terminal.onExit(({ exitCode }) => {
+      this.hub?.revoke(id); session.alive = false; session.state = 'ended'; session.exitCode = exitCode; session.updatedAt = Date.now();
+      if (resumeId && exitCode !== 0 && !session.dismissed) {
+        session.state = 'error'; session.restoreError = 'The saved conversation could not be reopened. Check the console output, then try again.';
+      }
+      this.emit('changed');
+    });
+    this.emit('changed');
+    return this.list().find(x => x.id === id);
+  }
+  write(id, data) {
+    const item = this.items.get(id);
+    if (!item?.alive) return;
+    if (typeof data !== 'string' || data.length > 65536) throw new Error('Terminal input is too large.');
+    item.terminal.write(data);
+    if (/[\r\n]/.test(data) && ['codex', 'claude'].includes(item.provider)) { item.state = 'active'; item.updatedAt = Date.now(); this.emit('changed'); }
+  }
+  resize(id, cols, rows) {
+    const item = this.items.get(id); if (!item?.alive) return;
+    cols = Math.max(20, Math.min(500, Math.floor(cols) || 80)); rows = Math.max(5, Math.min(200, Math.floor(rows) || 24));
+    if (item.cols === cols && item.rows === rows) return;
+    item.terminal.resize(cols, rows); item.cols = cols; item.rows = rows;
+  }
+  buffer(id) { const item = this.items.get(id); return { data: item?.buffer || '', sequence: item?.sequence || 0 }; }
+  rename(id, name) {
+    const item = this.items.get(id);
+    if (!item || (!item.alive && !item.restoreError)) throw new Error('This console is no longer open.');
+    item.name = name || path.basename(item.cwd) || `Console ${item.slot}`;
+    this.emit('changed');
+  }
+  acknowledge(id) { const item = this.items.get(id); if (item && ['ready', 'attention'].includes(item.state)) { item.state = 'open'; this.emit('changed'); } }
+  end(id) {
+    const item = this.items.get(id); if (!item) return;
+    item.dismissed = true; delete item.restoreError;
+    if (item.alive) item.terminal.kill();
+    else this.items.delete(id);
+    this.emit('changed');
+  }
+  scanEvents() {
+    let changed = false;
+    for (const item of this.items.values()) {
+      for (const kind of ['state', 'usage']) {
+        const file = path.join(this.root, 'events', `${item.id}.${kind}.json`);
+        try {
+          const stat = fs.statSync(file);
+          if (this.eventTimes.get(file) === stat.mtimeMs) continue;
+          this.eventTimes.set(file, stat.mtimeMs);
+          const event = readJson(file, {});
+          if (event.session !== item.id) continue;
+          if (event.providerSessionId) item.providerSessionId = event.providerSessionId;
+          if (event.usage) item.usage = event.usage;
+          if (event.model) item.model = event.model;
+          if (event.contextPercent !== undefined) item.contextPercent = event.contextPercent;
+          if (event.state && item.alive) {
+            item.state = event.state; item.updatedAt = event.at;
+            if (['ready', 'attention'].includes(event.state)) this.emit('attention', this.list().find(x => x.id === item.id));
+          }
+          if (event.limits) this.emit('limits', event.limits);
+          changed = true;
+        } catch {}
+      }
+    }
+    if (changed) this.emit('changed');
+  }
+  updateUsage(recent) { for (const session of this.items.values()) { const match = recent.find(x => x.id === session.providerSessionId); if (match?.usage) session.usage = match.usage; } }
+  async stop() {
+    const active = [...this.items.values()].filter(x => x.alive);
+    if (!active.length) return;
+    await new Promise(resolve => {
+      const finish = () => { clearTimeout(timeout); this.off('changed', check); resolve(); };
+      const check = () => { if (active.every(x => !x.alive)) finish(); };
+      const timeout = setTimeout(finish, 5000);
+      this.on('changed', check);
+      for (const item of active) { try { item.terminal.kill(); } catch {} }
+      check();
+    });
+  }
+}
+module.exports = { Sessions, psQuote, validateConsoleDefaults };
