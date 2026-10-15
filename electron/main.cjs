@@ -117,8 +117,11 @@ async function quit() {
   quitting = true; app.quit();
 }
 app.whenReady().then(async () => {
+  // The frameless UI supplies its own controls. Electron's default menu would
+  // otherwise take editor keys such as Ctrl+W, Ctrl+R and Ctrl+A from terminals.
+  Menu.setApplicationMenu(null);
   root = app.getPath('userData'); fs.mkdirSync(root, { recursive: true });
-  const defaults = { hudAlwaysOnTop: false, notifications: true, restoreConsoles: true, agentPermissions: 'default', sidebarCollapsed: false, slotNames: {}, rates: {}, consoleDefaults: { provider: 'codex', cwd: defaultFolder, name: '', command: '' } };
+  const defaults = { hudAlwaysOnTop: false, notifications: true, restoreConsoles: true, agentPermissions: 'default', sidebarCollapsed: false, vimControls: false, slotNames: {}, rates: {}, consoleDefaults: { provider: 'codex', cwd: defaultFolder, name: '', command: '' } };
   const savedSettings = readJson(path.join(root, 'settings.json'), {});
   settings = { ...defaults, ...savedSettings, consoleDefaults: { ...defaults.consoleDefaults, ...savedSettings.consoleDefaults } };
   ledger = readJson(path.join(root, 'ledger.json'), []);
@@ -236,6 +239,7 @@ app.whenReady().then(async () => {
           if (typeof payload?.notifications === 'boolean') next.notifications = payload.notifications;
           if (typeof payload?.restoreConsoles === 'boolean') next.restoreConsoles = payload.restoreConsoles;
           if (typeof payload?.sidebarCollapsed === 'boolean') next.sidebarCollapsed = payload.sidebarCollapsed;
+          if (typeof payload?.vimControls === 'boolean') next.vimControls = payload.vimControls;
           if (payload?.consoleDefaults !== undefined) next.consoleDefaults = validateConsoleDefaults(payload.consoleDefaults);
           if (payload?.agentPermissions !== undefined) {
             if (!['default', 'unrestricted'].includes(payload.agentPermissions)) throw new Error('Choose a supported agent permission mode.');

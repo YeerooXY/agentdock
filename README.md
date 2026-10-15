@@ -46,6 +46,26 @@ Codex model suggestions come from its local model cache. Claude offers its [mode
 
 The HUD is a normal desktop window, covered by other apps by default. It is not attached to the wallpaper; Win + D hides it too. Use the shortcut or taskbar to bring it back. Settings has an optional always-on-top switch.
 
+## Vim controls
+
+Turn on **Settings → Keyboard → Vim controls**. It is off by default and remembers your choice. **Ctrl+Shift+Space** moves focus out of the terminal and into Dock's **NORMAL** mode. **i** returns to typing (**INSERT**). When the terminal or a form field has focus, its usual keys—including Escape and Ctrl+w—pass through unchanged.
+
+| Key in NORMAL mode | Action |
+| --- | --- |
+| h / j / k / l | Select the slot to the left / below / above / right |
+| 1–9 | Select a numbered slot |
+| Enter | Expand the selected console, or launch an empty slot |
+| i | Type in the selected console without expanding the grid |
+| n / N | Open a console with defaults / open the one-time chooser |
+| r | Edit the selected slot's name |
+| gg / G | First / last slot; top / bottom on other pages |
+| gc / gu / ga | Consoles / Usage / API |
+| gv / gt / gi / gs | Keys / Tools / Instructions / Settings |
+| b / f / d | Toggle sidebar / fullscreen / collapse to HUD |
+| ? | Show the shortcut list |
+
+On other pages, j/k scroll and Ctrl+d/u scroll half a page. Press the two keys in a `g` shortcut within a second. No Vim shortcut ends a running console. This controls Dock's interface; your editor or agent keeps its own editing mode.
+
 ## Claude and permissions
 
 Claude Code is detected on Windows PATH, in its usual native install folders, and inside installed WSL distributions. Open a Claude console to complete any first-run setup and sign-in.

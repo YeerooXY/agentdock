@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
+const { checkVimControls } = require('./vim-check.cjs');
 const root = path.resolve(__dirname, '..');
 const testParent = path.join(root, 'test-data');
 fs.mkdirSync(testParent, { recursive: true });
@@ -178,6 +179,8 @@ async function eventually(predicate, message) {
   assert.ok((await invoke('session.buffer', session.id)).sequence >= before.sequence);
   checks.push('Collapse keeps the process and buffer; HUD expands the same console fullscreen');
   await invoke('mode', 'dashboard');
+  await checkVimControls({ page, app, invoke, eventually, capture: file => capture({ path: path.join(artifacts, file) }) });
+  checks.push('Optional Vim controls navigate grid and HUD, rename and launch consoles, switch pages and show help; terminals and forms retain their keys, and the preference survives reload');
   await page.locator('nav [data-page=vault]').click();
   assert.equal((await invoke('state')).vault.available, true);
   const fakeKey = 'sk-TEST_ONLY_NOT_A_REAL_KEY_123456789';

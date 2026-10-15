@@ -4,6 +4,7 @@ import '@xterm/xterm/css/xterm.css';
 import './style.css';
 import { sharedViews } from './shared-ui.js';
 import { holdToChoose } from './launch-gesture.js';
+import { vimControls } from './vim-controls.js';
 
 const $ = selector => document.querySelector(selector);
 const escape = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
@@ -35,7 +36,7 @@ let state, page = 'consoles', selectedId = null, selectedApi = 'openai', apiBusy
 let apiDraft = { model: '', prompt: '', maxOutput: '1024' }, responseMeta = 'TEXT OUTPUT', responseError = '';
 const terminals = new Map();
 let openingConsole = false;
-let launchGesture, chooserOpener;
+let launchGesture, chooserOpener, vim;
 const nameSaves = new Map();
 const launchHint = 'title="Click to open. Hold or right-click to choose." aria-haspopup="dialog"';
 let renderedView = null, viewAnimation, windowMoving = false;
@@ -99,6 +100,7 @@ $('#app').innerHTML = `
     <p class="form-error" role="alert"></p><div class="dialog-footer"><button type="button" class="secondary" data-action="cancel-console">Cancel</button><button type="submit" class="primary">Open console</button></div>
   </form>
 </dialog>`;
+$('#launch-folder').insertAdjacentHTML('afterend', '<button class="vim-mode" data-action="vim-normal" hidden></button>');
 document.querySelectorAll('.sidebar [data-page]').forEach(button => {
   if (!button.hasAttribute('aria-label')) button.setAttribute('aria-label', button.textContent.replace(/\d+$/, '').trim());
 });
@@ -153,6 +155,8 @@ function renderConsoles() {
       panel = replacement;
     }
     syncSlotName(panel.querySelector('.console-name'), slot, session);
+    panel.tabIndex = -1;
+    panel.setAttribute('aria-label', `Console ${slot}${session?.name || state.settings.slotNames?.[slot] ? ': ' + (session?.name || state.settings.slotNames[slot]) : ''}`);
     if (!session) { panel.querySelector('[data-action="new"]').disabled = openingConsole; continue; }
     if (panel.dataset.state !== session.state) {
       panel.className = `session-card ${session.state}`; panel.dataset.state = session.state;
@@ -195,8 +199,12 @@ function renderSettings() {
 function renderStartupSettings() {
   return `<section class="surface"><h2>Startup</h2><label class="toggle-row"><span><strong>Restore previous consoles</strong><small>Reopen your panels and folders. Saved agent chats resume; shells and custom commands restart.</small></span><input type="checkbox" data-setting="restoreConsoles" ${state.settings.restoreConsoles ? 'checked' : ''}></label><p id="workspace-error" class="form-error" role="alert">${escape(state.workspaceError || '')}</p></section>`;
 }
+function renderKeyboardSettings() {
+  return `<section class="surface"><h2>Keyboard</h2><label class="toggle-row"><span><strong>Vim controls</strong><small>Use h/j/k/l to move around Dock.</small></span><input type="checkbox" data-setting="vimControls" ${state.settings.vimControls ? 'checked' : ''}></label><p class="field-hint">Ctrl+Shift+Space returns control to Dock. Press i to type in a console.</p><button class="subtle" data-action="vim-help">View shortcuts</button></section>`;
+}
 function renderPage() {
   if (!state) return;
+  queueMicrotask(() => vim?.refresh());
   applySidebar();
   if ($('#workspace-error')) $('#workspace-error').textContent = state.workspaceError || '';
   const terminalView = page === 'terminal', consoleView = ['consoles', 'overview'].includes(page);
@@ -221,7 +229,7 @@ function renderPage() {
   if (consoleView) { renderConsoles(); return; }
   const renderer = { usage: renderUsage, api: renderApi, vault: renderVault, tools: renderTools, instructions: renderInstructions, settings: renderSettings }[page] || renderSettings;
   $('#content').innerHTML = (state.storageError ? `<div class="error-banner" role="alert">${escape(state.storageError)}</div>` : '') + renderer();
-  if (page === 'settings') { $('.settings-layout').insertAdjacentHTML('afterbegin', renderStartupSettings() + renderLaunchDefaults()); launchDefaultsFields(); }
+  if (page === 'settings') { $('.settings-layout').insertAdjacentHTML('afterbegin', renderKeyboardSettings() + renderStartupSettings() + renderLaunchDefaults()); launchDefaultsFields(); }
   if (page === 'api') {
     const form = $('#api-form');
     for (const key of ['model', 'prompt', 'maxOutput']) form.elements[key].value = apiDraft[key];
@@ -240,9 +248,9 @@ function hudHtml() {
   const slots = Array.from({ length: 9 }, (_, i) => {
     const item = state.sessions.find(x => x.slot === i + 1 && (x.alive || x.restoreError));
     const name = state.settings.slotNames?.[i + 1];
-    return item ? `<button class="hud-slot ${item.state} ${item.id === selectedId ? 'current' : ''}" data-session="${item.id}" title="${escape(item.name)} · ${labels[item.state]}"><span>${i + 1}</span><i class="dot"></i><small>${escape(item.name)}</small></button>` : `<button class="hud-slot empty ${name ? 'named' : ''}" data-action="new" data-slot="${i + 1}" aria-label="Open console ${i + 1}${name ? ': ' + escape(name) : ''}" ${launchHint} ${openingConsole ? 'disabled' : ''}>${newConsoleMark()}${name ? `<small class="hud-slot-name">${escape(name)}</small>` : ''}</button>`;
+    return item ? `<button class="hud-slot ${item.state} ${item.id === selectedId ? 'current' : ''}" data-slot="${i + 1}" data-session="${item.id}" title="${escape(item.name)} · ${labels[item.state]}"><span>${i + 1}</span><i class="dot"></i><small>${escape(item.name)}</small></button>` : `<button class="hud-slot empty ${name ? 'named' : ''}" data-action="new" data-slot="${i + 1}" aria-label="Open console ${i + 1}${name ? ': ' + escape(name) : ''}" ${launchHint} ${openingConsole ? 'disabled' : ''}>${newConsoleMark()}${name ? `<small class="hud-slot-name">${escape(name)}</small>` : ''}</button>`;
   }).join('');
-  return `<div class="hud-title"><span class="hud-brand">${icon('grid')}agentdock</span><button class="icon-button" data-action="dashboard" aria-label="Expand dashboard">${icon('expand')}</button></div><button class="hud-summary" data-action="dashboard"><div><strong>${ready ? `${ready} ready for you` : active ? `${active} console${active === 1 ? '' : 's'} open` : ''}</strong>${icon('arrow')}</div></button><div class="hud-slots">${slots}</div>${selected ? `<button class="hud-console ${selected.state}" data-session="${selected.id}"><div><span>${icon('terminal')}${escape(selected.name)}</span>${icon('expand')}</div><pre id="hud-preview">${escape(terminalPreview(selected))}</pre></button>` : `<button class="hud-console empty" data-action="new" aria-label="Open console" ${launchHint} ${openingConsole ? 'disabled' : ''}>${newConsoleMark()}</button>`}<div class="hud-usage"><span>${quotaProvider === 'claude' ? 'CLAUDE USAGE' : 'CODEX USAGE'} <small>${quota ? age(quota.observedAt) : 'Not connected'}</small></span><div><span>5h <b>${five ? number(five.usedPercent) + '%' : '—'}</b></span><span>Weekly <b>${weekly ? number(weekly.usedPercent) + '%' : '—'}</b></span></div></div>`;
+  return `<div class="hud-title"><span class="hud-brand">${icon('grid')}agentdock</span><button class="vim-mode" data-action="vim-normal" hidden></button><button class="icon-button" data-action="dashboard" aria-label="Expand dashboard">${icon('expand')}</button></div><button class="hud-summary" data-action="dashboard"><div><strong>${ready ? `${ready} ready for you` : active ? `${active} console${active === 1 ? '' : 's'} open` : ''}</strong>${icon('arrow')}</div></button><div class="hud-slots">${slots}</div>${selected ? `<button class="hud-console ${selected.state}" data-session="${selected.id}"><div><span>${icon('terminal')}${escape(selected.name)}</span>${icon('expand')}</div><pre id="hud-preview">${escape(terminalPreview(selected))}</pre></button>` : `<button class="hud-console empty" data-action="new" aria-label="Open console" ${launchHint} ${openingConsole ? 'disabled' : ''}>${newConsoleMark()}</button>`}<div class="hud-usage"><span>${quotaProvider === 'claude' ? 'CLAUDE USAGE' : 'CODEX USAGE'} <small>${quota ? age(quota.observedAt) : 'Not connected'}</small></span><div><span>5h <b>${five ? number(five.usedPercent) + '%' : '—'}</b></span><span>Weekly <b>${weekly ? number(weekly.usedPercent) + '%' : '—'}</b></span></div></div>`;
 }
 function terminalPreview(session) {
   if (!session) return '> ready when you are';
@@ -285,6 +293,7 @@ function receive(next) {
   if (hud && !launchGesture?.active && !$('#console-chooser').open) $('#hud').innerHTML = hudHtml();
   else if (['overview', 'consoles', 'usage', 'terminal'].includes(page) && !document.activeElement?.closest('#rates-form')) renderPage();
   if (!windowMoving) scheduleFits();
+  vim?.refresh();
 }
 function applySidebar() {
   const collapsed = !!state.settings.sidebarCollapsed;
@@ -549,6 +558,8 @@ document.addEventListener('click', async event => {
     switch (button.dataset.action) {
       case 'new': await openNew(button.dataset.slot); break;
       case 'cancel-console': if (!openingConsole) $('#console-chooser').close(); break;
+      case 'vim-normal': vim.enterNormal(); break;
+      case 'vim-help': vim.showHelp(); break;
       case 'sidebar':
         button.disabled = true;
         try { await call('settings', { sidebarCollapsed: !state.settings.sidebarCollapsed }); }
@@ -646,5 +657,44 @@ document.addEventListener('submit', async event => {
 });
 document.addEventListener('keydown', event => {
   if (event.key === 'F11') { event.preventDefault(); call('mode', state.mode === 'fullscreen' ? 'dashboard' : 'fullscreen'); }
+});
+
+function focusVimSlot(slot) {
+  if (state.mode !== 'hud' && !['consoles', 'overview'].includes(page)) { page = 'consoles'; renderPage(); }
+  const panel = document.querySelector(state.mode === 'hud' ? `.hud-slot[data-slot="${slot}"]` : `.session-card[data-slot="${slot}"]`);
+  panel?.focus({ preventScroll: true });
+}
+async function vimAction(action, value) {
+  if (action === 'page') {
+    page = value;
+    if (state.mode === 'hud') await call('mode', 'dashboard');
+    renderPage();
+    if (page === 'consoles') focusVimSlot(vim.slot); else $('#content').focus({ preventScroll: true });
+    return;
+  }
+  if (action === 'sidebar') { await call('settings', { sidebarCollapsed: !state.settings.sidebarCollapsed }); return; }
+  if (action === 'fullscreen') { await call('mode', state.mode === 'fullscreen' ? 'dashboard' : 'fullscreen'); return; }
+  if (action === 'dock') { await call('mode', 'hud'); focusVimSlot(vim.slot); return; }
+  const session = state.sessions.find(x => x.slot === value && (x.alive || x.restoreError));
+  if (action === 'open') { if (session) await selectSession(session.id); else await openNew(value); }
+  else if (action === 'new') await openNew(value);
+  else if (action === 'choose') {
+    const button = document.querySelector(`${state.mode === 'hud' ? '#hud' : '#consoles-page'} [data-action="new"][data-slot="${value}"]`);
+    if (button) chooseConsole(button);
+  } else if (action === 'rename') {
+    if (state.mode === 'hud') { page = 'consoles'; await call('mode', 'dashboard'); renderPage(); }
+    else focusVimSlot(value);
+    document.querySelector(`#consoles-page .console-name[data-name-slot="${value}"]`)?.focus();
+  } else if (action === 'type') {
+    if (!session?.alive) { toast('Press n to open a console here.'); return; }
+    if (state.mode === 'hud') { await selectSession(session.id); return; }
+    focusVimSlot(value); selectedId = session.id;
+    await terminals.get(session.id)?.ready;
+    fitVisible(); terminals.get(session.id)?.term.focus();
+  }
+}
+vim = vimControls({
+  context: () => ({ enabled: state?.settings.vimControls === true, view: state?.mode === 'hud' ? 'hud' : page, sessions: state?.sessions || [], busy: windowMoving || openingConsole }),
+  focusSlot: focusVimSlot, action: vimAction, onError: message => toast(message, true)
 });
 try { state = await call('state'); receive(state); renderPage(); } catch (error) { $('#content').textContent = error.message; }
