@@ -2,7 +2,19 @@
 
 A Windows desktop app for up to nine agent consoles, shared tools and usage tracking.
 
-## Run it
+## Install
+
+Download **[Agent-Dock-0.2.0-Setup-x64.exe](https://github.com/YeerooXY/agentdock/releases/download/v0.2.0/Agent-Dock-0.2.0-Setup-x64.exe)** for Windows 10/11 on an Intel or AMD 64-bit PC.
+
+1. Run the installer and choose where to install Dock. It adds desktop and Start menu shortcuts.
+2. On first launch, choose your **project folder** and **default console**.
+3. Click **+** to open a console there. Change either choice later in **Settings → Console defaults**.
+
+Dock includes its own runtime; you do not need Node.js or Git to run it. Install Codex, Claude Code or other agent CLIs separately and sign in to your own accounts. The welcome screen links to their setup guides. PowerShell works immediately. Additional MCP servers may need their own software or runtimes.
+
+This release is unsigned, so Windows may show an unknown-publisher or SmartScreen prompt. Only download it from this repository's releases. Existing users keep their settings, keys and saved panels. Uninstalling leaves that local data in `%APPDATA%\Agent Dock`.
+
+## Run from source
 
 On Windows, with Node.js 24 and Git installed:
 
@@ -14,9 +26,15 @@ npm run build
 npm start
 ```
 
-Install and sign in to the agent CLIs you want to use separately. PowerShell consoles work without an agent account. Set your launch folder and preferred agent in **Settings → Console defaults**.
-
 To add desktop and Start menu shortcuts, run `powershell -File scripts/desktop-shortcut.ps1` after building. `Launch Agent Dock.cmd` also opens the app. Keep the project folder in place; the shortcuts point to it.
+
+## Build an installer
+
+On Windows x64 with Node.js 24, run `npm ci`, then `npm run dist`. The installer and `SHA256SUMS.txt` are written to `release/`. `npm run pack` builds an unpacked app for inspection; `npm run test:packaged` tests it with a temporary profile and no system Node on PATH.
+
+`powershell -NoProfile -File scripts/test-installer.ps1` also checks installation, the Start menu shortcut and removal. It refuses to run when Dock is already installed and preserves existing development shortcuts.
+
+The build downloads a pinned Node.js runtime, checks its SHA-256, bundles the completion/MCP helpers outside ASAR, and includes their dependency licenses. `node-pty` uses its supplied Windows x64 N-API binaries. Only application code, built UI, icons, production dependencies and the runtime go into the installer. Local settings, credentials, sessions and test data are excluded. Packaging uses [electron-builder's NSIS target](https://www.electron.build/v26/docs/nsis/).
 
 ## Use it
 

@@ -1,8 +1,9 @@
 Add-Type -AssemblyName System.Drawing
 $assetDir = Join-Path $PSScriptRoot '..\assets'
 New-Item -ItemType Directory -Path $assetDir -Force | Out-Null
-$bitmap = New-Object System.Drawing.Bitmap 128,128
+$bitmap = New-Object System.Drawing.Bitmap 256,256
 $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+$graphics.ScaleTransform(2,2)
 $graphics.Clear([System.Drawing.Color]::FromArgb(22,31,23))
 $brush = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(185,232,136))
 foreach ($x in @(25,70)) {

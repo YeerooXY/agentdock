@@ -1,0 +1,10 @@
+'use strict';
+const fs = require('node:fs');
+const path = require('node:path');
+const crypto = require('node:crypto');
+const root = path.resolve(__dirname, '..');
+const { version } = require('../package.json');
+const name = `Agent-Dock-${version}-Setup-x64.exe`;
+const hash = crypto.createHash('sha256').update(fs.readFileSync(path.join(root, 'release', name))).digest('hex');
+fs.writeFileSync(path.join(root, 'release', 'SHA256SUMS.txt'), `${hash}  ${name}\n`);
+console.log(`SHA-256 written for ${name}`);

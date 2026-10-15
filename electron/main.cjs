@@ -5,14 +5,16 @@ const fs = require('node:fs');
 const os = require('node:os');
 const { pathToFileURL } = require('node:url');
 const { Vault, readJson, atomicJson, validateKeyId } = require('./storage.cjs');
-const { CodexAccount, RecentCodex, findProgram, findClaude, consoleModels } = require('./adapters.cjs');
+const { CodexAccount, RecentCodex, findProgram, nativeCodex, findClaude, consoleModels } = require('./adapters.cjs');
+const { runtimeFiles } = require('./runtime.cjs');
+const { initialSettings } = require('./settings.cjs');
 const { Sessions, validateConsoleDefaults } = require('./sessions.cjs');
 const { Workspace } = require('./workspace.cjs');
 const { runApi } = require('./api-run.cjs');
 const { SharedHub } = require('./shared.cjs');
 const { validateProvider, validateRequest, ledgerSummary, number } = require('./domain.cjs');
 app.setName('Agent Dock');
-if (process.platform === 'win32') app.setAppUserModelId(process.execPath);
+if (process.platform === 'win32') app.setAppUserModelId(app.isPackaged ? 'com.yeeroo.agentdock' : process.execPath);
 const testMode = process.argv.includes('--smoke-test');
 const testDir = process.argv.find(x => x.startsWith('--data-dir='))?.slice(11);
 if (testMode && testDir) app.setPath('userData', testDir);
@@ -46,6 +48,7 @@ function notifySession(session) {
 }
 function persistSettings(next) { atomicJson(path.join(root, 'settings.json'), next); settings = next; }
 function setMode(next) {
+  if (next === 'hud' && settings?.setupComplete === false) next = 'dashboard';
   if (!window || window.isDestroyed() || quitting || !['hud', 'dashboard', 'fullscreen'].includes(next)) return Promise.resolve();
   if (modeTarget === next) return modeTask;
   const sequence = ++modeSequence;
@@ -121,15 +124,15 @@ app.whenReady().then(async () => {
   // otherwise take editor keys such as Ctrl+W, Ctrl+R and Ctrl+A from terminals.
   Menu.setApplicationMenu(null);
   root = app.getPath('userData'); fs.mkdirSync(root, { recursive: true });
-  const defaults = { hudAlwaysOnTop: false, notifications: true, restoreConsoles: true, agentPermissions: 'default', sidebarCollapsed: false, vimControls: false, slotNames: {}, rates: {}, consoleDefaults: { provider: 'codex', cwd: defaultFolder, name: '', command: '' } };
+  const runtime = runtimeFiles({ isPackaged: app.isPackaged, resourcesPath: process.resourcesPath, findProgram });
+  const claude = findClaude();
+  capabilities = { codex: !!nativeCodex(), claude: !!claude, claudeLocation: claude?.label, node: !!runtime.node, shell: true };
   const savedSettings = readJson(path.join(root, 'settings.json'), {});
-  settings = { ...defaults, ...savedSettings, consoleDefaults: { ...defaults.consoleDefaults, ...savedSettings.consoleDefaults } };
+  settings = initialSettings(savedSettings, defaultFolder, capabilities);
   ledger = readJson(path.join(root, 'ledger.json'), []);
   vault = new Vault(path.join(root, 'vault.json'), safeStorage);
   hub = new SharedHub(root, vault); await hub.start();
-  const claude = findClaude();
-  sessions = new Sessions(root, { hub, claude });
-  capabilities = { codex: !!findProgram('codex'), claude: !!claude, claudeLocation: claude?.label, node: !!findProgram('node'), shell: true };
+  sessions = new Sessions(root, { hub, claude, runtime });
   const savedLimits = readJson(path.join(root, 'limits.json'), []);
   limits = Array.isArray(savedLimits) ? savedLimits : [];
   account = new CodexAccount(values => {
@@ -186,6 +189,17 @@ app.whenReady().then(async () => {
         case 'minimize': window.minimize(); break;
         case 'quit': await quit(); break;
         case 'refresh': await refreshLimits(); break;
+        case 'agents.refresh': {
+          sessions.claude = findClaude();
+          capabilities = { ...capabilities, codex: !!nativeCodex(), claude: !!sessions.claude, claudeLocation: sessions.claude?.label };
+          publish(); return { ok: true, value: capabilities };
+        }
+        case 'setup.complete': {
+          const consoleDefaults = validateConsoleDefaults(payload);
+          if (['codex', 'claude'].includes(consoleDefaults.provider) && !capabilities[consoleDefaults.provider]) throw new Error('Install this agent, then check again. You can also start with PowerShell.');
+          persistSettings({ ...settings, consoleDefaults, setupComplete: true });
+          publish(); break;
+        }
         case 'pickFolder': {
           const suggested = typeof payload?.cwd === 'string' && path.isAbsolute(payload.cwd) && fs.existsSync(payload.cwd) && fs.statSync(payload.cwd).isDirectory() ? payload.cwd : settings.consoleDefaults.cwd;
           const result = await dialog.showOpenDialog(window, { properties: ['openDirectory'], title: 'Choose a launch folder', defaultPath: suggested });

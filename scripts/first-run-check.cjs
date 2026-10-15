@@ -1,0 +1,41 @@
+'use strict';
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+async function checkFirstRun({ app, page, invoke, dataDir, screenshot }) {
+  await page.locator('#first-run[open]').waitFor();
+  assert.equal((await invoke('state')).settings.setupComplete, false);
+  await page.keyboard.press('Escape');
+  assert.equal(await page.locator('#first-run').evaluate(el => el.open), true);
+  await page.reload();
+  await page.locator('#first-run[open]').waitFor();
+  const form = page.locator('#first-run-form');
+  await form.locator('[name=provider]').selectOption('shell');
+  const missing = path.join(dataDir, 'not-created');
+  await form.locator('[name=cwd]').fill(missing);
+  await form.locator('[type=submit]').click();
+  await page.waitForFunction(() => document.querySelector('#first-run .form-error').textContent.includes('existing project folder'));
+  assert.equal((await invoke('state')).settings.setupComplete, false);
+  await invoke('settings', { notifications: false });
+  assert.equal(await form.locator('[name=cwd]').inputValue(), missing, 'background updates preserve the setup draft');
+  const folder = path.join(dataDir, 'First project'); fs.mkdirSync(folder);
+  await app.evaluate(({ dialog }, selected) => {
+    globalThis.setupOriginalPicker = dialog.showOpenDialog;
+    dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [selected] });
+  }, folder);
+  await page.getByRole('button', { name: 'Choose your first project folder' }).click();
+  await page.waitForFunction(value => document.querySelector('#first-run [name=cwd]').value === value, folder);
+  await app.evaluate(({ dialog }) => { dialog.showOpenDialog = globalThis.setupOriginalPicker; delete globalThis.setupOriginalPicker; });
+  if (await form.locator('[data-setup-refresh]').isVisible()) await form.locator('[data-setup-refresh]').click();
+  else await invoke('agents.refresh');
+  assert.equal(await form.locator('[name=cwd]').inputValue(), folder);
+  if (screenshot) await page.screenshot({ path: screenshot });
+  await form.locator('[type=submit]').click();
+  await page.locator('#first-run').waitFor({ state: 'hidden' });
+  const saved = JSON.parse(fs.readFileSync(path.join(dataDir, 'settings.json'), 'utf8'));
+  assert.equal(saved.setupComplete, true); assert.equal(saved.consoleDefaults.cwd, folder); assert.equal(saved.consoleDefaults.provider, 'shell');
+  await page.reload(); await page.waitForSelector('.session-grid');
+  assert.equal(await page.locator('#first-run').evaluate(el => el.open), false);
+  return folder;
+}
+module.exports = { checkFirstRun };

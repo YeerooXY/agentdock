@@ -23,6 +23,7 @@ class Sessions extends EventEmitter {
     this.nativeCodex = dependencies.nativeCodex || nativeCodex;
     this.hub = dependencies.hub;
     this.claude = dependencies.claude;
+    this.runtime = dependencies.runtime;
   }
   list() { return [...this.items.values()].map(({ terminal, buffer, command, claudeTarget, ...session }) => session).sort((a, b) => a.slot - b.slot); }
   savedConsoles() {
@@ -67,11 +68,11 @@ class Sessions extends EventEmitter {
     const name = String(raw.name || path.basename(cwd)).trim().slice(0, 64);
     const id = crypto.randomUUID();
     const dir = path.join(this.root, 'sessions', id); fs.mkdirSync(dir, { recursive: true });
-    const helper = path.join(__dirname, 'agent-event.cjs');
-    const node = this.findProgram('node.exe') || this.findProgram('node');
+    const helper = this.runtime?.event || path.join(__dirname, 'agent-event.cjs');
+    const node = this.runtime?.node || this.findProgram('node.exe') || this.findProgram('node');
     const claudeInstall = claudeTarget || this.claude || (raw.provider === 'claude' && { kind: 'native', path: this.findProgram('claude') });
     const isWsl = raw.provider === 'claude' && claudeInstall?.kind === 'wsl';
-    const bridgeHelper = path.join(__dirname, 'agent-tools.cjs');
+    const bridgeHelper = this.runtime?.tools || path.join(__dirname, 'agent-tools.cjs');
     const mcpConfig = path.join(dir, 'mcp.json');
     if (this.hub && node) atomicJson(mcpConfig, { mcpServers: { agent_dock: { type: 'stdio', command: isWsl ? wslPath(node) : node, args: [bridgeHelper], env: { AGENT_DOCK_BRIDGE_URL: '${AGENT_DOCK_BRIDGE_URL}', AGENT_DOCK_BRIDGE_TOKEN: '${AGENT_DOCK_BRIDGE_TOKEN}', ...(isWsl ? { WSLENV: 'AGENT_DOCK_BRIDGE_URL:AGENT_DOCK_BRIDGE_TOKEN' } : {}) } } } });
     let executable = process.env.SystemRoot ? path.join(process.env.SystemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe') : 'pwsh';
@@ -93,7 +94,7 @@ class Sessions extends EventEmitter {
       const claude = claudeInstall?.path;
       if (!claude) throw new Error('Claude Code was not found. Install it, then restart Agent Dock.');
       if (!node) throw new Error('Node.js is needed for Claude tracking.');
-      const command = mode => isWsl ? `${shQuote(wslPath(node))} ${shQuote(helper)} ${mode}` : `node "${helper.replaceAll('\\', '/')}" ${mode}`;
+      const command = mode => isWsl ? `${shQuote(wslPath(node))} ${shQuote(helper)} ${mode}` : `"${node.replaceAll('\\', '/')}" "${helper.replaceAll('\\', '/')}" ${mode}`;
       const hooks = {};
       for (const type of ['SessionStart', 'UserPromptSubmit', 'Stop', 'PermissionRequest', 'Notification', 'StopFailure', 'SessionEnd']) hooks[type] = [{ hooks: [{ type: 'command', command: command(type), timeout: 5 }] }];
       const settings = path.join(dir, 'claude-settings.json');

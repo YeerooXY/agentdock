@@ -5,6 +5,7 @@ import './style.css';
 import { sharedViews } from './shared-ui.js';
 import { holdToChoose } from './launch-gesture.js';
 import { vimControls } from './vim-controls.js';
+import { firstRun } from './first-run.js';
 
 const $ = selector => document.querySelector(selector);
 const escape = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
@@ -36,7 +37,7 @@ let state, page = 'consoles', selectedId = null, selectedApi = 'openai', apiBusy
 let apiDraft = { model: '', prompt: '', maxOutput: '1024' }, responseMeta = 'TEXT OUTPUT', responseError = '';
 const terminals = new Map();
 let openingConsole = false;
-let launchGesture, chooserOpener, vim;
+let launchGesture, chooserOpener, vim, setup;
 const nameSaves = new Map();
 const launchHint = 'title="Click to open. Hold or right-click to choose." aria-haspopup="dialog"';
 let renderedView = null, viewAnimation, windowMoving = false;
@@ -275,6 +276,7 @@ function updatePreview() {
 }
 function receive(next) {
   state = next;
+  setup?.receive();
   if ($('#workspace-error')) $('#workspace-error').textContent = state.workspaceError || '';
   windowMoving = !!state.transitioning;
   document.body.classList.toggle('window-moving', windowMoving);
@@ -569,7 +571,7 @@ document.addEventListener('click', async event => {
       case 'pick-folder': {
         const form = button.closest('form');
         const folder = await call('pickFolder', { cwd: form.elements.cwd.value });
-        if (folder) form.elements.cwd.value = folder;
+        if (folder) { form.elements.cwd.value = folder; form.elements.cwd.dispatchEvent(new Event('input', { bubbles: true })); }
         break;
       }
       case 'launch-folder': {
@@ -697,4 +699,5 @@ vim = vimControls({
   context: () => ({ enabled: state?.settings.vimControls === true, view: state?.mode === 'hud' ? 'hud' : page, sessions: state?.sessions || [], busy: windowMoving || openingConsole }),
   focusSlot: focusVimSlot, action: vimAction, onError: message => toast(message, true)
 });
+setup = firstRun({ call, escape, icon, getState: () => state });
 try { state = await call('state'); receive(state); renderPage(); } catch (error) { $('#content').textContent = error.message; }

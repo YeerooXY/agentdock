@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { checkVimControls } = require('./vim-check.cjs');
+const { checkFirstRun } = require('./first-run-check.cjs');
 const root = path.resolve(__dirname, '..');
 const testParent = path.join(root, 'test-data');
 fs.mkdirSync(testParent, { recursive: true });
@@ -34,6 +35,8 @@ async function eventually(predicate, message) {
   const invoke = (method, payload) => page.evaluate(async ([m, p]) => {
     const result = await window.dock.call(m, p); if (!result.ok) throw new Error(result.error); return result.value;
   }, [method, payload]);
+  await checkFirstRun({ app, page, invoke, dataDir, screenshot: path.join(artifacts, 'test-first-run.png') });
+  checks.push('First launch validates and saves the chosen folder and console, preserves drafts, and stays completed after reload');
   assert.equal(await page.locator('.session-card').count(), 9);
   assert.equal(await page.locator('.app-footer, .local-note, #new-console, #content .page-heading, #content .grid-caption').count(), 0);
   assert.ok(await page.locator('.session-card.empty .new-console-label').evaluateAll(labels => labels.every(label => getComputedStyle(label).opacity === '0')));
@@ -89,6 +92,7 @@ async function eventually(predicate, message) {
   assert.equal(badName.ok, false);
   checks.push('Empty slot names save without launching, survive reload, prefill the chooser, and support Escape; hover reveals the label and respects reduced motion');
   await page.locator('[data-page=settings]').click();
+  await page.locator('#console-defaults-form select[name=provider]').selectOption('codex');
   await page.locator('[data-setting=agentPermissions]').selectOption('unrestricted');
   await eventually(async () => (await invoke('state')).settings.agentPermissions === 'unrestricted');
   assert.equal(JSON.parse(fs.readFileSync(path.join(dataDir, 'settings.json'), 'utf8')).agentPermissions, 'unrestricted');
@@ -97,7 +101,7 @@ async function eventually(predicate, message) {
   await page.locator('#console-defaults-form input[name=cwd]').fill(path.join(dataDir, 'missing-folder'));
   await page.locator('#console-defaults-form button[type=submit]').click();
   await page.waitForFunction(() => document.querySelector('#console-defaults-form .form-error').textContent.includes('existing project folder'));
-  assert.equal((await invoke('state')).settings.consoleDefaults.provider, 'codex');
+  assert.equal((await invoke('state')).settings.consoleDefaults.provider, 'shell');
   await page.locator('#console-defaults-form input[name=cwd]').fill(root);
   await page.locator('#console-defaults-form input[name=name]').fill('Terminal check');
   await page.locator('#console-defaults-form button[type=submit]').click();

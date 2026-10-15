@@ -151,6 +151,22 @@ button[data-action="new"].is-holding .new-console-mark>.icon{transform:scale(1.1
 @media(prefers-reduced-motion:reduce){input.console-name,input.console-name::placeholder,.consoles-only .session-card.empty,button[data-action="new"],button[data-action="new"]::before,.new-console-mark>.icon,.new-console-label{transition:none!important}}
 
 .vim-mode{flex-shrink:0;border:1px solid #443b64;border-radius:4px;padding:4px 7px;color:#c5b2ef;font:9px/1.3 Consolas,monospace;letter-spacing:.5px;white-space:nowrap}
+#first-run{width:540px;max-width:calc(100vw - 32px);max-height:calc(100dvh - 32px);overflow:auto;padding:34px;background:radial-gradient(ellipse at 100% 0%,#151027 0,transparent 55%),#030408;border:1px solid #57517b;box-shadow:0 24px 120px #000b;color:#e9eaf5}
+#first-run::backdrop{background:#010103dc;backdrop-filter:blur(5px)}
+#first-run .setup-close{position:absolute;right:14px;top:14px}
+#first-run form{display:flex;flex-direction:column;gap:18px}
+#first-run h1{margin:0;font-size:29px;font-weight:550;letter-spacing:-.8px;line-height:1.2}
+#first-run-hint{margin:-8px 0 5px;color:#a2a8bd;font-size:14px}
+.setup-star{width:42px;height:42px;display:grid;place-items:center;border:1px solid #645a91;border-radius:12px;background:linear-gradient(135deg,#17213d,#2a1633);color:#cebcf6;margin-bottom:4px}
+.setup-star .icon{width:22px;height:22px}
+.setup-agent-note{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:-10px}
+.setup-agent-note .field-hint{margin:0}.setup-agent-note button{white-space:nowrap}
+#setup-missing{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;border-top:1px solid #232332;padding-top:14px;color:#9aa1b8;font-size:11px}
+.setup-footer{display:flex;gap:14px;align-items:center;justify-content:space-between;margin-top:2px}
+.setup-footer>span{max-width:220px;color:#8f98b0;font-size:11px;line-height:1.6}
+.setup-footer .primary{display:flex;align-items:center;gap:10px;white-space:nowrap}
+#first-run .form-error:empty{display:none}
+@media(max-width:600px){#first-run{padding:24px}.setup-footer{align-items:flex-start;flex-direction:column}.setup-footer .primary{width:100%;justify-content:center}}
 .vim-mode:hover{background:#13101f;border-color:#8372b6}
 [data-vim-mode=insert] .vim-mode{border-color:#293247;color:#99aac7}
 .session-card.vim-selected,.hud-slot.vim-selected{outline:2px solid #b7a1f0;outline-offset:-4px}
