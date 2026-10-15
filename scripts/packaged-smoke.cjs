@@ -14,6 +14,7 @@ fs.mkdirSync(parent, { recursive: true });
 const work = fs.mkdtempSync(path.join(parent, 'Installed Dock '));
 const dataDir = path.join(work, 'profile'); fs.mkdirSync(dataDir);
 const suppliedApp = process.argv.find(arg => arg.startsWith('--app='))?.slice(6);
+const keepTestData = process.argv.includes('--keep-test-data');
 const install = suppliedApp ? path.dirname(path.resolve(suppliedApp)) : path.join(work, 'Program Files', 'Agent Dock');
 const executablePath = suppliedApp ? path.resolve(suppliedApp) : path.join(install, 'Agent Dock.exe');
 const systemRoot = process.env.SystemRoot || 'C:\\Windows';
@@ -30,11 +31,11 @@ async function eventually(predicate) {
   if (!suppliedApp) fs.cpSync(path.join(root, 'release', 'win-unpacked'), install, { recursive: true });
   assert.notEqual(spawnSync(path.join(systemRoot, 'System32', 'where.exe'), ['node'], { env, windowsHide: true }).status, 0, 'No system Node is available to the test app');
   const packaged = require('@electron/asar').listPackage(path.join(install, 'resources', 'app.asar')).map(file => file.replaceAll('\\', '/'));
-  const allowed = new Set(['assets', 'dist', 'electron', 'node_modules', 'package.json']);
+  const allowed = new Set(['assets', 'dist', 'electron', 'guides', 'node_modules', 'package.json']);
   assert.ok(packaged.every(file => allowed.has(file.split('/').filter(Boolean)[0])), 'Only allowlisted app files and production dependencies are packaged');
   assert.ok(!packaged.some(file => /\/(vault|workspace|settings|ledger)\.json$/.test(file) || /\/(test-data|artifacts|\.git)(\/|$)/.test(file)), 'No user data or development artifacts');
   const runtime = path.join(install, 'resources', 'runtime'), node = path.join(runtime, 'node.exe');
-  assert.deepEqual(fs.readdirSync(runtime).sort(), ['agent-event.cjs', 'agent-tools.cjs', 'node.exe', 'NODE-LICENSE.txt', 'THIRD-PARTY-NOTICES.txt', 'runtime.json'].sort());
+  assert.deepEqual(fs.readdirSync(runtime).sort(), ['agent-event.cjs', 'agent-tools.cjs', 'meshy-mcp.cjs', 'node.exe', 'NODE-LICENSE.txt', 'THIRD-PARTY-NOTICES.txt', 'runtime.json'].sort());
   assert.equal(execFileSync(node, ['--version'], { env, windowsHide: true, encoding: 'utf8' }).trim(), 'v24.19.0');
   const problems = [];
   const launch = async () => {
@@ -78,6 +79,14 @@ async function eventually(predicate) {
   assert.equal((await client.callTool({ name: 'dock_context', arguments: {} })).content[0].text, 'PACKAGED_CONTEXT_OK');
   await client.close(); client = null;
 
+  assert.match((await invoke('state')).shared.summary, /Data deletion requests/);
+  await invoke('vault.save', { provider: 'meshy', label: 'Meshy test', key: 'TEST_ONLY_NO_REQUESTS' });
+  await invoke('integrations.setup', { id: 'meshy', keyId: 'meshy' });
+  const mesh = await invoke('tools.catalog', 'meshy');
+  assert.ok(mesh.length >= 20 && mesh.every(tool => tool.name.startsWith('meshy/')));
+  assert.ok(!JSON.stringify(await invoke('state')).includes('TEST_ONLY_NO_REQUESTS'));
+  await invoke('tools.remove', 'meshy'); await invoke('vault.remove', 'meshy');
+
   await app.close(); page = await launch();
   assert.equal(await page.locator('#first-run').evaluate(el => el.open), false);
   const restored = (await invoke('state')).sessions.find(item => item.alive);
@@ -85,11 +94,12 @@ async function eventually(predicate) {
   await invoke('session.input', { id: restored.id, data: "Write-Output ('RESTORED_' + 'PACKAGE_OK')\r" });
   await eventually(async () => (await invoke('session.buffer', restored.id)).data.includes('RESTORED_PACKAGE_OK'));
   assert.deepEqual(problems, []);
-  console.log('PASS: packaged first-run setup, real terminal in the chosen folder, bundled Node, completion callback, MCP bridge, and restart/restore. No system Node or paid model requests.');
+  console.log('PASS: packaged setup, real terminal, bundled Node and Meshy tools, shared web guide, completion callback, MCP bridge, and restart/restore. No system Node or paid model requests.');
 })().catch(error => { console.error(error); process.exitCode = 1; }).finally(async () => {
   if (client) await client.close().catch(() => {});
   if (server) await new Promise(resolve => server.close(resolve));
   if (app) await app.close().catch(() => {});
+  if (keepTestData) { console.log(`Test files retained at ${work}`); return; }
   assert.equal(path.dirname(fs.realpathSync(work)), fs.realpathSync(parent));
   fs.rmSync(work, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 });
 });

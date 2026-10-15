@@ -40,6 +40,9 @@ input:not([type="checkbox"]):not(.console-name),textarea,select{background:#0708
 @media(max-width:850px){.consoles-only .session-card{height:140px;padding:13px}.consoles-only .session-grid{gap:10px}.usage-stats .stat>strong{font-size:26px}.usage-stats .stat>span:first-child{font-size:8px}.form-bottom{align-items:flex-start}.page-heading h1{font-size:28px}.sidebar nav button{position:relative}.sidebar nav button:hover:after{content:attr(aria-label);position:absolute;left:47px;font-size:12px;padding:8px;background:#1b2134;z-index:20;white-space:nowrap}}
 
 .titlebar{height:42px;padding:0 10px;gap:12px}.titlebar>#sidebar-toggle{width:32px;height:30px}.titlebar .window-actions{margin-left:auto}.brand{padding-bottom:28px}.workspace{min-height:0}
+.window-drag-handle{flex:1;align-self:stretch;min-width:36px;display:flex;align-items:center;justify-content:center;cursor:grab;user-select:none;-webkit-app-region:no-drag;touch-action:none}
+.window-drag-handle span{width:28px;height:3px;border-radius:3px;background:#33334b;opacity:.55;transition:background .18s,opacity .18s}
+.window-drag-handle:hover span{background:#ac8fd6;opacity:1}[data-window-drag]:active{cursor:grabbing}[data-window-drag]{-webkit-app-region:no-drag;touch-action:none;user-select:none}.hud-brand[data-window-drag]{cursor:grab;flex:1;align-self:stretch}
 #app{opacity:1;transition:opacity 140ms ease}.window-moving #app{opacity:0;transition-duration:70ms;pointer-events:none}
 #sidebar{--sidebar-width:206px;width:var(--sidebar-width);margin-left:0;opacity:1;visibility:visible}
 #sidebar.sidebar-animated{transition:margin-left 260ms cubic-bezier(.22,1,.36,1),opacity 180ms ease,visibility 0s}
@@ -165,6 +168,17 @@ button[data-action="new"].is-holding .new-console-mark>.icon{transform:scale(1.1
 .setup-footer{display:flex;gap:14px;align-items:center;justify-content:space-between;margin-top:2px}
 .setup-footer>span{max-width:220px;color:#8f98b0;font-size:11px;line-height:1.6}
 .setup-footer .primary{display:flex;align-items:center;gap:10px;white-space:nowrap}
+.integrations{margin-bottom:30px}.integration-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+.integration-card{display:flex;flex-direction:column;gap:14px;padding:22px;border:1px solid #292538;border-radius:14px;background:linear-gradient(145deg,#0d0b17,#050609 65%);min-width:0}
+.integration-heading{display:flex;align-items:center;gap:10px}.integration-heading h3{font-size:17px;margin:0}.integration-heading .subtle{margin-left:auto;padding:4px;font-size:11px}
+.integration-mark{display:grid;place-items:center;width:30px;height:30px;border:1px solid #5a4875;border-radius:9px;color:#d4b2f3;font:16px Consolas,monospace;flex-shrink:0}
+.integration-card p{font-size:12px;line-height:1.65;margin:0;color:#c2bed2}.integration-card .field-hint{font-size:11px;color:#a9a4bc}.integration-card label{margin:0}.integration-card .integration-status{margin-top:auto;color:#d2b6ed;min-height:2em}
+.integration-card .button-row{flex-wrap:wrap}.integration-card .button-row button{font-size:12px}.integration-card .folder-input input{width:0;min-width:0;flex:1}
+.working-guides{margin-bottom:20px}.working-guides h2{margin:0 0 16px}.working-guide .check-row{align-items:flex-start}.working-guide small{display:block;font-weight:400;margin-top:6px;color:#b7b1ca;font-size:12px}.working-guide details{margin:12px 0 0 24px}
+.working-guide pre{white-space:pre-wrap;font-family:inherit;font-size:12px;line-height:1.8;color:#c5bfd4;max-height:440px;overflow:auto;margin:16px 0 0}.working-guide summary{font-size:12px;color:#c5b6ed;cursor:pointer}
+#tool-catalog{width:720px;max-width:calc(100vw - 40px);max-height:calc(100dvh - 40px);overflow:auto;padding:26px;background:#050609;border:1px solid #6c518f;color:#e6e0f3}
+#tool-catalog h2{font-size:22px;margin:0}.catalog-state{font-size:12px;color:#c0b3d6;margin:20px 0}.catalog-tools details{border-top:1px solid #2b2538;padding:14px 0}.catalog-tools summary{font:12px/1.7 Consolas,monospace;cursor:pointer;overflow-wrap:anywhere}.catalog-tools p{font-size:12px;line-height:1.7;white-space:pre-wrap;overflow-wrap:anywhere}.catalog-tools pre{font-size:11px;white-space:pre-wrap;overflow-wrap:anywhere;color:#bdb0d2}
+@media(max-width:1100px){.integration-grid{grid-template-columns:1fr}.integration-card{padding:20px}.integration-card .integration-status{min-height:0}.integration-card label{max-width:500px}}
 #first-run .form-error:empty{display:none}
 @media(max-width:600px){#first-run{padding:24px}.setup-footer{align-items:flex-start;flex-direction:column}.setup-footer .primary{width:100%;justify-content:center}}
 .vim-mode:hover{background:#13101f;border-color:#8372b6}

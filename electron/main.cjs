@@ -12,6 +12,7 @@ const { Sessions, validateConsoleDefaults } = require('./sessions.cjs');
 const { Workspace } = require('./workspace.cjs');
 const { runApi } = require('./api-run.cjs');
 const { SharedHub } = require('./shared.cjs');
+const { ToolIntegrations, definitions: integrationDefinitions } = require('./integrations.cjs');
 const { validateProvider, validateRequest, ledgerSummary, number } = require('./domain.cjs');
 app.setName('Agent Dock');
 if (process.platform === 'win32') app.setAppUserModelId(app.isPackaged ? 'com.yeeroo.agentdock' : process.execPath);
@@ -19,9 +20,10 @@ const testMode = process.argv.includes('--smoke-test');
 const testDir = process.argv.find(x => x.startsWith('--data-dir='))?.slice(11);
 if (testMode && testDir) app.setPath('userData', testDir);
 if (!app.requestSingleInstanceLock() && !testMode) app.quit();
-let window, tray, vault, sessions, workspace, account, root, settings, ledger, balloonClick, hub;
+let window, tray, vault, sessions, workspace, account, root, settings, ledger, balloonClick, hub, integrations;
 let mode = 'dashboard', quitting = false, refreshing = false, lastRefresh = 0, apiBusy = false;
 let modeTarget = null, modeTask, modeSequence = 0, transitioning = false;
+let trayHidden = false, windowDrag = null;
 let limits = [], recent = [], accountError = null, capabilities = {}, storageError = null, workspaceError = null, shortcutAvailable = false;
 const recentReader = new RecentCodex();
 const entryFile = path.join(__dirname, '..', 'dist', 'index.html');
@@ -29,10 +31,10 @@ const entryUrl = pathToFileURL(entryFile).href;
 const projectsFolder = path.join(os.homedir(), 'Projects');
 const defaultFolder = fs.existsSync(projectsFolder) && fs.statSync(projectsFolder).isDirectory() ? projectsFolder : os.homedir();
 function snapshot() {
-  return { mode, transitioning, sessions: sessions?.list() || [], limits, recent, accountError, refreshing, lastRefresh,
+  return { mode, transitioning, trayHidden, sessions: sessions?.list() || [], limits, recent, accountError, refreshing, lastRefresh,
     capabilities, vault: { available: vault?.available() || false, entries: vault?.list() || [] },
     ledger: ledger || [], summary: ledgerSummary(ledger || []), shared: hub?.snapshot(), settings, storageError, workspaceError, shortcutAvailable,
-    defaultFolder, version: app.getVersion() };
+    integrations: integrations?.snapshot(hub?.config.connections || [], vault?.list() || []), defaultFolder, version: app.getVersion() };
 }
 function publish() { if (window && !window.isDestroyed()) window.webContents.send('dock:state', snapshot()); }
 function notifySession(session) {
@@ -47,6 +49,36 @@ function notifySession(session) {
   notice.on('click', select); notice.on('failed', fallback); notice.show();
 }
 function persistSettings(next) { atomicJson(path.join(root, 'settings.json'), next); settings = next; }
+function revealWindow() {
+  if (!window || window.isDestroyed()) return;
+  trayHidden = false; window.setSkipTaskbar(false);
+  if (window.isMinimized()) window.restore();
+  window.show(); window.focus(); publish();
+}
+function hideToTray() {
+  if (!tray) { window.minimize(); return; }
+  ++modeSequence; modeTarget = null; modeTask = null; transitioning = false; windowDrag = null;
+  trayHidden = true; window.hide(); window.setSkipTaskbar(true); publish();
+}
+function dragWindow(action, point) {
+  if (!['start', 'move', 'end'].includes(action)) throw new Error('Invalid window action.');
+  if (action === 'end') { windowDrag = null; publish(); return; }
+  if (!Number.isFinite(point?.x) || !Number.isFinite(point?.y) || Math.abs(point.x) > 100000 || Math.abs(point.y) > 100000) throw new Error('Invalid window position.');
+  if (action === 'start') {
+    ++modeSequence; modeTarget = null; modeTask = null; transitioning = false;
+    const before = window.getBounds();
+    if (window.isFullScreen() || window.isMaximized()) {
+      const area = screen.getDisplayMatching(before).workArea;
+      const width = Math.min(1240, area.width - 40), height = Math.min(840, area.height - 40);
+      window.setFullScreen(false); window.unmaximize();
+      window.setBounds({ x: Math.round(point.x - Math.max(0, Math.min(1, (point.x - before.x) / before.width)) * width), y: Math.round(point.y - 22), width, height });
+      mode = 'dashboard';
+    }
+    windowDrag = { point, bounds: window.getBounds() }; publish();
+  } else if (windowDrag) {
+    window.setPosition(Math.round(windowDrag.bounds.x + point.x - windowDrag.point.x), Math.round(windowDrag.bounds.y + point.y - windowDrag.point.y));
+  }
+}
 function setMode(next) {
   if (next === 'hud' && settings?.setupComplete === false) next = 'dashboard';
   if (!window || window.isDestroyed() || quitting || !['hud', 'dashboard', 'fullscreen'].includes(next)) return Promise.resolve();
@@ -69,7 +101,7 @@ async function moveWindow(next, sequence) {
   const changed = next !== mode || Object.keys(target).some(key => start[key] !== target[key]);
   const animation = systemPreferences.getAnimationSettings();
   const animate = changed && window.isVisible() && !window.isMinimized() && animation.shouldRenderRichAnimation && !animation.prefersReducedMotion;
-  if (!changed) { window.show(); window.focus(); return; }
+  if (!changed) { revealWindow(); return; }
   if (animate) {
     transitioning = true; publish();
     await new Promise(resolve => setTimeout(resolve, 80));
@@ -102,7 +134,7 @@ async function moveWindow(next, sequence) {
   window.setMinimumSize(next === 'hud' ? 340 : 720, next === 'hud' ? 390 : 520);
   window.setResizable(next !== 'hud');
   window.setAlwaysOnTop(next === 'hud' && settings.hudAlwaysOnTop);
-  window.show(); window.focus();
+  revealWindow();
 }
 async function refreshLimits() {
   if (refreshing || testMode) return;
@@ -131,7 +163,8 @@ app.whenReady().then(async () => {
   settings = initialSettings(savedSettings, defaultFolder, capabilities);
   ledger = readJson(path.join(root, 'ledger.json'), []);
   vault = new Vault(path.join(root, 'vault.json'), safeStorage);
-  hub = new SharedHub(root, vault); await hub.start();
+  integrations = new ToolIntegrations(root, runtime, { onChange: publish });
+  hub = new SharedHub(root, vault, { integrations }); await hub.start();
   sessions = new Sessions(root, { hub, claude, runtime });
   const savedLimits = readJson(path.join(root, 'limits.json'), []);
   limits = Array.isArray(savedLimits) ? savedLimits : [];
@@ -159,17 +192,17 @@ app.whenReady().then(async () => {
   window.webContents.session.setPermissionRequestHandler((_, __, callback) => callback(false));
   window.webContents.session.setPermissionCheckHandler(() => false);
   window.webContents.on('render-process-gone', () => { if (!quitting) window.loadFile(entryFile); });
-  window.on('close', event => { if (!quitting && !testMode) { event.preventDefault(); setMode('hud'); } });
+  window.on('close', event => { if (!quitting) { event.preventDefault(); hideToTray(); } });
   window.loadFile(entryFile);
   window.once('ready-to-show', () => setMode(process.argv.includes('--hud') ? 'hud' : 'dashboard'));
   const iconFile = path.join(__dirname, '..', 'assets', 'icon.png');
   if (fs.existsSync(iconFile)) {
     tray = new Tray(nativeImage.createFromPath(iconFile)); tray.setToolTip('Agent Dock');
-    tray.setContextMenu(Menu.buildFromTemplate([{ label: 'Open dashboard', click: () => setMode('dashboard') }, { label: 'Corner HUD', click: () => setMode('hud') }, { type: 'separator' }, { label: 'Quit Agent Dock', click: quit }]));
-    tray.on('double-click', () => setMode((modeTarget || mode) === 'hud' ? 'dashboard' : 'hud'));
+    tray.setContextMenu(Menu.buildFromTemplate([{ label: 'Open Agent Dock', click: revealWindow }, { label: 'Corner HUD', click: () => setMode('hud') }, { type: 'separator' }, { label: 'Quit Agent Dock', click: quit }]));
+    tray.on('click', revealWindow); tray.on('double-click', revealWindow);
     tray.on('balloon-click', () => balloonClick?.());
   }
-  shortcutAvailable = !testMode && globalShortcut.register('CommandOrControl+Alt+Space', () => setMode((modeTarget || mode) === 'hud' ? 'dashboard' : 'hud'));
+  shortcutAvailable = !testMode && globalShortcut.register('CommandOrControl+Alt+Space', () => trayHidden ? revealWindow() : setMode((modeTarget || mode) === 'hud' ? 'dashboard' : 'hud'));
   for (let i = 1; !testMode && i <= 9; i++) globalShortcut.register(`CommandOrControl+Alt+${i}`, () => {
     const item = sessions.list().find(x => x.slot === i); if (!item) return;
     setMode('fullscreen'); window.webContents.send('dock:select', item.id);
@@ -187,6 +220,9 @@ app.whenReady().then(async () => {
         case 'state': return { ok: true, value: snapshot() };
         case 'mode': await setMode(payload); break;
         case 'minimize': window.minimize(); break;
+        case 'tray': hideToTray(); break;
+        case 'show': revealWindow(); break;
+        case 'window.drag': dragWindow(payload?.action, payload); break;
         case 'quit': await quit(); break;
         case 'refresh': await refreshLimits(); break;
         case 'agents.refresh': {
@@ -242,9 +278,20 @@ app.whenReady().then(async () => {
           vault.remove(payload); hub.writeSummary(); await Promise.allSettled([...hub.clients.keys()].map(id => hub.disconnect(id))); publish(); break;
         }
         case 'shared.instructions': hub.instructions(payload); publish(); break;
+        case 'shared.guides': hub.setGuides(payload); publish(); break;
+        case 'integrations.refresh': integrations.refresh(); publish(); break;
+        case 'integrations.setup': {
+          if (testMode && payload?.id !== 'meshy') throw new Error('Software installation is disabled during tests.');
+          if (payload?.id === 'meshy' && !vault.list().some(x => x.id === payload.keyId)) throw new Error('Save a Meshy API key in Keys, then choose it here.');
+          const previous = hub.config.connections.find(x => x.id === payload?.id);
+          if (previous && previous.integration !== payload.id) throw new Error('A custom tool already uses this ID. Rename it before setting up this integration.');
+          const connection = await integrations.prepare(payload?.id, payload);
+          await hub.saveConnection(connection); publish(); break;
+        }
         case 'tools.save': await hub.saveConnection(payload); publish(); break;
         case 'tools.remove': await hub.removeConnection(payload); publish(); break;
         case 'tools.test': { try { const result = await hub.test(payload); return { ok: true, value: result }; } finally { publish(); } }
+        case 'tools.catalog': { try { return { ok: true, value: await hub.list(payload) }; } finally { publish(); } }
         case 'profiles.save': hub.saveProfile(payload); publish(); break;
         case 'profiles.remove': hub.removeProfile(payload); publish(); break;
         case 'settings': {
@@ -296,6 +343,7 @@ app.whenReady().then(async () => {
         }
         case 'docs': {
           const urls = { codex: 'https://learn.chatgpt.com/docs/codex/cli', claude: 'https://code.claude.com/docs/en/overview', openai: 'https://developers.openai.com/api/docs/pricing', anthropic: 'https://platform.claude.com/docs/en/about-claude/pricing' };
+          for (const item of integrationDefinitions) urls[item.id] = item.docs;
           if (!urls[payload]) throw new Error('Unknown documentation link.'); await shell.openExternal(urls[payload]); break;
         }
         default: throw new Error('Unknown action.');

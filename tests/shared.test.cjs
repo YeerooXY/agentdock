@@ -78,6 +78,7 @@ for (const protocol of ['responses', 'anthropic', 'chat']) test(`${protocol} API
   const result = await runApi({ provider: 'custom', model: 'test', prompt: 'PRIVATE_PROMPT', maxOutput: 100 }, 'PRIVATE_KEY', { input: 2, output: 4 }, { profile: { id: 'custom', protocol, url: 'https://example.com/model' }, hub, onEntry: entry => saved.push(entry), fetcher: async (_, options) => {
     const body = JSON.parse(options.body); count++;
     assert.match(protocol === 'chat' ? body.messages[0].content : protocol === 'anthropic' ? body.system : body.instructions, /Reply briefly/);
+    assert.match(protocol === 'chat' ? body.messages[0].content : protocol === 'anthropic' ? body.system : body.instructions, /Web design and page review/);
     assert.equal(body.tools.length, 3);
     if (count === 2) assert.match(JSON.stringify(body), /Agent Dock shared instructions/);
     const usage = protocol === 'chat' ? { prompt_tokens: 20, completion_tokens: 10 } : { input_tokens: 20, output_tokens: 10 };

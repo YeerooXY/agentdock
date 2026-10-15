@@ -6,6 +6,7 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { checkVimControls } = require('./vim-check.cjs');
 const { checkFirstRun } = require('./first-run-check.cjs');
+const { checkToolsAndWindow } = require('./tool-window-check.cjs');
 const root = path.resolve(__dirname, '..');
 const testParent = path.join(root, 'test-data');
 fs.mkdirSync(testParent, { recursive: true });
@@ -417,6 +418,9 @@ async function eventually(predicate, message) {
     return contents.length === 9 && contents.every((text, i) => text.includes(`PANEL_${i + 1}_LIVE`));
   }, 'All nine terminals should display their own live output');
   checks.push('All nine panels show independent live terminal output');
+  await checkToolsAndWindow({ app, page, invoke, eventually, capture: file => capture({ path: path.join(artifacts, file) }), dataDir });
+  checks.push('Shared web guide preserves drafts; Unity folder picker and encrypted Meshy binding work; bundled Meshy discovers tools without a paid request');
+  checks.push('Dragging works in dashboard, fullscreen and HUD; close hides to tray and reopening preserves fullscreen and all running consoles');
   const tenth = await page.evaluate(cwd => window.dock.call('session.create', { provider: 'shell', cwd }), root);
   assert.equal(tenth.ok, false); assert.match(tenth.error, /nine consoles/);
   const workingHook = spawnSync(process.execPath, [path.join(root, 'electron', 'agent-event.cjs'), 'UserPromptSubmit'], { input: JSON.stringify({ session_id: 'test-thread' }), windowsHide: true, env: { ...process.env, AGENT_DOCK_DATA_DIR: dataDir, AGENT_DOCK_SESSION_ID: session.id } });

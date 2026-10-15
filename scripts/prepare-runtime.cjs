@@ -26,7 +26,8 @@ async function download(url) {
   const license = path.join(output, 'NODE-LICENSE.txt');
   if (!fs.existsSync(license)) fs.writeFileSync(license, await download(`https://raw.githubusercontent.com/nodejs/node/v${version}/LICENSE`));
   const result = await build({
-    absWorkingDir: root, entryPoints: ['electron/agent-event.cjs', 'electron/agent-tools.cjs'],
+    absWorkingDir: root, entryPoints: { 'agent-event': 'electron/agent-event.cjs', 'agent-tools': 'electron/agent-tools.cjs', 'meshy-mcp': 'node_modules/@meshy-ai/meshy-mcp-server/dist/index.js' },
+    alias: { dotenv: path.join(root, 'electron', 'no-dotenv.cjs') },
     outdir: output, outExtension: { '.js': '.cjs' }, bundle: true,
     platform: 'node', target: 'node24', format: 'cjs', legalComments: 'eof', metafile: true
   });
@@ -47,10 +48,14 @@ async function download(url) {
   const notices = [];
   for (const [directory, pkg] of packages) {
     const licenses = fs.readdirSync(directory).filter(file => /^(licen[cs]e|copying|notice)(\.|$)/i.test(file) && fs.statSync(path.join(directory, file)).isFile());
+    if (!licenses.length) {
+      const readme = fs.readdirSync(directory).find(file => /^readme(\.|$)/i.test(file));
+      if (readme && /Permission is hereby granted[\s\S]+THE SOFTWARE IS PROVIDED/i.test(fs.readFileSync(path.join(directory, readme), 'utf8'))) licenses.push(readme);
+    }
     if (!licenses.length) throw new Error(`Missing license text for bundled dependency ${pkg.name}`);
     notices.push(`${pkg.name} ${pkg.version}\n${'='.repeat(60)}\n${licenses.map(file => fs.readFileSync(path.join(directory, file), 'utf8')).join('\n')}`);
   }
   fs.writeFileSync(path.join(output, 'THIRD-PARTY-NOTICES.txt'), notices.join('\n\n'));
   fs.writeFileSync(path.join(output, 'runtime.json'), JSON.stringify({ node: version, arch: 'x64', sha256: checksum }, null, 2) + '\n');
-  console.log(`Prepared Node ${version} and both agent helpers.`);
+  console.log(`Prepared Node ${version}, agent helpers and Meshy MCP.`);
 })().catch(error => { console.error(error.message); process.exitCode = 1; });

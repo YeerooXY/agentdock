@@ -6,6 +6,8 @@ import { sharedViews } from './shared-ui.js';
 import { holdToChoose } from './launch-gesture.js';
 import { vimControls } from './vim-controls.js';
 import { firstRun } from './first-run.js';
+import { windowDragging } from './window-drag.js';
+import { toolFeatures, syncIntegrationJobs } from './tool-features.js';
 
 const $ = selector => document.querySelector(selector);
 const escape = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
@@ -82,7 +84,7 @@ $('#app').innerHTML = `
     <div class="sidebar-bottom"><button data-page="settings">${icon('settings')}Settings</button></div>
   </aside>
   <div class="workspace">
-    <header class="titlebar"><button id="sidebar-toggle" class="icon-button" data-action="sidebar" aria-label="Hide sidebar" title="Hide sidebar" aria-controls="sidebar" aria-expanded="true">${icon('menu')}</button><button id="launch-folder" class="launch-folder" data-action="launch-folder" aria-label="Choose launch folder">${icon('folder')}<span></span></button><div class="window-actions"><button data-action="hud" title="Collapse to corner HUD" aria-label="Collapse to corner HUD">${icon('corner')}</button><button data-action="minimize" aria-label="Minimize">${icon('minus')}</button><button data-action="hud" aria-label="Dock window">${icon('close')}</button></div></header>
+    <header class="titlebar"><button id="sidebar-toggle" class="icon-button" data-action="sidebar" aria-label="Hide sidebar" title="Hide sidebar" aria-controls="sidebar" aria-expanded="true">${icon('menu')}</button><button id="launch-folder" class="launch-folder" data-action="launch-folder" aria-label="Choose launch folder">${icon('folder')}<span></span></button><div class="window-drag-handle" data-window-drag title="Drag to move. Double-click for fullscreen." aria-label="Move window"><span></span></div><div class="window-actions"><button data-action="hud" title="Collapse to corner HUD" aria-label="Collapse to corner HUD">${icon('corner')}</button><button data-action="minimize" aria-label="Minimize">${icon('minus')}</button><button data-action="tray" aria-label="Hide in system tray" title="Hide in system tray">${icon('close')}</button></div></header>
     <main id="content" tabindex="-1"></main>
     <section id="consoles-page" class="console-grid-view" hidden aria-label="Consoles"><div class="consoles-only"><div class="session-grid"></div></div></section>
     <section id="terminal-page" hidden><div class="terminal-toolbar"><div id="terminal-heading"></div><div class="toolbar-actions"><button data-page="consoles" class="subtle" aria-label="Back to consoles">${icon('grid')}Consoles</button><button data-action="fullscreen" class="subtle">${icon('expand')}Fullscreen</button><button data-action="end-session" class="subtle danger">End console</button></div></div><div id="terminal-tabs" role="tablist" aria-label="Open consoles"></div><div id="terminal-host"></div></section>
@@ -189,13 +191,22 @@ function renderApi() {
 }
 function renderVault() { return sharedViews(state, { escape, icon, pageHeading }).vault(); }
 function renderTools() { return sharedViews(state, { escape, icon, pageHeading }).tools(); }
+function refreshToolSections() {
+  if (page !== 'tools') return;
+  const drafts = [...document.querySelectorAll('.integrations input, .integrations select')].map(field => [field.name, field.value]);
+  const focusedSetup = document.activeElement?.dataset.integrationSetup;
+  const template = document.createElement('template'); template.innerHTML = renderTools();
+  for (const selector of ['.integrations', '.connection-list']) document.querySelector(selector)?.replaceWith(template.content.querySelector(selector));
+  for (const [name, value] of drafts) { const field = document.querySelector(`.integrations [name="${name}"]`); if (field) field.value = value; }
+  if (focusedSetup) document.querySelector(`[data-integration-setup="${focusedSetup}"]`)?.focus({ preventScroll: true });
+}
 function renderInstructions() { return sharedViews(state, { escape, icon, pageHeading }).instructions(); }
 function renderLaunchDefaults() {
   const defaults = state.settings.consoleDefaults;
   return `<form id="console-defaults-form" class="surface"><h2>Console defaults</h2><p class="field-hint">Used when you click +.</p><div class="form-pair"><label>Agent or shell<select name="provider">${['codex', 'claude', 'shell', 'custom'].map(provider => `<option value="${provider}" ${defaults.provider === provider ? 'selected' : ''}>${providerName(provider)}</option>`).join('')}</select></label><label id="default-permissions">Permissions<select name="permissions" data-setting="agentPermissions"><option value="unrestricted" ${state.settings.agentPermissions === 'unrestricted' ? 'selected' : ''}>Unrestricted</option><option value="default" ${state.settings.agentPermissions !== 'unrestricted' ? 'selected' : ''}>Agent defaults</option></select></label></div><label>Project folder<div class="folder-input"><input name="cwd" required value="${escape(defaults.cwd)}"><button type="button" data-action="pick-folder" aria-label="Choose default project folder">${icon('folder')}</button></div></label><label>Name <span class="optional">optional</span><input name="name" maxlength="64" value="${escape(defaults.name)}" placeholder="Uses the folder name"></label><label id="default-command">Custom command<textarea name="command" rows="3" maxlength="4000" spellcheck="false" placeholder="The command to run">${escape(defaults.command)}</textarea></label><p id="default-provider-hint" class="field-hint"></p><p class="form-error" role="alert"></p><button type="submit" class="primary">Save defaults</button></form>`;
 }
 function renderSettings() {
-  return pageHeading('', 'Settings', '') + '<div class="settings-layout"><section class="surface"><h2>Desktop</h2><label class="toggle-row"><span><strong>Keep HUD above other apps</strong><small>Off lets your other windows cover it.</small></span><input type="checkbox" data-setting="hudAlwaysOnTop" ' + (state.settings.hudAlwaysOnTop ? 'checked' : '') + '></label><label class="toggle-row"><span><strong>Notify when an agent needs you</strong></span><input type="checkbox" data-setting="notifications" ' + (state.settings.notifications ? 'checked' : '') + '></label><div class="shortcut-row"><span>Show or collapse</span><kbd>Ctrl Alt Space</kbd></div><div class="shortcut-row"><span>Open a console</span><kbd>Ctrl Alt 1…9</kbd></div><p class="field-hint">Closing the window keeps consoles running. Use Quit to stop the app.</p></section><section class="surface"><h2>Installed agents</h2>' + ['codex', 'claude'].map(provider => '<div class="connection-row"><span>' + providerName(provider) + '</span><span>' + (state.capabilities[provider] ? provider === 'claude' ? escape(state.capabilities.claudeLocation) : 'Windows' : 'Not found') + '</span><button class="subtle" data-docs="' + provider + '">Guide ↗</button></div>').join('') + '<button class="secondary danger" data-action="quit">Quit Agent Dock</button></section></div>';
+  return pageHeading('', 'Settings', '') + '<div class="settings-layout"><section class="surface"><h2>Desktop</h2><label class="toggle-row"><span><strong>Keep HUD above other apps</strong><small>Off lets your other windows cover it.</small></span><input type="checkbox" data-setting="hudAlwaysOnTop" ' + (state.settings.hudAlwaysOnTop ? 'checked' : '') + '></label><label class="toggle-row"><span><strong>Notify when an agent needs you</strong></span><input type="checkbox" data-setting="notifications" ' + (state.settings.notifications ? 'checked' : '') + '></label><div class="shortcut-row"><span>Show or collapse</span><kbd>Ctrl Alt Space</kbd></div><div class="shortcut-row"><span>Open a console</span><kbd>Ctrl Alt 1…9</kbd></div><p class="field-hint">Close hides Dock in the system tray. Consoles keep running. Use Quit to stop the app.</p></section><section class="surface"><h2>Installed agents</h2>' + ['codex', 'claude'].map(provider => '<div class="connection-row"><span>' + providerName(provider) + '</span><span>' + (state.capabilities[provider] ? provider === 'claude' ? escape(state.capabilities.claudeLocation) : 'Windows' : 'Not found') + '</span><button class="subtle" data-docs="' + provider + '">Guide ↗</button></div>').join('') + '<button class="secondary danger" data-action="quit">Quit Agent Dock</button></section></div>';
 }
 function renderStartupSettings() {
   return `<section class="surface"><h2>Startup</h2><label class="toggle-row"><span><strong>Restore previous consoles</strong><small>Reopen your panels and folders. Saved agent chats resume; shells and custom commands restart.</small></span><input type="checkbox" data-setting="restoreConsoles" ${state.settings.restoreConsoles ? 'checked' : ''}></label><p id="workspace-error" class="form-error" role="alert">${escape(state.workspaceError || '')}</p></section>`;
@@ -251,7 +262,7 @@ function hudHtml() {
     const name = state.settings.slotNames?.[i + 1];
     return item ? `<button class="hud-slot ${item.state} ${item.id === selectedId ? 'current' : ''}" data-slot="${i + 1}" data-session="${item.id}" title="${escape(item.name)} · ${labels[item.state]}"><span>${i + 1}</span><i class="dot"></i><small>${escape(item.name)}</small></button>` : `<button class="hud-slot empty ${name ? 'named' : ''}" data-action="new" data-slot="${i + 1}" aria-label="Open console ${i + 1}${name ? ': ' + escape(name) : ''}" ${launchHint} ${openingConsole ? 'disabled' : ''}>${newConsoleMark()}${name ? `<small class="hud-slot-name">${escape(name)}</small>` : ''}</button>`;
   }).join('');
-  return `<div class="hud-title"><span class="hud-brand">${icon('grid')}agentdock</span><button class="vim-mode" data-action="vim-normal" hidden></button><button class="icon-button" data-action="dashboard" aria-label="Expand dashboard">${icon('expand')}</button></div><button class="hud-summary" data-action="dashboard"><div><strong>${ready ? `${ready} ready for you` : active ? `${active} console${active === 1 ? '' : 's'} open` : ''}</strong>${icon('arrow')}</div></button><div class="hud-slots">${slots}</div>${selected ? `<button class="hud-console ${selected.state}" data-session="${selected.id}"><div><span>${icon('terminal')}${escape(selected.name)}</span>${icon('expand')}</div><pre id="hud-preview">${escape(terminalPreview(selected))}</pre></button>` : `<button class="hud-console empty" data-action="new" aria-label="Open console" ${launchHint} ${openingConsole ? 'disabled' : ''}>${newConsoleMark()}</button>`}<div class="hud-usage"><span>${quotaProvider === 'claude' ? 'CLAUDE USAGE' : 'CODEX USAGE'} <small>${quota ? age(quota.observedAt) : 'Not connected'}</small></span><div><span>5h <b>${five ? number(five.usedPercent) + '%' : '—'}</b></span><span>Weekly <b>${weekly ? number(weekly.usedPercent) + '%' : '—'}</b></span></div></div>`;
+  return `<div class="hud-title"><span class="hud-brand" data-window-drag title="Drag to move">${icon('grid')}agentdock</span><button class="vim-mode" data-action="vim-normal" hidden></button><button class="icon-button" data-action="dashboard" aria-label="Expand dashboard">${icon('expand')}</button><button class="icon-button" data-action="tray" aria-label="Hide in system tray">${icon('close')}</button></div><button class="hud-summary" data-action="dashboard"><div><strong>${ready ? `${ready} ready for you` : active ? `${active} console${active === 1 ? '' : 's'} open` : ''}</strong>${icon('arrow')}</div></button><div class="hud-slots">${slots}</div>${selected ? `<button class="hud-console ${selected.state}" data-session="${selected.id}"><div><span>${icon('terminal')}${escape(selected.name)}</span>${icon('expand')}</div><pre id="hud-preview">${escape(terminalPreview(selected))}</pre></button>` : `<button class="hud-console empty" data-action="new" aria-label="Open console" ${launchHint} ${openingConsole ? 'disabled' : ''}>${newConsoleMark()}</button>`}<div class="hud-usage"><span>${quotaProvider === 'claude' ? 'CLAUDE USAGE' : 'CODEX USAGE'} <small>${quota ? age(quota.observedAt) : 'Not connected'}</small></span><div><span>5h <b>${five ? number(five.usedPercent) + '%' : '—'}</b></span><span>Weekly <b>${weekly ? number(weekly.usedPercent) + '%' : '—'}</b></span></div></div>`;
 }
 function terminalPreview(session) {
   if (!session) return '> ready when you are';
@@ -292,7 +303,8 @@ function receive(next) {
     const label = document.querySelector(`[data-tool-status="${connection.id}"]`);
     if (label) { label.textContent = !connection.enabled ? 'Disabled' : connection.status ? connection.status.ok ? `${connection.status.count} tools` : 'Check connection' : 'Ready to connect'; label.classList.toggle('connected', !!connection.status?.ok); }
   }
-  if (hud && !launchGesture?.active && !$('#console-chooser').open) $('#hud').innerHTML = hudHtml();
+  syncIntegrationJobs(state);
+  if (hud && !launchGesture?.active && !$('#console-chooser').open && !document.body.classList.contains('window-dragging')) $('#hud').innerHTML = hudHtml();
   else if (['overview', 'consoles', 'usage', 'terminal'].includes(page) && !document.activeElement?.closest('#rates-form')) renderPage();
   if (!windowMoving) scheduleFits();
   vim?.refresh();
@@ -584,6 +596,7 @@ document.addEventListener('click', async event => {
       case 'dashboard': page = 'consoles'; await call('mode', 'dashboard'); renderPage(); break;
       case 'fullscreen': await call('mode', 'fullscreen'); break;
       case 'minimize': await call('minimize'); break;
+      case 'tray': await call('tray'); break;
       case 'refresh': await call('refresh'); break;
       case 'quit': await call('quit'); break;
       case 'end-session': await call('session.end', selectedId); break;
@@ -700,4 +713,6 @@ vim = vimControls({
   focusSlot: focusVimSlot, action: vimAction, onError: message => toast(message, true)
 });
 setup = firstRun({ call, escape, icon, getState: () => state });
+windowDragging(call, () => state);
+toolFeatures({ call, getState: () => state, navigate: next => { page = next; renderPage(); }, render: refreshToolSections, toast, escape });
 try { state = await call('state'); receive(state); renderPage(); } catch (error) { $('#content').textContent = error.message; }

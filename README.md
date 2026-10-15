@@ -4,7 +4,7 @@ A Windows desktop app for up to nine agent consoles, shared tools and usage trac
 
 ## Install
 
-Download **[Agent-Dock-0.2.0-Setup-x64.exe](https://github.com/YeerooXY/agentdock/releases/download/v0.2.0/Agent-Dock-0.2.0-Setup-x64.exe)** for Windows 10/11 on an Intel or AMD 64-bit PC.
+Download **[Agent-Dock-0.3.0-Setup-x64.exe](https://github.com/YeerooXY/agentdock/releases/download/v0.3.0/Agent-Dock-0.3.0-Setup-x64.exe)** for Windows 10/11 on an Intel or AMD 64-bit PC.
 
 1. Run the installer and choose where to install Dock. It adds desktop and Start menu shortcuts.
 2. On first launch, choose your **project folder** and **default console**.
@@ -22,6 +22,7 @@ On Windows, with Node.js 24 and Git installed:
 git clone https://github.com/YeerooXY/agentdock.git
 cd agentdock
 npm ci
+npm run prepare:runtime
 npm run build
 npm start
 ```
@@ -34,7 +35,7 @@ On Windows x64 with Node.js 24, run `npm ci`, then `npm run dist`. The installer
 
 `powershell -NoProfile -File scripts/test-installer.ps1` also checks installation, the Start menu shortcut and removal. It refuses to run when Dock is already installed and preserves existing development shortcuts.
 
-The build downloads a pinned Node.js runtime, checks its SHA-256, bundles the completion/MCP helpers outside ASAR, and includes their dependency licenses. `node-pty` uses its supplied Windows x64 N-API binaries. Only application code, built UI, icons, production dependencies and the runtime go into the installer. Local settings, credentials, sessions and test data are excluded. Packaging uses [electron-builder's NSIS target](https://www.electron.build/v26/docs/nsis/).
+The build downloads a pinned Node.js runtime, checks its SHA-256, bundles the completion/MCP helpers and Meshy server outside ASAR, and includes their dependency licenses. `node-pty` uses its supplied Windows x64 N-API binaries. Only application code, built UI, bundled guides, icons, production dependencies and the runtime go into the installer. Local settings, credentials, sessions and test data are excluded. Packaging uses [electron-builder's NSIS target](https://www.electron.build/v26/docs/nsis/).
 
 ## Use it
 
@@ -44,7 +45,9 @@ The build downloads a pinned Node.js runtime, checks its SHA-256, bundles the co
 - **Tools** connects MCP servers, HTTP tools and model APIs.
 - **Instructions** sets the working style shared by supported agents.
 
-**Ctrl + Alt + Space** shows or collapses the app. **Ctrl + Alt + 1–9** opens a console fullscreen. Closing the window keeps sessions running in the HUD; quitting stops their processes.
+**Ctrl + Alt + Space** shows or collapses the app. **Ctrl + Alt + 1–9** opens a console fullscreen. **×** hides Dock in the Windows system tray, keeping consoles running. Click its tray icon or use the shortcut to return. **–** minimizes to the taskbar; **Quit** stops the processes.
+
+Drag the grip in the top bar to move the window, including out of fullscreen. Drag the name in the HUD to move it. Double-click either grip to toggle fullscreen. Reopening from the tray keeps the window's position and fullscreen state.
 
 **Settings → Startup → Restore previous consoles** is on by default. After quitting or restarting Windows, Dock reopens the same numbered panels with their agents, names, launch folders and permissions. The layout is saved as it changes, including before shutdown. Ending an individual console removes it from the saved layout. Turning the setting off clears the saved layout and leaves currently open consoles running.
 
@@ -99,6 +102,22 @@ Per-session hooks report completion and attention states. Claude's status line r
 3. Test an MCP connection to discover its tools. Checking an ordinary HTTP API validates its setup without sending a request.
 4. Write your preferences in **Instructions**. New managed Codex, Claude and API sessions receive them automatically.
 
+The **3D tools** cards handle these integrations:
+
+| Tool | Setup in Dock | What you need |
+| --- | --- | --- |
+| Blender | **Set up Blender** installs a pinned MCP server in a separate local Python environment and installs its add-on. **Update tools** reapplies the version shipped with Dock. | Install Blender first. The setup uses Blender's bundled Python. Open Blender and start **MCP for Blender** in the N sidebar; enable it in Preferences → Add-ons if setup could not do that while Blender was open. |
+| Unity | Pick your project folder and press **Connect**. Dock installs Unity Pipeline into that project and uses the official Unity CLI MCP connection. | Install [Unity CLI](https://docs.unity.com/en-us/unity-cli/unity-cli-reference) and a compatible Unity Editor. Open the selected project to use editor tools. |
+| Meshy AI | **Add key** saves your Meshy key in the encrypted vault. Select it and press **Connect**. The MCP server and runtime are included. | Your own [Meshy API key](https://www.meshy.ai/developers/keys). Asset generation uses Meshy credits. |
+
+**Browse tools** shows discovered tool names, descriptions and inputs. Connecting or browsing Meshy does not generate assets or verify account credits. Installers need an internet connection; Blender is a community integration, while Unity CLI and Meshy's MCP server are provided by their respective vendors. Blender server telemetry is disabled for Dock's managed connection. No other agent configuration is rewritten.
+
+### Web design
+
+**Instructions → Ways of working → Web design** is on by default. Its [shared guide](guides/web-design.md) covers layout, typography, responsive behavior, accessibility, performance and a 20-point page review: policies, consent, data collection, SDKs, honest claims and reviews, fees, business details, children's data, unsubscribe, asset licenses and deletion requests.
+
+Agents review every item on every page, recording checked, needs work or not applicable with a reason. Policies and consent flows must match the actual site and applicable rules; the guide is not a legal certification or an automated enforcement engine. You can read or disable it in Instructions, alongside your own preferences.
+
 The generated summary is `%APPDATA%\Agent Dock\shared\AGENT_DOCK.md`. It contains instructions, enabled connection descriptions and credential names, never key values.
 
 All supported sessions receive three shared functions:
@@ -111,7 +130,7 @@ Open sessions can fetch updates with `dock_context`. Codex receives the summary 
 
 Custom commands can use `{instructions}` and `{mcp_config}` placeholders; Dock replaces them with quoted file paths. The same paths are available in `AGENT_DOCK_INSTRUCTIONS` and `AGENT_DOCK_MCP_CONFIG`. A custom agent must support those integrations. Arbitrary programs do not automatically become MCP clients. Agents launched outside Dock are not modified.
 
-Supported connections: MCP stdio, Streamable HTTP and legacy SSE; fixed HTTP endpoints with GET/POST/PUT/PATCH/DELETE and JSON Schema inputs. MCP OAuth browser login, resources/prompts, arbitrary model protocols and streaming model output are not implemented. Blender's MCP server and Blender itself must be installed/configured separately before adding that connection.
+Supported connections: MCP stdio, Streamable HTTP and legacy SSE; fixed HTTP endpoints with GET/POST/PUT/PATCH/DELETE and JSON Schema inputs. MCP OAuth browser login, resources/prompts, arbitrary model protocols and streaming model output are not implemented.
 
 ## API requests and usage
 
@@ -131,6 +150,7 @@ Local data is in `%APPDATA%\Agent Dock`:
 - `workspace.json`: encrypted console launch details and conversation IDs for startup restoration; no terminal input, output or transcripts.
 - `shared.json`: instructions, connection settings and credential IDs.
 - `shared/AGENT_DOCK.md`: generated summary without secrets.
+- `integrations`: installed Blender server, setup versions and add-on setup notes. The Blender add-on itself lives in Blender's user add-ons folder. Unity Pipeline lives in the project you selected.
 - `ledger.json`: model, time, tokens, request status and estimated cost; no prompts or responses.
 - `settings.json`, `limits.json`, `events`, `sessions`: preferences, cached quotas and per-session tracking/configuration.
 
@@ -144,6 +164,7 @@ API prompts, responses and terminal scrollback stay in memory. Agent CLIs and co
 
 ```powershell
 npm ci
+npm run prepare:runtime
 npm run build
 npm start
 npm test

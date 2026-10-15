@@ -1,7 +1,7 @@
 {
   "name": "agent-dock",
   "productName": "Agent Dock",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "description": "A local desktop home for agent sessions, usage and API calls.",
   "main": "electron/main.cjs",
@@ -16,6 +16,7 @@
     "test:packaged": "node scripts/packaged-smoke.cjs"
   },
   "devDependencies": {
+    "@meshy-ai/meshy-mcp-server": "0.6.4",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",
     "electron": "^44.7.2",
