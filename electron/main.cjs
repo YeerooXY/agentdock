@@ -10,6 +10,7 @@ const { runtimeFiles } = require('./runtime.cjs');
 const { initialSettings } = require('./settings.cjs');
 const { Sessions, validateConsoleDefaults } = require('./sessions.cjs');
 const { Workspace } = require('./workspace.cjs');
+const { Workbench } = require('./workbench.cjs');
 const { runApi } = require('./api-run.cjs');
 const { SharedHub } = require('./shared.cjs');
 const { ToolIntegrations, definitions: integrationDefinitions } = require('./integrations.cjs');
@@ -20,7 +21,7 @@ const testMode = process.argv.includes('--smoke-test');
 const testDir = process.argv.find(x => x.startsWith('--data-dir='))?.slice(11);
 if (testMode && testDir) app.setPath('userData', testDir);
 if (!app.requestSingleInstanceLock() && !testMode) app.quit();
-let window, tray, vault, sessions, workspace, account, root, settings, ledger, balloonClick, hub, integrations;
+let window, tray, vault, sessions, workspace, account, root, settings, ledger, balloonClick, hub, integrations, workbench;
 let mode = 'dashboard', quitting = false, refreshing = false, lastRefresh = 0, apiBusy = false;
 let modeTarget = null, modeTask, modeSequence = 0, transitioning = false;
 let trayHidden = false, windowDrag = null;
@@ -32,7 +33,7 @@ const projectsFolder = path.join(os.homedir(), 'Projects');
 const defaultFolder = fs.existsSync(projectsFolder) && fs.statSync(projectsFolder).isDirectory() ? projectsFolder : os.homedir();
 function snapshot() {
   return { mode, transitioning, trayHidden, sessions: sessions?.list() || [], limits, recent, accountError, refreshing, lastRefresh,
-    capabilities, vault: { available: vault?.available() || false, entries: vault?.list() || [] },
+    capabilities, workbench: workbench?.snapshot(), vault: { available: vault?.available() || false, entries: vault?.list() || [] },
     ledger: ledger || [], summary: ledgerSummary(ledger || []), shared: hub?.snapshot(), settings, storageError, workspaceError, shortcutAvailable,
     integrations: integrations?.snapshot(hub?.config.connections || [], vault?.list() || []), defaultFolder, version: app.getVersion() };
 }
@@ -164,7 +165,8 @@ app.whenReady().then(async () => {
   ledger = readJson(path.join(root, 'ledger.json'), []);
   vault = new Vault(path.join(root, 'vault.json'), safeStorage);
   integrations = new ToolIntegrations(root, runtime, { onChange: publish });
-  hub = new SharedHub(root, vault, { integrations }); await hub.start();
+  workbench = new Workbench(root, runtime, require('electron'), { testMode, onChange: publish, getSessions: () => sessions, getProject: () => settings.consoleDefaults.cwd, getWindow: () => window });
+  hub = new SharedHub(root, vault, { integrations, workbench }); await hub.start();
   sessions = new Sessions(root, { hub, claude, runtime });
   const savedLimits = readJson(path.join(root, 'limits.json'), []);
   limits = Array.isArray(savedLimits) ? savedLimits : [];
@@ -181,7 +183,14 @@ app.whenReady().then(async () => {
     publish();
   });
   sessions.on('attention', session => {
+    workbench.inbox.add({ key: `${session.id}:${session.updatedAt}:${session.state}`, title: session.name + (session.state === 'ready' ? ' is ready' : ' needs you'), sessionId: session.id, kind: session.state === 'ready' ? 'ready' : 'question' });
     if (settings.notifications && !testMode) notifySession(session);
+  });
+  const seenExits = new Set();
+  sessions.on('changed', () => {
+    for (const item of sessions.list()) if (!item.alive && !item.dismissed && (item.restoreError || item.exitCode) && !seenExits.has(item.id)) {
+      seenExits.add(item.id); workbench.inbox.add({ key: 'exit:' + item.id, title: item.name + ' stopped', message: item.restoreError || `Exit code ${item.exitCode}`, sessionId: item.id, kind: 'error' });
+    }
   });
   workspace = new Workspace(root, sessions, safeStorage, { enabled: settings.restoreConsoles, onError: message => { workspaceError = message; publish(); } });
   await workspace.restore();
@@ -216,6 +225,7 @@ app.whenReady().then(async () => {
   ipcMain.handle('dock:call', async (event, method, payload) => {
     if (event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame || event.senderFrame.url !== entryUrl) throw new Error('Untrusted client.');
     try {
+      if (typeof method === 'string' && method.startsWith('workbench.')) return { ok: true, value: await workbench.call(method.slice(10), payload) };
       switch (method) {
         case 'state': return { ok: true, value: snapshot() };
         case 'mode': await setMode(payload); break;
@@ -259,6 +269,17 @@ app.whenReady().then(async () => {
           break;
         }
         case 'session.models': return { ok: true, value: consoleModels(payload) };
+        case 'session.move': {
+          sessions.move(payload?.id, payload?.slot, (from, to) => {
+            const slotNames = { ...settings.slotNames };
+            const source = slotNames[from], target = slotNames[to];
+            delete slotNames[from]; delete slotNames[to];
+            if (source) slotNames[to] = source;
+            if (target) slotNames[from] = target;
+            persistSettings({ ...settings, slotNames });
+          });
+          break;
+        }
         case 'session.retry': return { ok: true, value: await sessions.retry(payload) };
         case 'session.input': sessions.write(payload?.id, payload?.data); break;
         case 'session.resize': sessions.resize(payload?.id, payload?.cols, payload?.rows); break;
@@ -335,6 +356,7 @@ app.whenReady().then(async () => {
             publish();
           } }); }
           finally { apiBusy = false; }
+          workbench.inbox.add({ title: result.error || result.entry?.status !== 'completed' ? 'API request needs attention' : 'API response ready', message: `${profile.name} · ${payload.model}`, kind: result.error || result.entry?.status !== 'completed' ? 'error' : 'ready', destination: 'usage' });
           publish(); return { ok: true, value: result };
         }
         case 'ledger.export': {
@@ -360,6 +382,7 @@ app.on('before-quit', event => {
   if (cleanupStarted) return;
   cleanupStarted = true; quitting = true;
   workspace?.freeze();
+  workbench?.stop();
   // Drain ConPTY exits while the event loop is alive, before Electron tears down its workers.
   (async () => {
     await sessions?.stop();

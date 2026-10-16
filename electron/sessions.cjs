@@ -134,12 +134,12 @@ class Sessions extends EventEmitter {
     this.emit('changed');
     return this.list().find(x => x.id === id);
   }
-  write(id, data) {
+  write(id, data, { draft = false } = {}) {
     const item = this.items.get(id);
     if (!item?.alive) return;
     if (typeof data !== 'string' || data.length > 65536) throw new Error('Terminal input is too large.');
     item.terminal.write(data);
-    if (/[\r\n]/.test(data) && ['codex', 'claude'].includes(item.provider)) { item.state = 'active'; item.updatedAt = Date.now(); this.emit('changed'); }
+    if (!draft && /[\r\n]/.test(data) && ['codex', 'claude'].includes(item.provider)) { item.state = 'active'; item.updatedAt = Date.now(); this.emit('changed'); }
   }
   resize(id, cols, rows) {
     const item = this.items.get(id); if (!item?.alive) return;
@@ -152,6 +152,20 @@ class Sessions extends EventEmitter {
     const item = this.items.get(id);
     if (!item || (!item.alive && !item.restoreError)) throw new Error('This console is no longer open.');
     item.name = name || path.basename(item.cwd) || `Console ${item.slot}`;
+    this.emit('changed');
+  }
+  move(id, slot, beforeMove = () => {}) {
+    const item = this.items.get(id);
+    if (!item || (!item.alive && !item.restoreError)) throw new Error('This console is no longer open.');
+    if (!Number.isInteger(slot) || slot < 1 || slot > 9) throw new Error('Choose a console slot from 1 to 9.');
+    if (slot === item.slot) return;
+    const other = [...this.items.values()].find(x => x.slot === slot && (x.alive || x.restoreError));
+    const from = item.slot;
+    beforeMove(from, slot);
+    // Move the existing PTYs and conversation IDs, never recreate them.
+    for (const [oldId, old] of this.items) if (old.slot === slot && !old.alive && !old.restoreError) this.items.delete(oldId);
+    item.slot = slot;
+    if (other) other.slot = from;
     this.emit('changed');
   }
   acknowledge(id) { const item = this.items.get(id); if (item && ['ready', 'attention'].includes(item.state)) { item.state = 'open'; this.emit('changed'); } }

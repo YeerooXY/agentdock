@@ -46,6 +46,8 @@ try {
   if ($link.TargetPath -ne $exe) { throw 'The Start menu shortcut points to the wrong executable.' }
   & node (Join-Path $PSScriptRoot 'packaged-smoke.cjs') "--app=$exe"
   if ($LASTEXITCODE -ne 0) { throw 'The installed application failed its smoke test.' }
+  & node (Join-Path $PSScriptRoot 'workbench-smoke.cjs') "--app=$exe"
+  if ($LASTEXITCODE -ne 0) { throw 'The installed gallery, inbox, website review or console move checks failed.' }
 } finally {
   try {
     $uninstaller = Join-Path $installDir 'Uninstall Agent Dock.exe'

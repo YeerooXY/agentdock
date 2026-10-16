@@ -4,6 +4,9 @@ Use this guide whenever you create, redesign or review a website or web page. Fo
 
 ## Design the page
 
+- For image generation, try your own image generator first. Use Meshy only if your own image generation is unavailable or fails. For page ideas, inspect the actual desktop/mobile screenshots and generate a flat 2D page concept from those references, not a 3D model. Do not submit another paid task to retry a pending job.
+- Discover Dock’s built-in tools with `dock_tools` using connection `dock`. Save screenshots, test reports and generated concepts with `dock/save_result`; it keeps a copy in Results. Record actual test outcomes and remaining manual checks. Use `dock/notify` for a concise completion, question or error. Website reviews and Meshy fallback jobs are available there too. Other connected tools remain available through the same shared tool discovery.
+
 - Establish the audience, page purpose and main action from the brief and existing project. Make reasonable assumptions explicit; ask only when a missing fact changes the work.
 - Read the existing components and styles before adding new ones. Choose a clear hierarchy, consistent typography, spacing, colors and image treatment. Give the main action appropriate prominence. Avoid decorative clutter and generic sections without a purpose.
 - Use real content and honest evidence. Keep labels clear, prices precise and paragraphs readable. Never invent customers, testimonials, statistics, certifications or business details.

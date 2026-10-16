@@ -88,6 +88,25 @@ test('renaming preserves the live process and conversation, and the saved title 
   assert.equal(second.sessions.list()[0].name, path.basename(first.root));
 });
 
+test('moving and swapping preserves PTYs, output and conversation IDs and restores the new layout', async t => {
+  const first = fixture(t), thread = crypto.randomUUID();
+  const one = await first.sessions.create({ slot: 1, name: 'Trader', provider: 'codex', cwd: first.root }, { resumeId: thread });
+  const two = await first.sessions.create({ slot: 9, name: 'Game', provider: 'shell', cwd: first.root });
+  const terminal = first.sessions.items.get(one.id).terminal; terminal.data('keep this output');
+  first.sessions.move(one.id, 9);
+  assert.equal(first.sessions.items.get(two.id).slot, 1);
+  assert.equal(first.sessions.items.get(one.id).terminal, terminal);
+  assert.equal(first.sessions.buffer(one.id).data, 'keep this output');
+  first.sessions.move(one.id, 4); assert.equal(first.sessions.items.get(one.id).slot, 4);
+  assert.throws(() => first.sessions.move(one.id, 0));
+  assert.throws(() => first.sessions.move(one.id, 2, () => { throw Error('Disk full'); }));
+  assert.equal(first.sessions.items.get(one.id).slot, 4);
+  assert.equal(first.calls.length, 2);
+  first.workspace.freeze(); const second = fixture(t, first.root); await second.workspace.restore();
+  assert.deepEqual(second.sessions.list().map(x => [x.slot, x.name]), [[1,'Game'],[4,'Trader']]);
+  assert.equal(second.sessions.list()[1].providerSessionId, thread);
+});
+
 test('turning restoration off deletes the save and leaves current terminals running', async t => {
   const first = fixture(t);
   await first.sessions.create({ provider: 'shell', cwd: first.root }); first.workspace.save();

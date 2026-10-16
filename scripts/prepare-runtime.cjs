@@ -8,6 +8,26 @@ const output = path.join(root, '.build', 'runtime');
 const version = '24.19.0';
 // Official Node.js v24.19.0 SHASUMS256.txt, win-x64/node.exe.
 const checksum = '3602f2bb1a10f2cbab4c36886218a33c1ab3db87290e73b033c46c77147d0237';
+// Keep the official CLI intact (including its own auth handling and sharp).
+// Copy only its runtime dependency graph, never developer tools or user data.
+function copyPackage(name, from, destination) {
+  const { createRequire } = require('node:module');
+  const resolver = createRequire(path.join(from, 'package.json'));
+  const source = resolver.resolve.paths(name).map(base => path.join(base, name)).find(dir => fs.existsSync(path.join(dir, 'package.json')));
+  if (!source) throw new Error(`Missing runtime dependency ${name}`);
+  const pkg = JSON.parse(fs.readFileSync(path.join(source, 'package.json'), 'utf8'));
+  const target = path.join(destination, name);
+  if (fs.existsSync(path.join(target, 'package.json'))) {
+    if (JSON.parse(fs.readFileSync(path.join(target, 'package.json'), 'utf8')).version !== pkg.version) throw new Error(`Conflicting runtime version for ${name}`);
+    return;
+  }
+  fs.cpSync(source, target, { recursive: true, filter: file => !path.relative(source, file).split(path.sep).includes('node_modules') });
+  for (const dependency of Object.keys(pkg.dependencies || {})) copyPackage(dependency, source, destination);
+  for (const dependency of Object.keys(pkg.optionalDependencies || {})) {
+    const available = resolver.resolve.paths(dependency)?.some(base => fs.existsSync(path.join(base, dependency, 'package.json')));
+    if (available) copyPackage(dependency, source, destination);
+  }
+}
 const hash = data => crypto.createHash('sha256').update(data).digest('hex');
 async function download(url) {
   const response = await fetch(url, { signal: AbortSignal.timeout(120000) });
@@ -17,6 +37,12 @@ async function download(url) {
 (async () => {
   if (process.platform !== 'win32' || process.arch !== 'x64') throw new Error('Build this Windows x64 installer on Windows x64.');
   fs.mkdirSync(output, { recursive: true });
+  const cliModules = path.join(output, 'meshy-cli', 'node_modules');
+  fs.mkdirSync(cliModules, { recursive: true });
+  copyPackage('meshy-cli', root, cliModules);
+  // Put the CLI at a stable entry point; dependencies stay beside it.
+  const cliPackage = path.join(cliModules, 'meshy-cli');
+  for (const file of fs.readdirSync(cliPackage)) fs.cpSync(path.join(cliPackage, file), path.join(output, 'meshy-cli', file), { recursive: true });
   const executable = path.join(output, 'node.exe');
   if (!fs.existsSync(executable) || hash(fs.readFileSync(executable)) !== checksum) {
     const binary = await download(`https://nodejs.org/dist/v${version}/win-x64/node.exe`);

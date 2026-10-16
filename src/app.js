@@ -7,6 +7,8 @@ import { holdToChoose } from './launch-gesture.js';
 import { vimControls } from './vim-controls.js';
 import { firstRun } from './first-run.js';
 import { windowDragging } from './window-drag.js';
+import { consoleDragging } from './console-drag.js';
+import { workbenchUI } from './workbench-ui.js';
 import { toolFeatures, syncIntegrationJobs } from './tool-features.js';
 
 const $ = selector => document.querySelector(selector);
@@ -39,7 +41,7 @@ let state, page = 'consoles', selectedId = null, selectedApi = 'openai', apiBusy
 let apiDraft = { model: '', prompt: '', maxOutput: '1024' }, responseMeta = 'TEXT OUTPUT', responseError = '';
 const terminals = new Map();
 let openingConsole = false;
-let launchGesture, chooserOpener, vim, setup;
+let launchGesture, chooserOpener, vim, setup, workbench;
 const nameSaves = new Map();
 const launchHint = 'title="Click to open. Hold or right-click to choose." aria-haspopup="dialog"';
 let renderedView = null, viewAnimation, windowMoving = false;
@@ -75,6 +77,9 @@ $('#app').innerHTML = `
     <nav aria-label="Main navigation">
 
       <button data-page="consoles">${icon('terminal')}Consoles <span id="nav-count">0</span></button>
+      <button data-page="inbox">${icon('check')}Inbox <span id="inbox-count" hidden></span></button>
+      <button data-page="results">${icon('grid')}Results</button>
+      <button data-page="reviews">${icon('star')}Website review</button>
       <button data-page="usage">${icon('chart')}Usage</button>
       <button data-page="api">${icon('api')}API</button>
       <button data-page="vault">${icon('lock')}Keys</button>
@@ -138,7 +143,7 @@ function syncSlotName(input, slot, session) {
 function sessionCard(slot) {
   const session = state.sessions.find(x => x.slot === slot && (x.alive || x.restoreError));
   if (!session) return `<article class="session-card empty" data-slot="${slot}"><header class="empty-panel-header">${slotNameInput(slot)}</header><button class="console-launch" data-action="new" data-slot="${slot}" aria-label="Open console ${slot}" ${launchHint} ${openingConsole ? 'disabled' : ''}>${newConsoleMark()}</button></article>`;
-  return `<article class="session-card ${escape(session.state)}" data-console-id="${session.id}" data-slot="${slot}"><header class="console-panel-header"><span class="slot" title="${escape(providerName(session.provider) + ' · ' + session.cwd)}">${String(slot).padStart(2, '0')}</span>${slotNameInput(slot, session)}<span class="panel-status">${badge(session.state)}</span><button class="icon-button" data-session="${session.id}" aria-label="Expand console ${slot}" title="Expand console">${icon('expand')}</button></header><div class="console-panel-body" data-terminal-mount="${session.id}"></div></article>`;
+  return `<article class="session-card ${escape(session.state)}" data-console-id="${session.id}" data-slot="${slot}"><header class="console-panel-header"><button class="console-grip" draggable="true" data-console-drag="${session.id}" aria-label="Move console ${slot}" title="Drag to move or swap. Focus here and press Alt + 1–9 to move.">⠿</button><span class="slot" title="${escape(providerName(session.provider) + ' · ' + session.cwd)}">${String(slot).padStart(2, '0')}</span>${slotNameInput(slot, session)}<span class="panel-status">${badge(session.state)}</span><button class="icon-button" data-session="${session.id}" aria-label="Expand console ${slot}" title="Expand console">${icon('expand')}</button></header><div class="console-panel-body" data-terminal-mount="${session.id}"></div></article>`;
 }
 function recentSection() {
   const entries = state.recent.filter(x => !state.sessions.some(s => s.providerSessionId === x.id));
@@ -239,8 +244,10 @@ function renderPage() {
   document.querySelectorAll('[data-page]').forEach(button => button.classList.toggle('selected', button.dataset.page === page));
   if (terminalView) { renderTerminal(); return; }
   if (consoleView) { renderConsoles(); return; }
-  const renderer = { usage: renderUsage, api: renderApi, vault: renderVault, tools: renderTools, instructions: renderInstructions, settings: renderSettings }[page] || renderSettings;
+  const renderer = { results: () => workbench.render('results'), inbox: () => workbench.render('inbox'), reviews: () => workbench.render('reviews'), usage: renderUsage, api: renderApi, vault: renderVault, tools: renderTools, instructions: renderInstructions, settings: renderSettings }[page] || renderSettings;
   $('#content').innerHTML = (state.storageError ? `<div class="error-banner" role="alert">${escape(state.storageError)}</div>` : '') + renderer();
+  workbench?.mount();
+  if (page === 'usage' && state.workbench?.conceptUsage?.length) $('#content').insertAdjacentHTML('beforeend', `<section class="surface"><h2>Meshy concepts</h2><p class="field-hint">Credits reported for concepts created here. Separate from API dollar estimates.</p>${state.workbench.conceptUsage.map(x => `<div class="connection-row"><span>${new Date(x.at).toLocaleString()}</span><span>${escape(x.state)}</span><strong>${x.credits == null ? 'Credits unavailable' : number(x.credits) + ' credits'}</strong></div>`).join('')}</section>`);
   if (page === 'settings') { $('.settings-layout').insertAdjacentHTML('afterbegin', renderKeyboardSettings() + renderStartupSettings() + renderLaunchDefaults()); launchDefaultsFields(); }
   if (page === 'api') {
     const form = $('#api-form');
@@ -287,6 +294,7 @@ function updatePreview() {
 }
 function receive(next) {
   state = next;
+  workbench?.sync();
   setup?.receive();
   if ($('#workspace-error')) $('#workspace-error').textContent = state.workspaceError || '';
   windowMoving = !!state.transitioning;
@@ -714,5 +722,7 @@ vim = vimControls({
 });
 setup = firstRun({ call, escape, icon, getState: () => state });
 windowDragging(call, () => state);
+consoleDragging({ call, toast });
+workbench = workbenchUI({ call, getState: () => state, getPage: () => page, renderPage, escape, toast, selectSession, navigate: next => { page = next; renderPage(); } });
 toolFeatures({ call, getState: () => state, navigate: next => { page = next; renderPage(); }, render: refreshToolSections, toast, escape });
 try { state = await call('state'); receive(state); renderPage(); } catch (error) { $('#content').textContent = error.message; }

@@ -4,7 +4,7 @@ A Windows desktop app for up to nine agent consoles, shared tools and usage trac
 
 ## Install
 
-Download **[Agent-Dock-0.3.0-Setup-x64.exe](https://github.com/YeerooXY/agentdock/releases/download/v0.3.0/Agent-Dock-0.3.0-Setup-x64.exe)** for Windows 10/11 on an Intel or AMD 64-bit PC.
+Download **[Agent-Dock-0.4.0-Setup-x64.exe](https://github.com/YeerooXY/agentdock/releases/download/v0.4.0/Agent-Dock-0.4.0-Setup-x64.exe)** for Windows 10/11 on an Intel or AMD 64-bit PC.
 
 1. Run the installer and choose where to install Dock. It adds desktop and Start menu shortcuts.
 2. On first launch, choose your **project folder** and **default console**.
@@ -38,6 +38,11 @@ On Windows x64 with Node.js 24, run `npm ci`, then `npm run dist`. The installer
 The build downloads a pinned Node.js runtime, checks its SHA-256, bundles the completion/MCP helpers and Meshy server outside ASAR, and includes their dependency licenses. `node-pty` uses its supplied Windows x64 N-API binaries. Only application code, built UI, bundled guides, icons, production dependencies and the runtime go into the installer. Local settings, credentials, sessions and test data are excluded. Packaging uses [electron-builder's NSIS target](https://www.electron.build/v26/docs/nsis/).
 
 ## Use it
+
+- **Move consoles** with the grip in each panel header. Drop on an empty slot to move, or an occupied slot to swap. Processes, output, names and saved conversations stay with their consoles. With the grip focused, **Alt+1–9** moves it by keyboard.
+- **Results** collects screenshots, test reports, design concepts and files shared by your agents. Filter by project or type, preview, export, or select several to delete. Deletion sends Dock’s copies to the Recycle Bin; project originals stay in place.
+- **Inbox** keeps completion alerts, questions and errors. Open the related console or review, mark items read, dismiss them, or clear read items.
+- **Website review** captures desktop/mobile viewports, runs automated accessibility and overflow checks, and checks up to 12 same-origin links. Findings and screenshots go into Results. The 20-item checklist needs a human or agent review; an automated scan is not certification.
 
 - **Consoles** shows nine live terminals filling the window. Click **+** to launch in that panel using **Settings → Console defaults**. You can type directly in a panel or use its expand button for fullscreen. **Consoles** brings back the grid and keeps the window fullscreen. Thinking uses a blue-purple outline; ready uses green.
 - **Usage** contains subscription limits, API tokens, cost estimates and pricing settings.
@@ -114,6 +119,12 @@ The **3D tools** cards handle these integrations:
 
 ### Web design
 
+Open a completed **Website review** and use **Draft in console** to paste a screenshot-based design brief into an idle Codex or Claude console. Review it, then press Enter to send. Agents are instructed to try their own image generator first. Use **Meshy fallback** only when that generator is unavailable or has failed.
+
+Meshy fallback uses the bundled official CLI and its own sign-in, separate from the API-key MCP connection in Tools. **Check sign-in** reuses an existing CLI account; **Connect Meshy** provides a code and a browser sign-in link. The CLI manages its credentials; Dock does not copy them into its vault. Generating a concept uploads the reference screenshot to Meshy and uses credits. Accepted task IDs are saved, so **Resume task** continues checking the same job without another submission. Reported credits appear in **Usage** and remain after deleting a job. No credit amount is invented when Meshy does not report one.
+
+All agents and API sessions can discover connection `dock` with `dock_tools`. It includes `save_result`, `notify`, `review_page`, `review_details`, `meshy_concept` and job status tools. File results must be inside the calling console’s project; API sessions use the default project folder. Files are copied into the gallery, with a 50 MB file limit and a 1 GB gallery limit. Existing project files are not scanned or imported automatically.
+
 **Instructions → Ways of working → Web design** is on by default. Its [shared guide](guides/web-design.md) covers layout, typography, responsive behavior, accessibility, performance and a 20-point page review: policies, consent, data collection, SDKs, honest claims and reviews, fees, business details, children's data, unsubscribe, asset licenses and deletion requests.
 
 Agents review every item on every page, recording checked, needs work or not applicable with a reason. Policies and consent flows must match the actual site and applicable rules; the guide is not a legal certification or an automated enforcement engine. You can read or disable it in Instructions, alongside your own preferences.
@@ -152,6 +163,8 @@ Local data is in `%APPDATA%\Agent Dock`:
 - `shared/AGENT_DOCK.md`: generated summary without secrets.
 - `integrations`: installed Blender server, setup versions and add-on setup notes. The Blender add-on itself lives in Blender's user add-ons folder. Unity Pipeline lives in the project you selected.
 - `ledger.json`: model, time, tokens, request status and estimated cost; no prompts or responses.
+- `results/`, `reviews.json`: saved files, page screenshots, findings and manual checklist notes. These can contain project or page content. Delete saved copies in Results, or delete a whole review from Website review.
+- `inbox.json`: attention items and read state. `concept-jobs/` holds Meshy job metadata and temporary downloads; `concept-usage.json` keeps reported credit usage. Completed downloads are copied to Results and temporary copies are recycled.
 - `settings.json`, `limits.json`, `events`, `sessions`: preferences, cached quotas and per-session tracking/configuration.
 
 Keys are decrypted in the main process. A configured local MCP server receives only the credentials explicitly bound to it. Agent consoles do not receive vault keys. Remote keys are sent only to their configured connection, with redirects disabled. Do not paste credentials into commands, URLs, descriptions or instructions; use key bindings.

@@ -35,7 +35,9 @@ async function eventually(predicate) {
   assert.ok(packaged.every(file => allowed.has(file.split('/').filter(Boolean)[0])), 'Only allowlisted app files and production dependencies are packaged');
   assert.ok(!packaged.some(file => /\/(vault|workspace|settings|ledger)\.json$/.test(file) || /\/(test-data|artifacts|\.git)(\/|$)/.test(file)), 'No user data or development artifacts');
   const runtime = path.join(install, 'resources', 'runtime'), node = path.join(runtime, 'node.exe');
-  assert.deepEqual(fs.readdirSync(runtime).sort(), ['agent-event.cjs', 'agent-tools.cjs', 'meshy-mcp.cjs', 'node.exe', 'NODE-LICENSE.txt', 'THIRD-PARTY-NOTICES.txt', 'runtime.json'].sort());
+  assert.deepEqual(fs.readdirSync(runtime).sort(), ['agent-event.cjs', 'agent-tools.cjs', 'meshy-cli', 'meshy-mcp.cjs', 'node.exe', 'NODE-LICENSE.txt', 'THIRD-PARTY-NOTICES.txt', 'runtime.json'].sort());
+  const help = execFileSync(node, [path.join(runtime, 'meshy-cli', 'dist', 'index.js'), 'image-to-image', 'create', '--help', '--no-update-check'], { env, windowsHide: true, encoding: 'utf8', timeout: 30000 });
+  assert.ok(help.includes('--reference-image-urls'), 'Bundled Meshy CLI runs without system Node or developer dependencies');
   assert.equal(execFileSync(node, ['--version'], { env, windowsHide: true, encoding: 'utf8' }).trim(), 'v24.19.0');
   const problems = [];
   const launch = async () => {

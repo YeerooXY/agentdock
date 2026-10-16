@@ -18,6 +18,11 @@ release/
 /sessions/
 /events/
 /shared/
+/results/
+/reviews.json
+/inbox.json
+/concept-jobs/
+/concept-usage.json
 *.pem
 *.key
 *.pfx

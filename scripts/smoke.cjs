@@ -39,6 +39,8 @@ async function eventually(predicate, message) {
   await checkFirstRun({ app, page, invoke, dataDir, screenshot: path.join(artifacts, 'test-first-run.png') });
   checks.push('First launch validates and saves the chosen folder and console, preserves drafts, and stays completed after reload');
   assert.equal(await page.locator('.session-card').count(), 9);
+  await page.mouse.move(5, 5);
+  await page.waitForFunction(() => [...document.querySelectorAll('.session-card.empty .new-console-label')].every(label => getComputedStyle(label).opacity === '0'));
   assert.equal(await page.locator('.app-footer, .local-note, #new-console, #content .page-heading, #content .grid-caption').count(), 0);
   assert.ok(await page.locator('.session-card.empty .new-console-label').evaluateAll(labels => labels.every(label => getComputedStyle(label).opacity === '0')));
   assert.equal(await page.getByRole('button', { name: 'New console', exact: true }).count(), 0);
