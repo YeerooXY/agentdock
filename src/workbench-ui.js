@@ -4,29 +4,50 @@ export function workbenchUI({ call, getState, getPage, renderPage, escape: e, to
   const api = (method, value) => call('workbench.' + method, value);
   const selected = new Set(), previews = new Map();
   let resultPage = 0;
-  let filter = '', kind = '', project = '', reviewDraft = { url: '', brief: '' }, detail = null, stamp = '', modalVersion = 0;
+  let filter = '', kind = '', project = '', consoleFilter = '', reviewDraft = { url: '', brief: '' }, detail = null, stamp = '', modalVersion = 0;
   const data = () => getState()?.workbench || { results: [], inbox: [], reviews: [], concepts: [] };
   const date = at => new Date(at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
   const button = (action, label, id = '', cls = 'subtle', disabled = false) => `<button ${disabled ? 'disabled' : ''} class="${cls}" data-wb="${action}" data-id="${e(id)}">${label}</button>`;
-  const filtered = () => data().results.filter(x => (!kind || x.kind === kind) && (!project || x.project === project) && (!filter || (x.title + ' ' + x.summary).toLowerCase().includes(filter.toLowerCase())));
+  const consoleKey = x => x.consoleKey || x.sessionId || x.source || 'Dock';
+  const consoleName = x => x.consoleName || getState().sessions.find(s => s.id === x.sessionId)?.name || (x.sessionId ? 'Earlier console' : x.source === 'Agent' ? 'API' : x.source || 'Dock');
+  const groupKey = x => JSON.stringify([consoleKey(x), x.groupId || x.id]);
+  const batch = id => { const item = data().results.find(x => x.id === id); return item ? data().results.filter(x => groupKey(x) === groupKey(item)) : []; };
+  const filtered = () => data().results.filter(x => (!kind || x.kind === kind) && (!project || x.project === project) && (!consoleFilter || consoleKey(x) === consoleFilter) && (!filter || (x.title + ' ' + x.summary + ' ' + consoleName(x)).toLowerCase().includes(filter.toLowerCase())));
   const shell = (title, text, content) => `<div class="page-heading"><div><h1>${title}</h1><p>${text}</p></div></div>${content}`;
   const empty = text => `<div class="wb-empty">${text}</div>`;
   const visible = () => filtered().slice(resultPage * 40, (resultPage + 1) * 40);
   const pagination = () => button('previous-results','Previous','','subtle',resultPage === 0) + `<span class="result-page-number">${resultPage + 1} / ${Math.max(1, Math.ceil(filtered().length / 40))}</span>` + button('next-results','Next','','subtle',(resultPage + 1) * 40 >= filtered().length);
   const card = x => `<article class="result-card"><button class="result-image" data-wb="preview" data-id="${x.id}" aria-label="Open ${e(x.title)}">${x.image ? `<img data-result-image="${x.id}" alt="${e(x.title)}">` : `<span class="result-file">${e(x.ext.slice(1).toUpperCase())}</span>`}</button><div class="result-copy"><div class="result-meta"><span>${e(x.kind)}</span><label class="result-select"><input type="checkbox" data-result-select="${x.id}" aria-label="Select ${e(x.title)}" ${selected.has(x.id) ? 'checked' : ''}></label></div><button class="result-title" data-wb="preview" data-id="${x.id}">${e(x.title)}</button><p>${e(x.summary || (x.project.split(/[\\/]/).filter(Boolean).pop() || 'No project'))}</p><div class="result-meta"><time>${date(x.at)}</time><span>${e(x.status.replaceAll('-', ' '))}</span></div></div></article>`;
-  const resultsList = () => visible().map(card).join('') || empty('Screenshots, test reports and concepts will appear here.');
+  const resultsList = () => {
+    const consoles = new Map();
+    for (const item of visible()) {
+      const key = consoleKey(item);
+      if (!consoles.has(key)) consoles.set(key, new Map());
+      const groups = consoles.get(key), group = groupKey(item);
+      if (!groups.has(group)) groups.set(group, []);
+      groups.get(group).push(item);
+    }
+    return [...consoles.values()].map(groups => {
+      const first = groups.values().next().value[0];
+      return `<section class="result-console-group"><header class="result-console-heading"><h2>${e(consoleName(first))}</h2><span class="project-label">${e(first.project.split(/[\\/]/).filter(Boolean).pop() || '')}</span></header>${[...groups.values()].map(items => {
+        const first = items[0], all = batch(first.id), unread = all.some(x => !x.seenAt);
+        return `<section class="result-batch ${unread ? 'unread' : ''}"><header class="result-batch-heading"><div><span>${all.length} file${all.length === 1 ? '' : 's'}</span><time>${date(first.at)}</time>${unread ? '<span class="result-new">New</span>' : ''}</div><div>${unread ? button('seen-batch','Mark viewed',first.id) : ''}${button('delete-batch','Delete batch',first.id,'subtle danger')}</div></header><div class="result-batch-grid">${items.map(card).join('')}</div></section>`;
+      }).join('')}</section>`;
+    }).join('') || empty('Screenshots, test reports and concepts will appear here.');
+  };
   function gallery() {
     const projects = [...new Set(data().results.map(x => x.project).filter(Boolean))];
-    return shell('Results', 'Screenshots, tests and ideas. Saved together.', `<div class="wb-toolbar"><input id="result-search" type="search" aria-label="Search results" placeholder="Search results" value="${e(filter)}"><select id="result-kind" aria-label="Result type"><option value="">All types</option>${['screenshot','test','report','review','concept','asset'].map(x => `<option value="${x}" ${x === kind ? 'selected' : ''}>${x}</option>`).join('')}</select><select id="result-project" aria-label="Project"><option value="">All projects</option>${projects.map(x => `<option value="${e(x)}" ${x === project ? 'selected' : ''}>${e(x.split(/[\\/]/).pop() || x)}</option>`).join('')}</select>${button('import','Add files','','secondary')}</div><div class="wb-toolbar small">${button('select-all','Select visible')}${button('delete-selected',`Delete selected (${selected.size})`,'','subtle danger')}<span>Deletes saved copies. Originals stay in your project.</span></div><div class="results-grid">${resultsList()}</div><div class="wb-toolbar result-pagination">${pagination()}</div>`);
+    const consoles = new Map(data().results.map(x => [consoleKey(x), consoleName(x)]));
+    return shell('Results', '', `<div class="wb-toolbar result-filters"><input id="result-search" type="search" aria-label="Search results" placeholder="Search results" value="${e(filter)}"><select id="result-console" aria-label="Console"><option value="">All consoles</option>${[...consoles].map(([key,name]) => `<option value="${e(key)}" ${key === consoleFilter ? 'selected' : ''}>${e(name)}</option>`).join('')}</select><select id="result-kind" aria-label="Result type"><option value="">All types</option>${['screenshot','test','report','review','concept','asset'].map(x => `<option value="${x}" ${x === kind ? 'selected' : ''}>${x}</option>`).join('')}</select><select id="result-project" aria-label="Project"><option value="">All projects</option>${projects.map(x => `<option value="${e(x)}" ${x === project ? 'selected' : ''}>${e(x.split(/[\\/]/).pop() || x)}</option>`).join('')}</select>${button('import','Add files','','secondary')}${button('folder','Open folder')}</div><div class="wb-toolbar small">${button('select-all','Select visible')}${button('delete-selected',`Delete selected (${selected.size})`,'','subtle danger')}${button('seen-all','Mark all viewed')}</div><div class="results-grid">${resultsList()}</div><div class="wb-toolbar result-pagination">${pagination()}</div>`);
   }
   function inbox() {
-    return shell('Inbox', 'Ready for you.', `<div class="wb-toolbar">${button('clear-read','Clear read')}</div><div class="inbox-list">${data().inbox.map(x => `<article class="inbox-item ${x.read ? 'read' : ''}"><span class="inbox-dot ${e(x.kind)}"></span><div><h2>${e(x.title)}</h2>${x.message ? `<p>${e(x.message)}</p>` : ''}<time>${date(x.at)}</time></div><div class="inbox-actions">${x.destination || x.reviewId || x.resultId || getState().sessions.some(s => s.id === x.sessionId) ? button('inbox-open','Open',x.id) : ''}${!x.read ? button('read','Mark read',x.id) : ''}${button('dismiss','Dismiss',x.id)}</div></article>`).join('') || empty('You’re caught up. Finished jobs, questions and errors land here.')}</div>`);
+    return shell('Inbox', 'Ready for you.', `<div class="wb-toolbar">${button('clear-all','Clear inbox','','secondary',!data().inbox.length)}${button('clear-read','Clear read','','subtle',!data().inbox.some(x => x.read))}</div><div class="inbox-list">${data().inbox.map(x => `<article class="inbox-item ${x.read ? 'read' : ''}"><span class="inbox-dot ${e(x.kind)}"></span><div><h2>${e(x.title)}</h2>${x.message ? `<p>${e(x.message)}</p>` : ''}<time>${date(x.at)}</time></div><div class="inbox-actions">${x.destination || x.reviewId || x.resultId || getState().sessions.some(s => s.id === x.sessionId) ? button('inbox-open','Open',x.id) : ''}${!x.read ? button('read','Mark read',x.id) : ''}${button('dismiss','Dismiss',x.id)}</div></article>`).join('') || empty('You’re caught up. Finished jobs, questions and errors land here.')}</div>`);
   }
   function reviews() {
     return shell('Website review', 'Check the page. Keep the evidence. Explore a new direction.', `<form id="website-review-form" class="surface wb-review-form"><label>Page URL<input name="url" type="url" placeholder="https://example.com or http://localhost:3000" value="${e(reviewDraft.url)}" required></label><label>What should improve?<textarea name="brief" rows="2" maxlength="2500" placeholder="The page’s goal, audience or design direction">${e(reviewDraft.brief)}</textarea></label><div class="wb-toolbar"><button class="primary" type="submit" ${data().reviews.some(x => x.state === 'running') ? 'disabled' : ''}>Review page</button><p class="field-hint">Desktop + mobile. Automated checks and a manual checklist.</p></div><p class="form-error" role="alert"></p></form><div id="review-list">${reviewList()}</div>`);
   }
   function reviewList() {
-    return data().reviews.map(x => `<article class="review-row"><div><h2>${e(x.url)}</h2><p>${e(x.state === 'complete' ? `${x.issues} automated findings · manual review needed` : x.stage || x.error || x.state)}</p><time>${date(x.at)}</time></div>${button('review-open',x.state === 'running' ? 'View progress' : 'Open review',x.id)}${x.state !== 'running' ? button('review-delete','Delete',x.id,'subtle danger') : ''}</article>`).join('') || empty('Start with a page URL. Nothing is submitted to forms or published.');
+    return data().reviews.map(x => `<article class="review-row"><div><h2>${e(x.url)}</h2><p>${e(x.state === 'complete' ? `${x.issues} automated findings · manual review needed` : x.stage || x.error || x.state)}</p><time>${date(x.at)}</time></div>${button('review-open',x.state === 'running' ? 'View progress' : 'Open review',x.id)}${x.state !== 'running' ? button('review-delete','Delete',x.id,'subtle danger') : ''}</article>`).join('') || '';
   }
   const dialog = document.createElement('dialog'); dialog.className = 'wb-dialog'; dialog.setAttribute('aria-label','Result details'); document.body.append(dialog);
   function show(html) { dialog.innerHTML = `<div class="wb-dialog-top">${detail?.type === 'review' ? button('review-open','Refresh review',detail.id) : ''}${button('close','Close')}</div>${html}`; if (!dialog.open) dialog.showModal(); loadImages(dialog);
@@ -39,6 +60,7 @@ export function workbenchUI({ call, getState, getPage, renderPage, escape: e, to
     const content = await api('results.preview',id);
     if (version !== modalVersion || !dialog.open) return;
     dialog.querySelector('#result-preview').innerHTML = content.image ? `<img class="result-full-image" src="${e(content.image)}" alt="${e(item.title)}">` : `<pre class="result-text">${e(content.text)}</pre>${content.truncated ? '<p>Preview shortened. Export for the full file.</p>' : ''}`;
+    await api('results.seen', batch(id).map(x => x.id));
   }
   function meshyConnection() {
     const auth = data().meshyAuth || { state:'unchecked' };
@@ -67,6 +89,16 @@ export function workbenchUI({ call, getState, getPage, renderPage, escape: e, to
     }
   }
   function refreshGallery() {
+    for (const [id, values, selectedValue, label] of [
+      ['result-console', new Map(data().results.map(x => [consoleKey(x), consoleName(x)])), consoleFilter, 'All consoles'],
+      ['result-project', new Map(data().results.filter(x => x.project).map(x => [x.project, x.project.split(/[\\/]/).pop() || x.project])), project, 'All projects']
+    ]) {
+      const select = document.getElementById(id);
+      if (select && select !== document.activeElement) {
+        if (selectedValue && !values.has(selectedValue)) values.set(selectedValue, select.selectedOptions[0]?.textContent || selectedValue);
+        select.innerHTML = `<option value="">${label}</option>` + [...values].map(([value, text]) => `<option value="${e(value)}" ${value === selectedValue ? 'selected' : ''}>${e(text)}</option>`).join('');
+      }
+    }
     resultPage = Math.min(resultPage, Math.max(0, Math.ceil(filtered().length / 40) - 1));
     const pager = document.querySelector('.result-pagination'); if (pager) pager.innerHTML = pagination();
     const grid = document.querySelector('.results-grid'); if (grid) { grid.innerHTML = resultsList(); loadImages(grid); }
@@ -86,6 +118,7 @@ export function workbenchUI({ call, getState, getPage, renderPage, escape: e, to
     if (event.target.id === 'native-status') { const btn = dialog.querySelector('[data-wb=meshy]'); if (btn) btn.disabled = !event.target.value; }
     if (event.target.id === 'result-kind') { kind = event.target.value; resultPage = 0; refreshGallery(); }
     if (event.target.id === 'result-project') { project = event.target.value; resultPage = 0; refreshGallery(); }
+    if (event.target.id === 'result-console') { consoleFilter = event.target.value; resultPage = 0; refreshGallery(); }
     if (event.target.dataset.resultSelect) { event.target.checked ? selected.add(event.target.dataset.resultSelect) : selected.delete(event.target.dataset.resultSelect); const btn = document.querySelector('[data-wb="delete-selected"]'); btn.textContent = `Delete selected (${selected.size})`; btn.disabled = !selected.size; }
   });
   document.addEventListener('submit', async event => {
@@ -111,13 +144,17 @@ export function workbenchUI({ call, getState, getPage, renderPage, escape: e, to
       if (action === 'preview') await preview(id);
       if (action === 'import') { const result = await api('results.import'); if (result.errors.length) toast(result.errors.join('\n'),true); renderPage(); }
       if (action === 'export') await api('results.export',id);
+      if (action === 'folder') await api('results.folder');
+      if (action === 'seen-batch') await api('results.seen',batch(id).map(x => x.id));
+      if (action === 'seen-all') await api('results.seen',data().results.map(x => x.id));
+      if (action === 'delete-batch') await remove(batch(id).map(x => x.id));
       if (action === 'select-all') { for (const x of visible()) selected.add(x.id); refreshGallery(); }
       if (action === 'delete-selected') await remove([...selected]);
       if (action === 'delete-one') { await remove([id]); if (!data().results.some(x=>x.id===id)) dialog.close(); }
-      if (['read','dismiss','clear-read'].includes(action)) await api('inbox.update',{id,action});
+      if (['read','dismiss','clear-read','clear-all'].includes(action)) await api('inbox.update',{id,action});
       if (action === 'inbox-open') {
         const item = data().inbox.find(x=>x.id===id); await api('inbox.update',{id,action:'read'});
-        if (item.destination === 'usage') navigate('usage');
+        if (['usage', 'tools'].includes(item.destination)) navigate(item.destination);
         else if (item.reviewId && data().reviews.some(x=>x.id===item.reviewId)) { navigate('reviews'); await review(item.reviewId); }
         else if (item.resultId && data().results.some(x=>x.id===item.resultId)) { navigate('results'); await preview(item.resultId); }
         else if (getState().sessions.some(x=>x.id===item.sessionId)) await selectSession(item.sessionId);
@@ -140,6 +177,11 @@ export function workbenchUI({ call, getState, getPage, renderPage, escape: e, to
     sync() {
       const d = data(), next = JSON.stringify(d);
       const badge = document.querySelector('#inbox-count'); if (badge) { const unread = d.inbox.filter(x=>!x.read).length; badge.textContent = unread || ''; badge.hidden = !unread; }
+      const count = d.unreadResults ?? new Set(d.results.filter(x => !x.seenAt).map(groupKey)).size;
+      const resultBadge = document.querySelector('#results-count');
+      if (resultBadge) { resultBadge.textContent = count || ''; resultBadge.hidden = !count; resultBadge.closest('button').classList.toggle('has-new-results', !!count); resultBadge.closest('button').setAttribute('aria-label', count ? `Results, ${count} new ${count === 1 ? 'batch' : 'batches'}` : 'Results'); }
+      const shortcut = document.querySelector('#results-shortcut');
+      if (shortcut) { shortcut.hidden = !count; shortcut.querySelector('.notification-badge').textContent = count; shortcut.setAttribute('aria-label', `Results, ${count} new ${count === 1 ? 'batch' : 'batches'}`); }
       syncMeshy();
       if (next === stamp) return; stamp = next;
       for (const id of selected) if (!d.results.some(x=>x.id===id)) selected.delete(id);

@@ -440,7 +440,7 @@ async function eventually(predicate, message) {
   assert.equal(await page.locator(`.session-card.ready[data-console-id="${session.id}"]`).evaluate(el => getComputedStyle(el).borderTopColor), 'rgb(98, 217, 154)');
   await capture({ path: path.join(artifacts, 'test-nine-sessions.png') });
   await invoke('mode', 'fullscreen');
-  await page.waitForFunction(() => document.querySelector('.session-grid').getBoundingClientRect().bottom >= innerHeight - 14);
+  await page.waitForFunction(() => { const gap = innerHeight - document.querySelector('.session-grid').getBoundingClientRect().bottom; return gap >= 24 && gap <= 32; });
   assert.equal(await page.evaluate(() => document.querySelector('#consoles-page').scrollHeight <= document.querySelector('#consoles-page').clientHeight), true);
   await capture({ path: path.join(artifacts, 'test-fullscreen-grid.png') });
   await invoke('mode', 'dashboard');
@@ -453,7 +453,7 @@ async function eventually(predicate, message) {
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
   assert.equal(await page.locator('.session-card').count(), 9);
   const gridGeometry = await page.locator('.session-grid').evaluate(el => ({ bottom: el.getBoundingClientRect().bottom, screen: innerHeight, rows: [...el.children].map(child => child.getBoundingClientRect().height) }));
-  assert.ok(gridGeometry.bottom >= gridGeometry.screen - 14);
+  assert.ok(gridGeometry.bottom >= gridGeometry.screen - 24 && gridGeometry.bottom <= gridGeometry.screen - 16);
   assert.ok(Math.max(...gridGeometry.rows) - Math.min(...gridGeometry.rows) < 2);
   for (const view of ['tools', 'instructions', 'vault', 'usage', 'api']) {
     await page.locator(`nav [data-page=${view}]`).click();
@@ -493,7 +493,7 @@ async function eventually(predicate, message) {
   assert.equal(fs.existsSync(path.join(dataDir, 'workspace.json')), false);
   await app.close(); await launch();
   assert.equal((await invoke('state')).sessions.length, 0);
-  assert.equal(await page.locator('.session-card[data-slot="3"] .console-name').inputValue(), 'Trader', 'Slot names survive a restart even with console restoration off');
+  assert.equal(await page.locator('.session-card[data-slot="3"] .console-name').inputValue(), 'Console 3', 'The most recently created console name survives a restart even with restoration off');
   await page.locator('[data-page=settings]').click();
   assert.equal(await page.locator('[data-setting=restoreConsoles]').isChecked(), false);
   await page.locator('[data-setting=restoreConsoles]').check();

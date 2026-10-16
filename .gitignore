@@ -23,6 +23,9 @@ release/
 /inbox.json
 /concept-jobs/
 /concept-usage.json
+/agent-setup.json
+/setup-requests.json
+/agents/
 *.pem
 *.key
 *.pfx

@@ -28,6 +28,24 @@ test('gallery copies project artifacts, rejects private/outside files, and delet
   assert.equal(fs.readFileSync(source,'utf8'),'changed in project'); assert.equal(loaded.list().length,0);
   assert.throws(()=>loaded.path('../../vault.json'));
 });
+test('result notifications count batches, remember names and preserve unread state across launches', async t => {
+  const { root, results, project } = fixture(t);
+  const context = { project, sessionId: 'live-id', consoleKey: 'persistent-console', consoleName: 'Trader' };
+  const first = Array.from({ length: 3 }, () => results.add({ title: 'Screen', text: 'fixture', groupId: 'verification-one' }, context));
+  const second = Array.from({ length: 5 }, () => results.add({ title: 'Check', text: 'fixture', groupId: 'verification-two' }, context));
+  assert.equal(results.unreadGroups(), 2);
+  results.markSeen(first.map(x => x.id)); assert.equal(results.unreadGroups(), 1);
+  results.renameConsole(context.consoleKey, 'Robonslaught');
+  const loaded = new Results(root, { trash: results.trash });
+  assert.equal(loaded.unreadGroups(), 1); assert.ok(loaded.list().every(x => x.consoleName === 'Robonslaught'));
+  loaded.markSeen(second.map(x => x.id)); assert.equal(loaded.unreadGroups(), 0);
+  loaded.add({ title: 'Late screen', text: 'fixture', groupId: 'verification-two' }, { ...context, sessionId: 'restored-id' });
+  assert.equal(loaded.unreadGroups(), 1);
+  loaded.add({ title: 'Different console', text: 'fixture', groupId: 'verification-two' }, { ...context, consoleKey: 'other-console' });
+  assert.equal(loaded.unreadGroups(), 2);
+  await loaded.remove(loaded.list().map(x => x.id)); assert.equal(loaded.unreadGroups(), 0);
+});
+
 test('bulk deletion keeps failed items and a redirected result directory cannot be read or deleted', async t => {
   const { root,project,results }=fixture(t);
   const one=results.add({text:'one'}),two=results.add({text:'two'});
@@ -42,6 +60,7 @@ test('inbox persists read state, deduplicates completion events and clears only 
   inbox.add({key:'one',title:'Duplicate'}); inbox.add({key:'two',title:'Question',kind:'question'});
   inbox.update({id:one.id,action:'read'}); const loaded=new Inbox(root); assert.equal(loaded.items.length,2);
   loaded.update({action:'clear-read'}); assert.equal(loaded.items.length,1); assert.equal(loaded.items[0].kind,'question');
+  loaded.update({action:'clear-all'}); assert.equal(new Inbox(root).items.length,0);
 });
 test('website reviews reject local files, credentials and active schemes',()=>{
   assert.equal(pageUrl('http://localhost:3000'),'http://localhost:3000/');

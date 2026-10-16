@@ -5,10 +5,13 @@ const crypto = require('node:crypto');
 const { EventEmitter } = require('node:events');
 const { findProgram, nativeCodex, wslPath } = require('./adapters.cjs');
 const { atomicJson, readJson } = require('./storage.cjs');
+const { cells, occupied: occupiedCells, planLayout } = require('./console-layout.cjs');
+const { providers, byId: cliAgents } = require('./cli-catalog.cjs');
+const { prepareCli } = require('./cli-launch.cjs');
 function psQuote(text) { return "'" + text.replaceAll("'", "''") + "'"; }
 function shQuote(text) { return "'" + text.replaceAll("'", "'\"'\"'") + "'"; }
 function validateConsoleDefaults(raw) {
-  if (!['codex', 'claude', 'shell', 'custom'].includes(raw?.provider)) throw new Error('Choose an agent or shell.');
+  if (!providers.includes(raw?.provider)) throw new Error('Choose an agent or shell.');
   const cwd = String(raw.cwd || '').trim();
   if (!path.isAbsolute(cwd) || !fs.existsSync(cwd) || !fs.statSync(cwd).isDirectory()) throw new Error('Choose an existing project folder.');
   const command = String(raw.command || '');
@@ -24,11 +27,13 @@ class Sessions extends EventEmitter {
     this.hub = dependencies.hub;
     this.claude = dependencies.claude;
     this.runtime = dependencies.runtime;
+    this.cliSetup = dependencies.cliSetup;
+    this.agentHome = dependencies.agentHome;
   }
   list() { return [...this.items.values()].map(({ terminal, buffer, command, claudeTarget, ...session }) => session).sort((a, b) => a.slot - b.slot); }
   savedConsoles() {
     return [...this.items.values()].filter(x => (x.alive || x.restoreError) && !x.dismissed).map(x => ({
-      slot: x.slot, name: x.name, cwd: x.cwd, provider: x.provider, permissions: x.permissions,
+      slot: x.slot, width: x.width || 1, height: x.height || 1, consoleKey: x.consoleKey || x.id, name: x.name, cwd: x.cwd, provider: x.provider, permissions: x.permissions,
       command: x.command || '', model: x.launchModel || '', providerSessionId: ['codex', 'claude'].includes(x.provider) ? x.providerSessionId : null, claudeTarget: x.claudeTarget
     })).sort((a, b) => a.slot - b.slot);
   }
@@ -50,18 +55,20 @@ class Sessions extends EventEmitter {
     return this.restore(entry);
   }
   async create(raw, { resumeId = null, claudeTarget = null } = {}) {
-    const occupied = new Set([...this.items.values()].filter(x => x.alive || x.restoreError).map(x => x.slot));
+    const occupied = occupiedCells(this.items.values());
     const requestedSlot = raw?.slot === undefined ? null : Number(raw.slot);
     if (requestedSlot !== null && (!Number.isInteger(requestedSlot) || requestedSlot < 1 || requestedSlot > 9)) throw new Error('Choose a console slot from 1 to 9.');
     if (occupied.has(requestedSlot)) throw new Error('That console is already open.');
     const slot = requestedSlot ?? Array.from({ length: 9 }, (_, i) => i + 1).find(x => !occupied.has(x));
     if (!slot) throw new Error('All nine consoles are open. End a console to free a slot.');
-    if (!['codex', 'claude', 'shell', 'custom'].includes(raw?.provider)) throw new Error('Choose a console type.');
+    const width = raw.width ?? 1, height = raw.height ?? 1;
+    if (cells({ slot, width, height }).some(x => occupied.has(x))) throw new Error('That space belongs to another console.');
+    if (!providers.includes(raw?.provider)) throw new Error('Choose a console type.');
     if (resumeId != null && !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(resumeId)) throw new Error('The saved conversation ID is invalid.');
     const selectedPermissions = raw.permissions ?? 'default';
     if (!['default', 'unrestricted'].includes(selectedPermissions)) throw new Error('Choose a supported agent permission mode.');
-    const permissions = ['codex', 'claude'].includes(raw.provider) ? selectedPermissions : 'system';
-    const model = ['codex', 'claude'].includes(raw.provider) ? String(raw.model ?? '').trim() : '';
+    const permissions = ['codex', 'claude'].includes(raw.provider) || cliAgents.get(raw.provider)?.unrestricted ? selectedPermissions : 'system';
+    const model = ['codex', 'claude'].includes(raw.provider) || cliAgents.get(raw.provider)?.model ? String(raw.model ?? '').trim() : '';
     if (model && !/^[a-zA-Z0-9][a-zA-Z0-9._:/\[\]@+-]{0,199}$/.test(model)) throw new Error('Enter a model name or alias, up to 200 characters.');
     const cwd = String(raw.cwd || '');
     if (!path.isAbsolute(cwd) || !fs.existsSync(cwd) || !fs.statSync(cwd).isDirectory()) throw new Error('Choose an existing project folder.');
@@ -76,7 +83,7 @@ class Sessions extends EventEmitter {
     const mcpConfig = path.join(dir, 'mcp.json');
     if (this.hub && node) atomicJson(mcpConfig, { mcpServers: { agent_dock: { type: 'stdio', command: isWsl ? wslPath(node) : node, args: [bridgeHelper], env: { AGENT_DOCK_BRIDGE_URL: '${AGENT_DOCK_BRIDGE_URL}', AGENT_DOCK_BRIDGE_TOKEN: '${AGENT_DOCK_BRIDGE_TOKEN}', ...(isWsl ? { WSLENV: 'AGENT_DOCK_BRIDGE_URL:AGENT_DOCK_BRIDGE_TOKEN' } : {}) } } } });
     let executable = process.env.SystemRoot ? path.join(process.env.SystemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe') : 'pwsh';
-    let args = ['-NoLogo', '-NoProfile'];
+    let args = ['-NoLogo', '-NoProfile'], cliEnv = {};
     if (raw.provider === 'codex') {
       executable = this.nativeCodex();
       if (!executable) throw new Error('Codex CLI was not found. Install it, then restart Agent Dock.');
@@ -107,6 +114,14 @@ class Sessions extends EventEmitter {
       if (isWsl) { executable = 'wsl.exe'; args = ['-d', claudeInstall.distro, '--cd', cwd, '--exec', claude, ...claudeArgs]; }
       else if (claude.toLowerCase().endsWith('.exe')) { executable = claude; args = claudeArgs; }
       else { args.push('-Command', `& ${psQuote(claude)} ${claudeArgs.map(psQuote).join(' ')}`); }
+    } else if (cliAgents.has(raw.provider)) {
+      const agent = cliAgents.get(raw.provider);
+      const program = this.cliSetup?.executable(raw.provider) || this.findProgram(agent.command);
+      if (!program) throw new Error(`${agent.name} was not found. Open Settings → Set up agents to install it.`);
+      const prepared = this.hub ? prepareCli(raw.provider, { directory: dir, runtime: { ...this.runtime, node, tools: bridgeHelper }, summary: this.hub.summary(), summaryPath: this.hub.summaryPath, home: this.agentHome, model, permissions }) : { args: [...(agent.args || []), ...(model && agent.model ? [agent.model, model] : [])], env: {} };
+      cliEnv = prepared.env;
+      if (program.toLowerCase().endsWith('.exe')) { executable = program; args = prepared.args; }
+      else args.push('-ExecutionPolicy', 'Bypass', '-Command', `& ${psQuote(program)} ${prepared.args.map(psQuote).join(' ')}`);
     } else if (raw.provider === 'custom') {
       if (typeof raw.command !== 'string' || !raw.command.trim() || raw.command.length > 4000 || raw.command.includes('\0')) throw new Error('Enter the command you want this console to run.');
       const command = this.hub ? raw.command.replaceAll('{instructions}', psQuote(this.hub.summaryPath)).replaceAll('{mcp_config}', psQuote(mcpConfig)) : raw.command;
@@ -116,12 +131,19 @@ class Sessions extends EventEmitter {
     delete env.ELECTRON_RUN_AS_NODE;
     for (const key of ['OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'GOOGLE_API_KEY', 'GEMINI_API_KEY']) delete env[key];
     if (this.hub) Object.assign(env, this.hub.grant(id), { AGENT_DOCK_MCP_CONFIG: mcpConfig });
+    Object.assign(env, cliEnv);
+    if (node) {
+      const currentPath = Object.entries(env).find(([key]) => key.toLowerCase() === 'path')?.[1] || '';
+      for (const key of Object.keys(env)) if (key.toLowerCase() === 'path') delete env[key];
+      env.PATH = path.dirname(node) + path.delimiter + currentPath;
+    }
     if (isWsl) env.WSLENV = [...new Set([...(env.WSLENV || '').split(':').filter(Boolean), 'AGENT_DOCK_DATA_DIR', 'AGENT_DOCK_SESSION_ID', 'AGENT_DOCK_BRIDGE_URL', 'AGENT_DOCK_BRIDGE_TOKEN', 'AGENT_DOCK_INSTRUCTIONS/p', 'AGENT_DOCK_MCP_CONFIG/p'])].join(':');
     let terminal;
     try { terminal = this.pty.spawn(executable, args, { name: 'xterm-256color', cols: 110, rows: 30, cwd, env, useConpty: true }); }
     catch (error) { this.hub?.revoke(id); throw error; }
     for (const [oldId, old] of this.items) if (old.slot === slot && !old.alive) this.items.delete(oldId);
-    const session = { id, slot, name, cwd, provider: raw.provider, permissions, launchModel: model, command: raw.provider === 'custom' ? raw.command : '', claudeTarget: raw.provider === 'claude' ? claudeInstall : undefined, state: 'open', alive: true, cols: 110, rows: 30, createdAt: Date.now(), updatedAt: Date.now(), terminal, buffer: '', sequence: 0, usage: null, providerSessionId: resumeId };
+    const consoleKey = /^[a-f0-9-]{36}$/i.test(raw.consoleKey || '') ? raw.consoleKey : id;
+    const session = { id, consoleKey, slot, width, height, name, cwd, provider: raw.provider, permissions, launchModel: model, command: raw.provider === 'custom' ? raw.command : '', claudeTarget: raw.provider === 'claude' ? claudeInstall : undefined, state: 'open', alive: true, cols: 110, rows: 30, createdAt: Date.now(), updatedAt: Date.now(), terminal, buffer: '', sequence: 0, usage: null, providerSessionId: resumeId };
     this.items.set(id, session);
     terminal.onData(data => { session.buffer = (session.buffer + data).slice(-250000); this.emit('output', { id, data, sequence: ++session.sequence }); });
     terminal.onExit(({ exitCode }) => {
@@ -139,7 +161,11 @@ class Sessions extends EventEmitter {
     if (!item?.alive) return;
     if (typeof data !== 'string' || data.length > 65536) throw new Error('Terminal input is too large.');
     item.terminal.write(data);
-    if (!draft && /[\r\n]/.test(data) && ['codex', 'claude'].includes(item.provider)) { item.state = 'active'; item.updatedAt = Date.now(); this.emit('changed'); }
+    if (!draft && /[\r\n]/.test(data) && cliAgents.has(item.provider)) { item.state = 'active'; item.updatedAt = Date.now(); this.emit('changed'); }
+  }
+  signal(id, kind) {
+    const item = this.items.get(id); if (!item?.alive || !['ready', 'question', 'error'].includes(kind)) return;
+    item.state = kind === 'question' ? 'attention' : kind; item.updatedAt = Date.now(); this.emit('changed');
   }
   resize(id, cols, rows) {
     const item = this.items.get(id); if (!item?.alive) return;
@@ -158,14 +184,13 @@ class Sessions extends EventEmitter {
     const item = this.items.get(id);
     if (!item || (!item.alive && !item.restoreError)) throw new Error('This console is no longer open.');
     if (!Number.isInteger(slot) || slot < 1 || slot > 9) throw new Error('Choose a console slot from 1 to 9.');
-    if (slot === item.slot) return;
-    const other = [...this.items.values()].find(x => x.slot === slot && (x.alive || x.restoreError));
-    const from = item.slot;
-    beforeMove(from, slot);
-    // Move the existing PTYs and conversation IDs, never recreate them.
-    for (const [oldId, old] of this.items) if (old.slot === slot && !old.alive && !old.restoreError) this.items.delete(oldId);
-    item.slot = slot;
-    if (other) other.slot = from;
+    return this.layout({ id, slot }, beforeMove);
+  }
+  layout(change, beforeMove = () => {}) {
+    const plan = planLayout(this.items.values(), change);
+    beforeMove(plan);
+    for (const placed of plan) Object.assign(this.items.get(placed.id), placed);
+    for (const [id, old] of this.items) if (!old.alive && !old.restoreError && plan.some(x => x.slot === old.slot)) this.items.delete(id);
     this.emit('changed');
   }
   acknowledge(id) { const item = this.items.get(id); if (item && ['ready', 'attention'].includes(item.state)) { item.state = 'open'; this.emit('changed'); } }

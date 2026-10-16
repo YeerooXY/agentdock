@@ -35,7 +35,17 @@ async function eventually(predicate) {
   assert.ok(packaged.every(file => allowed.has(file.split('/').filter(Boolean)[0])), 'Only allowlisted app files and production dependencies are packaged');
   assert.ok(!packaged.some(file => /\/(vault|workspace|settings|ledger)\.json$/.test(file) || /\/(test-data|artifacts|\.git)(\/|$)/.test(file)), 'No user data or development artifacts');
   const runtime = path.join(install, 'resources', 'runtime'), node = path.join(runtime, 'node.exe');
-  assert.deepEqual(fs.readdirSync(runtime).sort(), ['agent-event.cjs', 'agent-tools.cjs', 'meshy-cli', 'meshy-mcp.cjs', 'node.exe', 'NODE-LICENSE.txt', 'THIRD-PARTY-NOTICES.txt', 'runtime.json'].sort());
+  assert.deepEqual(fs.readdirSync(runtime).sort(), ['agent-event.cjs', 'agent-tools.cjs', 'meshy-cli', 'meshy-mcp.cjs', 'npm', 'node.exe', 'NODE-LICENSE.txt', 'THIRD-PARTY-NOTICES.txt', 'runtime.json'].sort());
+  assert.equal(execFileSync(node, [path.join(runtime, 'npm', 'bin', 'npm-cli.js'), '--version'], { env, windowsHide: true, encoding: 'utf8' }).trim(), '12.2.1', 'Bundled installer runs without system Node/npm');
+  const localPackage = path.join(work, 'fixture-cli'), installedCli = path.join(work, 'installed-cli');
+  fs.mkdirSync(localPackage); fs.writeFileSync(path.join(localPackage, 'package.json'), JSON.stringify({ name: 'dock-offline-fixture', version: '1.0.0', bin: { 'dock-fixture': 'cli.js' } }));
+  fs.writeFileSync(path.join(localPackage, 'cli.js'), '#!/usr/bin/env node\nconsole.log("BUNDLED_INSTALL_OK");\n');
+  const npmrc = path.join(work, 'npmrc'), globalNpmrc = path.join(work, 'global-npmrc'); fs.writeFileSync(npmrc, ''); fs.writeFileSync(globalNpmrc, '');
+  const installEnv = { ...env, PATH: runtime + ';' + env.PATH, NPM_CONFIG_USERCONFIG: npmrc, NPM_CONFIG_GLOBALCONFIG: globalNpmrc, NPM_CONFIG_CACHE: path.join(work, 'npm-cache') };
+  execFileSync(node, [path.join(runtime, 'npm', 'bin', 'npm-cli.js'), 'install', '--prefix', installedCli, '--ignore-scripts', '--no-audit', '--no-fund', '--install-links', localPackage], { env: installEnv, windowsHide: true, timeout: 30000, stdio: 'pipe' });
+  const shim = path.join(installedCli, 'node_modules', '.bin', 'dock-fixture.cmd');
+  const installedOutput = execFileSync(path.join(systemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe'), ['-NoProfile', '-Command', "& '" + shim.replaceAll("'", "''") + "'"], { env: installEnv, windowsHide: true, encoding: 'utf8', timeout: 15000 });
+  assert.match(installedOutput, /BUNDLED_INSTALL_OK/, 'Bundled npm installs and launches a CLI with no system Node or network request');
   const help = execFileSync(node, [path.join(runtime, 'meshy-cli', 'dist', 'index.js'), 'image-to-image', 'create', '--help', '--no-update-check'], { env, windowsHide: true, encoding: 'utf8', timeout: 30000 });
   assert.ok(help.includes('--reference-image-urls'), 'Bundled Meshy CLI runs without system Node or developer dependencies');
   assert.equal(execFileSync(node, ['--version'], { env, windowsHide: true, encoding: 'utf8' }).trim(), 'v24.19.0');

@@ -4,19 +4,22 @@ A Windows desktop app for up to nine agent consoles, shared tools and usage trac
 
 ## Install
 
-Download **[Agent-Dock-0.4.0-Setup-x64.exe](https://github.com/YeerooXY/agentdock/releases/download/v0.4.0/Agent-Dock-0.4.0-Setup-x64.exe)** for Windows 10/11 on an Intel or AMD 64-bit PC.
+Download **[Agent-Dock-0.5.0-Setup-x64.exe](https://github.com/YeerooXY/agentdock/releases/download/v0.5.0/Agent-Dock-0.5.0-Setup-x64.exe)** for Windows 10/11 on an Intel or AMD 64-bit PC.
 
 1. Run the installer and choose where to install Dock. It adds desktop and Start menu shortcuts.
-2. On first launch, choose your **project folder** and **default console**.
-3. Click **+** to open a console there. Change either choice later in **Settings → Console defaults**.
+2. Choose your **project folder**. Tick any agents you want Dock to install; already installed agents are detected.
+3. Choose your **default console**. Tick **Open this console when setup finishes** to launch it immediately.
+4. Sign in through that agent's console. After setup, **+** launches your saved choice. Run the wizard again from **Settings → Set up agents**.
 
-Dock includes its own runtime; you do not need Node.js or Git to run it. Install Codex, Claude Code or other agent CLIs separately and sign in to your own accounts. The welcome screen links to their setup guides. PowerShell works immediately. Additional MCP servers may need their own software or runtimes.
+Dock includes Node.js and its package installer; you do not need a separate Node installation. PowerShell works immediately. Optional agents download from their official installers or npm packages and use your own accounts or API billing. Some agents have newer Windows requirements, shown in setup. Git and other project tools may still be needed by your chosen agent. Additional MCP servers may need their own software.
+
+The wizard offers Codex, Claude Code, Google Antigravity, GitHub Copilot, OpenCode, Cursor, Grok Build, Kiro, Qwen Code, Kimi Code, Cline, Factory Droid, Pi and Gemini CLI. Z.AI/GLM can be connected through OpenCode. Grok and Z.AI also have model API presets in Tools. See the [agent setup notes](docs/agent-setup.md) for sources, sign-in and integration details. Other CLIs can use **Custom command**.
 
 This release is unsigned, so Windows may show an unknown-publisher or SmartScreen prompt. Only download it from this repository's releases. Existing users keep their settings, keys and saved panels. Uninstalling leaves that local data in `%APPDATA%\Agent Dock`.
 
 ## Run from source
 
-On Windows, with Node.js 24 and Git installed:
+On Windows, with Node.js 24.19.0 and Git installed:
 
 ```powershell
 git clone https://github.com/YeerooXY/agentdock.git
@@ -31,26 +34,29 @@ To add desktop and Start menu shortcuts, run `powershell -File scripts/desktop-s
 
 ## Build an installer
 
-On Windows x64 with Node.js 24, run `npm ci`, then `npm run dist`. The installer and `SHA256SUMS.txt` are written to `release/`. `npm run pack` builds an unpacked app for inspection; `npm run test:packaged` tests it with a temporary profile and no system Node on PATH.
+On Windows x64 with Node.js 24.19.0, run `npm ci`, then `npm run dist`. The installer and `SHA256SUMS.txt` are written to `release/`. `npm run pack` builds an unpacked app for inspection; `npm run test:packaged` tests it with a temporary profile and no system Node on PATH.
 
 `powershell -NoProfile -File scripts/test-installer.ps1` also checks installation, the Start menu shortcut and removal. It refuses to run when Dock is already installed and preserves existing development shortcuts.
 
-The build downloads a pinned Node.js runtime, checks its SHA-256, bundles the completion/MCP helpers and Meshy server outside ASAR, and includes their dependency licenses. `node-pty` uses its supplied Windows x64 N-API binaries. Only application code, built UI, bundled guides, icons, production dependencies and the runtime go into the installer. Local settings, credentials, sessions and test data are excluded. Packaging uses [electron-builder's NSIS target](https://www.electron.build/v26/docs/nsis/).
+The build downloads a pinned Node.js runtime, checks its SHA-256, bundles npm 12.2.1, the completion/MCP helpers and Meshy server outside ASAR, and includes their dependency licenses. `node-pty` uses its supplied Windows x64 N-API binaries. Only application code, built UI, bundled guides, icons, production dependencies and the runtime go into the installer. Local settings, credentials, sessions and test data are excluded. Packaging uses [electron-builder's NSIS target](https://www.electron.build/v26/docs/nsis/).
 
 ## Use it
 
-- **Move consoles** with the grip in each panel header. Drop on an empty slot to move, or an occupied slot to swap. Processes, output, names and saved conversations stay with their consoles. With the grip focused, **Alt+1–9** moves it by keyboard.
-- **Results** collects screenshots, test reports, design concepts and files shared by your agents. Filter by project or type, preview, export, or select several to delete. Deletion sends Dock’s copies to the Recycle Bin; project originals stay in place.
-- **Inbox** keeps completion alerts, questions and errors. Open the related console or review, mark items read, dismiss them, or clear read items.
+Version 0.5.0 includes the agent setup wizard, resizable panels, grouped notifications and the updated theme.
+
+- **Move consoles** with the terminal icon in each panel header. A frozen copy of the terminal follows your pointer while other panels slide into place. On release, the copy expands into its destination. Drop on an empty slot to move, or an occupied slot to swap. Processes, output, names and saved conversations stay with their consoles. With the icon focused, **Alt+1–9** moves it by keyboard.
+- **Resize consoles** by dragging an edge or corner. It snaps to the 3×3 grid, including 3×1 and 2×2 panels. Other panels move to make room. A pink-blue grid preview, active edge and live size label show the new footprint. An occupied layout turns red. Escape cancels; an impossible size leaves the saved layout intact. Focus a resize handle and use arrow keys to move that edge by one cell. Sizes are saved with your workspace. Narrow browser previews stack panels for readability.
+- **Results** groups saved files by console name and task. The badge counts new batches: three screenshots from one verification and five from another count as two. Opening a result or choosing **Mark viewed** clears that batch’s badge. Names remain after a console closes. Filter, preview, export, open the local folder, or delete individual files or whole batches. Deletion sends Dock’s copies to the Recycle Bin; project originals stay in place.
+- **Inbox** keeps completion alerts, questions and errors. Open the related console or review, mark items read, dismiss them, clear read items, or **Clear inbox**. Clearing alerts leaves Results and running consoles intact.
 - **Website review** captures desktop/mobile viewports, runs automated accessibility and overflow checks, and checks up to 12 same-origin links. Findings and screenshots go into Results. The 20-item checklist needs a human or agent review; an automated scan is not certification.
 
 - **Consoles** shows nine live terminals filling the window. Click **+** to launch in that panel using **Settings → Console defaults**. You can type directly in a panel or use its expand button for fullscreen. **Consoles** brings back the grid and keeps the window fullscreen. Thinking uses a blue-purple outline; ready uses green.
 - **Usage** contains subscription limits, API tokens, cost estimates and pricing settings.
 - **Keys** stores named credentials from any service, encrypted with Windows DPAPI.
-- **Tools** connects MCP servers, HTTP tools and model APIs.
+- **Tools** connects MCP servers, HTTP tools and model APIs. Ask an agent to help configure one: it can prepare the settings here for you to apply. Missing keys are entered directly in Keys.
 - **Instructions** sets the working style shared by supported agents.
 
-**Ctrl + Alt + Space** shows or collapses the app. **Ctrl + Alt + 1–9** opens a console fullscreen. **×** hides Dock in the Windows system tray, keeping consoles running. Click its tray icon or use the shortcut to return. **–** minimizes to the taskbar; **Quit** stops the processes.
+**Ctrl + Shift + N** creates a console in the first free cell while Dock is focused, using your defaults. **Ctrl + Alt + Space** shows or collapses the app. **Ctrl + Alt + 1–9** opens a console fullscreen. **×** hides Dock in the Windows system tray, keeping consoles running. Click its tray icon or use the shortcut to return. **–** minimizes to the taskbar; **Quit** stops the processes.
 
 Drag the grip in the top bar to move the window, including out of fullscreen. Drag the name in the HUD to move it. Double-click either grip to toggle fullscreen. Reopening from the tray keeps the window's position and fullscreen state.
 
@@ -58,7 +64,7 @@ Drag the grip in the top bar to move the window, including out of fullscreen. Dr
 
 Saved Codex and Claude conversations resume by their exact session IDs, so consoles sharing a folder keep separate chats. Codex's completion callback supplies its ID after the first completed turn; Claude's session-start hook supplies its ID when the chat opens. Consoles without a recorded ID start a new chat. Dock uses [`codex resume <ID>`](https://learn.chatgpt.com/docs/cli/reference) and [`claude --resume <ID>`](https://code.claude.com/docs/en/cli-reference) without submitting a prompt. WSL Claude sessions keep their original distribution even if a native installation is added later.
 
-Shells and custom startup commands launch fresh. Running jobs, shell variables, typed input and terminal scrollback are not restored. A missing project folder leaves its panel available to retry; other panels still reopen.
+Other agents, shells and custom startup commands launch fresh. Running jobs, shell variables, typed input and terminal scrollback are not restored. A missing project folder leaves its panel available to retry; other panels still reopen.
 
 The top-left button hides or shows the sidebar. Its state is saved.
 
@@ -66,7 +72,11 @@ Click a panel's title to name it, for example **Trader** or **Robonslaught**. On
 
 The folder button above the grid changes the launch folder for new consoles. You can also choose it in **Settings → Console defaults**, alongside the agent, optional name and custom command. Preferences are stored for each Windows user. On a new computer the initial folder is that user's Projects folder, or their home folder if Projects does not exist.
 
-Hold **+** for a moment, or right-click it, to choose an agent, model and folder for that panel. **Options** has a name and permission override. These choices apply only to that console; a regular click still uses your saved defaults. Escape or Cancel closes the chooser without opening anything. This also works in the HUD. With a keyboard, hold Space or press Shift+Enter on a plus button.
+Hold **+** for a moment, or right-click it, to choose a name, agent, model and folder for that panel. **Options** has a permission override. These choices apply only to that console; a regular click still uses your saved defaults. Escape or Cancel closes the chooser without opening anything. This also works in the HUD. With a keyboard, hold Space or press Shift+Enter on a plus button.
+
+Pink-blue accents are the default. **Settings → Appearance** also offers blue or pink. Ready consoles pulse green and show a red badge on their terminal icon; opening the console clears its badge. Results shows the number of new batches directly on its icon. Reduced-motion preferences disable panel motion and the ready pulse. Fullscreen terminals leave space below the last line. Window controls sit at the top right: HUD, minimize, fullscreen/restore, close to tray.
+
+The console cursor is steady by default. **Settings → Appearance → Blink cursor** turns blinking back on. Dock batches short output fragments and gives split cursor hide/redraw/show sequences up to 48 ms to arrive together. It also skips unchanged terminal fits to reduce redraw flicker. Programs can still deliberately hide and show their cursor; Dock preserves those terminal commands. This setting affects Dock, not CMD or other terminal apps. For Codex outside Dock, `codex -c tui.animations=false` disables its animations for that launch; this is a troubleshooting option, not a confirmed fix for every flicker. See [Codex TUI options](https://learn.chatgpt.com/docs/config-file/config-advanced#tui-options).
 
 Codex model suggestions come from its local model cache. Claude offers its [model aliases](https://code.claude.com/docs/en/model-config). **Enter a model…** accepts another model name or alias; the CLI checks availability. **Agent default** keeps the CLI's configured model. A one-time model choice is kept with that console when startup restoration is enabled.
 
@@ -105,7 +115,7 @@ Per-session hooks report completion and attention states. Claude's status line r
 1. Save a credential in **Keys**, using a short ID such as `blender_service`.
 2. Add a connection in **Tools**. Local MCP servers need their executable and arguments; remote servers need an endpoint. Bind a saved key to the required environment variable, HTTP header or query parameter.
 3. Test an MCP connection to discover its tools. Checking an ordinary HTTP API validates its setup without sending a request.
-4. Write your preferences in **Instructions**. New managed Codex, Claude and API sessions receive them automatically.
+4. Write your preferences in **Instructions**. Managed agents and API sessions receive shared context through their launch configuration or the MCP bridge. See the [adapter details](docs/agent-setup.md).
 
 The **3D tools** cards handle these integrations:
 

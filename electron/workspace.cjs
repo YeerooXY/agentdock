@@ -1,7 +1,9 @@
 'use strict';
+const { providers } = require('./cli-catalog.cjs');
 const fs = require('node:fs');
 const path = require('node:path');
 const { atomicJson, readJson } = require('./storage.cjs');
+const { cells } = require('./console-layout.cjs');
 
 // Only launch details and exact conversation IDs are saved. Agent transcripts stay
 // with their CLI, and terminal input is never replayed into a restored process.
@@ -40,9 +42,11 @@ class Workspace {
       if (saved.version !== 1 || typeof saved.encrypted !== 'string') throw new Error('Unsupported saved workspace.');
       const entries = JSON.parse(this.crypto.decryptString(Buffer.from(saved.encrypted, 'base64')));
       if (!Array.isArray(entries) || entries.length > 9 || new Set(entries.map(x => x?.slot)).size !== entries.length || entries.some(x =>
-        !Number.isInteger(x?.slot) || x.slot < 1 || x.slot > 9 || !['codex', 'claude', 'shell', 'custom'].includes(x.provider) ||
+        !Number.isInteger(x?.slot) || x.slot < 1 || x.slot > 9 || !providers.includes(x.provider) ||
         typeof x.cwd !== 'string' || typeof x.name !== 'string' || !['default', 'unrestricted', 'system'].includes(x.permissions) ||
         (x.command != null && (typeof x.command !== 'string' || x.command.length > 4000 || x.command.includes('\0'))))) throw new Error('Invalid saved workspace.');
+      const area = entries.flatMap(cells);
+      if (new Set(area).size !== area.length) throw new Error('Saved consoles overlap.');
       for (const entry of entries.sort((a, b) => a.slot - b.slot)) await this.sessions.restore(entry);
     } catch {
       // A damaged or undecryptable save must not be overwritten by an empty dock.

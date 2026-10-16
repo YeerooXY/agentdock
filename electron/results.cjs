@@ -17,6 +17,16 @@ class Results extends EventEmitter {
     this.trash = trash; this.nativeImage = nativeImage; this.deleting = false;
   }
   list() { return this.items.map(x => ({ ...x, image: imageExtensions.has(x.ext) })); }
+  groupKey(item) { return JSON.stringify([item.consoleKey || item.sessionId || item.source || 'Dock', item.groupId || item.id]); }
+  unreadGroups() { return new Set(this.items.filter(x => !x.seenAt).map(x => this.groupKey(x))).size; }
+  markSeen(ids) {
+    if (!Array.isArray(ids) || ids.length > 1000) throw new Error('Choose results to mark as seen.');
+    const seen = new Set(ids), at = Date.now();
+    if (this.items.some(x => seen.has(x.id) && !x.seenAt)) this.persist(this.items.map(x => seen.has(x.id) ? { ...x, seenAt: x.seenAt || at } : x));
+  }
+  renameConsole(consoleKey, name) {
+    if (this.items.some(x => (x.consoleKey || x.sessionId) === consoleKey && x.consoleName !== name)) this.persist(this.items.map(x => (x.consoleKey || x.sessionId) === consoleKey ? { ...x, consoleName: short(name, 64) } : x));
+  }
   persist(next) { atomicJson(this.file, next); this.items = next; this.emit('changed'); }
   directory(id) {
     if (!/^[a-f0-9-]{36}$/.test(id)) throw new Error('Unknown result.');
@@ -31,7 +41,7 @@ class Results extends EventEmitter {
     if (fs.lstatSync(file).isSymbolicLink()) throw new Error('The result file was redirected.');
     return file;
   }
-  add(raw, { project = '', sessionId = null, trusted = false } = {}) {
+  add(raw, { project = '', sessionId = null, consoleKey = null, consoleName = '', trusted = false } = {}) {
     if (this.items.length >= 1000) throw new Error('The gallery is full. Delete some saved results first.');
     let buffer, ext;
     if (raw.file) {
@@ -52,7 +62,7 @@ class Results extends EventEmitter {
     const item = { id: crypto.randomUUID(), title: short(raw.title || (raw.file && path.basename(raw.file)) || 'Result'), ext, size: buffer.length, at: Date.now(),
       kind: ['screenshot', 'test', 'concept', 'review', 'asset', 'report'].includes(raw.kind) ? raw.kind : 'report',
       status: ['passed', 'failed', 'needs-review'].includes(raw.status) ? raw.status : 'needs-review',
-      summary: short(raw.summary, 1500), project: short(project, 1000), sessionId, groupId: short(raw.groupId, 80), source: short(raw.source || 'Agent', 60) };
+      summary: short(raw.summary, 1500), project: short(project, 1000), sessionId, consoleKey: consoleKey || sessionId, consoleName: short(consoleName, 64), seenAt: null, groupId: short(raw.groupId, 80), source: short(raw.source || 'Agent', 60) };
     const dir = this.directory(item.id); fs.mkdirSync(dir); fs.writeFileSync(path.join(dir, 'result' + ext), buffer, { flag: 'wx' });
     this.persist([item, ...this.items]); return item;
   }
@@ -94,11 +104,12 @@ class Inbox extends EventEmitter {
   add(raw) {
     if (raw.key && this.items.some(x => x.key === raw.key)) return;
     const item = { id: crypto.randomUUID(), at: Date.now(), read: false, title: short(raw.title), message: short(raw.message, 1200), sessionId: raw.sessionId || null, resultId: raw.resultId || null, reviewId: raw.reviewId || null, kind: raw.kind || 'ready', key: raw.key || null };
-    if (raw.destination === 'usage') item.destination = 'usage';
+    if (['usage', 'tools'].includes(raw.destination)) item.destination = raw.destination;
     this.items = [item, ...this.items].slice(0, 200); this.save(); return item;
   }
   update({ id, action }) {
-    if (action === 'clear-read') this.items = this.items.filter(x => !x.read);
+    if (action === 'clear-all') this.items = [];
+    else if (action === 'clear-read') this.items = this.items.filter(x => !x.read);
     else if (action === 'dismiss') this.items = this.items.filter(x => x.id !== id);
     else if (action === 'read') { const item = this.items.find(x => x.id === id); if (item) item.read = true; }
     else throw new Error('Unknown inbox action.');

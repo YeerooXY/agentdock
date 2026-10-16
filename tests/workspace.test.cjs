@@ -107,6 +107,31 @@ test('moving and swapping preserves PTYs, output and conversation IDs and restor
   assert.equal(second.sessions.list()[1].providerSessionId, thread);
 });
 
+test('resizing rearranges live panels, reserves covered cells and restores sizes and console identity', async t => {
+  const first = fixture(t), thread = crypto.randomUUID();
+  const one = await first.sessions.create({ slot: 5, provider: 'codex', cwd: first.root, name: 'Trader' }, { resumeId: thread });
+  const two = await first.sessions.create({ slot: 6, provider: 'shell', cwd: first.root, name: 'Game' });
+  const terminal = first.sessions.items.get(one.id).terminal; terminal.data('layout output stays here');
+  first.sessions.layout({ id: one.id, width: 2, height: 2 });
+  const current = first.sessions.items.get(one.id);
+  assert.deepEqual([current.slot, current.width, current.height], [5, 2, 2]);
+  assert.equal(current.terminal, terminal); assert.equal(current.providerSessionId, thread);
+  assert.equal(first.sessions.buffer(one.id).data, 'layout output stays here');
+  assert.ok(![5, 6, 8, 9].includes(first.sessions.items.get(two.id).slot));
+  await assert.rejects(first.sessions.create({ slot: 9, provider: 'shell', cwd: first.root }), /already open|space/);
+  const before = first.sessions.savedConsoles();
+  assert.throws(() => first.sessions.layout({ id: one.id, width: 3, height: 3 }), /enough room/);
+  assert.deepEqual(first.sessions.savedConsoles(), before);
+  first.sessions.layout({ id: one.id, width: 3, height: 1 });
+  assert.equal(first.sessions.items.get(one.id).slot, 4);
+  first.workspace.freeze();
+  const second = fixture(t, first.root); await second.workspace.restore();
+  const restored = second.sessions.list().find(x => x.name === 'Trader');
+  assert.deepEqual([restored.slot, restored.width, restored.height], [4, 3, 1]);
+  assert.equal(restored.consoleKey, one.consoleKey); assert.equal(restored.providerSessionId, thread);
+  assert.equal(first.calls.length, 2); assert.deepEqual(second.errors, []);
+});
+
 test('turning restoration off deletes the save and leaves current terminals running', async t => {
   const first = fixture(t);
   await first.sessions.create({ provider: 'shell', cwd: first.root }); first.workspace.save();

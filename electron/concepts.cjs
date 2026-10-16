@@ -66,7 +66,7 @@ class Concepts extends EventEmitter {
     const desktopId = review.report?.views?.find(x => x.name === 'Desktop')?.screenshot;
     const reference = this.results.items.find(x => x.id === desktopId) || this.results.items.find(x => x.groupId === review.id && x.kind === 'screenshot');
     if (!reference) throw new Error('The reference screenshot was deleted. Run the review again.');
-    const job = { id: crypto.randomUUID(), reviewId: review.id, referenceId: reference.id, project: review.project, state: 'submitting', at: Date.now(), taskId: null, credits: null,
+    const job = { id: crypto.randomUUID(), reviewId: review.id, referenceId: reference.id, sessionId: review.sessionId, consoleKey: review.consoleKey, consoleName: review.consoleName, project: review.project, state: 'submitting', at: Date.now(), taskId: null, credits: null,
       prompt: `Create one polished 2D website redesign concept using the reference screenshot. Keep the page’s purpose and real content. Improve hierarchy, spacing, typography and accessibility. Show a flat screen mockup, not a 3D scene. ${review.brief} ${String(raw.prompt || '').slice(0, 2000)}` };
     this.items.unshift(job); this.save(); this.launch(job, true); return job.id;
   }
@@ -110,7 +110,7 @@ class Concepts extends EventEmitter {
     const downloaded = await this.run(['download', '--task-json', taskFile, '--asset', asset.key, '--output-dir', output, ...flags], 120000);
     const file = downloaded.result?.downloads?.files?.find(x => x.status === 'written')?.path;
     if (!file || !inside(fs.realpathSync(dir), fs.realpathSync(file))) throw new Error('Meshy did not save an image inside the job folder.');
-    const saved = this.results.add({ file, title: 'Page concept · Meshy', kind: 'concept', source: 'Meshy', groupId: job.reviewId, summary: job.prompt }, { project: job.project, trusted: true });
+    const saved = this.results.add({ file, title: 'Page concept · Meshy', kind: 'concept', source: 'Meshy', groupId: job.reviewId, summary: job.prompt }, { project: job.project, sessionId: job.sessionId, consoleKey: job.consoleKey, consoleName: job.consoleName, trusted: true });
     job.resultId = saved.id; job.state = 'complete'; this.save();
     this.inbox.add({ title: 'Page concept ready', resultId: saved.id, reviewId: job.reviewId });
     // Keep task/credit metadata; discard duplicate working files only within this proven job folder.

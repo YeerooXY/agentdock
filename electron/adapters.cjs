@@ -12,6 +12,8 @@ function findProgram(name) {
   return (process.env.PATH || '').split(path.delimiter).map(x => path.join(x, name)).find(x => fs.existsSync(x)) || null;
 }
 function nativeCodex() {
+  const standalone = path.join(process.env.LOCALAPPDATA || '', 'Programs', 'OpenAI', 'Codex', 'bin', 'codex.exe');
+  if (fs.existsSync(standalone)) return standalone;
   const direct = findProgram('codex.exe');
   if (direct) return direct;
   const wrapper = findProgram('codex');

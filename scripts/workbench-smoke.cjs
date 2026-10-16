@@ -51,7 +51,7 @@ async function eventually(check, message='Timed out') {const end=Date.now()+4500
   await page.screenshot({path:path.join(root,'artifacts','test-website-review.png')});
   await page.locator('[data-wb="copy-brief"]').click();const brief=await app.evaluate(({clipboard})=>clipboard.readText());assert.ok(brief.includes('own image generation capability first'));assert.ok(brief.includes('reference')||brief.includes('Reference'));
   await assert.rejects(call('workbench.concept.start',{reviewId:review.id,nativeStatus:'failed'}),/disabled/);
-  await page.locator('[data-wb="close"]').click(); await page.locator('[data-page="results"]').click(); await page.locator('.result-card').first().waitFor();
+  await page.locator('[data-wb="close"]').click(); await page.locator('nav [data-page="results"]').click(); await page.locator('.result-card').first().waitFor();
   await eventually(async()=>page.locator('.result-image img').evaluateAll(xs=>xs.length===2&&xs.every(x=>x.complete&&x.naturalWidth>0)));
   assert.ok(await page.locator('.result-image img').evaluateAll(xs=>xs.every(x=>x.naturalWidth<=360&&x.naturalHeight<=400)),'Gallery loads bounded thumbnails');
   await capture('test-results.png');

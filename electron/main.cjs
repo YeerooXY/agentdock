@@ -8,6 +8,9 @@ const { Vault, readJson, atomicJson, validateKeyId } = require('./storage.cjs');
 const { CodexAccount, RecentCodex, findProgram, nativeCodex, findClaude, consoleModels } = require('./adapters.cjs');
 const { runtimeFiles } = require('./runtime.cjs');
 const { initialSettings } = require('./settings.cjs');
+const { CliSetup } = require('./cli-setup.cjs');
+const { catalog: cliCatalog, byId: cliAgents } = require('./cli-catalog.cjs');
+const { cells: consoleCells, occupied: occupiedCells, planLayout } = require('./console-layout.cjs');
 const { Sessions, validateConsoleDefaults } = require('./sessions.cjs');
 const { Workspace } = require('./workspace.cjs');
 const { Workbench } = require('./workbench.cjs');
@@ -16,12 +19,13 @@ const { SharedHub } = require('./shared.cjs');
 const { ToolIntegrations, definitions: integrationDefinitions } = require('./integrations.cjs');
 const { validateProvider, validateRequest, ledgerSummary, number } = require('./domain.cjs');
 app.setName('Agent Dock');
-if (process.platform === 'win32') app.setAppUserModelId(app.isPackaged ? 'com.yeeroo.agentdock' : process.execPath);
+const appModelId = app.isPackaged ? 'com.yeeroo.agentdock' : process.execPath;
+if (process.platform === 'win32') app.setAppUserModelId(appModelId);
 const testMode = process.argv.includes('--smoke-test');
 const testDir = process.argv.find(x => x.startsWith('--data-dir='))?.slice(11);
 if (testMode && testDir) app.setPath('userData', testDir);
 if (!app.requestSingleInstanceLock() && !testMode) app.quit();
-let window, tray, vault, sessions, workspace, account, root, settings, ledger, balloonClick, hub, integrations, workbench;
+let window, tray, vault, sessions, workspace, account, root, settings, ledger, balloonClick, hub, integrations, workbench, cliSetup;
 let mode = 'dashboard', quitting = false, refreshing = false, lastRefresh = 0, apiBusy = false;
 let modeTarget = null, modeTask, modeSequence = 0, transitioning = false;
 let trayHidden = false, windowDrag = null;
@@ -32,7 +36,7 @@ const entryUrl = pathToFileURL(entryFile).href;
 const projectsFolder = path.join(os.homedir(), 'Projects');
 const defaultFolder = fs.existsSync(projectsFolder) && fs.statSync(projectsFolder).isDirectory() ? projectsFolder : os.homedir();
 function snapshot() {
-  return { mode, transitioning, trayHidden, sessions: sessions?.list() || [], limits, recent, accountError, refreshing, lastRefresh,
+  return { mode, transitioning, trayHidden, sessions: sessions?.list() || [], limits, recent, accountError, refreshing, lastRefresh, agents: cliSetup?.snapshot() || [], agentSetupBusy: !!cliSetup?.running,
     capabilities, workbench: workbench?.snapshot(), vault: { available: vault?.available() || false, entries: vault?.list() || [] },
     ledger: ledger || [], summary: ledgerSummary(ledger || []), shared: hub?.snapshot(), settings, storageError, workspaceError, shortcutAvailable,
     integrations: integrations?.snapshot(hub?.config.connections || [], vault?.list() || []), defaultFolder, version: app.getVersion() };
@@ -158,6 +162,7 @@ app.whenReady().then(async () => {
   Menu.setApplicationMenu(null);
   root = app.getPath('userData'); fs.mkdirSync(root, { recursive: true });
   const runtime = runtimeFiles({ isPackaged: app.isPackaged, resourcesPath: process.resourcesPath, findProgram });
+  cliSetup = new CliSetup(root, runtime, { testMode, onChange: publish });
   const claude = findClaude();
   capabilities = { codex: !!nativeCodex(), claude: !!claude, claudeLocation: claude?.label, node: !!runtime.node, shell: true };
   const savedSettings = readJson(path.join(root, 'settings.json'), {});
@@ -165,9 +170,9 @@ app.whenReady().then(async () => {
   ledger = readJson(path.join(root, 'ledger.json'), []);
   vault = new Vault(path.join(root, 'vault.json'), safeStorage);
   integrations = new ToolIntegrations(root, runtime, { onChange: publish });
-  workbench = new Workbench(root, runtime, require('electron'), { testMode, onChange: publish, getSessions: () => sessions, getProject: () => settings.consoleDefaults.cwd, getWindow: () => window });
+  workbench = new Workbench(root, runtime, require('electron'), { testMode, onChange: publish, getSessions: () => sessions, getProject: () => settings.consoleDefaults.cwd, getWindow: () => window, getHub: () => hub, getAgents: () => cliSetup.snapshot() });
   hub = new SharedHub(root, vault, { integrations, workbench }); await hub.start();
-  sessions = new Sessions(root, { hub, claude, runtime });
+  sessions = new Sessions(root, { hub, claude, runtime, cliSetup });
   const savedLimits = readJson(path.join(root, 'limits.json'), []);
   limits = Array.isArray(savedLimits) ? savedLimits : [];
   account = new CodexAccount(values => {
@@ -196,6 +201,20 @@ app.whenReady().then(async () => {
   await workspace.restore();
   window = new BrowserWindow({ width: 1240, height: 840, minWidth: 720, minHeight: 520, frame: false, show: false, backgroundColor: '#010103', title: 'Agent Dock', icon: path.join(__dirname, '..', 'assets', 'icon.png'),
     webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true, webSecurity: true, spellcheck: false } });
+  if (process.platform === 'win32') {
+    // Windows Shell cannot read an icon inside app.asar. Installed builds use
+    // their executable resource; development uses a versioned, readable ICO.
+    let taskbarIcon = process.execPath;
+    if (!app.isPackaged) {
+      const iconData = fs.readFileSync(path.join(__dirname, '..', 'assets', 'icon.ico'));
+      const hash = require('node:crypto').createHash('sha256').update(iconData).digest('hex').slice(0, 12);
+      const iconsDir = path.join(root, 'icons'); fs.mkdirSync(iconsDir, { recursive: true });
+      taskbarIcon = path.join(iconsDir, `agent-dock-${hash}.ico`);
+      if (!fs.existsSync(taskbarIcon)) fs.writeFileSync(taskbarIcon, iconData);
+    }
+    window.setAppDetails({ appId: appModelId, appIconPath: taskbarIcon, appIconIndex: 0,
+      relaunchCommand: `"${process.execPath}"${app.isPackaged ? '' : ` "${app.getAppPath()}"`}`, relaunchDisplayName: 'Agent Dock' });
+  }
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   window.webContents.on('will-navigate', event => event.preventDefault());
   window.webContents.session.setPermissionRequestHandler((_, __, callback) => callback(false));
@@ -213,7 +232,7 @@ app.whenReady().then(async () => {
   }
   shortcutAvailable = !testMode && globalShortcut.register('CommandOrControl+Alt+Space', () => trayHidden ? revealWindow() : setMode((modeTarget || mode) === 'hud' ? 'dashboard' : 'hud'));
   for (let i = 1; !testMode && i <= 9; i++) globalShortcut.register(`CommandOrControl+Alt+${i}`, () => {
-    const item = sessions.list().find(x => x.slot === i); if (!item) return;
+    const item = sessions.list().find(x => (x.alive || x.restoreError) && consoleCells(x).includes(i)); if (!item) return;
     setMode('fullscreen'); window.webContents.send('dock:select', item.id);
   });
   if (!testMode) { recent = recentReader.scan(); refreshLimits(); }
@@ -236,15 +255,24 @@ app.whenReady().then(async () => {
         case 'quit': await quit(); break;
         case 'refresh': await refreshLimits(); break;
         case 'agents.refresh': {
+          cliSetup.refresh();
           sessions.claude = findClaude();
           capabilities = { ...capabilities, codex: !!nativeCodex(), claude: !!sessions.claude, claudeLocation: sessions.claude?.label };
           publish(); return { ok: true, value: capabilities };
         }
+        case 'agents.install': {
+          const result = await cliSetup.install(payload);
+          sessions.claude = findClaude();
+          capabilities = { ...capabilities, codex: !!nativeCodex(), claude: !!sessions.claude, claudeLocation: sessions.claude?.label };
+          publish(); return { ok: true, value: result };
+        }
+        case 'setup.validate': return { ok: true, value: validateConsoleDefaults(payload) };
         case 'setup.complete': {
           const consoleDefaults = validateConsoleDefaults(payload);
-          if (['codex', 'claude'].includes(consoleDefaults.provider) && !capabilities[consoleDefaults.provider]) throw new Error('Install this agent, then check again. You can also start with PowerShell.');
+          if (cliAgents.has(consoleDefaults.provider) && !cliSetup.executable(consoleDefaults.provider)) throw new Error('Install this agent, then check again. You can also start with PowerShell.');
+          const opened = payload.launchNow === true ? await sessions.create({ ...consoleDefaults, permissions: settings.agentPermissions }) : null;
           persistSettings({ ...settings, consoleDefaults, setupComplete: true });
-          publish(); break;
+          publish(); return { ok: true, value: opened };
         }
         case 'pickFolder': {
           const suggested = typeof payload?.cwd === 'string' && path.isAbsolute(payload.cwd) && fs.existsSync(payload.cwd) && fs.statSync(payload.cwd).isDirectory() ? payload.cwd : settings.consoleDefaults.cwd;
@@ -252,9 +280,11 @@ app.whenReady().then(async () => {
           return { ok: true, value: result.filePaths[0] || null };
         }
         case 'session.create': {
-          const occupied = new Set(sessions.list().filter(x => x.alive || x.restoreError).map(x => x.slot));
+          const occupied = occupiedCells(sessions.items.values());
           const slot = payload?.slot ?? Array.from({ length: 9 }, (_, i) => i + 1).find(x => !occupied.has(x));
-          return { ok: true, value: await sessions.create({ ...settings.consoleDefaults, ...(settings.slotNames?.[slot] ? { name: settings.slotNames[slot] } : {}), ...payload, permissions: payload?.permissions ?? settings.agentPermissions }) };
+          const session = await sessions.create({ ...settings.consoleDefaults, ...(settings.slotNames?.[slot] ? { name: settings.slotNames[slot] } : {}), ...payload, permissions: payload?.permissions ?? settings.agentPermissions });
+          persistSettings({ ...settings, slotNames: { ...settings.slotNames, [session.slot]: session.name } }); publish();
+          return { ok: true, value: session };
         }
         case 'slot.name': {
           const slot = payload?.slot;
@@ -265,17 +295,21 @@ app.whenReady().then(async () => {
           const name = payload.name.trim(), slotNames = { ...settings.slotNames };
           if (name) slotNames[slot] = name; else delete slotNames[slot];
           persistSettings({ ...settings, slotNames });
-          if (item) sessions.rename(item.id, name); else publish();
+          if (item) { sessions.rename(item.id, name); workbench.results.renameConsole(item.consoleKey || item.id, sessions.items.get(item.id).name); } else publish();
           break;
         }
         case 'session.models': return { ok: true, value: consoleModels(payload) };
-        case 'session.move': {
-          sessions.move(payload?.id, payload?.slot, (from, to) => {
+        case 'session.layout.preview': return { ok: true, value: planLayout(sessions.items.values(), { id: payload?.id, slot: payload?.slot, width: payload?.width, height: payload?.height }) };
+        case 'session.move':
+        case 'session.layout': {
+          sessions.layout(method === 'session.move' ? { id: payload?.id, slot: payload?.slot } : { id: payload?.id, slot: payload?.slot, width: payload?.width, height: payload?.height }, plan => {
             const slotNames = { ...settings.slotNames };
-            const source = slotNames[from], target = slotNames[to];
-            delete slotNames[from]; delete slotNames[to];
-            if (source) slotNames[to] = source;
-            if (target) slotNames[from] = target;
+            const previous = new Set(plan.map(x => sessions.items.get(x.id).slot));
+            const displaced = plan.filter(x => !previous.has(x.slot) && slotNames[x.slot]).map(x => slotNames[x.slot]);
+            const freed = [...previous].filter(slot => !plan.some(x => x.slot === slot));
+            for (const placed of plan) delete slotNames[sessions.items.get(placed.id).slot];
+            for (let i = 0; i < displaced.length && i < freed.length; i++) slotNames[freed[i]] = displaced[i];
+            for (const placed of plan) slotNames[placed.slot] = sessions.items.get(placed.id).name;
             persistSettings({ ...settings, slotNames });
           });
           break;
@@ -289,7 +323,7 @@ app.whenReady().then(async () => {
           const item = sessions.list().find(x => x.id === payload);
           if (!item) throw new Error('Console not found.');
           const result = testMode ? { response: 1 } : await dialog.showMessageBox(window, { type: 'question', buttons: ['Keep running', 'End console'], defaultId: 0, cancelId: 0, message: `End “${item.name}”?`, detail: 'This stops the console and any agent running inside it.' });
-          if (result.response === 1) sessions.end(payload); break;
+          if (result.response === 1) { persistSettings({ ...settings, slotNames: { ...settings.slotNames, [item.slot]: item.name } }); sessions.end(payload); } break;
         }
         case 'vault.save': vault.set(payload?.provider, payload?.key, payload?.label); hub.writeSummary(); await Promise.allSettled([...hub.clients.keys()].map(id => hub.disconnect(id))); publish(); break;
         case 'vault.remove': {
@@ -322,6 +356,11 @@ app.whenReady().then(async () => {
           if (typeof payload?.restoreConsoles === 'boolean') next.restoreConsoles = payload.restoreConsoles;
           if (typeof payload?.sidebarCollapsed === 'boolean') next.sidebarCollapsed = payload.sidebarCollapsed;
           if (typeof payload?.vimControls === 'boolean') next.vimControls = payload.vimControls;
+          if (typeof payload?.cursorBlink === 'boolean') next.cursorBlink = payload.cursorBlink;
+          if (payload?.accentStyle !== undefined) {
+            if (!['pink-blue', 'blue', 'pink'].includes(payload.accentStyle)) throw new Error('Choose an available accent style.');
+            next.accentStyle = payload.accentStyle;
+          }
           if (payload?.consoleDefaults !== undefined) next.consoleDefaults = validateConsoleDefaults(payload.consoleDefaults);
           if (payload?.agentPermissions !== undefined) {
             if (!['default', 'unrestricted'].includes(payload.agentPermissions)) throw new Error('Choose a supported agent permission mode.');
@@ -366,6 +405,8 @@ app.whenReady().then(async () => {
         case 'docs': {
           const urls = { codex: 'https://learn.chatgpt.com/docs/codex/cli', claude: 'https://code.claude.com/docs/en/overview', openai: 'https://developers.openai.com/api/docs/pricing', anthropic: 'https://platform.claude.com/docs/en/about-claude/pricing' };
           for (const item of integrationDefinitions) urls[item.id] = item.docs;
+          for (const item of cliCatalog) urls[item.id] = item.docs;
+          urls.zai = 'https://docs.z.ai/devpack/tool/opencode';
           if (!urls[payload]) throw new Error('Unknown documentation link.'); await shell.openExternal(urls[payload]); break;
         }
         default: throw new Error('Unknown action.');

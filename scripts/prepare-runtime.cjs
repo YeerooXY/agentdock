@@ -37,6 +37,14 @@ async function download(url) {
 (async () => {
   if (process.platform !== 'win32' || process.arch !== 'x64') throw new Error('Build this Windows x64 installer on Windows x64.');
   fs.mkdirSync(output, { recursive: true });
+  // npm carries its runtime dependencies and license texts in its own package.
+  // Keep it outside ASAR so selected CLI packages can use the bundled Node.
+  const npmOutput = path.join(output, 'npm');
+  if (fs.existsSync(npmOutput)) {
+    if (path.dirname(fs.realpathSync(npmOutput)) !== fs.realpathSync(output)) throw new Error('Unexpected npm runtime location.');
+    fs.rmSync(npmOutput, { recursive: true });
+  }
+  fs.cpSync(path.join(root, 'node_modules', 'npm'), npmOutput, { recursive: true });
   const cliModules = path.join(output, 'meshy-cli', 'node_modules');
   fs.mkdirSync(cliModules, { recursive: true });
   copyPackage('meshy-cli', root, cliModules);

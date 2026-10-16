@@ -3,7 +3,13 @@ const { Server } = require('@modelcontextprotocol/sdk/server/index.js');
 const { StdioServerTransport } = require('@modelcontextprotocol/sdk/server/stdio.js');
 const { ListToolsRequestSchema, CallToolRequestSchema } = require('@modelcontextprotocol/sdk/types.js');
 const { DOCK_TOOLS, textResult } = require('./tool-contract.cjs');
-const server = new Server({ name: 'agent-dock', version: '0.2.0' }, { capabilities: { tools: {} } });
+const fs = require('node:fs');
+let instructions = 'Call dock_context at the start of each task for the user\'s shared instructions and connected tools. Use dock_tools to discover them. Use dock/notify when work finishes or needs the user. Never request secret values in chat; use Dock\'s Keys page.';
+try {
+  const file = process.env.AGENT_DOCK_INSTRUCTIONS;
+  if (file && fs.statSync(file).size <= 200000) instructions += '\n\n' + fs.readFileSync(file, 'utf8');
+} catch {}
+const server = new Server({ name: 'agent-dock', version: '0.5.0' }, { capabilities: { tools: {} }, instructions });
 server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: DOCK_TOOLS }));
 server.setRequestHandler(CallToolRequestSchema, async request => {
   try {
