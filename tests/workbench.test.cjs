@@ -62,6 +62,25 @@ test('inbox persists read state, deduplicates completion events and clears only 
   loaded.update({action:'clear-read'}); assert.equal(loaded.items.length,1); assert.equal(loaded.items[0].kind,'question');
   loaded.update({action:'clear-all'}); assert.equal(new Inbox(root).items.length,0);
 });
+test('console acknowledgment persists only its ready/question alerts and preserves later notifications', t => {
+  const { root, inbox } = fixture(t);
+  const ready = inbox.add({ title: 'Ready', sessionId: 'one' });
+  const question = inbox.add({ title: 'Question', sessionId: 'one', kind: 'question' });
+  const other = inbox.add({ title: 'Other console', sessionId: 'two' });
+  const error = inbox.add({ title: 'Error', sessionId: 'one', kind: 'error' });
+  const general = inbox.add({ title: 'Review ready' });
+  let saves = 0; inbox.on('changed', () => saves++);
+  inbox.acknowledgeSession('one');
+  assert.equal(saves, 1);
+  const loaded = new Inbox(root);
+  assert.deepEqual(loaded.items.filter(x => x.read).map(x => x.id).sort(), [ready.id, question.id].sort());
+  assert.deepEqual(loaded.items.filter(x => !x.read).map(x => x.id).sort(), [other.id, error.id, general.id].sort());
+  inbox.acknowledgeSession('one'); inbox.acknowledgeSession(null); inbox.acknowledgeSession('missing');
+  assert.equal(saves, 1, 'Repeated interaction does not rewrite the inbox');
+  const next = inbox.add({ title: 'Next task ready', sessionId: 'one' });
+  assert.equal(new Inbox(root).items.find(x => x.id === next.id).read, false);
+});
+
 test('website reviews reject local files, credentials and active schemes',()=>{
   assert.equal(pageUrl('http://localhost:3000'),'http://localhost:3000/');
   for(const url of ['file:///C:/secrets','javascript:alert(1)','https://user:secret@example.com']) assert.throws(()=>pageUrl(url));

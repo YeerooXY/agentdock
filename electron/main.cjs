@@ -318,7 +318,7 @@ app.whenReady().then(async () => {
         case 'session.input': sessions.write(payload?.id, payload?.data); break;
         case 'session.resize': sessions.resize(payload?.id, payload?.cols, payload?.rows); break;
         case 'session.buffer': return { ok: true, value: sessions.buffer(payload) };
-        case 'session.acknowledge': sessions.acknowledge(payload); break;
+        case 'session.acknowledge': sessions.acknowledge(payload); workbench.inbox.acknowledgeSession(payload); break;
         case 'session.end': {
           const item = sessions.list().find(x => x.id === payload);
           if (!item) throw new Error('Console not found.');

@@ -14,6 +14,22 @@ let app, page;
 async function until(fn) { const end = Date.now() + 20000; while (Date.now() < end) { if (await fn()) return; await new Promise(r => setTimeout(r, 80)); } throw Error('Timed out'); }
 const call = (method, payload) => page.evaluate(async ([method, payload]) => { const result = await window.dock.call(method, payload); if (!result.ok) throw Error(result.error); return result.value; }, [method, payload]);
 const capture = async name => { await page.waitForFunction(() => !document.body.classList.contains('window-moving')); await page.screenshot({ path: path.join(artifacts, name + '.png') }); };
+async function signal(session, state = 'ready') {
+  fs.mkdirSync(path.join(profile, 'events'), { recursive: true });
+  fs.writeFileSync(path.join(profile, 'events', `${session.id}.state.json`), JSON.stringify({ session: session.id, state, at: Date.now() }));
+  await until(async () => (await call('state')).sessions.find(x => x.id === session.id).state === state);
+}
+async function acknowledged(session, other) {
+  await until(async () => {
+    const state = await call('state');
+    return state.sessions.find(x => x.id === session.id).state === 'open' && state.workbench.inbox.filter(x => x.sessionId === session.id).every(x => x.read);
+  });
+  const state = await call('state');
+  assert.equal(state.sessions.find(x => x.id === other.id).state, 'ready');
+  assert.ok(state.workbench.inbox.some(x => x.sessionId === other.id && !x.read));
+  assert.equal(state.workbench.unreadResults, 2, 'Console interaction leaves Results unread');
+  await page.waitForFunction(() => document.querySelector('#ready-count').textContent === '1');
+}
 async function resize(id, edge, dx, dy, cancel = false, snapshot) {
   await page.evaluate(() => document.querySelectorAll('.session-card').forEach(el => el.getAnimations().filter(a => a.effect.getTiming().iterations !== Infinity).forEach(a => a.finish())));
   const handle = page.locator(`[data-console-id="${id}"] [data-resize-edge="${edge}"]`);
@@ -91,6 +107,29 @@ async function resize(id, edge, dx, dy, cancel = false, snapshot) {
   await capture('desktop-grid');
   const fixture = await call('state');
   fs.writeFileSync(path.join(artifacts, 'fixture.json'), JSON.stringify(fixture));
+  // Completion can arrive while the same terminal already has focus.
+  await signal(first);
+  await page.waitForFunction(() => document.querySelector('#ready-count').textContent === '2');
+  await page.locator(`[data-terminal-id="${second.id}"] .xterm-screen`).click();
+  await acknowledged(second, first);
+  await capture('notification-click-cleared');
+  await signal(second);
+  await app.evaluate(({ BrowserWindow }, id) => BrowserWindow.getAllWindows()[0].webContents.send('dock:output', { id, sequence: 999999, data: '\r\nACK_OUTPUT_VISIBLE\x1b[6n' }), second.id);
+  await until(async () => (await page.locator(`[data-terminal-id="${second.id}"] .xterm-rows`).textContent()).includes('ACK_OUTPUT_VISIBLE'));
+  assert.equal((await call('state')).sessions.find(x => x.id === second.id).state, 'ready', 'Output and terminal replies do not dismiss completion');
+  await page.keyboard.type('x');
+  await acknowledged(second, first);
+  await signal(second);
+  await page.keyboard.insertText('input');
+  await acknowledged(second, first);
+  await signal(second, 'attention');
+  await page.locator(`[data-terminal-id="${second.id}"] .xterm-helper-textarea`).evaluate(el => {
+    const clipboardData = new DataTransfer(); clipboardData.setData('text/plain', 'pasted');
+    el.dispatchEvent(new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData }));
+  });
+  await acknowledged(second, first);
+  await call('session.acknowledge', first.id);
+  await signal(second);
   const handle = page.locator(`[data-console-drag="${first.id}"]`), bounds = await handle.boundingBox();
   await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2); await page.mouse.down(); await page.mouse.move(bounds.x + 20, bounds.y + 15); await page.mouse.move(bounds.x + 150, bounds.y + 80, { steps: 8 });
   await page.locator('.console-drag-preview').waitFor();
@@ -113,6 +152,13 @@ async function resize(id, edge, dx, dy, cancel = false, snapshot) {
   await until(async () => (await call('state')).mode === 'fullscreen' && !(await call('state')).transitioning);
   const gap = await page.locator('#terminal-page').evaluate(el => innerHeight - el.getBoundingClientRect().bottom); assert.ok(gap >= 26, `Fullscreen gap: ${gap}`);
   await capture('fullscreen');
+  await signal(first);
+  await page.locator('#terminal-host .xterm-screen').click();
+  await acknowledged(first, second);
+  await signal(first);
+  await page.keyboard.type('x');
+  await acknowledged(first, second);
+  await page.keyboard.press('Control+C');
   await call('session.input', { id: first.id, data: "[Console]::Write(([char]27 + '[1 q'))\r" });
   await page.locator('#terminal-host .xterm-helper-textarea').focus();
   await page.locator('#terminal-host .xterm-cursor').waitFor();

@@ -47,17 +47,21 @@ const reports = [], browsers = new Set(), overflowProblems = [];
       }
       else if (method === 'setup.complete') { state.settings.consoleDefaults = { ...state.settings.consoleDefaults, ...payload }; assert.equal(payload.launchNow, true); }
       else if (method === 'mode') state.mode = payload;
-      else if (method === 'session.acknowledge') {}
+      else if (method === 'session.acknowledge') {
+        const session = state.sessions.find(x => x.id === payload);
+        if (session && ['ready', 'attention'].includes(session.state)) session.state = 'open';
+        for (const item of state.workbench.inbox) if (item.sessionId === payload && ['ready', 'question'].includes(item.kind)) item.read = true;
+      }
       else if (method === 'session.models') value = [];
       else if (method === 'workbench.results.preview') value = { image: preview };
       else if (method === 'workbench.results.seen') { state.workbench.results.forEach(x => { if (payload.includes(x.id)) x.seenAt = 1; }); state.workbench.unreadResults = new Set(state.workbench.results.filter(x => !x.seenAt).map(x => x.groupId || x.id)).size; }
       else if (method === 'workbench.inbox.update') { if (payload.action === 'clear-all') state.workbench.inbox = []; }
       else if (!['session.resize', 'session.input'].includes(method)) throw Error('Unexpected fixture call: ' + method);
-      reads++; return { ok: true, value, state: ['session.layout', 'settings', 'mode', 'agents.install', 'setup.complete', 'workbench.results.seen', 'workbench.inbox.update'].includes(method) ? state : null };
+      reads++; return { ok: true, value, state: ['session.layout', 'session.acknowledge', 'settings', 'mode', 'agents.install', 'setup.complete', 'workbench.results.seen', 'workbench.inbox.update'].includes(method) ? state : null };
     });
     await context.addInitScript(() => {
       let changed;
-      window.dock = { call: async (method, payload) => { const response = await window.fixtureCall(method, payload); if (response.state) changed?.(response.state); return response; }, onState: fn => changed = fn, onOutput: fn => window.fixtureOutput = fn, onSelect: () => {} };
+      window.dock = { call: async (method, payload) => { const response = await window.fixtureCall(method, payload); if (response.state) changed?.(response.state); return response; }, onState: fn => { changed = fn; window.fixtureState = fn; }, onOutput: fn => window.fixtureOutput = fn, onSelect: () => {} };
     });
     const page = await context.newPage(); page.setDefaultTimeout(12000); page.on('pageerror', e => errors.push(e.message));
     await page.goto(`http://127.0.0.1:${server.address().port}`); await page.locator('.session-card:not(.empty)').first().waitFor();
@@ -162,8 +166,35 @@ const reports = [], browsers = new Set(), overflowProblems = [];
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.locator('#terminal-page [data-page=consoles]').click();
     assert.equal(await page.locator('.session-card.ready').evaluate(el => getComputedStyle(el).animationName), 'none');
+    const [first, second] = state.sessions;
+    async function readyFor(session) {
+      session.state = 'ready';
+      state.workbench.inbox.unshift({ id: 'completion-' + state.workbench.inbox.length, sessionId: session.id, title: session.name + ' is ready', kind: 'ready', at: Date.now(), read: false });
+      await page.evaluate(next => window.fixtureState(next), state);
+    }
+    async function checkAcknowledged(session, other) {
+      await page.waitForFunction(() => document.querySelector('#ready-count').textContent === '1');
+      assert.equal(session.state, 'open'); assert.equal(other.state, 'ready');
+      assert.ok(state.workbench.inbox.filter(x => x.sessionId === session.id).every(x => x.read));
+      assert.ok(state.workbench.inbox.some(x => x.sessionId === other.id && !x.read));
+      assert.equal(await page.locator('#results-count').innerText(), '2');
+    }
+    await readyFor(first); await readyFor(second);
+    await page.locator(`[data-terminal-id="${second.id}"] .xterm-screen`).click();
+    await checkAcknowledged(second, first);
+    assert.equal(await page.locator(`[data-console-id="${second.id}"] .console-ready-badge`).isVisible(), false);
+    await capture('notification-click-cleared');
+    await readyFor(second); await page.keyboard.type('x'); await checkAcknowledged(second, first);
+    await readyFor(second); await page.keyboard.insertText('input'); await checkAcknowledged(second, first);
+    await page.locator(`[data-console-id="${first.id}"] [data-session]`).click();
+    await readyFor(first); await readyFor(second);
+    await page.locator('#terminal-host .xterm-helper-textarea').focus();
+    await capture('notification-fullscreen-ready');
+    await page.keyboard.type('x'); await checkAcknowledged(first, second);
+    assert.equal(await page.locator(`#terminal-tabs [data-session="${first.id}"] .console-ready-badge`).isVisible(), false);
+    await capture('notification-fullscreen-cleared');
     assert.deepEqual(errors, []); reports.push({ profile: name, browser: browser.version(), viewport: options.viewport, emulated: name !== 'pc', captures, accessibility, calls: reads });
-    console.log('PASS ' + name + ' view layouts, dialogs, grouped results, inbox clearing, fullscreen and reduced motion');
+    console.log('PASS ' + name + ' view layouts, dialogs, grouped results, inbox clearing, fullscreen, reduced motion and console notification acknowledgment');
     await browser.close();
     browsers.delete(browser);
   }

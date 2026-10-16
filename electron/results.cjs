@@ -115,5 +115,12 @@ class Inbox extends EventEmitter {
     else throw new Error('Unknown inbox action.');
     this.save();
   }
+  acknowledgeSession(sessionId) {
+    if (typeof sessionId !== 'string' || !sessionId) return;
+    const unread = this.items.filter(item => item.sessionId === sessionId && !item.read && ['ready', 'question'].includes(item.kind));
+    if (!unread.length) return;
+    for (const item of unread) item.read = true;
+    this.save();
+  }
 }
 module.exports = { Results, Inbox, inside };

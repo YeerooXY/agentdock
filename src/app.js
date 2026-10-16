@@ -391,12 +391,21 @@ function applySidebar() {
   $('#sidebar-toggle').setAttribute('aria-label', collapsed ? 'Show sidebar' : 'Hide sidebar');
   $('#sidebar-toggle').title = collapsed ? 'Show sidebar' : 'Hide sidebar';
 }
+const acknowledgments = new Set();
+async function acknowledgeSession(id) {
+  const needsAttention = state.sessions.some(session => session.id === id && isReady(session));
+  const unread = state.workbench?.inbox.some(item => item.sessionId === id && !item.read && ['ready', 'question'].includes(item.kind));
+  if (acknowledgments.has(id) || (!needsAttention && !unread)) return;
+  acknowledgments.add(id);
+  try { await call('session.acknowledge', id); }
+  finally { acknowledgments.delete(id); }
+}
 async function selectSession(id) {
   selectedId = id;
   if (state.mode !== 'fullscreen') await call('mode', 'fullscreen');
   page = 'terminal';
   renderPage();
-  await call('session.acknowledge', id);
+  await acknowledgeSession(id);
   await terminals.get(id)?.ready;
   if (page === 'terminal' && selectedId === id) { fitVisible(); terminals.get(id)?.term.focus(); }
 }
@@ -434,6 +443,12 @@ function mountTerminal(session, host, compact) {
     record.output = terminalOutput((data, done) => term.write(data, done), updatePreview);
     term.onData(data => call('session.input', { id, data }).catch(error => toast(error.message, true)));
     node.addEventListener('focusin', () => { selectedId = id; });
+    // A focused console can finish while the user is reading. Wait for their
+    // next interaction; terminal output and automatic protocol replies do not count.
+    for (const event of ['pointerdown', 'keydown', 'input', 'paste']) node.addEventListener(event, e => {
+      if (e.type === 'keydown' && ['Shift', 'Control', 'Alt', 'Meta'].includes(e.key)) return;
+      acknowledgeSession(id).catch(error => toast(error.message, true));
+    }, { capture: true });
     record.ready = call('session.buffer', id).then(buffer => {
       if (terminals.get(id) !== record) return;
       term.write(buffer.data + record.queued.filter(packet => packet.sequence > buffer.sequence).map(packet => packet.data).join(''));
