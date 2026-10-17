@@ -74,6 +74,8 @@ Other agents, shells and custom startup commands launch fresh. Running jobs, she
 
 The top-left button hides or shows the sidebar. Its state is saved.
 
+**Settings → Desktop → Keep PC awake while agents work** is on by default. Dock requests that Windows stay awake while any console is marked Thinking or a Dock API request is running, including in the tray or HUD. The screen can still turn off. Normal automatic sleep resumes once all work finishes, needs input, or stops. Turning the setting off releases the request immediately. This follows Dock's agent status; plain shells and custom commands without status reporting are not detected automatically. Manual Sleep, lid actions and Windows power-policy limits still apply. See the [verification and limits](docs/keep-awake-review.md).
+
 Click a panel's title to name it, for example **Trader** or **Robonslaught**. On an empty panel, the name field appears at the top when you hover or tab into it. Enter or clicking away saves; Escape cancels. The name follows the console into fullscreen and the HUD, survives restarts, and stays on its slot after you close the console. Clear it to return to folder names. Hovering over an empty console smoothly reveals **New console** beside the plus.
 
 The folder button above the grid changes the launch folder for new consoles. You can also choose it in **Settings → Console defaults**, alongside the agent, optional name and custom command. Preferences are stored for each Windows user. On a new computer the initial folder is that user's Projects folder, or their home folder if Projects does not exist.

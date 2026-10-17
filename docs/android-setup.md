@@ -13,6 +13,8 @@ This is an Android preview. iPhone support comes later. Live Firebase delivery a
 5. Open **Pair phone → Show QR code**. In Android, choose **Scan QR code**, or paste the code. The code expires after five minutes and works once. Treat it like a temporary password.
 6. Keep the PC awake with Dock running. Closing Dock to its tray preserves the connection and consoles; choosing Quit stops them.
 
+Current source builds keep the PC awake while an agent is marked Thinking or a Dock API request runs. You can switch this off in **Settings → Desktop**. The screen can still turn off, and normal sleep resumes when work finishes. For phone access while every console is idle, the PC still needs to remain awake. This setting was added after the 0.6 preview 1 installer.
+
 Windows Firewall may need an inbound TCP rule for port **47831** on the selected private network. Allow only the network/address you intend to use. Do not forward this port on your router or expose it publicly. Tailscale device approval or access rules can also block the connection.
 
 A paired phone can type commands using the console's existing permissions. This is access to your PC, so pair only devices you control. **Remove** beside a phone immediately revokes its token. **Turn off** stops mobile access without ending local consoles.

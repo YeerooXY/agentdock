@@ -1,5 +1,5 @@
 'use strict';
-const { app, BrowserWindow, ipcMain, dialog, screen, systemPreferences, globalShortcut, safeStorage, Tray, Menu, nativeImage, Notification, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, screen, systemPreferences, globalShortcut, safeStorage, Tray, Menu, nativeImage, Notification, shell, powerSaveBlocker } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -17,6 +17,7 @@ const { Workbench } = require('./workbench.cjs');
 const { Turns } = require('./turns.cjs');
 const { MobileCompanion } = require('./mobile.cjs');
 const { DockNotifications } = require('./notifications.cjs');
+const { WorkPower } = require('./power.cjs');
 const { runApi } = require('./api-run.cjs');
 const { SharedHub } = require('./shared.cjs');
 const { ToolIntegrations, definitions: integrationDefinitions } = require('./integrations.cjs');
@@ -28,7 +29,7 @@ const testMode = process.argv.includes('--smoke-test');
 const testDir = process.argv.find(x => x.startsWith('--data-dir='))?.slice(11);
 if (testMode && testDir) app.setPath('userData', testDir);
 if (!app.requestSingleInstanceLock() && !testMode) app.quit();
-let window, tray, vault, sessions, workspace, account, root, settings, ledger, notifications, hub, integrations, workbench, cliSetup, turns, mobile;
+let window, tray, vault, sessions, workspace, account, root, settings, ledger, notifications, hub, integrations, workbench, cliSetup, turns, mobile, workPower;
 let mode = 'dashboard', quitting = false, refreshing = false, lastRefresh = 0, apiBusy = false;
 let modeTarget = null, modeTask, modeSequence = 0, transitioning = false;
 let trayHidden = false, windowDrag = null;
@@ -45,7 +46,8 @@ function snapshot() {
     integrations: integrations?.snapshot(hub?.config.connections || [], vault?.list() || []), defaultFolder, version: app.getVersion() };
 }
 function publish() { if (window && !window.isDestroyed()) window.webContents.send('dock:state', snapshot()); }
-function persistSettings(next) { atomicJson(path.join(root, 'settings.json'), next); settings = next; }
+function updatePower() { workPower?.update({ enabled: settings?.keepAwakeWhileWorking === true, sessions: sessions?.list() || [], apiBusy }); }
+function persistSettings(next) { atomicJson(path.join(root, 'settings.json'), next); settings = next; updatePower(); }
 function revealWindow() {
   if (!window || window.isDestroyed()) return;
   trayHidden = false; window.setSkipTaskbar(false);
@@ -165,6 +167,8 @@ app.whenReady().then(async () => {
   workbench = new Workbench(root, runtime, require('electron'), { testMode, onChange: publish, getSessions: () => sessions, getProject: () => settings.consoleDefaults.cwd, getWindow: () => window, getHub: () => hub, getAgents: () => cliSetup.snapshot() });
   hub = new SharedHub(root, vault, { integrations, workbench }); await hub.start();
   sessions = new Sessions(root, { hub, claude, runtime, cliSetup });
+  workPower = new WorkPower(powerSaveBlocker);
+  sessions.on('changed', updatePower);
   turns = new Turns(workbench.results, { getSession: id => sessions.items.get(id), getSecrets: () => vault.list().flatMap(x => { try { return [vault.get(x.id)]; } catch { return []; } }) });
   workbench.turns = turns;
   turns.on('tracking-error', ({ owner, message }) => workbench.inbox.add({ title: 'Code capture needs attention', message, sessionId: owner, kind: 'error' }));
@@ -373,6 +377,7 @@ app.whenReady().then(async () => {
           const next = { ...settings };
           if (typeof payload?.hudAlwaysOnTop === 'boolean') next.hudAlwaysOnTop = payload.hudAlwaysOnTop;
           if (typeof payload?.notifications === 'boolean') next.notifications = payload.notifications;
+          if (typeof payload?.keepAwakeWhileWorking === 'boolean') next.keepAwakeWhileWorking = payload.keepAwakeWhileWorking;
           if (typeof payload?.restoreConsoles === 'boolean') next.restoreConsoles = payload.restoreConsoles;
           if (typeof payload?.sidebarCollapsed === 'boolean') next.sidebarCollapsed = payload.sidebarCollapsed;
           if (typeof payload?.vimControls === 'boolean') next.vimControls = payload.vimControls;
@@ -406,7 +411,7 @@ app.whenReady().then(async () => {
           const profile = hub.config.profiles.find(x => x.id === payload?.provider);
           if (!profile) throw new Error('Choose an API connection.');
           const key = profile.keyId ? vault.get(profile.keyId) : '';
-          apiBusy = true;
+          apiBusy = true; updatePower();
           const apiOwner = 'api:' + require('node:crypto').randomUUID();
           turns.virtual.set(apiOwner, { id: apiOwner, consoleKey: 'api:' + profile.id, name: profile.name, cwd: settings.consoleDefaults.cwd, alive: true });
           const apiHub = { summary: () => hub.summary(), invoke: (name, args) => hub.invoke(name, args, apiOwner) };
@@ -417,7 +422,7 @@ app.whenReady().then(async () => {
             catch { storageError = 'Latest API usage is only in memory. Export it before quitting.'; }
             publish();
           } }); }
-          finally { try { await turns.finish(apiOwner); } finally { turns.virtual.delete(apiOwner); apiBusy = false; } }
+          finally { try { await turns.finish(apiOwner); } finally { turns.virtual.delete(apiOwner); apiBusy = false; updatePower(); } }
           workbench.inbox.add({ title: result.error || result.entry?.status !== 'completed' ? 'API request needs attention' : 'API response ready', message: `${profile.name} · ${payload.model}`, kind: result.error || result.entry?.status !== 'completed' ? 'error' : 'ready', destination: 'usage' });
           publish(); return { ok: true, value: result };
         }
@@ -452,6 +457,7 @@ app.on('before-quit', event => {
   event.preventDefault();
   if (cleanupStarted) return;
   cleanupStarted = true; quitting = true;
+  workPower?.dispose();
   workspace?.freeze();
   workbench?.stop();
   // Drain ConPTY exits while the event loop is alive, before Electron tears down its workers.
