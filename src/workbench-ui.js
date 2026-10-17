@@ -38,7 +38,7 @@ export function workbenchUI({ call, getState, getPage, renderPage, escape: e, to
   function gallery() {
     const projects = [...new Set(data().results.map(x => x.project).filter(Boolean))];
     const consoles = new Map(data().results.map(x => [consoleKey(x), consoleName(x)]));
-    return shell('Results', '', `<div class="wb-toolbar result-filters"><input id="result-search" type="search" aria-label="Search results" placeholder="Search results" value="${e(filter)}"><select id="result-console" aria-label="Console"><option value="">All consoles</option>${[...consoles].map(([key,name]) => `<option value="${e(key)}" ${key === consoleFilter ? 'selected' : ''}>${e(name)}</option>`).join('')}</select><select id="result-kind" aria-label="Result type"><option value="">All types</option>${['screenshot','test','report','review','concept','asset'].map(x => `<option value="${x}" ${x === kind ? 'selected' : ''}>${x}</option>`).join('')}</select><select id="result-project" aria-label="Project"><option value="">All projects</option>${projects.map(x => `<option value="${e(x)}" ${x === project ? 'selected' : ''}>${e(x.split(/[\\/]/).pop() || x)}</option>`).join('')}</select>${button('import','Add files','','secondary')}${button('folder','Open folder')}</div><div class="wb-toolbar small">${button('select-all','Select visible')}${button('delete-selected',`Delete selected (${selected.size})`,'','subtle danger')}${button('seen-all','Mark all viewed')}</div><div class="results-grid">${resultsList()}</div><div class="wb-toolbar result-pagination">${pagination()}</div>`);
+    return shell('Results', '', `<div class="wb-toolbar result-filters"><input id="result-search" type="search" aria-label="Search results" placeholder="Search results" value="${e(filter)}"><select id="result-console" aria-label="Console"><option value="">All consoles</option>${[...consoles].map(([key,name]) => `<option value="${e(key)}" ${key === consoleFilter ? 'selected' : ''}>${e(name)}</option>`).join('')}</select><select id="result-kind" aria-label="Result type"><option value="">All types</option>${['code','screenshot','test','report','review','concept','asset'].map(x => `<option value="${x}" ${x === kind ? 'selected' : ''}>${x}</option>`).join('')}</select><select id="result-project" aria-label="Project"><option value="">All projects</option>${projects.map(x => `<option value="${e(x)}" ${x === project ? 'selected' : ''}>${e(x.split(/[\\/]/).pop() || x)}</option>`).join('')}</select>${button('import','Add files','','secondary')}${button('folder','Open folder')}</div><div class="wb-toolbar small">${button('select-all','Select visible')}${button('delete-selected',`Delete selected (${selected.size})`,'','subtle danger')}${button('seen-all','Mark all viewed')}</div><div class="results-grid">${resultsList()}</div><div class="wb-toolbar result-pagination">${pagination()}</div>`);
   }
   function inbox() {
     return shell('Inbox', 'Ready for you.', `<div class="wb-toolbar">${button('clear-all','Clear inbox','','secondary',!data().inbox.length)}${button('clear-read','Clear read','','subtle',!data().inbox.some(x => x.read))}</div><div class="inbox-list">${data().inbox.map(x => `<article class="inbox-item ${x.read ? 'read' : ''}"><span class="inbox-dot ${e(x.kind)}"></span><div><h2>${e(x.title)}</h2>${x.message ? `<p>${e(x.message)}</p>` : ''}<time>${date(x.at)}</time></div><div class="inbox-actions">${x.destination || x.reviewId || x.resultId || getState().sessions.some(s => s.id === x.sessionId) ? button('inbox-open','Open',x.id) : ''}${!x.read ? button('read','Mark read',x.id) : ''}${button('dismiss','Dismiss',x.id)}</div></article>`).join('') || empty('You’re caught up. Finished jobs, questions and errors land here.')}</div>`);
@@ -58,9 +58,13 @@ export function workbenchUI({ call, getState, getPage, renderPage, escape: e, to
     detail = { type: 'result', id }; const version = ++modalVersion;
     show(`<h2>${e(item.title)}</h2><p class="field-hint">${e(item.source)} · ${e(item.status.replaceAll('-', ' '))} · ${date(item.at)}</p><div id="result-preview">Loading…</div><div class="wb-toolbar">${button('export','Export',id,'secondary')}${button('delete-one','Delete saved copy',id,'subtle danger')}</div>`);
     const content = await api('results.preview',id);
+    const markdown = item.ext === '.md' && content.text != null ? (await import('./markdown')).renderMarkdown(content.text) : null;
     if (version !== modalVersion || !dialog.open) return;
-    dialog.querySelector('#result-preview').innerHTML = content.image ? `<img class="result-full-image" src="${e(content.image)}" alt="${e(item.title)}">` : `<pre class="result-text">${e(content.text)}</pre>${content.truncated ? '<p>Preview shortened. Export for the full file.</p>' : ''}`;
+    dialog.querySelector('#result-preview').innerHTML = content.diff ? renderDiff(content.diff) : content.image ? `<img class="result-full-image" src="${e(content.image)}" alt="${e(item.title)}">` : `${markdown !== null ? `<article class="result-markdown">${markdown}</article>` : `<pre class="result-text">${e(content.text)}</pre>`}${content.truncated ? '<p>Preview shortened. Export for the full file.</p>' : ''}`;
     await api('results.seen', batch(id).map(x => x.id));
+  }
+  function renderDiff(report) {
+    return (report.notes || []).map(note => `<p class="field-hint">${e(note)}</p>`).join('') + (report.changes || []).map(change => `<details class="code-change" open><summary>${e(change.file)} <span>${e(change.type)}</span></summary>${change.patch ? `<pre class="result-text code-diff">${change.patch.split('\n').map(line => `<span class="${line.startsWith('+') ? 'diff-add' : line.startsWith('-') ? 'diff-remove' : line.startsWith('@@') ? 'diff-hunk' : ''}">${e(line)}\n</span>`).join('')}</pre>` : `<p class="field-hint">${e(change.omitted || 'No text preview')}</p>`}</details>`).join('');
   }
   function meshyConnection() {
     const auth = data().meshyAuth || { state:'unchecked' };
@@ -75,7 +79,7 @@ export function workbenchUI({ call, getState, getPage, renderPage, escape: e, to
   async function review(id) {
     const version = ++modalVersion; detail = { type:'review', id };
     const item = await api('review.get', id); if (version !== modalVersion) return;
-    const shots = data().results.filter(x => x.groupId === id && ['screenshot','concept'].includes(x.kind));
+    const shots = data().results.filter(x => (x.reviewId === id || x.groupId === id) && ['screenshot','concept'].includes(x.kind));
     const jobs = data().concepts.filter(x => x.reviewId === id);
     const sessions = getState().sessions.filter(x => x.alive && ['codex','claude'].includes(x.provider) && ['open','ready'].includes(x.state));
     show(`<h2>${e(item.url)}</h2><p>${e(item.error || item.stage || 'Automated checks are a starting point. Finish the checklist before calling the page reviewed.')}</p><div class="review-shots">${shots.map(x => `<button data-wb="preview" data-id="${x.id}"><img data-result-image="${x.id}" alt="${e(x.title)}"><span>${e(x.title)}</span></button>`).join('')}</div>${item.report ? `<div class="review-findings">${item.report.views.map(view => `<section class="surface"><h3>${e(view.name)} · ${view.width} × ${view.height}</h3><p>${view.page.horizontalOverflow ? 'Horizontal overflow found.' : 'No horizontal overflow detected.'} ${view.page.missingAlt} images without alt attributes.</p>${view.accessibility.violations.map(x => `<details><summary>${e(x.impact)} · ${e(x.help)}</summary>${x.nodes.map(n => `<pre>${e(n.target.join(', '))}\n${e(n.summary)}</pre>`).join('')}</details>`).join('') || '<p>No violations detected by this scan.</p>'}<p class="field-hint">${view.accessibility.incomplete.length} automated rules need manual review.</p></section>`).join('')}</div><details class="surface"><summary>Links and third-party hosts</summary><p>${e(item.report.thirdPartyHosts.join(', ') || 'No third-party hosts observed during capture.')}</p>${item.report.links.map(x => `<p>${e(x.result)} ${x.status || ''} · ${e(x.url)}</p>`).join('')}<p class="field-hint">Up to 12 same-origin links checked with HEAD. Redirect destinations and protected links need manual review.</p></details>` : ''}<section class="surface review-concepts"><h3>Page ideas</h3><p>Use your agent’s image generator first. The brief includes these screenshots.</p><div class="wb-toolbar"><select id="concept-agent" aria-label="Agent for the design brief">${sessions.length ? sessions.map(x => `<option value="${x.id}">${e(x.name)}</option>`).join('') : '<option value="">No idle agent console</option>'}</select>${button('draft-concept','Draft in console',id,'primary')}${button('copy-brief','Copy brief',id)}</div><p class="field-hint">The draft is pasted for you to review. Press Enter in the console to send it.</p><details><summary>Meshy fallback</summary><div id="meshy-connection">${meshyConnection()}</div><p>Uses your Meshy CLI sign-in. Uploads the screenshot to Meshy and spends credits.</p><label>Agent image generator<select id="native-status"><option value="">Try your agent first</option><option value="unavailable">Not available in this agent</option><option value="failed">Tried, but generation failed</option></select></label>${button('meshy','Generate with Meshy',id,'secondary')}</details>${jobs.map(x => `<div class="concept-job"><span>${e(x.state)}${x.error ? ' · ' + e(x.error) : ''}</span>${x.taskId && ['failed','interrupted'].includes(x.state) ? button('concept-resume','Resume task',x.id) : ''}${!['submitting','waiting','downloading'].includes(x.state) ? button('concept-delete','Remove job',x.id) : ''}</div>`).join('')}</section><section class="surface"><h3>Page checklist</h3><p class="field-hint">Check each item against the actual site. Use “Not applicable” with a reason.</p><div class="review-checks">${item.checks.map((x,index) => `<form class="review-check" data-review="${id}" data-index="${index}"><label>${index + 1}. ${e(x.title)}<select name="status" aria-label="${e(x.title)} status">${[['unreviewed','Unreviewed'],['passed','Checked'],['needs-work','Needs work'],['not-applicable','Not applicable']].map(([key,label]) => `<option value="${key}" ${x.status === key ? 'selected' : ''}>${label}</option>`).join('')}</select></label><input name="note" maxlength="1000" placeholder="Evidence or reason" aria-label="${e(x.title)} note" value="${e(x.note)}"><button type="submit" class="subtle">Save</button></form>`).join('')}</div></section>`);
@@ -152,14 +156,7 @@ export function workbenchUI({ call, getState, getPage, renderPage, escape: e, to
       if (action === 'delete-selected') await remove([...selected]);
       if (action === 'delete-one') { await remove([id]); if (!data().results.some(x=>x.id===id)) dialog.close(); }
       if (['read','dismiss','clear-read','clear-all'].includes(action)) await api('inbox.update',{id,action});
-      if (action === 'inbox-open') {
-        const item = data().inbox.find(x=>x.id===id); await api('inbox.update',{id,action:'read'});
-        if (['usage', 'tools'].includes(item.destination)) navigate(item.destination);
-        else if (item.reviewId && data().reviews.some(x=>x.id===item.reviewId)) { navigate('reviews'); await review(item.reviewId); }
-        else if (item.resultId && data().results.some(x=>x.id===item.resultId)) { navigate('results'); await preview(item.resultId); }
-        else if (getState().sessions.some(x=>x.id===item.sessionId)) await selectSession(item.sessionId);
-        else toast('This console or result is no longer available.');
-      }
+      if (action === 'inbox-open') await openNotice(data().inbox.find(x=>x.id===id));
       if (action === 'review-open') await review(id);
       if (action === 'review-delete') await api('review.delete',id);
       if (action === 'copy-brief') { await api('review.brief',id); toast('Design brief copied.'); }
@@ -171,7 +168,22 @@ export function workbenchUI({ call, getState, getPage, renderPage, escape: e, to
     finally { if (target.isConnected) target.disabled = false; }
   });
   dialog.addEventListener('close',()=>{detail=null;++modalVersion;});
+  dialog.addEventListener('click', event => {
+    const link = event.target.closest('.result-markdown a[href]');
+    if (!link) return;
+    event.preventDefault(); call('external.open', link.getAttribute('href')).catch(error => toast(error.message, true));
+  });
+  async function openNotice(item) {
+    if (!item) { navigate('inbox'); return; }
+    if (data().inbox.some(x => x.id === item.id)) await api('inbox.update', { id: item.id, action: 'read' });
+    if (['usage', 'tools'].includes(item.destination)) navigate(item.destination);
+    else if (item.resultId && data().results.some(x => x.id === item.resultId)) { navigate('results'); await preview(item.resultId); }
+    else if (item.reviewId && data().reviews.some(x => x.id === item.reviewId)) { navigate('reviews'); await review(item.reviewId); }
+    else if (getState().sessions.some(x => x.id === item.sessionId)) await selectSession(item.sessionId);
+    else { navigate(item.resultId ? 'results' : 'inbox'); toast('This console or result is no longer available.'); }
+  }
   return {
+    openNotice,
     render: page => ({ results:gallery, inbox, reviews }[page]?.() || ''),
     mount: () => { loadImages(); const btn = document.querySelector('[data-wb="delete-selected"]'); if (btn) btn.disabled = !selected.size; },
     sync() {

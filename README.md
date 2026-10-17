@@ -17,6 +17,12 @@ The wizard offers Codex, Claude Code, Google Antigravity, GitHub Copilot, OpenCo
 
 This release is unsigned, so Windows may show an unknown-publisher or SmartScreen prompt. Only download it from this repository's releases. Existing users keep their settings, keys and saved panels. Uninstalling leaves that local data in `%APPDATA%\Agent Dock`.
 
+## Android preview
+
+The [0.6 preview](https://github.com/YeerooXY/agentdock/releases/tag/v0.6.0-preview.1) adds a native Android companion, turn-by-turn code diffs in Results, formatted Markdown previews, and Windows notifications that bring Dock forward. Install both preview builds to try the phone connection; the stable 0.5 installer above does not include it.
+
+Use your own Tailscale account, or stay on the same Wi-Fi. Optional cloud alerts use your own Firebase project. No terminal traffic goes through an Agent Dock account or hosted relay. Setup is in **Settings → Android → Connect a phone**, and the first-run wizard can open it for you. See the [setup and privacy guide](docs/android-setup.md) and [verification notes](docs/android-review.md). Real-phone and live Firebase checks are still pending.
+
 ## Run from source
 
 On Windows, with Node.js 24.19.0 and Git installed:
@@ -46,8 +52,8 @@ Version 0.5.0 includes the agent setup wizard, resizable panels, grouped notific
 
 - **Move consoles** with the terminal icon in each panel header. A frozen copy of the terminal follows your pointer while other panels slide into place. On release, the copy expands into its destination. Drop on an empty slot to move, or an occupied slot to swap. Processes, output, names and saved conversations stay with their consoles. With the icon focused, **Alt+1–9** moves it by keyboard.
 - **Resize consoles** by dragging an edge or corner. It snaps to the 3×3 grid, including 3×1 and 2×2 panels. Other panels move to make room. A pink-blue grid preview, active edge and live size label show the new footprint. An occupied layout turns red. Escape cancels; an impossible size leaves the saved layout intact. Focus a resize handle and use arrow keys to move that edge by one cell. Sizes are saved with your workspace. Narrow browser previews stack panels for readability.
-- **Results** groups saved files by console name and task. The badge counts new batches: three screenshots from one verification and five from another count as two. Opening a result or choosing **Mark viewed** clears that batch’s badge. Names remain after a console closes. Filter, preview, export, open the local folder, or delete individual files or whole batches. Deletion sends Dock’s copies to the Recycle Bin; project originals stay in place.
-- **Inbox** keeps completion alerts, questions and errors. Open the related console or review, mark items read, dismiss them, clear read items, or **Clear inbox**. Clearing alerts leaves Results and running consoles intact.
+- **Results** groups saved files by console name and task. The badge counts new batches: three screenshots from one verification and five from another count as two. Opening a result or choosing **Mark viewed** clears that batch’s badge. Names remain after a console closes. Tracked turns include code diffs alongside their saved images and reports. Markdown opens as formatted text with tables and code blocks. Filter, preview, export, open the local folder, or delete individual files or whole batches. Deletion sends Dock’s copies to the Recycle Bin; project originals stay in place.
+- **Inbox** keeps completion alerts, questions and errors. Open the related console or review, mark items read, dismiss them, clear read items, or **Clear inbox**. Clicking a Windows notification brings Dock out of the tray or minimization and opens its related console, result or review. Clearing alerts leaves Results and running consoles intact.
 - **Website review** captures desktop/mobile viewports, runs automated accessibility and overflow checks, and checks up to 12 same-origin links. Findings and screenshots go into Results. The 20-item checklist needs a human or agent review; an automated scan is not certification.
 
 - **Consoles** shows nine live terminals filling the window. Click **+** to launch in that panel using **Settings → Console defaults**. You can type directly in a panel or use its expand button for fullscreen. **Consoles** brings back the grid and keeps the window fullscreen. Thinking uses a blue-purple outline; ready uses green.
@@ -133,7 +139,7 @@ Open a completed **Website review** and use **Draft in console** to paste a scre
 
 Meshy fallback uses the bundled official CLI and its own sign-in, separate from the API-key MCP connection in Tools. **Check sign-in** reuses an existing CLI account; **Connect Meshy** provides a code and a browser sign-in link. The CLI manages its credentials; Dock does not copy them into its vault. Generating a concept uploads the reference screenshot to Meshy and uses credits. Accepted task IDs are saved, so **Resume task** continues checking the same job without another submission. Reported credits appear in **Usage** and remain after deleting a job. No credit amount is invented when Meshy does not report one.
 
-All agents and API sessions can discover connection `dock` with `dock_tools`. It includes `save_result`, `notify`, `review_page`, `review_details`, `meshy_concept` and job status tools. File results must be inside the calling console’s project; API sessions use the default project folder. Files are copied into the gallery, with a 50 MB file limit and a 1 GB gallery limit. Existing project files are not scanned or imported automatically.
+All agents and API sessions can discover connection `dock` with `dock_tools`. It includes `save_result`, `notify`, `review_page`, `review_details`, `meshy_concept` and job status tools. File results must be inside the calling console’s project; API sessions use the default project folder. Files are copied into the gallery, with a 50 MB file limit and a 1 GB gallery limit. Tracked turns compare bounded project snapshots and save changed code and images; see the [capture limits](docs/android-setup.md#code-changes-in-results).
 
 **Instructions → Ways of working → Web design** is on by default. Its [shared guide](guides/web-design.md) covers layout, typography, responsive behavior, accessibility, performance and a 20-point page review: policies, consent, data collection, SDKs, honest claims and reviews, fees, business details, children's data, unsubscribe, asset licenses and deletion requests.
 
@@ -174,12 +180,13 @@ Local data is in `%APPDATA%\Agent Dock`:
 - `integrations`: installed Blender server, setup versions and add-on setup notes. The Blender add-on itself lives in Blender's user add-ons folder. Unity Pipeline lives in the project you selected.
 - `ledger.json`: model, time, tokens, request status and estimated cost; no prompts or responses.
 - `results/`, `reviews.json`: saved files, page screenshots, findings and manual checklist notes. These can contain project or page content. Delete saved copies in Results, or delete a whole review from Website review.
+- `mobile.json`: connection settings plus an OS-encrypted payload containing paired device tokens, TLS identity and optional Firebase sender credentials. Disable the connection or remove phones/Firebase in Android setup.
 - `inbox.json`: attention items and read state. `concept-jobs/` holds Meshy job metadata and temporary downloads; `concept-usage.json` keeps reported credit usage. Completed downloads are copied to Results and temporary copies are recycled.
 - `settings.json`, `limits.json`, `events`, `sessions`: preferences, cached quotas and per-session tracking/configuration.
 
 Keys are decrypted in the main process. A configured local MCP server receives only the credentials explicitly bound to it. Agent consoles do not receive vault keys. Remote keys are sent only to their configured connection, with redirects disabled. Do not paste credentials into commands, URLs, descriptions or instructions; use key bindings.
 
-The renderer is sandboxed and cannot read decrypted keys or make network requests directly. CLI tools connect through a token-authenticated loopback bridge bound to 127.0.0.1; tokens are passed in memory via environment variables and revoked when the session ends. There is no LAN/tablet service. Windows encryption does not protect against software already running with your account's access.
+The renderer is sandboxed and cannot read decrypted keys or make network requests directly. CLI tools connect through a token-authenticated loopback bridge bound to 127.0.0.1; tokens are passed in memory via environment variables and revoked when the session ends. The optional Android companion adds a separate, disabled-by-default HTTPS/WSS listener on a selected private or Tailscale address. Pairing is single-use and devices can be revoked; see the [mobile data flow](docs/android-setup.md#data-use-and-privacy). Windows encryption does not protect against software already running with your account's access.
 
 API prompts, responses and terminal scrollback stay in memory. Agent CLIs and connected tools may independently keep their own histories. Remote model providers receive the shared instructions, connection descriptions and tool results needed for their requests.
 

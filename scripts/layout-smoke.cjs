@@ -150,6 +150,8 @@ async function resize(id, edge, dx, dy, cancel = false, snapshot) {
   assert.ok((await call('session.buffer', first.id)).data.includes('FROZEN_TERMINAL_PREVIEW_421'));
   await page.locator(`[data-session="${first.id}"]`).click();
   await until(async () => (await call('state')).mode === 'fullscreen' && !(await call('state')).transitioning);
+  // The renderer's layout transition can finish after the native window transition.
+  await until(async () => await page.locator('#terminal-page').evaluate(el => innerHeight - el.getBoundingClientRect().bottom >= 26));
   const gap = await page.locator('#terminal-page').evaluate(el => innerHeight - el.getBoundingClientRect().bottom); assert.ok(gap >= 26, `Fullscreen gap: ${gap}`);
   await capture('fullscreen');
   await signal(first);

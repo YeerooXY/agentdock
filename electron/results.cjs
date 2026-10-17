@@ -41,7 +41,7 @@ class Results extends EventEmitter {
     if (fs.lstatSync(file).isSymbolicLink()) throw new Error('The result file was redirected.');
     return file;
   }
-  add(raw, { project = '', sessionId = null, consoleKey = null, consoleName = '', trusted = false } = {}) {
+  add(raw, { project = '', sessionId = null, consoleKey = null, consoleName = '', trusted = false, turnId = '' } = {}) {
     if (this.items.length >= 1000) throw new Error('The gallery is full. Delete some saved results first.');
     let buffer, ext;
     if (raw.file) {
@@ -60,14 +60,15 @@ class Results extends EventEmitter {
     if (!extensions.has(ext) || buffer.length > 50 * 1024 * 1024) throw new Error('Unsupported result file.');
     if (this.items.reduce((sum, x) => sum + x.size, 0) + buffer.length > 1024 ** 3) throw new Error('The gallery has reached 1 GB. Delete some saved results first.');
     const item = { id: crypto.randomUUID(), title: short(raw.title || (raw.file && path.basename(raw.file)) || 'Result'), ext, size: buffer.length, at: Date.now(),
-      kind: ['screenshot', 'test', 'concept', 'review', 'asset', 'report'].includes(raw.kind) ? raw.kind : 'report',
+      kind: ['screenshot', 'test', 'concept', 'review', 'asset', 'report', 'code'].includes(raw.kind) ? raw.kind : 'report',
       status: ['passed', 'failed', 'needs-review'].includes(raw.status) ? raw.status : 'needs-review',
-      summary: short(raw.summary, 1500), project: short(project, 1000), sessionId, consoleKey: consoleKey || sessionId, consoleName: short(consoleName, 64), seenAt: null, groupId: short(raw.groupId, 80), source: short(raw.source || 'Agent', 60) };
+      summary: short(raw.summary, 1500), project: short(project, 1000), sessionId, consoleKey: consoleKey || sessionId, consoleName: short(consoleName, 64), seenAt: null, reviewId: trusted ? short(raw.reviewId, 80) : null, groupId: short(turnId || raw.groupId, 80), originalFile: raw.file && project ? path.relative(project, raw.file).replaceAll('\\', '/') : null, source: short(raw.source || 'Agent', 60) };
     const dir = this.directory(item.id); fs.mkdirSync(dir); fs.writeFileSync(path.join(dir, 'result' + ext), buffer, { flag: 'wx' });
     this.persist([item, ...this.items]); return item;
   }
   preview(id, thumbnail = false) {
     const item = this.items.find(x => x.id === id), file = this.path(id);
+    if (item.kind === 'code' && item.ext === '.json' && item.size < 2 * 1024 * 1024) return { diff: JSON.parse(fs.readFileSync(file, 'utf8')) };
     if (imageExtensions.has(item.ext) && this.nativeImage) {
       const source = this.nativeImage.createFromPath(file);
       if (source.isEmpty()) throw new Error('This image could not be read.');
@@ -105,7 +106,7 @@ class Inbox extends EventEmitter {
     if (raw.key && this.items.some(x => x.key === raw.key)) return;
     const item = { id: crypto.randomUUID(), at: Date.now(), read: false, title: short(raw.title), message: short(raw.message, 1200), sessionId: raw.sessionId || null, resultId: raw.resultId || null, reviewId: raw.reviewId || null, kind: raw.kind || 'ready', key: raw.key || null };
     if (['usage', 'tools'].includes(raw.destination)) item.destination = raw.destination;
-    this.items = [item, ...this.items].slice(0, 200); this.save(); return item;
+    this.items = [item, ...this.items].slice(0, 200); this.save(); this.emit('added', item); return item;
   }
   update({ id, action }) {
     if (action === 'clear-all') this.items = [];

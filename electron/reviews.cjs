@@ -32,7 +32,7 @@ class Reviews extends EventEmitter {
   start(raw) {
     if (this.active) throw new Error('A website review is already running.');
     if (this.items.length >= 100) throw new Error('Delete an old review before starting another.');
-    const item = { id: crypto.randomUUID(), url: pageUrl(raw.url), sessionId: raw.sessionId || null, consoleKey: raw.consoleKey || null, consoleName: String(raw.consoleName || '').slice(0, 64), project: String(raw.project || '').slice(0, 1000), brief: String(raw.brief || '').slice(0, 2500), at: Date.now(), state: 'running', stage: 'Opening page', resultIds: [], checks: checklist.map(title => ({ title, status: 'unreviewed', note: '' })) };
+    const item = { id: crypto.randomUUID(), url: pageUrl(raw.url), turnId: raw.turnId || '', sessionId: raw.sessionId || null, consoleKey: raw.consoleKey || null, consoleName: String(raw.consoleName || '').slice(0, 64), project: String(raw.project || '').slice(0, 1000), brief: String(raw.brief || '').slice(0, 2500), at: Date.now(), state: 'running', stage: 'Opening page', resultIds: [], checks: checklist.map(title => ({ title, status: 'unreviewed', note: '' })) };
     this.items.unshift(item); this.active = item.id; this.save();
     this.run(item).catch(error => {
       if (!this.items.includes(item)) return;
@@ -64,7 +64,7 @@ class Reviews extends EventEmitter {
         await browser.webContents.executeJavaScript(this.axeSource);
         const axe = await browser.webContents.executeJavaScript(`axe.run(document, { runOnly: { type: 'tag', values: ['wcag2a','wcag2aa','wcag21a','wcag21aa','wcag22aa'] } }).then(r => ({ violations: r.violations.map(x => ({ id:x.id, impact:x.impact, help:x.help, helpUrl:x.helpUrl, nodes:x.nodes.slice(0,12).map(n=>({target:n.target,summary:n.failureSummary})) })), incomplete:r.incomplete.map(x=>({id:x.id,help:x.help,count:x.nodes.length})), passes:r.passes.length }))`);
         const shot = await browser.webContents.capturePage();
-        const saved = this.results.add({ title: name + ' · ' + (page.title || new URL(item.url).hostname), kind: 'screenshot', source: 'Website review', groupId: item.id, buffer: shot.toPNG(), ext: '.png' }, { project: item.project, sessionId: item.sessionId, consoleKey: item.consoleKey, consoleName: item.consoleName, trusted: true });
+        const saved = this.results.add({ title: name + ' · ' + (page.title || new URL(item.url).hostname), kind: 'screenshot', source: 'Website review', groupId: item.id, reviewId: item.id, buffer: shot.toPNG(), ext: '.png' }, { project: item.project, sessionId: item.sessionId, consoleKey: item.consoleKey, consoleName: item.consoleName, turnId: item.turnId, trusted: true });
         item.resultIds.push(saved.id); report.views.push({ name, width, height, screenshot: saved.id, page, accessibility: axe }); this.save();
       }
       const finalUrl = new URL(report.views[0].page.url);
@@ -78,7 +78,7 @@ class Reviews extends EventEmitter {
       item.report = report; item.state = 'complete'; item.stage = '';
       const issues = report.views.reduce((n, x) => n + x.accessibility.violations.length + Number(x.page.horizontalOverflow), 0) + report.links.filter(x => x.result === 'broken').length;
       item.issues = issues;
-      const saved = this.results.add({ title: 'Review · ' + new URL(item.url).hostname, kind: 'review', ext: '.json', text: JSON.stringify({ ...report, checklist: item.checks }, null, 2), source: 'Website review', groupId: item.id, summary: `${issues} automated findings. Manual checklist still needs review.`, status: 'needs-review' }, { project: item.project, sessionId: item.sessionId, consoleKey: item.consoleKey, consoleName: item.consoleName, trusted: true });
+      const saved = this.results.add({ title: 'Review · ' + new URL(item.url).hostname, kind: 'review', ext: '.json', text: JSON.stringify({ ...report, checklist: item.checks }, null, 2), source: 'Website review', groupId: item.id, reviewId: item.id, summary: `${issues} automated findings. Manual checklist still needs review.`, status: 'needs-review' }, { project: item.project, sessionId: item.sessionId, consoleKey: item.consoleKey, consoleName: item.consoleName, turnId: item.turnId, trusted: true });
       item.resultIds.push(saved.id); this.save();
       this.inbox.add({ title: 'Website review ready', message: `${new URL(item.url).hostname} · ${issues} automated findings`, reviewId: item.id, resultId: saved.id });
     } finally { clearTimeout(timeout); if (!browser.isDestroyed()) browser.destroy(); await partition.clearStorageData(); await partition.closeAllConnections(); }
@@ -88,18 +88,18 @@ class Reviews extends EventEmitter {
     if (!check || !['unreviewed', 'passed', 'needs-work', 'not-applicable'].includes(raw.status)) throw new Error('Choose a checklist status.');
     if (raw.status === 'not-applicable' && !String(raw.note || '').trim()) throw new Error('Add a reason for “Not applicable”.');
     check.status = raw.status; check.note = String(raw.note || '').slice(0, 1000); this.save();
-    const result = this.results.items.find(x => x.groupId === item.id && x.kind === 'review');
+    const result = this.results.items.find(x => (x.reviewId === item.id || x.groupId === item.id) && x.kind === 'review');
     if (result) this.results.updateReport(result.id, { ...item.report, checklist: item.checks });
   }
   async remove(id) {
     if (id === this.active) throw new Error('Wait for this review to finish.');
-    const deleted = await this.results.remove(this.results.items.filter(x => x.groupId === id).map(x => x.id));
+    const deleted = await this.results.remove(this.results.items.filter(x => (x.reviewId === id || x.groupId === id)).map(x => x.id));
     if (deleted.failed.length) throw new Error('Some review files could not be deleted. Try again.');
     this.items = this.items.filter(x => x.id !== id); this.save();
   }
   brief(id) {
     const item = this.get(id);
-    const shots = this.results.items.filter(x => x.groupId === id && x.kind === 'screenshot');
+    const shots = this.results.items.filter(x => (x.reviewId === id || x.groupId === id) && x.kind === 'screenshot');
     return `Review this page and generate a visual redesign concept: ${item.url}\n${item.brief}\nReference screenshots (read these first):\n${shots.map(x => this.results.path(x.id)).join('\n')}\nUse your own image generation capability first. Use Meshy only if your image generator is unavailable or fails. Do not generate a 3D model for a web page.\nCall dock_tools with connection "dock". Save your generated concept and verification report with dock/save_result, groupId "${item.id}". Use dock/notify when ready. Keep the project’s voice and the shared web design checklist.\nAutomated findings: ${item.issues ?? 'Review still running'}. Call dock/review_details with id "${item.id}" for the full report.`;
   }
   stop() { this.stopping = true; if (this.window && !this.window.isDestroyed()) this.window.destroy(); }

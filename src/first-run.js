@@ -42,6 +42,7 @@
         <label id="setup-command" hidden>Command<textarea name="command" rows="2" maxlength="4000" spellcheck="false" placeholder="The command to run">${escape(defaults.command)}</textarea></label>
         <p id="setup-agent-hint" class="field-hint"></p><button type="button" class="subtle" data-setup-guide data-docs="codex">Setup guide ↗</button>
         <label class="setup-check"><input type="checkbox" name="launchNow"><span>Open this console when setup finishes</span></label>
+        <label class="setup-check"><input type="checkbox" name="mobileSetup"><span>Connect my Android phone next</span></label>
         <div class="setup-zai"><strong>Z.AI / GLM</strong><p>Choose OpenCode, then connect Z.AI in its console.</p><button type="button" class="subtle" data-docs="zai">Connection guide ↗</button></div>
       </section><section class="setup-agents" aria-label="Install agents">
         <div class="setup-agents-heading"><h2>Install agents <span class="optional">optional</span></h2><button type="button" class="subtle" data-setup-refresh>Check again</button></div>
@@ -83,7 +84,7 @@
         await call('agents.install', pending);
         if (pending.some(id => !agents().find(x => x.id === id)?.installed)) throw new Error('Some agents need another try. Retry, or untick them to continue.');
       }
-      await call('setup.complete', data); dialog.close(); document.querySelector('.session-card [data-action=new]')?.focus();
+      await call('setup.complete', data); dialog.close(); document.querySelector('.session-card [data-action=new]')?.focus(); if (form.elements.mobileSetup.checked) document.dispatchEvent(new CustomEvent('dock-mobile-setup'));
     } catch (error) { form.querySelector('.form-error').textContent = error.message; }
     finally { busy = false; update(); }
   });

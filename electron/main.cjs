@@ -14,6 +14,9 @@ const { cells: consoleCells, occupied: occupiedCells, planLayout } = require('./
 const { Sessions, validateConsoleDefaults } = require('./sessions.cjs');
 const { Workspace } = require('./workspace.cjs');
 const { Workbench } = require('./workbench.cjs');
+const { Turns } = require('./turns.cjs');
+const { MobileCompanion } = require('./mobile.cjs');
+const { DockNotifications } = require('./notifications.cjs');
 const { runApi } = require('./api-run.cjs');
 const { SharedHub } = require('./shared.cjs');
 const { ToolIntegrations, definitions: integrationDefinitions } = require('./integrations.cjs');
@@ -25,7 +28,7 @@ const testMode = process.argv.includes('--smoke-test');
 const testDir = process.argv.find(x => x.startsWith('--data-dir='))?.slice(11);
 if (testMode && testDir) app.setPath('userData', testDir);
 if (!app.requestSingleInstanceLock() && !testMode) app.quit();
-let window, tray, vault, sessions, workspace, account, root, settings, ledger, balloonClick, hub, integrations, workbench, cliSetup;
+let window, tray, vault, sessions, workspace, account, root, settings, ledger, notifications, hub, integrations, workbench, cliSetup, turns, mobile;
 let mode = 'dashboard', quitting = false, refreshing = false, lastRefresh = 0, apiBusy = false;
 let modeTarget = null, modeTask, modeSequence = 0, transitioning = false;
 let trayHidden = false, windowDrag = null;
@@ -37,22 +40,11 @@ const projectsFolder = path.join(os.homedir(), 'Projects');
 const defaultFolder = fs.existsSync(projectsFolder) && fs.statSync(projectsFolder).isDirectory() ? projectsFolder : os.homedir();
 function snapshot() {
   return { mode, transitioning, trayHidden, sessions: sessions?.list() || [], limits, recent, accountError, refreshing, lastRefresh, agents: cliSetup?.snapshot() || [], agentSetupBusy: !!cliSetup?.running,
-    capabilities, workbench: workbench?.snapshot(), vault: { available: vault?.available() || false, entries: vault?.list() || [] },
+    capabilities, mobile: mobile?.snapshot(), workbench: workbench?.snapshot(), vault: { available: vault?.available() || false, entries: vault?.list() || [] },
     ledger: ledger || [], summary: ledgerSummary(ledger || []), shared: hub?.snapshot(), settings, storageError, workspaceError, shortcutAvailable,
     integrations: integrations?.snapshot(hub?.config.connections || [], vault?.list() || []), defaultFolder, version: app.getVersion() };
 }
 function publish() { if (window && !window.isDestroyed()) window.webContents.send('dock:state', snapshot()); }
-function notifySession(session) {
-  const title = `${session.slot}. ${session.name}`;
-  const body = session.state === 'ready' ? 'Ready for your review.' : 'Needs your attention.';
-  const select = () => { setMode('fullscreen'); window.webContents.send('dock:select', session.id); };
-  const fallback = () => {
-    if (tray && process.platform === 'win32') { balloonClick = select; tray.displayBalloon({ title, content: body, respectQuietTime: true }); }
-  };
-  if (!Notification.isSupported()) return fallback();
-  const notice = new Notification({ title, body });
-  notice.on('click', select); notice.on('failed', fallback); notice.show();
-}
 function persistSettings(next) { atomicJson(path.join(root, 'settings.json'), next); settings = next; }
 function revealWindow() {
   if (!window || window.isDestroyed()) return;
@@ -173,6 +165,12 @@ app.whenReady().then(async () => {
   workbench = new Workbench(root, runtime, require('electron'), { testMode, onChange: publish, getSessions: () => sessions, getProject: () => settings.consoleDefaults.cwd, getWindow: () => window, getHub: () => hub, getAgents: () => cliSetup.snapshot() });
   hub = new SharedHub(root, vault, { integrations, workbench }); await hub.start();
   sessions = new Sessions(root, { hub, claude, runtime, cliSetup });
+  turns = new Turns(workbench.results, { getSession: id => sessions.items.get(id), getSecrets: () => vault.list().flatMap(x => { try { return [vault.get(x.id)]; } catch { return []; } }) });
+  workbench.turns = turns;
+  turns.on('tracking-error', ({ owner, message }) => workbench.inbox.add({ title: 'Code capture needs attention', message, sessionId: owner, kind: 'error' }));
+  mobile = new MobileCompanion(root, safeStorage, { sessions, results: workbench.results, inbox: workbench.inbox, getUsage: () => ({ limits, summary: ledgerSummary(ledger || []) }), getDefaults: () => ({ ...settings.consoleDefaults, permissions: settings.agentPermissions }), testMode });
+  mobile.on('changed', publish);
+  if (!testMode) mobile.start().catch(() => publish());
   const savedLimits = readJson(path.join(root, 'limits.json'), []);
   limits = Array.isArray(savedLimits) ? savedLimits : [];
   account = new CodexAccount(values => {
@@ -181,6 +179,7 @@ app.whenReady().then(async () => {
     publish();
   });
   sessions.on('changed', publish);
+  sessions.on('changed', () => { for (const item of sessions.items.values()) if (!item.alive && turns.active.has(item.id)) turns.finish(item.id).catch(() => {}); });
   sessions.on('output', data => { if (window && !window.isDestroyed()) window.webContents.send('dock:output', data); });
   sessions.on('limits', value => {
     limits = [...limits.filter(x => x.id !== value.id), value];
@@ -189,7 +188,6 @@ app.whenReady().then(async () => {
   });
   sessions.on('attention', session => {
     workbench.inbox.add({ key: `${session.id}:${session.updatedAt}:${session.state}`, title: session.name + (session.state === 'ready' ? ' is ready' : ' needs you'), sessionId: session.id, kind: session.state === 'ready' ? 'ready' : 'question' });
-    if (settings.notifications && !testMode) notifySession(session);
   });
   const seenExits = new Set();
   sessions.on('changed', () => {
@@ -228,8 +226,11 @@ app.whenReady().then(async () => {
     tray = new Tray(nativeImage.createFromPath(iconFile)); tray.setToolTip('Agent Dock');
     tray.setContextMenu(Menu.buildFromTemplate([{ label: 'Open Agent Dock', click: revealWindow }, { label: 'Corner HUD', click: () => setMode('hud') }, { type: 'separator' }, { label: 'Quit Agent Dock', click: quit }]));
     tray.on('click', revealWindow); tray.on('double-click', revealWindow);
-    tray.on('balloon-click', () => balloonClick?.());
+    tray.on('balloon-click', () => notifications?.balloonClick?.());
   }
+  notifications = new DockNotifications({ Notification, getTray: () => tray, getWindow: () => window, getMode: () => modeTarget || mode,
+    setMode, reveal: revealWindow, publish, getSessions: () => sessions.list(), icon: iconFile });
+  workbench.inbox.on('added', item => { if (settings.notifications && !testMode) notifications.show(item); });
   shortcutAvailable = !testMode && globalShortcut.register('CommandOrControl+Alt+Space', () => trayHidden ? revealWindow() : setMode((modeTarget || mode) === 'hud' ? 'dashboard' : 'hud'));
   for (let i = 1; !testMode && i <= 9; i++) globalShortcut.register(`CommandOrControl+Alt+${i}`, () => {
     const item = sessions.list().find(x => (x.alive || x.restoreError) && consoleCells(x).includes(i)); if (!item) return;
@@ -244,6 +245,25 @@ app.whenReady().then(async () => {
   ipcMain.handle('dock:call', async (event, method, payload) => {
     if (event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame || event.senderFrame.url !== entryUrl) throw new Error('Untrusted client.');
     try {
+      if (typeof method === 'string' && method.startsWith('mobile.')) {
+        let value;
+        switch (method) {
+          case 'mobile.configure': await mobile.configure(payload); break;
+          case 'mobile.invite': { const invite = await mobile.invite(); value = { ...invite, qr: await require('qrcode').toDataURL(invite.code, { width: 280, margin: 2, errorCorrectionLevel: 'M' }) }; break; }
+          case 'mobile.cancel-pairing': mobile.pairing = null; publish(); break;
+          case 'mobile.revoke': mobile.revoke(payload); break;
+          case 'mobile.status': value = mobile.snapshot(); publish(); break;
+          case 'mobile.test-push': if (testMode) throw new Error('Push requests are disabled in tests.'); await mobile.sendPush('test', payload); break;
+          case 'mobile.remove-push': mobile.removeFirebase(); break;
+          case 'mobile.import-push': {
+            const choose = async title => { const selected = await dialog.showOpenDialog(window, { title, properties: ['openFile'], filters: [{ name: 'Firebase JSON', extensions: ['json'] }] }); if (selected.canceled) return null; const file = selected.filePaths[0]; if (fs.statSync(file).size > 65536) throw new Error('Choose a Firebase configuration under 64 KB.'); try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { throw new Error('This Firebase configuration could not be read.'); } };
+            const options = await choose('Choose google-services.json'); if (!options) break;
+            const credential = await choose('Choose the Firebase service-account JSON'); if (credential) mobile.configureFirebase(options, credential); break;
+          }
+          default: throw new Error('Unknown mobile action.');
+        }
+        return { ok: true, value };
+      }
       if (typeof method === 'string' && method.startsWith('workbench.')) return { ok: true, value: await workbench.call(method.slice(10), payload) };
       switch (method) {
         case 'state': return { ok: true, value: snapshot() };
@@ -387,14 +407,17 @@ app.whenReady().then(async () => {
           if (!profile) throw new Error('Choose an API connection.');
           const key = profile.keyId ? vault.get(profile.keyId) : '';
           apiBusy = true;
+          const apiOwner = 'api:' + require('node:crypto').randomUUID();
+          turns.virtual.set(apiOwner, { id: apiOwner, consoleKey: 'api:' + profile.id, name: profile.name, cwd: settings.consoleDefaults.cwd, alive: true });
+          const apiHub = { summary: () => hub.summary(), invoke: (name, args) => hub.invoke(name, args, apiOwner) };
           let result;
-          try { result = await runApi(payload, key, settings.rates[`${profile.id}:${payload.model?.trim()}`], { profile, hub, onEntry: entry => {
+          try { await turns.begin(apiOwner); result = await runApi(payload, key, settings.rates[`${profile.id}:${payload.model?.trim()}`], { profile, hub: apiHub, onEntry: entry => {
             ledger = [entry, ...ledger];
             try { atomicJson(path.join(root, 'ledger.json'), ledger); }
             catch { storageError = 'Latest API usage is only in memory. Export it before quitting.'; }
             publish();
           } }); }
-          finally { apiBusy = false; }
+          finally { try { await turns.finish(apiOwner); } finally { turns.virtual.delete(apiOwner); apiBusy = false; } }
           workbench.inbox.add({ title: result.error || result.entry?.status !== 'completed' ? 'API request needs attention' : 'API response ready', message: `${profile.name} · ${payload.model}`, kind: result.error || result.entry?.status !== 'completed' ? 'error' : 'ready', destination: 'usage' });
           publish(); return { ok: true, value: result };
         }
@@ -402,8 +425,15 @@ app.whenReady().then(async () => {
           const result = await dialog.showSaveDialog(window, { defaultPath: 'agent-dock-usage.json', filters: [{ name: 'JSON', extensions: ['json'] }] });
           if (!result.canceled && result.filePath) atomicJson(result.filePath, { scope: 'API requests made through Agent Dock', currency: 'USD', costs: 'estimates', entries: ledger }); break;
         }
+        case 'external.open': {
+          if (typeof payload !== 'string' || payload.length > 4096) throw new Error('Invalid web link.');
+          const url = new URL(payload);
+          if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password) throw new Error('Only web links can open here.');
+          await shell.openExternal(url.href); break;
+        }
         case 'docs': {
           const urls = { codex: 'https://learn.chatgpt.com/docs/codex/cli', claude: 'https://code.claude.com/docs/en/overview', openai: 'https://developers.openai.com/api/docs/pricing', anthropic: 'https://platform.claude.com/docs/en/about-claude/pricing' };
+          Object.assign(urls, { tailscale: 'https://tailscale.com/download', firebase: 'https://console.firebase.google.com/', 'mobile-guide': 'https://github.com/YeerooXY/agentdock/blob/main/docs/android-setup.md', 'android-download': 'https://github.com/YeerooXY/agentdock/releases' });
           for (const item of integrationDefinitions) urls[item.id] = item.docs;
           for (const item of cliCatalog) urls[item.id] = item.docs;
           urls.zai = 'https://docs.z.ai/devpack/tool/opencode';
@@ -426,6 +456,7 @@ app.on('before-quit', event => {
   workbench?.stop();
   // Drain ConPTY exits while the event loop is alive, before Electron tears down its workers.
   (async () => {
+    await mobile?.stop();
     await sessions?.stop();
     await hub?.close();
     account?.stop();

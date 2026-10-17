@@ -6,6 +6,7 @@ import { sharedViews } from './shared-ui.js';
 import { holdToChoose } from './launch-gesture.js';
 import { vimControls } from './vim-controls.js';
 import { firstRun } from './first-run.js';
+import { mobileUI } from './mobile-ui.js';
 import { setupRequests, apiPresets } from './setup-ui.js';
 import { windowDragging } from './window-drag.js';
 import { consoleDragging } from './console-drag.js';
@@ -51,7 +52,7 @@ let state, page = 'consoles', selectedId = null, selectedApi = 'openai', apiBusy
 let apiDraft = { model: '', prompt: '', maxOutput: '1024' }, responseMeta = 'TEXT OUTPUT', responseError = '';
 const terminals = new Map();
 let openingConsole = false;
-let launchGesture, chooserOpener, vim, setup, workbench, layoutMotion;
+let launchGesture, chooserOpener, vim, setup, workbench, layoutMotion, phone;
 const nameSaves = new Map();
 const launchHint = 'title="Click to open. Hold or right-click to choose." aria-haspopup="dialog"';
 let renderedView = null, viewAnimation, windowMoving = false;
@@ -281,7 +282,7 @@ function renderPage() {
   $('#content').innerHTML = (state.storageError ? `<div class="error-banner" role="alert">${escape(state.storageError)}</div>` : '') + renderer();
   workbench?.mount();
   if (page === 'usage' && state.workbench?.conceptUsage?.length) $('#content').insertAdjacentHTML('beforeend', `<section class="surface"><h2>Meshy concepts</h2><p class="field-hint">Credits reported for concepts created here. Separate from API dollar estimates.</p>${state.workbench.conceptUsage.map(x => `<div class="connection-row"><span>${new Date(x.at).toLocaleString()}</span><span>${escape(x.state)}</span><strong>${x.credits == null ? 'Credits unavailable' : number(x.credits) + ' credits'}</strong></div>`).join('')}</section>`);
-  if (page === 'settings') { $('.settings-layout').insertAdjacentHTML('afterbegin', renderAppearanceSettings() + renderKeyboardSettings() + renderStartupSettings() + renderLaunchDefaults()); launchDefaultsFields(); }
+  if (page === 'settings') { $('.settings-layout').insertAdjacentHTML('afterbegin', (phone?.renderSettings() || '') + renderAppearanceSettings() + renderKeyboardSettings() + renderStartupSettings() + renderLaunchDefaults()); launchDefaultsFields(); }
   if (page === 'api') {
     const form = $('#api-form');
     for (const key of ['model', 'prompt', 'maxOutput']) form.elements[key].value = apiDraft[key];
@@ -343,6 +344,7 @@ function receive(next) {
   }
   workbench?.sync();
   setup?.receive();
+  phone?.receive();
   const providerSelect = $('#one-off-console-form [name=provider]');
   if (providerSelect && !$('#console-chooser').open) for (const provider of consoleProviders()) if (!providerSelect.querySelector(`[value="${provider}"]`)) providerSelect.add(new Option(providerName(provider), provider));
   if ($('#workspace-error')) $('#workspace-error').textContent = state.workspaceError || '';
@@ -486,6 +488,10 @@ terminalResize.observe($('#terminal-host')); terminalResize.observe($('.session-
 window.dock.onOutput(packet => { const record = terminals.get(packet.id); if (!record) return; if (record.loading) record.queued.push(packet); else record.output.push(packet.data); });
 document.fonts.ready.then(() => { for (const record of terminals.values()) record.dimensions = null; scheduleFits(); });
 window.dock.onSelect(id => selectSession(id).catch(error => toast(error.message, true)));
+window.dock.onNotice?.(item => {
+  for (const dialog of document.querySelectorAll('dialog[open]')) dialog.close();
+  workbench.openNotice(item).catch(error => toast(error.message, true));
+});
 window.dock.onState(receive);
 
 function launchDefaultsFields() {
@@ -824,6 +830,7 @@ vim = vimControls({
   context: () => ({ enabled: state?.settings.vimControls === true, view: state?.mode === 'hud' ? 'hud' : page, sessions: state?.sessions || [], busy: windowMoving || openingConsole }),
   focusSlot: focusVimSlot, action: vimAction, onError: message => toast(message, true)
 });
+phone = mobileUI({ call, escape, icon, getState: () => state, toast });
 setup = firstRun({ call, escape, icon, getState: () => state });
 windowDragging(call, () => state);
 layoutMotion = consoleMotion({ render: renderConsoles, fit: scheduleFits });

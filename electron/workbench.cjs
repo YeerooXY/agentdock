@@ -9,6 +9,8 @@ const { SetupRequests } = require('./setup-requests.cjs');
 const schema = (properties, required = []) => ({ type: 'object', properties, required, additionalProperties: false });
 const string = { type: 'string' };
 const nativeTools = [
+  ['start_turn', 'Start tracking a new task before editing files. Idempotent until finish_turn or a ready notification. Called automatically by dock_context. Returns the turn ID used to group code changes, tests and images.', schema({})],
+  ['finish_turn', 'Save code changes for this task in Results. Native supported-agent stop hooks and ready notifications also do this.', schema({})],
   ['setup_status', 'Inspect installed agents, saved key names and shared tool/API settings. Never returns key values.', schema({})],
   ['prepare_setup', 'Prepare a tool connection, model API or key-entry request in Tools. The user reviews and applies it there. config uses the Tools form fields: tool {id,name,type,command,args,envKeys} or {id,name,type,url,headerKeys}; API {id,name,protocol,url,keyId}; key {id,name}. Key bindings use vault IDs, never secret values. Does not install software, send API requests or change an active connection.', schema({ kind: { enum: ['tool','api','key'] }, config: { type: 'object' } }, ['kind','config'])],
   ['save_result', 'Save a screenshot, generated image, test report or other result in the gallery. Files must be inside your project folder. The gallery keeps a copy.', schema({ file: string, text: string, title: string, kind: { enum: ['screenshot','concept','test','report','asset'] }, status: { enum: ['passed','failed','needs-review'] }, summary: string, groupId: string, ext: { enum: ['.md','.json','.txt'] } }, ['title'])],
@@ -31,10 +33,12 @@ class Workbench {
   snapshot() { return { results: this.results.list(), unreadResults: this.results.unreadGroups(), inbox: this.inbox.items, reviews: this.reviews.list(), concepts: this.concepts.list(), conceptUsage: this.concepts.usage, meshyAuth: this.concepts.auth, setupRequests: this.setup.items }; }
   tools() { return nativeTools; }
   async invoke(name, args, owner) {
-    const session = owner ? this.getSessions().items.get(owner) : null;
+    const session = owner ? this.getSessions().items.get(owner) || this.turns?.session(owner) : null;
     if (owner && !session?.alive) throw new Error('This console is no longer open.');
-    const context = { project: session?.cwd || this.getProject(), sessionId: session?.id || null, consoleKey: session?.consoleKey || session?.id || null, consoleName: session?.name || '' };
+    const context = this.turns?.context(owner) || { project: session?.cwd || this.getProject(), sessionId: session?.id || null, consoleKey: session?.consoleKey || session?.id || null, consoleName: session?.name || '' };
     switch (name) {
+      case 'dock/start_turn': return { turnId: await this.turns?.begin(owner) };
+      case 'dock/finish_turn': return { turnId: await this.turns?.finish(owner) };
       case 'dock/setup_status': return this.setup.status();
       case 'dock/prepare_setup': {
         const result = this.setup.prepare(args, context);
@@ -43,9 +47,9 @@ class Workbench {
       }
       case 'dock/save_result': return this.results.add(args, context);
       case 'dock/list_results': return this.results.list();
-      case 'dock/notify': this.getSessions().signal?.(context.sessionId, args.kind); return this.inbox.add({ ...args, sessionId: context.sessionId });
+      case 'dock/notify': if (['ready', 'error'].includes(args.kind || 'ready')) await this.turns?.finish(owner); this.getSessions().signal?.(context.sessionId, args.kind || 'ready'); return this.inbox.add({ ...args, sessionId: context.sessionId });
       case 'dock/review_page': return { id: this.reviews.start({ ...args, ...context }) };
-      case 'dock/review_details': { const review = this.reviews.get(args.id); return { ...review, screenshots: this.results.items.filter(x => x.groupId === review.id && x.kind === 'screenshot').map(x => ({ id: x.id, title: x.title, file: this.results.path(x.id) })) }; }
+      case 'dock/review_details': { const review = this.reviews.get(args.id); return { ...review, screenshots: this.results.items.filter(x => (x.reviewId === review.id || x.groupId === review.id) && x.kind === 'screenshot').map(x => ({ id: x.id, title: x.title, file: this.results.path(x.id) })) }; }
       case 'dock/meshy_concept': return { id: await this.concepts.start(args) };
       case 'dock/concept_status': return this.concepts.list();
       default: throw new Error('Unknown Dock tool.');

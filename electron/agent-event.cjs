@@ -8,7 +8,7 @@ const root = process.env.AGENT_DOCK_DATA_DIR;
 const session = process.env.AGENT_DOCK_SESSION_ID;
 const mode = process.argv[2];
 if (!root || !session || !/^[a-f0-9-]{36}$/.test(session)) process.exit(0);
-function accept(raw) {
+async function accept(raw) {
   try {
     const input = JSON.parse(raw || '{}');
     const event = { session, at: Date.now(), providerSessionId: input['thread-id'] || input.session_id || null };
@@ -26,6 +26,11 @@ function accept(raw) {
       if (mode === 'codex-notify' && input.type !== 'agent-turn-complete') return;
       if (name === 'Notification' && !['permission_prompt', 'idle_prompt', 'elicitation_dialog'].includes(input.notification_type)) return;
       event.state = statuses[name] || statuses[mode];
+      // Await the baseline before the agent can edit. No prompts or answers leave this helper.
+      const tool = event.state === 'active' ? 'dock/start_turn' : ['ready', 'error', 'ended'].includes(event.state) ? 'dock/finish_turn' : null;
+      if (tool && process.env.AGENT_DOCK_BRIDGE_URL && process.env.AGENT_DOCK_BRIDGE_TOKEN) {
+        try { await fetch(process.env.AGENT_DOCK_BRIDGE_URL, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + process.env.AGENT_DOCK_BRIDGE_TOKEN }, body: JSON.stringify({ name: 'dock_call', arguments: { tool, arguments: {} } }), signal: AbortSignal.timeout(12000) }); } catch {}
+      }
       if (event.state) atomicJson(path.join(root, 'events', `${session}.state.json`), event);
     }
   } catch { /* A tracker failure must never prevent an agent from working. */ }

@@ -5,7 +5,7 @@ module.exports = {
   copyright: 'Copyright © 2026 YeerooXY',
   directories: { output: 'release', buildResources: 'assets' },
   files: [
-    'dist/**/*', 'electron/**/*.cjs', 'guides/*.md', 'assets/icon.*', 'package.json',
+    'dist/**/*', 'electron/**/*.cjs', 'guides/*.md', 'assets/icon.*', 'assets/third-party-notices.txt', 'package.json',
     '!node_modules/node-pty/{src,deps,third_party,scripts,typings}/**/*',
     '!node_modules/node-pty/prebuilds/{darwin-*,win32-arm64}/**/*',
     '!node_modules/node-pty/**/*.pdb'

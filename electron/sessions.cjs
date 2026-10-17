@@ -103,7 +103,7 @@ class Sessions extends EventEmitter {
       if (!node) throw new Error('Node.js is needed for Claude tracking.');
       const command = mode => isWsl ? `${shQuote(wslPath(node))} ${shQuote(helper)} ${mode}` : `"${node.replaceAll('\\', '/')}" "${helper.replaceAll('\\', '/')}" ${mode}`;
       const hooks = {};
-      for (const type of ['SessionStart', 'UserPromptSubmit', 'Stop', 'PermissionRequest', 'Notification', 'StopFailure', 'SessionEnd']) hooks[type] = [{ hooks: [{ type: 'command', command: command(type), timeout: 5 }] }];
+      for (const type of ['SessionStart', 'UserPromptSubmit', 'Stop', 'PermissionRequest', 'Notification', 'StopFailure', 'SessionEnd']) hooks[type] = [{ hooks: [{ type: 'command', command: command(type), timeout: 15 }] }];
       const settings = path.join(dir, 'claude-settings.json');
       atomicJson(settings, { hooks, statusLine: { type: 'command', command: command('statusline') } });
       const claudeArgs = ['--settings', isWsl ? wslPath(settings) : settings];
