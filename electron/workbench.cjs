@@ -13,7 +13,7 @@ const nativeTools = [
   ['finish_turn', 'Save code changes for this task in Results. Native supported-agent stop hooks and ready notifications also do this.', schema({})],
   ['setup_status', 'Inspect installed agents, saved key names and shared tool/API settings. Never returns key values.', schema({})],
   ['prepare_setup', 'Prepare a tool connection, model API or key-entry request in Tools. The user reviews and applies it there. config uses the Tools form fields: tool {id,name,type,command,args,envKeys} or {id,name,type,url,headerKeys}; API {id,name,protocol,url,keyId}; key {id,name}. Key bindings use vault IDs, never secret values. Does not install software, send API requests or change an active connection.', schema({ kind: { enum: ['tool','api','key'] }, config: { type: 'object' } }, ['kind','config'])],
-  ['save_result', 'Save a screenshot, generated image, test report or other result in the gallery. Files must be inside your project folder. The gallery keeps a copy.', schema({ file: string, text: string, title: string, kind: { enum: ['screenshot','concept','test','report','asset'] }, status: { enum: ['passed','failed','needs-review'] }, summary: string, groupId: string, ext: { enum: ['.md','.json','.txt'] } }, ['title'])],
+  ['save_result', 'Save a screenshot, generated image, test report or other result in the gallery. Save images and reports as separate files so they can be previewed immediately; use ZIP only for an optional download. Files must be inside your project folder. The gallery keeps a copy.', schema({ file: string, text: string, title: string, kind: { enum: ['screenshot','concept','test','report','asset'] }, status: { enum: ['passed','failed','needs-review'] }, summary: string, groupId: string, ext: { enum: ['.md','.json','.txt'] } }, ['title'])],
   ['list_results', 'List saved results, newest first.', schema({})],
   ['notify', 'Leave a short completion, question or error in the attention inbox.', schema({ title: string, message: string, kind: { enum: ['ready','question','error'] } }, ['title'])],
   ['review_page', 'Start a website review: desktop/mobile screenshots, axe accessibility checks and a manual checklist. Returns a job ID; read review_details later.', schema({ url: string, brief: string }, ['url'])],
@@ -59,7 +59,7 @@ class Workbench {
     switch (method) {
       case 'setup.apply': return this.setup.apply(payload);
       case 'setup.dismiss': return this.setup.remove(payload);
-      case 'results.preview': return this.results.preview(typeof payload === 'string' ? payload : payload?.id, payload?.thumbnail === true);
+      case 'results.preview': return this.results.preview(typeof payload === 'string' ? payload : payload?.id, payload?.thumbnail === true, payload?.entry);
       case 'results.delete': return this.results.remove(payload);
       case 'results.seen': return this.results.markSeen(payload);
       case 'results.folder': { const error = await this.electron.shell.openPath(this.results.dir); if (error) throw new Error(error); return; }

@@ -11,6 +11,7 @@ after(() => { assert.equal(path.dirname(fs.realpathSync(root)), fs.realpathSync(
 function fixture(claude = 'C:\\Apps With Spaces\\claude.exe') {
   const calls = [];
   const sessions = new Sessions(root, {
+    prepareCodexSession: async () => [],
     pty: { spawn(executable, args, options) { calls.push({ executable, args, options }); return { onData() {}, onExit() {}, kill() {} }; } },
     nativeCodex: () => 'C:\\Apps With Spaces\\codex.exe',
     findProgram: name => name === 'claude' ? claude : 'C:\\Program Files\\nodejs\\node.exe'

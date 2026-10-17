@@ -24,9 +24,18 @@ test('gallery copies project artifacts, rejects private/outside files, and delet
   assert.equal(results.preview(item.id).text,'Verified: keyboard works');
   fs.writeFileSync(source,'changed in project'); assert.equal(results.preview(item.id).text,'Verified: keyboard works');
   const loaded=new Results(root,{trash:results.trash}); assert.equal(loaded.list()[0].title,'Keyboard test');
+  const savedDir = loaded.directory(item.id);
   assert.deepEqual(await loaded.remove([item.id]),{deleted:[item.id],failed:[]});
+  assert.equal(fs.existsSync(savedDir), false); assert.deepEqual(new Results(root).list(), []);
   assert.equal(fs.readFileSync(source,'utf8'),'changed in project'); assert.equal(loaded.list().length,0);
   assert.throws(()=>loaded.path('../../vault.json'));
+});
+
+test('deletion reports failure if the saved files are still on disk', async t => {
+  const { results } = fixture(t); const item = results.add({ text: 'Keep me until deletion succeeds' });
+  results.trash = async () => {};
+  assert.deepEqual(await results.remove([item.id]), { deleted: [], failed: [item.id] });
+  assert.equal(results.list().length, 1); assert.ok(fs.existsSync(results.path(item.id)));
 });
 test('result notifications count batches, remember names and preserve unread state across launches', async t => {
   const { root, results, project } = fixture(t);

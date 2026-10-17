@@ -8,6 +8,7 @@ const { atomicJson, readJson } = require('./storage.cjs');
 const { cells, occupied: occupiedCells, planLayout } = require('./console-layout.cjs');
 const { providers, byId: cliAgents } = require('./cli-catalog.cjs');
 const { prepareCli } = require('./cli-launch.cjs');
+const { prepareCodexSession } = require('./codex-session.cjs');
 function psQuote(text) { return "'" + text.replaceAll("'", "''") + "'"; }
 function shQuote(text) { return "'" + text.replaceAll("'", "'\"'\"'") + "'"; }
 function validateConsoleDefaults(raw) {
@@ -20,7 +21,7 @@ function validateConsoleDefaults(raw) {
 }
 class Sessions extends EventEmitter {
   constructor(root, dependencies = {}) {
-    super(); this.root = root; this.items = new Map(); this.eventTimes = new Map();
+    super(); this.root = root; this.items = new Map(); this.eventTimes = new Map(); this.starting = new Map(); this.codexIdentities = new Map();
     this.pty = dependencies.pty || require('node-pty');
     this.findProgram = dependencies.findProgram || findProgram;
     this.nativeCodex = dependencies.nativeCodex || nativeCodex;
@@ -29,6 +30,7 @@ class Sessions extends EventEmitter {
     this.runtime = dependencies.runtime;
     this.cliSetup = dependencies.cliSetup;
     this.agentHome = dependencies.agentHome;
+    this.prepareCodexSession = dependencies.prepareCodexSession || prepareCodexSession;
   }
   list() { return [...this.items.values()].map(({ terminal, buffer, command, claudeTarget, ...session }) => session).sort((a, b) => a.slot - b.slot); }
   savedConsoles() {
@@ -55,7 +57,8 @@ class Sessions extends EventEmitter {
     return this.restore(entry);
   }
   async create(raw, { resumeId = null, claudeTarget = null } = {}) {
-    const occupied = occupiedCells(this.items.values());
+    if (this.stopping) throw new Error('Agent Dock is closing.');
+    const occupied = occupiedCells([...this.items.values(), ...this.starting.values()]);
     const requestedSlot = raw?.slot === undefined ? null : Number(raw.slot);
     if (requestedSlot !== null && (!Number.isInteger(requestedSlot) || requestedSlot < 1 || requestedSlot > 9)) throw new Error('Choose a console slot from 1 to 9.');
     if (occupied.has(requestedSlot)) throw new Error('That console is already open.');
@@ -138,12 +141,21 @@ class Sessions extends EventEmitter {
       env.PATH = path.dirname(node) + path.delimiter + currentPath;
     }
     if (isWsl) env.WSLENV = [...new Set([...(env.WSLENV || '').split(':').filter(Boolean), 'AGENT_DOCK_DATA_DIR', 'AGENT_DOCK_SESSION_ID', 'AGENT_DOCK_BRIDGE_URL', 'AGENT_DOCK_BRIDGE_TOKEN', 'AGENT_DOCK_INSTRUCTIONS/p', 'AGENT_DOCK_MCP_CONFIG/p'])].join(':');
+    let trackingWarning = '';
+    if (raw.provider === 'codex') {
+      this.starting.set(id, { slot, width, height, alive: true });
+      try { args.push(...await this.prepareCodexSession(executable, { node, helper, root: this.root, session: id, cwd, env })); }
+      catch { trackingWarning = 'Agent Dock: Update Codex to restore chats before the first reply finishes.\r\n'; }
+      finally { this.starting.delete(id); }
+    }
+    if (this.stopping) { this.hub?.revoke(id); throw new Error('Agent Dock is closing.'); }
     let terminal;
     try { terminal = this.pty.spawn(executable, args, { name: 'xterm-256color', cols: 110, rows: 30, cwd, env, useConpty: true }); }
     catch (error) { this.hub?.revoke(id); throw error; }
     for (const [oldId, old] of this.items) if (old.slot === slot && !old.alive) this.items.delete(oldId);
     const consoleKey = /^[a-f0-9-]{36}$/i.test(raw.consoleKey || '') ? raw.consoleKey : id;
     const session = { id, consoleKey, slot, width, height, name, cwd, provider: raw.provider, permissions, launchModel: model, command: raw.provider === 'custom' ? raw.command : '', claudeTarget: raw.provider === 'claude' ? claudeInstall : undefined, state: 'open', alive: true, cols: 110, rows: 30, createdAt: Date.now(), updatedAt: Date.now(), terminal, buffer: '', sequence: 0, usage: null, providerSessionId: resumeId };
+    if (trackingWarning) session.buffer = trackingWarning;
     this.items.set(id, session);
     terminal.onData(data => { session.buffer = (session.buffer + data).slice(-250000); this.emit('output', { id, data, sequence: ++session.sequence }); });
     terminal.onExit(({ exitCode }) => {
@@ -187,6 +199,7 @@ class Sessions extends EventEmitter {
     return this.layout({ id, slot }, beforeMove);
   }
   layout(change, beforeMove = () => {}) {
+    if (this.starting.size) throw new Error('Wait for the new console to open before moving panels.');
     const plan = planLayout(this.items.values(), change);
     beforeMove(plan);
     for (const placed of plan) Object.assign(this.items.get(placed.id), placed);
@@ -204,7 +217,7 @@ class Sessions extends EventEmitter {
   scanEvents() {
     let changed = false;
     for (const item of this.items.values()) {
-      for (const kind of ['state', 'usage']) {
+      for (const kind of ['identity', 'state', 'usage']) {
         const file = path.join(this.root, 'events', `${item.id}.${kind}.json`);
         try {
           const stat = fs.statSync(file);
@@ -212,6 +225,15 @@ class Sessions extends EventEmitter {
           this.eventTimes.set(file, stat.mtimeMs);
           const event = readJson(file, {});
           if (event.session !== item.id) continue;
+          if (kind === 'identity') {
+            if (item.provider !== 'codex' || !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(event.providerSessionId || '')) continue;
+            this.codexIdentities.set(item.id, event.providerSessionId);
+            if (item.providerSessionId !== event.providerSessionId) { item.providerSessionId = event.providerSessionId; changed = true; }
+            continue;
+          }
+          // A late completion from a previous chat must not replace the new
+          // chat selected with /new, /resume or /fork in this same terminal.
+          if (item.provider === 'codex' && this.codexIdentities.has(item.id) && event.providerSessionId && event.providerSessionId !== this.codexIdentities.get(item.id)) continue;
           if (event.providerSessionId) item.providerSessionId = event.providerSessionId;
           if (event.usage) item.usage = event.usage;
           if (event.model) item.model = event.model;
@@ -229,6 +251,7 @@ class Sessions extends EventEmitter {
   }
   updateUsage(recent) { for (const session of this.items.values()) { const match = recent.find(x => x.id === session.providerSessionId); if (match?.usage) session.usage = match.usage; } }
   async stop() {
+    this.stopping = true;
     const active = [...this.items.values()].filter(x => x.alive);
     if (!active.length) return;
     await new Promise(resolve => {

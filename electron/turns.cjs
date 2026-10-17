@@ -12,9 +12,19 @@ const SKIP = /(^|\/)(\.git|node_modules|\.dart_tool|\.build|build|dist|release|v
 const SECRET = /(^|\/)(\.env(?:\..*)?|\.npmrc|\.pypirc|credentials?[^/]*|secrets?[^/]*|vault[^/]*|id_rsa|id_ed25519|google-services\.json|[^/]*\.(?:pem|p12|pfx|key|keystore|jks))$/i;
 const inside = (root, target) => { const r = path.relative(root, target); return r && !r.startsWith('..' + path.sep) && r !== '..' && !path.isAbsolute(r); };
 const hash = value => createHash('sha256').update(value).digest('hex');
+async function gitInfo(root) {
+  const options = { windowsHide: true, maxBuffer: 8192, timeout: 2000 };
+  const [branch, head] = await Promise.allSettled([
+    exec('git', ['-C', root, 'symbolic-ref', '--quiet', '--short', 'HEAD'], options),
+    exec('git', ['-C', root, 'rev-parse', '--verify', 'HEAD'], options)
+  ]);
+  const name = branch.status === 'fulfilled' ? branch.value.stdout.trim() : null;
+  const commit = head.status === 'fulfilled' && /^[a-f0-9]{40,64}$/i.test(head.value.stdout.trim()) ? head.value.stdout.trim() : null;
+  return name || commit ? { branch: name, commit, detached: !name } : null;
+}
 // Bound snapshots without touching Git's index, HEAD, or the user's working tree.
 async function snapshot(project, { maxFiles = 10000, maxBytes = 32 * 1024 * 1024 } = {}) {
-  const root = await fs.realpath(project), files = new Map(), notes = []; const deadline = Date.now() + 9000; let complete = true;
+  const root = await fs.realpath(project), files = new Map(), notes = [], git = await gitInfo(root); const deadline = Date.now() + 9000; let complete = true;
   let names;
   try { names = (await exec('git', ['-C', root, 'ls-files', '-z', '--cached', '--others', '--exclude-standard', '--', '.'], { windowsHide: true, maxBuffer: 4 * 1024 * 1024, timeout: 8000 })).stdout.split('\0').filter(Boolean); }
   catch {
@@ -58,7 +68,7 @@ async function snapshot(project, { maxFiles = 10000, maxBytes = 32 * 1024 * 1024
     } catch (error) { if (error.code !== 'ENOENT') notes.push(`Could not read ${relative}.`); }
   }
   if (!complete) notes.push('Partial snapshot. Changes outside the captured files are not included.');
-  return { root, files, notes, complete };
+  return { root, files, notes, complete, git };
 }
 class Turns extends EventEmitter {
   constructor(results, { getSession, getSecrets = () => [] } = {}) {
@@ -69,7 +79,7 @@ class Turns extends EventEmitter {
   context(owner) {
     const s = this.session(owner); if (!s) return null;
     const turn = this.active.get(owner) || this.latest.get(owner);
-    return { project: s.cwd, sessionId: s.id, consoleKey: s.consoleKey || s.id, consoleName: s.name, ...(turn ? { turnId: turn.id } : {}) };
+    return { project: s.cwd, sessionId: s.id, consoleKey: s.consoleKey || s.id, consoleName: s.name, ...(turn ? { turnId: turn.id, git: turn.git } : {}) };
   }
   serial(owner, fn) {
     const task = (this.queues.get(owner) || Promise.resolve()).catch(() => {}).then(fn);
@@ -85,17 +95,19 @@ class Turns extends EventEmitter {
       const a = path.resolve(this.session(other)?.cwd || ''), b = path.resolve(session.cwd);
       if (a === b || inside(a, b) || inside(b, a)) current.overlap = turn.overlap = true;
     }
-    try { turn.baseline = await snapshot(session.cwd); } catch { turn.error = 'The project baseline could not be read.'; }
+    try { turn.baseline = await snapshot(session.cwd); turn.git = turn.baseline.git; } catch { turn.error = 'The project baseline could not be read.'; }
     this.emit('started', { owner, id: turn.id }); return turn.id;
   }); }
   finish(owner, status = 'needs-review') { return this.serial(owner, async () => {
     const turn = this.active.get(owner); if (!turn) return null;
-    const context = this.context(owner), changes = [], notes = [...(turn.baseline?.notes || [])];
+    const context = this.context(owner), changes = [], notes = [...(turn.baseline?.notes || [])]; let endGit = turn.git || null;
     if (turn.error) notes.push(turn.error);
     if (turn.overlap) notes.push('Other consoles were active in this folder. Changes are a folder snapshot; authorship may overlap.');
     try {
       if (turn.baseline) {
         const after = await snapshot(context.project); notes.push(...after.notes);
+        endGit = after.git;
+        if (turn.git?.branch !== endGit?.branch) notes.push('The Git branch changed during this turn.');
         const redact = value => { for (const secret of this.getSecrets().filter(x => x && x.length > 5)) value = value.split(secret).join('[redacted]'); return value; };
         let imageCount = 0, patchBytes = 0;
         const diffDeadline = Date.now() + 3000;
@@ -118,8 +130,8 @@ class Turns extends EventEmitter {
           }
         }
       }
-      if (changes.length || notes.length) {
-        const report = { version: 1, turnId: turn.id, startedAt: turn.startedAt, finishedAt: Date.now(), attribution: turn.overlap ? 'overlapping-folder-activity' : 'folder-during-turn', notes: [...new Set(notes)], changes };
+      if (changes.length || notes.length || this.results.items.some(x => x.groupId === turn.id)) {
+        const report = { version: 2, turnId: turn.id, startedAt: turn.startedAt, finishedAt: Date.now(), git: { before: turn.git || null, after: endGit }, attribution: turn.overlap ? 'overlapping-folder-activity' : 'folder-during-turn', notes: [...new Set(notes)], changes };
         this.results.add({ text: JSON.stringify(report), ext: '.json', title: `${changes.length} changed ${changes.length === 1 ? 'file' : 'files'}`, kind: 'code', status, summary: turn.overlap ? 'Overlapping console activity' : 'Changes during this turn', groupId: turn.id }, context);
       }
     } catch { this.emit('tracking-error', { owner, message: 'This turn’s code changes could not be saved.' }); }

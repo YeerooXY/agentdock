@@ -4,15 +4,20 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { atomicJson } = require('./storage.cjs');
 const { claudeLimits } = require('./domain.cjs');
-const root = process.env.AGENT_DOCK_DATA_DIR;
-const session = process.env.AGENT_DOCK_SESSION_ID;
 const mode = process.argv[2];
+const root = mode === 'codex-session' ? process.argv[3] : process.env.AGENT_DOCK_DATA_DIR;
+const session = mode === 'codex-session' ? process.argv[4] : process.env.AGENT_DOCK_SESSION_ID;
 if (!root || !session || !/^[a-f0-9-]{36}$/.test(session)) process.exit(0);
 async function accept(raw) {
   try {
     const input = JSON.parse(raw || '{}');
     const event = { session, at: Date.now(), providerSessionId: input['thread-id'] || input.session_id || null };
-    if (mode === 'statusline') {
+    if (mode === 'codex-session') {
+      if (input.hook_event_name !== 'SessionStart' || !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(event.providerSessionId || '')) return;
+      // SessionStart can arrive on the first prompt or after compaction. It
+      // records identity only: never reset an active console to "open".
+      atomicJson(path.join(root, 'events', `${session}.identity.json`), event);
+    } else if (mode === 'statusline') {
       event.limits = claudeLimits(input);
       event.contextPercent = input.context_window?.used_percentage ?? null;
       event.model = input.model?.display_name || null;

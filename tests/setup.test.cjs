@@ -32,6 +32,7 @@ test('packaged sessions use their bundled runtime and helpers without Node on PA
   const runtime = runtimeFiles({ isPackaged: true, resourcesPath: root, findProgram: () => { throw new Error('Must not search PATH'); } });
   const calls = [];
   const sessions = new Sessions(root, {
+    prepareCodexSession: async () => [],
     runtime, findProgram: () => null, nativeCodex: () => 'C:\\Agents\\codex.exe', claude: { kind: 'native', path: 'C:\\Agents\\claude.exe' },
     pty: { spawn(executable, args) { calls.push({ executable, args }); return { onData() {}, onExit() {} }; } }
   });

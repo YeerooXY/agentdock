@@ -4,6 +4,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const { EventEmitter } = require('node:events');
 const { atomicJson, readJson } = require('./storage.cjs');
+const { previewArchive } = require('./result-archive.cjs');
 const extensions = new Set(['.png', '.jpg', '.jpeg', '.webp', '.txt', '.md', '.json', '.log', '.html', '.pdf', '.glb', '.gltf', '.obj', '.stl', '.zip']);
 const imageExtensions = new Set(['.png', '.jpg', '.jpeg', '.webp']);
 const textExtensions = new Set(['.txt', '.md', '.json', '.log', '.html']);
@@ -41,7 +42,7 @@ class Results extends EventEmitter {
     if (fs.lstatSync(file).isSymbolicLink()) throw new Error('The result file was redirected.');
     return file;
   }
-  add(raw, { project = '', sessionId = null, consoleKey = null, consoleName = '', trusted = false, turnId = '' } = {}) {
+  add(raw, { project = '', sessionId = null, consoleKey = null, consoleName = '', trusted = false, turnId = '', git = null } = {}) {
     if (this.items.length >= 1000) throw new Error('The gallery is full. Delete some saved results first.');
     let buffer, ext;
     if (raw.file) {
@@ -64,10 +65,12 @@ class Results extends EventEmitter {
       status: ['passed', 'failed', 'needs-review'].includes(raw.status) ? raw.status : 'needs-review',
       summary: short(raw.summary, 1500), project: short(project, 1000), sessionId, consoleKey: consoleKey || sessionId, consoleName: short(consoleName, 64), seenAt: null, reviewId: trusted ? short(raw.reviewId, 80) : null, groupId: short(turnId || raw.groupId, 80), originalFile: raw.file && project ? path.relative(project, raw.file).replaceAll('\\', '/') : null, source: short(raw.source || 'Agent', 60) };
     const dir = this.directory(item.id); fs.mkdirSync(dir); fs.writeFileSync(path.join(dir, 'result' + ext), buffer, { flag: 'wx' });
+    if (git) item.git = { branch: short(git.branch, 250) || null, commit: /^[a-f0-9]{40,64}$/i.test(git.commit || '') ? git.commit : null, detached: git.detached === true };
     this.persist([item, ...this.items]); return item;
   }
-  preview(id, thumbnail = false) {
+  preview(id, thumbnail = false, entry = null) {
     const item = this.items.find(x => x.id === id), file = this.path(id);
+    if (item.ext === '.zip') return previewArchive(file, { entry, thumbnail, nativeImage: this.nativeImage });
     if (item.kind === 'code' && item.ext === '.json' && item.size < 2 * 1024 * 1024) return { diff: JSON.parse(fs.readFileSync(file, 'utf8')) };
     if (imageExtensions.has(item.ext) && this.nativeImage) {
       const source = this.nativeImage.createFromPath(file);
@@ -91,7 +94,7 @@ class Results extends EventEmitter {
     try {
       for (const id of new Set(ids)) {
         if (!this.items.some(x => x.id === id)) continue;
-        try { const dir = this.directory(id); if (fs.existsSync(dir)) await this.trash(dir); deleted.push(id); }
+        try { const dir = this.directory(id); if (fs.existsSync(dir)) await this.trash(dir); if (fs.existsSync(dir)) throw new Error('Saved files are still present.'); deleted.push(id); }
         catch { failed.push(id); }
       }
       this.persist(this.items.filter(x => !deleted.includes(x.id)));

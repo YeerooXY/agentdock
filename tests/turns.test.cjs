@@ -9,7 +9,7 @@ const { Turns } = require('../electron/turns.cjs');
 const { Results } = require('../electron/results.cjs');
 function fixture(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dock-turn-')), project = path.join(root, 'project'), store = path.join(root, 'dock'); fs.mkdirSync(project); fs.mkdirSync(store);
-  execFileSync('git', ['init', '-q', project], { windowsHide: true });
+  execFileSync('git', ['init', '-q', '-b', 'feature/results', project], { windowsHide: true });
   const results = new Results(store, { trash: x => fs.promises.rm(x, { recursive: true, force: true }) });
   const sessions = new Map(['a','b'].map(id => [id, { id, consoleKey: id, name: 'Project ' + id, cwd: project, alive: true }]));
   const turns = new Turns(results, { getSession: id => sessions.get(id), getSecrets: () => ['a-long-private-value'] });
@@ -24,11 +24,22 @@ test('Results groups turn diffs with reports and excludes pre-existing edits and
   await f.turns.finish('a'); await f.turns.finish('a');
   assert.equal(f.results.items.length, 2); assert.equal(f.results.unreadGroups(), 1); assert.ok(f.results.items.every(x => x.groupId === id && x.consoleName === 'Project a'));
   const code = f.results.items.find(x => x.kind === 'code'), report = f.results.preview(code.id).diff;
+  assert.equal(code.git.branch, 'feature/results'); assert.equal(report.git.before.branch, 'feature/results'); assert.equal(report.git.after.branch, 'feature/results');
+  assert.ok(f.results.items.every(x => x.git.branch === 'feature/results'));
   assert.deepEqual(report.changes.map(x => x.file).sort(), ['deleted.js','existing.js','new.js']);
   assert.ok(report.changes.find(x => x.file === 'existing.js').patch.includes('+new change'));
   assert.ok(!report.changes.find(x => x.file === 'existing.js').patch.includes('+already dirty'));
   assert.ok(!JSON.stringify(report).includes('a-long-private-value'));
   await f.results.remove(f.results.items.map(x => x.id)); assert.equal(f.results.items.length, 0); assert.ok(fs.existsSync(path.join(f.project, 'new.js')));
+});
+
+test('turn reports retain starting and ending Git branches when the branch changes', async t => {
+  const f = fixture(t); f.write('app.js', 'before'); await f.turns.begin('a');
+  execFileSync('git', ['-C', f.project, 'symbolic-ref', 'HEAD', 'refs/heads/fix/restore'], { windowsHide: true });
+  f.write('app.js', 'after'); await f.turns.finish('a');
+  const report = f.results.preview(f.results.items[0].id).diff;
+  assert.equal(report.git.before.branch, 'feature/results'); assert.equal(report.git.after.branch, 'fix/restore');
+  assert.ok(report.notes.some(x => x.includes('branch changed')));
 });
 test('concurrent consoles mark folder attribution as overlapping; idle files do not become a new diff', async t => {
   const f = fixture(t); f.write('app.txt', 'before'); await Promise.all([f.turns.begin('a'), f.turns.begin('b')]); f.write('app.txt', 'after');

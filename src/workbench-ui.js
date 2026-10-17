@@ -11,13 +11,15 @@ export function workbenchUI({ call, getState, getPage, renderPage, escape: e, to
   const consoleKey = x => x.consoleKey || x.sessionId || x.source || 'Dock';
   const consoleName = x => x.consoleName || getState().sessions.find(s => s.id === x.sessionId)?.name || (x.sessionId ? 'Earlier console' : x.source === 'Agent' ? 'API' : x.source || 'Dock');
   const groupKey = x => JSON.stringify([consoleKey(x), x.groupId || x.id]);
+  const branchLabel = git => git?.branch || (git?.detached && git.commit ? `Detached ${git.commit.slice(0, 8)}` : 'Branch not recorded');
+  const branch = git => `<span class="result-branch" title="${e(git?.commit || branchLabel(git))}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="5" r="2.5"/><circle cx="6" cy="19" r="2.5"/><circle cx="18" cy="6" r="2.5"/><path d="M6 7.5v9M18 8.5c0 5.5-12 2-12 8"/></svg> ${e(branchLabel(git))}</span>`;
   const batch = id => { const item = data().results.find(x => x.id === id); return item ? data().results.filter(x => groupKey(x) === groupKey(item)) : []; };
   const filtered = () => data().results.filter(x => (!kind || x.kind === kind) && (!project || x.project === project) && (!consoleFilter || consoleKey(x) === consoleFilter) && (!filter || (x.title + ' ' + x.summary + ' ' + consoleName(x)).toLowerCase().includes(filter.toLowerCase())));
   const shell = (title, text, content) => `<div class="page-heading"><div><h1>${title}</h1><p>${text}</p></div></div>${content}`;
   const empty = text => `<div class="wb-empty">${text}</div>`;
   const visible = () => filtered().slice(resultPage * 40, (resultPage + 1) * 40);
   const pagination = () => button('previous-results','Previous','','subtle',resultPage === 0) + `<span class="result-page-number">${resultPage + 1} / ${Math.max(1, Math.ceil(filtered().length / 40))}</span>` + button('next-results','Next','','subtle',(resultPage + 1) * 40 >= filtered().length);
-  const card = x => `<article class="result-card"><button class="result-image" data-wb="preview" data-id="${x.id}" aria-label="Open ${e(x.title)}">${x.image ? `<img data-result-image="${x.id}" alt="${e(x.title)}">` : `<span class="result-file">${e(x.ext.slice(1).toUpperCase())}</span>`}</button><div class="result-copy"><div class="result-meta"><span>${e(x.kind)}</span><label class="result-select"><input type="checkbox" data-result-select="${x.id}" aria-label="Select ${e(x.title)}" ${selected.has(x.id) ? 'checked' : ''}></label></div><button class="result-title" data-wb="preview" data-id="${x.id}">${e(x.title)}</button><p>${e(x.summary || (x.project.split(/[\\/]/).filter(Boolean).pop() || 'No project'))}</p><div class="result-meta"><time>${date(x.at)}</time><span>${e(x.status.replaceAll('-', ' '))}</span></div></div></article>`;
+  const card = x => `<article class="result-card"><button class="result-image" data-wb="preview" data-id="${x.id}" aria-label="Open ${e(x.title)}">${!x.image ? `<span class="result-file">${x.kind === 'code' ? '&lt;/&gt;' : e(x.ext.slice(1).toUpperCase())}</span>` : ''}${x.image || x.ext === '.zip' ? `<img data-result-image="${x.id}" alt="${e(x.title)}">` : ''}</button><div class="result-copy"><div class="result-meta"><span>${e(x.kind)}</span><label class="result-select"><input type="checkbox" data-result-select="${x.id}" aria-label="Select ${e(x.title)}" ${selected.has(x.id) ? 'checked' : ''}></label></div><button class="result-title" data-wb="preview" data-id="${x.id}">${e(x.title)}</button><p>${e(x.summary || (x.project.split(/[\\/]/).filter(Boolean).pop() || 'No project'))}</p><div class="result-meta"><time>${date(x.at)}</time><span>${e(x.status.replaceAll('-', ' '))}</span></div></div></article>`;
   const resultsList = () => {
     const consoles = new Map();
     for (const item of visible()) {
@@ -30,8 +32,8 @@ export function workbenchUI({ call, getState, getPage, renderPage, escape: e, to
     return [...consoles.values()].map(groups => {
       const first = groups.values().next().value[0];
       return `<section class="result-console-group"><header class="result-console-heading"><h2>${e(consoleName(first))}</h2><span class="project-label">${e(first.project.split(/[\\/]/).filter(Boolean).pop() || '')}</span></header>${[...groups.values()].map(items => {
-        const first = items[0], all = batch(first.id), unread = all.some(x => !x.seenAt);
-        return `<section class="result-batch ${unread ? 'unread' : ''}"><header class="result-batch-heading"><div><span>${all.length} file${all.length === 1 ? '' : 's'}</span><time>${date(first.at)}</time>${unread ? '<span class="result-new">New</span>' : ''}</div><div>${unread ? button('seen-batch','Mark viewed',first.id) : ''}${button('delete-batch','Delete batch',first.id,'subtle danger')}</div></header><div class="result-batch-grid">${items.map(card).join('')}</div></section>`;
+        const first = items[0], all = batch(first.id), unread = all.some(x => !x.seenAt), code = all.find(x => x.kind === 'code'), git = all.find(x => x.git)?.git;
+        return `<section class="result-batch ${unread ? 'unread' : ''}"><header class="result-batch-heading"><div><span>${all.length} file${all.length === 1 ? '' : 's'}</span><time>${date(first.at)}</time>${branch(git)}${unread ? '<span class="result-new">New</span>' : ''}</div><div>${code ? button('preview','Code changes',code.id,'secondary') : ''}${unread ? button('seen-batch','Mark viewed',first.id) : ''}${button('delete-batch','Delete batch',first.id,'subtle danger')}</div></header><div class="result-batch-grid">${items.map(card).join('')}</div></section>`;
       }).join('')}</section>`;
     }).join('') || empty('Screenshots, test reports and concepts will appear here.');
   };
@@ -53,18 +55,27 @@ export function workbenchUI({ call, getState, getPage, renderPage, escape: e, to
   function show(html) { dialog.innerHTML = `<div class="wb-dialog-top">${detail?.type === 'review' ? button('review-open','Refresh review',detail.id) : ''}${button('close','Close')}</div>${html}`; if (!dialog.open) dialog.showModal(); loadImages(dialog);
     const draftButton = dialog.querySelector('[data-wb=draft-concept]'); if (draftButton) draftButton.disabled = !dialog.querySelector('#concept-agent').value || data().reviews.find(x=>x.id===detail?.id)?.state !== 'complete';
     const meshyButton = dialog.querySelector('[data-wb=meshy]'); if (meshyButton) meshyButton.disabled = !dialog.querySelector('#native-status')?.value; }
-  async function preview(id) {
+  async function preview(id, entry = null) {
     const item = data().results.find(x => x.id === id); if (!item) throw new Error('This result was deleted.');
     detail = { type: 'result', id }; const version = ++modalVersion;
-    show(`<h2>${e(item.title)}</h2><p class="field-hint">${e(item.source)} · ${e(item.status.replaceAll('-', ' '))} · ${date(item.at)}</p><div id="result-preview">Loading…</div><div class="wb-toolbar">${button('export','Export',id,'secondary')}${button('delete-one','Delete saved copy',id,'subtle danger')}</div>`);
-    const content = await api('results.preview',id);
-    const markdown = item.ext === '.md' && content.text != null ? (await import('./markdown')).renderMarkdown(content.text) : null;
-    if (version !== modalVersion || !dialog.open) return;
-    dialog.querySelector('#result-preview').innerHTML = content.diff ? renderDiff(content.diff) : content.image ? `<img class="result-full-image" src="${e(content.image)}" alt="${e(item.title)}">` : `${markdown !== null ? `<article class="result-markdown">${markdown}</article>` : `<pre class="result-text">${e(content.text)}</pre>`}${content.truncated ? '<p>Preview shortened. Export for the full file.</p>' : ''}`;
-    await api('results.seen', batch(id).map(x => x.id));
+    const code = batch(id).find(x => x.kind === 'code');
+    show(`<h2>${e(item.title)}</h2><div class="result-detail-meta">${item.kind === 'code' && item.git ? '' : branch(item.git || code?.git)}<span>${e(consoleName(item))} · ${e(item.status.replaceAll('-', ' '))} · ${date(item.at)}</span>${code && code.id !== id ? button('preview','Code changes',code.id,'secondary') : ''}</div><div id="result-preview" aria-live="polite">Loading…</div><div class="wb-toolbar">${button('export','Export',id,'secondary')}${button('delete-one','Delete saved copy',id,'subtle danger')}</div>`);
+    try {
+      const content = await api('results.preview',{ id, entry });
+      const ext = content.entry?.ext || item.ext;
+      const markdown = ext === '.md' && content.text != null ? (await import('./markdown')).renderMarkdown(content.text) : null;
+      if (version !== modalVersion || !dialog.open) return;
+      const body = content.diff ? renderDiff(content.diff) : content.image ? `<img class="result-full-image" src="${e(content.image)}" alt="${e(content.entry?.name || item.title)}">` : `${markdown !== null ? `<article class="result-markdown">${markdown}</article>` : `<pre class="result-text">${e(content.text || '')}</pre>`}${content.truncated ? '<p>Preview shortened. Export for the full file.</p>' : ''}`;
+      dialog.querySelector('#result-preview').innerHTML = content.archive ? `<div class="archive-preview"><nav class="archive-files" aria-label="Files in archive"><p>${content.archive.entries.length}${content.archive.limited ? '+' : ''} files</p>${content.archive.entries.map(file => `<button type="button" data-wb="archive-entry" data-id="${e(id)}" data-entry="${file.index}" aria-pressed="${file.index === content.entry?.index}"><span class="archive-file-type">${e(file.ext.slice(1).toUpperCase() || 'FILE')}</span><span>${e(file.name)}${file.reason ? `<small>${e(file.reason)}</small>` : ''}</span></button>`).join('')}${content.archive.limited ? '<p>Showing the first files. Export for the full archive.</p>' : ''}</nav><section class="archive-content">${content.entry ? `<h3>${e(content.entry.name)}</h3>` : ''}${body}</section></div>` : body;
+      if (entry != null) dialog.querySelector(`[data-entry="${entry}"]`)?.focus({ preventScroll: true });
+      await api('results.seen', batch(id).map(x => x.id));
+    } catch (error) {
+      if (version === modalVersion && dialog.open) dialog.querySelector('#result-preview').innerHTML = `<p role="alert">${e(error.message)}</p>`;
+    }
   }
   function renderDiff(report) {
-    return (report.notes || []).map(note => `<p class="field-hint">${e(note)}</p>`).join('') + (report.changes || []).map(change => `<details class="code-change" open><summary>${e(change.file)} <span>${e(change.type)}</span></summary>${change.patch ? `<pre class="result-text code-diff">${change.patch.split('\n').map(line => `<span class="${line.startsWith('+') ? 'diff-add' : line.startsWith('-') ? 'diff-remove' : line.startsWith('@@') ? 'diff-hunk' : ''}">${e(line)}\n</span>`).join('')}</pre>` : `<p class="field-hint">${e(change.omitted || 'No text preview')}</p>`}</details>`).join('');
+    const git = report.git, before = git?.before, after = git?.after;
+    return (git ? `<div class="code-git-context">${branch(before)}${branchLabel(before) !== branchLabel(after) ? `<span>→</span>${branch(after)}` : ''}${before?.commit ? `<code>${e(before.commit.slice(0, 8))}${after?.commit && after.commit !== before.commit ? ` → ${e(after.commit.slice(0, 8))}` : ''}</code>` : ''}</div>` : '') + (report.notes || []).map(note => `<p class="field-hint">${e(note)}</p>`).join('') + ((report.changes || []).length ? report.changes.map(change => `<details class="code-change" open><summary>${e(change.file)} <span>${e(change.type)}</span></summary>${change.patch ? `<pre class="result-text code-diff">${change.patch.split('\n').map(line => `<span class="${line.startsWith('+') ? 'diff-add' : line.startsWith('-') ? 'diff-remove' : line.startsWith('@@') ? 'diff-hunk' : ''}">${e(line)}\n</span>`).join('')}</pre>` : `<p class="field-hint">${e(change.omitted || 'No text preview')}</p>`}</details>`).join('') : '<p>No code changes in this turn.</p>');
   }
   function meshyConnection() {
     const auth = data().meshyAuth || { state:'unchecked' };
@@ -88,7 +99,7 @@ export function workbenchUI({ call, getState, getPage, renderPage, escape: e, to
     for (const img of parent.querySelectorAll('img[data-result-image]:not([src])')) {
       if (!img.isConnected) continue;
       const id = img.dataset.resultImage;
-      try { if (!previews.has(id)) { if (previews.size > 60) previews.delete(previews.keys().next().value); previews.set(id, api('results.preview',{ id, thumbnail:true })); } const result = await previews.get(id); if (img.isConnected && result.image) img.src = result.image; }
+      try { if (!previews.has(id)) { if (previews.size > 60) previews.delete(previews.keys().next().value); previews.set(id, api('results.preview',{ id, thumbnail:true })); } const result = await previews.get(id); if (img.isConnected) { if (result.image) img.src = result.image; else img.hidden = true; } }
       catch { previews.delete(id); img.alt = 'Preview unavailable'; }
     }
   }
@@ -146,6 +157,7 @@ export function workbenchUI({ call, getState, getPage, renderPage, escape: e, to
       if (action === 'meshy-login') await api('concept.open-login');
       if (action === 'close') { detail = null; ++modalVersion; dialog.close(); }
       if (action === 'preview') await preview(id);
+      if (action === 'archive-entry') await preview(id, Number(target.dataset.entry));
       if (action === 'import') { const result = await api('results.import'); if (result.errors.length) toast(result.errors.join('\n'),true); renderPage(); }
       if (action === 'export') await api('results.export',id);
       if (action === 'folder') await api('results.folder');
@@ -197,6 +209,8 @@ export function workbenchUI({ call, getState, getPage, renderPage, escape: e, to
       syncMeshy();
       if (next === stamp) return; stamp = next;
       for (const id of selected) if (!d.results.some(x=>x.id===id)) selected.delete(id);
+      for (const id of previews.keys()) if (!d.results.some(x=>x.id===id)) previews.delete(id);
+      if (detail?.type === 'result' && !d.results.some(x => x.id === detail.id)) { detail = null; ++modalVersion; dialog.close(); }
       if (getPage() === 'inbox') renderPage();
       if (getPage() === 'results') refreshGallery();
       const list = document.querySelector('#review-list'); if (list) list.innerHTML = reviewList();

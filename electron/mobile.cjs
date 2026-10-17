@@ -162,7 +162,7 @@ class MobileCompanion extends EventEmitter {
         const defaults = this.getDefaults(); return this.sessions.create({ ...defaults, name: typeof payload.name === 'string' ? payload.name.slice(0, 64) : defaults.name });
       }
       case 'results.list': return this.results.list().map(({ id, title, kind, status, summary, at, size, image, ext, groupId, sessionId, consoleKey, consoleName, seenAt }) => ({ id, title, kind, status, summary, at, size, image, ext, groupId, sessionId, consoleKey, consoleName, seenAt }));
-      case 'results.preview': { const value = this.results.preview(payload.id, payload.thumbnail !== false); if (JSON.stringify(value).length > 3 * 1024 * 1024) throw new Error('This preview is too large. Open it on your PC.'); return value; }
+      case 'results.preview': { const value = await this.results.preview(payload.id, payload.thumbnail !== false, payload.entry); if (JSON.stringify(value).length > 3 * 1024 * 1024) throw new Error('This preview is too large. Open it on your PC.'); return value; }
       case 'results.seen': return this.results.markSeen(payload.ids);
       case 'results.delete': return this.results.remove(payload.ids);
       case 'usage': return this.getUsage();

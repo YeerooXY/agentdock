@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
+const { spawnSync } = require('node:child_process');
 const { Sessions } = require('../electron/sessions.cjs');
 const { Workspace } = require('../electron/workspace.cjs');
 const { atomicJson } = require('../electron/storage.cjs');
@@ -21,6 +22,7 @@ function fixture(t, existingRoot, options = {}) {
   const sessions = new Sessions(root, {
     nativeCodex: () => 'C:\\Programs\\codex.exe', findProgram: name => name === 'claude' ? 'C:\\Programs\\claude.exe' : process.execPath,
     claude: options.claude,
+    prepareCodexSession: options.prepareCodexSession || (async () => []),
     pty: { spawn(executable, args, config) {
       const terminal = { onData(fn) { this.data = fn; }, onExit(fn) { this.exit = fn; }, kill() { this.exit({ exitCode: 0 }); }, write(data) { throw new Error('Restoration must not replay input: ' + data); } };
       calls.push({ executable, args, config, terminal }); return terminal;
@@ -70,6 +72,45 @@ test('ending a panel removes it from the saved workspace; a crash keeps the othe
   const second = fixture(t, first.root); await second.workspace.restore();
   assert.deepEqual(second.sessions.list().map(x => x.slot), [8]);
   assert.deepEqual(second.errors, []);
+});
+
+test('unfinished first turns restore each exact Codex chat, including consoles in the same folder', async t => {
+  const first = fixture(t), threads = [crypto.randomUUID(), crypto.randomUUID()];
+  for (let index = 0; index < 2; index++) {
+    const item = await first.sessions.create({ provider: 'codex', cwd: first.root, name: `Chat ${index + 1}` });
+    first.sessions.items.get(item.id).state = 'active';
+    const input = { hook_event_name: 'SessionStart', session_id: threads[index], source: 'startup', prompt: 'PRIVATE_PROMPT', transcript_path: 'PRIVATE_TRANSCRIPT' };
+    const run = spawnSync(process.execPath, [path.resolve(__dirname, '../electron/agent-event.cjs'), 'codex-session', first.root, item.id], { input: JSON.stringify(input), windowsHide: true });
+    assert.equal(run.status, 0);
+    const metadata = fs.readFileSync(path.join(first.root, 'events', `${item.id}.identity.json`), 'utf8');
+    assert.ok(!metadata.includes('PRIVATE_'));
+    assert.equal(fs.existsSync(path.join(first.root, 'events', `${item.id}.state.json`)), false, 'no completion callback has fired');
+  }
+  first.workspace.freeze();
+  assert.ok(first.sessions.list().every(x => x.state === 'active'), 'identity must not stop work tracking');
+  await first.sessions.stop();
+  const second = fixture(t, first.root); await second.workspace.restore();
+  assert.deepEqual(second.calls.map(x => x.args.slice(0, 2)), threads.map(id => ['resume', id]));
+});
+
+test('switching Codex chat preserves the new identity despite a late completion from the previous chat', async t => {
+  const f = fixture(t), oldId = crypto.randomUUID(), newId = crypto.randomUUID();
+  const item = await f.sessions.create({ provider: 'codex', cwd: f.root }, { resumeId: oldId });
+  f.sessions.items.get(item.id).state = 'active';
+  atomicJson(path.join(f.root, 'events', `${item.id}.identity.json`), { session: item.id, providerSessionId: newId, at: Date.now() });
+  atomicJson(path.join(f.root, 'events', `${item.id}.state.json`), { session: item.id, providerSessionId: oldId, state: 'ready', at: Date.now() + 1 });
+  f.workspace.freeze();
+  assert.equal(f.saved()[0].providerSessionId, newId); assert.equal(f.sessions.list()[0].state, 'active');
+});
+
+test('async Codex setup reserves its grid space and cannot launch after shutdown', async t => {
+  let finishSetup;
+  const f = fixture(t, undefined, { prepareCodexSession: () => new Promise(resolve => { finishSetup = resolve; }) });
+  const pending = f.sessions.create({ slot: 1, provider: 'codex', cwd: f.root });
+  await assert.rejects(f.sessions.create({ slot: 1, provider: 'shell', cwd: f.root }), /already open/);
+  const shell = await f.sessions.create({ provider: 'shell', cwd: f.root }); assert.equal(shell.slot, 2);
+  await f.sessions.stop(); finishSetup([]);
+  await assert.rejects(pending, /closing/); assert.equal(f.calls.length, 1);
 });
 
 test('renaming preserves the live process and conversation, and the saved title reopens', async t => {
