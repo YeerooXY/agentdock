@@ -23,7 +23,7 @@ Do not put `google-services.json` or service-account JSON in the app source. Eac
 
 ## Checks
 
-`flutter test` covers invalid pairing, narrow layout, draft retention, on-demand Results and native Markdown. Root `npm test` exercises the HTTPS/WebSocket protocol, token revocation, compressed reconnects, and mocked Firebase sends.
+`flutter test` covers invalid pairing, narrow layout, separate message submission, interrupted sends, terminal checkpoint replacement, draft retention, on-demand Results and native Markdown. Root `npm test` exercises the HTTPS/WebSocket protocol, resize ordering, token revocation, compressed reconnects, and mocked Firebase sends. The [preview 3 checks](../docs/mobile-input-resize-review.md) also exercise the installed Codex CLI against a local mock API.
 
 `scripts/mobile-device-fixture.cjs` starts an isolated unpaid Windows test instance for an emulator. `scripts/mobile-adb.cjs` only targets `emulator-5554`; it never chooses a physical phone. Generated pairing codes and profiles stay under ignored `artifacts/mobile-device` and must not be published. Browser profile screenshots test the desktop renderer's responsive fallback, not an iOS app.
 

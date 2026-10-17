@@ -32,7 +32,12 @@ class MobileCompanion extends EventEmitter {
     this.private = { devices: [] }; this.clients = new Set(); this.streams = new Map(); this.sent = new Set(); this.counters = { sent: 0, received: 0 }; this.error = ''; this.pairing = null;
     if (this.config.encrypted) { try { this.private = JSON.parse(safeStorage.decryptString(Buffer.from(this.config.encrypted, 'base64'))); } catch { this.error = 'Mobile credentials could not be unlocked. Set up this PC again.'; this.config.enabled = false; } }
     this.push = new MobilePush({ credential: () => this.private.firebase?.credential });
-    this.output = packet => { if (this.streams.has(packet.id)) this.streams.get(packet.id).write(packet); else this.ensureStream(packet.id); };
+    this.output = packet => {
+      const existing = this.streams.has(packet.id), stream = this.ensureStream(packet.id);
+      // A newly created stream already includes this packet in session.buffer.
+      if (existing) stream?.write(packet);
+    };
+    this.resized = ({ id }) => { this.ensureStream(id); this.scheduleState(); };
     this.changed = () => {
       for (const [id, stream] of this.streams) if (!sessions.items.has(id) || sessions.items.get(id).dismissed) { stream.dispose(); this.streams.delete(id); }
       this.scheduleState();
@@ -45,7 +50,7 @@ class MobileCompanion extends EventEmitter {
       if (this.sent.size > 500) this.sent = new Set(inbox.items.map(x => x.id));
     };
     for (const item of inbox.items) this.sent.add(item.id);
-    sessions.on('output', this.output); sessions.on('changed', this.changed); results.on('changed', this.changed); inbox.on('changed', this.alerts);
+    sessions.on('output', this.output); sessions.on('resize', this.resized); sessions.on('changed', this.changed); results.on('changed', this.changed); inbox.on('changed', this.alerts);
   }
   available() { return this.crypto.isEncryptionAvailable() && this.crypto.getSelectedStorageBackend?.() !== 'basic_text'; }
   persist() {

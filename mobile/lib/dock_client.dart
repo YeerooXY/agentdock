@@ -344,13 +344,19 @@ class DockClient extends ChangeNotifier {
       } else if (data['type'] == 'terminal') {
         final id = data['id'] as String;
         if (!sessions.any((s) => s['id'] == id)) return;
-        final view = screens.putIfAbsent(id, () => makeScreen(id));
+        // xterm.dart does not implement RIS (ESC c). A checkpoint needs a
+        // fresh parser and buffers, including modes and partial escape input.
+        final view = data['reset'] == true
+            ? (screens[id] = makeScreen(id))
+            : screens.putIfAbsent(id, () => makeScreen(id));
         view.receiving = true;
         try {
           view.cols = (data['cols'] as num).toInt();
           view.rows = (data['rows'] as num).toInt();
-          view.terminal.resize(view.cols, view.rows);
-          if (data['reset'] == true) view.terminal.write('\x1bc');
+          if (view.terminal.viewWidth != view.cols ||
+              view.terminal.viewHeight != view.rows) {
+            view.terminal.resize(view.cols, view.rows);
+          }
           view.terminal.write(data['data'] as String);
           view.sequence = (data['sequence'] as num).toInt();
           view.epoch = (data['epoch'] as num).toInt();
@@ -424,6 +430,31 @@ class DockClient extends ChangeNotifier {
   Future<void> input(String value, {String? id}) async {
     await request('input', {'id': id ?? selected, 'data': value});
     inputError = '';
+  }
+
+  Future<void> submit(String text) async {
+    final id = selected, connection = socket, current = generation;
+    if (id.isEmpty || !connected || !foreground) {
+      throw StateError('Select a connected console first.');
+    }
+    if (text.trim().isEmpty) return;
+    final paste = screens[id]?.terminal.bracketedPasteMode == true;
+    final value = paste ? '\x1b[200~$text\x1b[201~' : text;
+    if (value.length > 65536) throw StateError('This message is too long.');
+    await input(value, id: id);
+    // Keep Enter out of a CLI's paste burst. The acknowledgement confirms the
+    // PC accepted the text, not that the terminal app has processed its input.
+    await Future<void>.delayed(const Duration(milliseconds: 150));
+    if (!connected ||
+        !foreground ||
+        current != generation ||
+        !identical(connection, socket) ||
+        selected != id) {
+      throw StateError(
+        'Message was typed but not submitted. Check the original console.',
+      );
+    }
+    await input('\r', id: id);
   }
 
   Future<void> acknowledge() async {

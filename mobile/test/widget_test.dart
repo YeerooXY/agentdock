@@ -10,6 +10,8 @@ import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 class FakeDock extends DockClient {
   bool markdown = false;
   final calls = <String>[];
+  final inputs = <Map<String, dynamic>>[];
+  Future<void> Function(Map<String, dynamic>)? onInput;
   FakeDock({bool paired = true}) {
     if (!paired) return;
     pairing = {'name': 'Test PC'};
@@ -35,6 +37,10 @@ class FakeDock extends DockClient {
     Map<String, dynamic> payload = const {},
   ]) async {
     calls.add(method);
+    if (method == 'input') {
+      inputs.add(Map.of(payload));
+      await onInput?.call(payload);
+    }
     if (method == 'results.list') {
       return [
         {
@@ -76,6 +82,137 @@ class FakeDock extends DockClient {
 }
 
 void main() {
+  test(
+    'plain shells receive text and Enter separately without paste markers',
+    () async {
+      final c = FakeDock();
+      addTearDown(c.dispose);
+      await c.submit('Write-Host ready');
+      expect(c.inputs, [
+        {'id': 'one', 'data': 'Write-Host ready'},
+        {'id': 'one', 'data': '\r'},
+      ]);
+    },
+  );
+  for (final change in ['console', 'connection', 'background', 'reconnect']) {
+    test('submission does not send Enter after $change changes', () async {
+      final c = FakeDock();
+      addTearDown(c.dispose);
+      c.onInput = (_) async {
+        switch (change) {
+          case 'console':
+            c.selected = 'two';
+          case 'connection':
+            c.connected = false;
+          case 'background':
+            c.foreground = false;
+          case 'reconnect':
+            c.generation++;
+        }
+      };
+      await expectLater(c.submit('keep this draft'), throwsStateError);
+      expect(c.inputs, [
+        {'id': 'one', 'data': 'keep this draft'},
+      ]);
+    });
+  }
+  testWidgets('a failed Send keeps the draft and does not send Enter', (
+    tester,
+  ) async {
+    final c = FakeDock();
+    addTearDown(c.dispose);
+    c.onInput = (_) async => throw StateError(
+      'Connection lost. Check the console before sending again.',
+    );
+    await tester.pumpWidget(DockApp(client: c));
+    await tester.enterText(find.byType(TextField).last, 'keep my message');
+    await tester.tap(find.byTooltip('Send to console'));
+    await tester.pumpAndSettle();
+    expect(c.inputs, hasLength(1));
+    expect(
+      tester.widget<TextField>(find.byType(TextField).last).controller!.text,
+      'keep my message',
+    );
+    expect(find.textContaining('Connection lost.'), findsOneWidget);
+  });
+  testWidgets(
+    'Enter submits existing terminal input without resending the composer',
+    (tester) async {
+      final c = FakeDock();
+      addTearDown(c.dispose);
+      await tester.pumpWidget(DockApp(client: c));
+      await tester.enterText(find.byType(TextField).last, 'unsent draft');
+      await tester.tap(find.text('Enter'));
+      await tester.pumpAndSettle();
+      expect(c.inputs, [
+        {'id': 'one', 'data': '\r'},
+      ]);
+      expect(
+        tester.widget<TextField>(find.byType(TextField).last).controller!.text,
+        'unsent draft',
+      );
+    },
+  );
+  testWidgets('Send pastes a message, then submits with a separate Enter', (
+    tester,
+  ) async {
+    final c = FakeDock();
+    addTearDown(c.dispose);
+    c.screen!.terminal.write('\x1b[?2004h');
+    await tester.pumpWidget(DockApp(client: c));
+    await tester.enterText(
+      find.byType(TextField).last,
+      'first line\nsecond line',
+    );
+    await tester.tap(find.byTooltip('Send to console'));
+    await tester.pump();
+    expect(c.inputs, [
+      {'id': 'one', 'data': '\x1b[200~first line\nsecond line\x1b[201~'},
+    ]);
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(c.inputs, hasLength(1));
+    await tester.pump(const Duration(milliseconds: 150));
+    await tester.pumpAndSettle();
+    expect(c.inputs.last, {'id': 'one', 'data': '\r'});
+    expect(c.inputs, hasLength(2));
+    expect(
+      tester.widget<TextField>(find.byType(TextField).last).controller!.text,
+      isEmpty,
+    );
+  });
+
+  test(
+    'a resize checkpoint replaces old screen contents and terminal modes',
+    () {
+      final c = FakeDock();
+      addTearDown(c.dispose);
+      void frame(String data, int cols, int rows, int epoch) => c.handleMessage(
+        jsonEncode({
+          'type': 'terminal',
+          'id': 'one',
+          'data': data,
+          'cols': cols,
+          'rows': rows,
+          'sequence': epoch,
+          'epoch': epoch,
+          'reset': true,
+        }),
+      );
+      frame('\x1b[?1049h\x1b[?2004hSTALE SCREEN\x1b[6;1HOLD FOOTER', 80, 24, 1);
+      frame('Fresh screen', 40, 12, 2);
+      expect(c.screen!.terminal.buffer.getText().trim(), 'Fresh screen');
+      expect(c.screen!.terminal.bracketedPasteMode, false);
+      expect(c.screen!.terminal.viewWidth, 40);
+      expect(c.screen!.terminal.viewHeight, 12);
+      expect(
+        c.inputs,
+        isEmpty,
+        reason:
+            'screen restoration must never send terminal replies as user input',
+      );
+    },
+  );
+
   test('removed consoles release their phone scrollback', () {
     final client = FakeDock();
     client.handleMessage(

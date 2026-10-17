@@ -27,6 +27,15 @@ let app;
   console.log('READY isolated Android fixture on localhost:' + port);
   const started = Date.now();
   while (Date.now() - started < 30 * 60000 && !fs.existsSync(path.join(profile, 'stop'))) {
+    const actionsFile = path.join(profile, 'actions.json');
+    if (fs.existsSync(actionsFile)) {
+      const actions = JSON.parse(fs.readFileSync(actionsFile, 'utf8')); fs.unlinkSync(actionsFile);
+      for (const action of actions) {
+        if (action.method !== 'session.resize' && action.method !== 'session.input') throw Error('Unsupported fixture action');
+        if (!sessions.some(x => x.id === action.payload.id)) throw Error('Not a fixture console');
+        await call(action.method, action.payload);
+      }
+    }
     const state = await call('state');
     fs.writeFileSync(path.join(out, 'state.json'), JSON.stringify({ mobile: state.mobile, sessions: state.sessions.map(x => ({ id: x.id, name: x.name, state: x.state })), results: state.workbench.results.length }, null, 2));
     for (const session of sessions) { const buffer = await call('session.buffer', session.id); fs.writeFileSync(path.join(profile, session.id + '.txt'), buffer.data); }

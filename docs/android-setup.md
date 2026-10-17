@@ -6,7 +6,7 @@ This is an Android preview. iPhone support comes later. Live Firebase delivery a
 
 ## Install and pair
 
-1. Install the matching Windows and Android builds from the [0.6 preview 2 release](https://github.com/YeerooXY/agentdock/releases/tag/v0.6.0-preview.2). Most phones use the **arm64** APK. Android 7 or later is required. The APK uses a development signing key; a future store build may require uninstalling this preview first.
+1. Install the matching Windows and Android builds from the [0.6 preview 3 release](https://github.com/YeerooXY/agentdock/releases/tag/v0.6.0-preview.3). Most phones use the **arm64** APK. Android 7 or later is required. The APK uses a development signing key; a future store build may require uninstalling this preview first.
 2. Put the PC and phone on the same Wi-Fi or local network. **No VPN app, extra account or internet server is needed** for this connection.
 3. On the PC, open **Settings → Android → Connect a phone**. First-time setup also offers **Connect my Android phone next**.
 4. Select the PC's Wi-Fi or Ethernet address and enable the connection. Use **Refresh addresses** if you just changed networks. The **This PC only** address cannot be reached by your phone.

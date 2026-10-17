@@ -4,7 +4,7 @@ A Windows desktop app for up to nine agent consoles, shared tools and usage trac
 
 ## Install
 
-Download **[Agent-Dock-0.6.0-preview.2-Setup-x64.exe](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.2/Agent-Dock-0.6.0-preview.2-Setup-x64.exe)** for Windows 10/11 on an Intel or AMD 64-bit PC. This preview includes Android setup. The previous [stable desktop-only release](https://github.com/YeerooXY/agentdock/releases/tag/v0.5.0) is also available.
+Download **[Agent-Dock-0.6.0-preview.3-Setup-x64.exe](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.3/Agent-Dock-0.6.0-preview.3-Setup-x64.exe)** for Windows 10/11 on an Intel or AMD 64-bit PC. This preview includes Android setup. The previous [stable desktop-only release](https://github.com/YeerooXY/agentdock/releases/tag/v0.5.0) is also available.
 
 1. Run the installer and choose where to install Dock. It adds desktop and Start menu shortcuts.
 2. Choose your **project folder**. Tick any agents you want Dock to install; already installed agents are detected.
@@ -20,7 +20,7 @@ This release is unsigned, so Windows may show an unknown-publisher or SmartScree
 
 ## Android preview
 
-The [0.6 preview 2](https://github.com/YeerooXY/agentdock/releases/tag/v0.6.0-preview.2) includes a native Android companion, direct internet setup, turn-by-turn code diffs in Results, formatted Markdown previews, and Windows notifications that bring Dock forward. Install both matching preview builds; older Android builds cannot read internet pairing codes.
+The [0.6 preview 3](https://github.com/YeerooXY/agentdock/releases/tag/v0.6.0-preview.3) includes a native Android companion, direct internet setup, turn-by-turn code diffs in Results, formatted Markdown previews, and Windows notifications that bring Dock forward. Install both matching preview builds; older Android builds cannot read internet pairing codes.
 
 Phone and PC connect directly on the same Wi-Fi. For access away from home, choose **Direct internet**: Dock checks your network, can forward a port on a compatible router, helps with Windows Firewall, and pairs your phone by QR code. This needs a reachable public IPv4 address. An upstream router or provider NAT may need a manual step; the wizard does not claim internet access works until a phone connects from outside. A private VPN you already use still works too.
 

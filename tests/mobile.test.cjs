@@ -95,6 +95,35 @@ test('terminal checkpoint retains screen modes and resynchronizes after history 
   s.history = []; const gap = await s.read(0, snapshot.epoch); assert.equal(gap.reset, true);
   s.resize(40, 15); const resized = await s.read(1, snapshot.epoch); assert.equal(resized.cols, 40); assert.equal(resized.reset, true); s.dispose();
 });
+
+test('rapid terminal resizes keep the last requested size and ordered checkpoint dimensions', async () => {
+  const s = new TerminalStream({ buffer: '', sequence: 0, cols: 80, rows: 24 });
+  try {
+    const initial = await s.read(-1, 0);
+    const beforeResize = s.read(initial.sequence, initial.epoch);
+    s.resize(40, 12);
+    s.resize(80, 24);
+    const before = await beforeResize;
+    assert.equal(before.epoch, initial.epoch, 'a queued resize must not relabel an earlier screen');
+    assert.equal(before.cols, 80);
+    const after = await s.read(initial.sequence, initial.epoch);
+    assert.equal(after.cols, 80);
+    assert.equal(after.rows, 24);
+    assert.equal(after.reset, true);
+  } finally { s.dispose(); }
+});
+
+test('mobile parses a resized console redraw at its new width before the next flush', async t => {
+  const f = await fixture(t), session = f.sessions.items.get('console-1');
+  const stream = f.m.ensureStream(session.id);
+  await stream.read(-1, 0);
+  session.cols = 120; session.rows = 30;
+  f.sessions.emit('output', { id: session.id, sequence: ++session.sequence, data: '\x1b[?1049h\x1b[H\x1b[2J' + 'x'.repeat(110) + 'RIGHT' });
+  f.m.ensureStream(session.id);
+  const frame = await stream.read(-1, 0);
+  assert.equal(frame.cols, 120);
+  assert.equal(stream.term.buffer.active.getLine(0).translateToString(true), 'x'.repeat(110) + 'RIGHT');
+});
 test('Firebase imports validate project/package and push contains no console content', async () => {
   const keys = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
   const raw = { type: 'service_account', project_id: 'dock-test-123', client_email: 'sender@dock-test-123.iam.gserviceaccount.com', private_key: keys.privateKey.export({ type: 'pkcs8', format: 'pem' }) };

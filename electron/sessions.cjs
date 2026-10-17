@@ -183,7 +183,9 @@ class Sessions extends EventEmitter {
     const item = this.items.get(id); if (!item?.alive) return;
     cols = Math.max(20, Math.min(500, Math.floor(cols) || 80)); rows = Math.max(5, Math.min(200, Math.floor(rows) || 24));
     if (item.cols === cols && item.rows === rows) return;
-    item.terminal.resize(cols, rows); item.cols = cols; item.rows = rows;
+    item.cols = cols; item.rows = rows;
+    this.emit('resize', { id, cols, rows });
+    item.terminal.resize(cols, rows);
   }
   buffer(id) { const item = this.items.get(id); return { data: item?.buffer || '', sequence: item?.sequence || 0 }; }
   rename(id, name) {

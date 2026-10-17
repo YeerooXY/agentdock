@@ -110,8 +110,8 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
     final text = composer.text;
     setState(() => sending = true);
     await run(() async {
-      await c.input('$text\r');
-      if (composer.text == text) composer.clear();
+      await c.submit(text);
+      if (mounted && composer.text == text) composer.clear();
     });
     if (mounted) setState(() => sending = false);
   }
@@ -355,13 +355,14 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
                         }
                       },
                       child: SingleChildScrollView(
+                        key: ValueKey((c.selected, view.cols)),
                         scrollDirection: Axis.horizontal,
                         child: SizedBox(
                           width: max(size.maxWidth, view.cols * 7.3 + 16),
                           height: size.maxHeight,
                           child: TerminalView(
                             view.terminal,
-                            key: ValueKey(c.selected),
+                            key: ValueKey((c.selected, view.terminal)),
                             autoResize: false,
                             readOnly: !c.connected,
                             focusNode: terminalFocus,
@@ -384,6 +385,7 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
           child: Row(
             children: [
               for (final key in [
+                ('Enter', '\r'),
                 ('Esc', '\x1b'),
                 ('Tab', '\t'),
                 ('Ctrl C', '\x03'),
@@ -393,7 +395,7 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
                 ('→', '\x1b[C'),
               ])
                 TextButton(
-                  onPressed: c.connected
+                  onPressed: c.connected && !sending
                       ? () => run(() => c.input(key.$2))
                       : null,
                   child: Text(key.$1),
