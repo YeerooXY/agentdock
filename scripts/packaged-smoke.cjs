@@ -35,6 +35,7 @@ async function eventually(predicate) {
   assert.ok(packaged.every(file => allowed.has(file.split('/').filter(Boolean)[0])), 'Only allowlisted app files and production dependencies are packaged');
   assert.ok(!packaged.some(file => /\/(vault|workspace|settings|ledger)\.json$/.test(file) || /\/(test-data|artifacts|\.git)(\/|$)/.test(file)), 'No user data or development artifacts');
   const runtime = path.join(install, 'resources', 'runtime'), node = path.join(runtime, 'node.exe');
+  assert.ok(fs.existsSync(path.join(install, 'resources', 'mobile-network.ps1')), 'Router and firewall helper is installed outside ASAR');
   assert.deepEqual(fs.readdirSync(runtime).sort(), ['agent-event.cjs', 'agent-tools.cjs', 'meshy-cli', 'meshy-mcp.cjs', 'npm', 'node.exe', 'NODE-LICENSE.txt', 'THIRD-PARTY-NOTICES.txt', 'runtime.json'].sort());
   assert.equal(execFileSync(node, [path.join(runtime, 'npm', 'bin', 'npm-cli.js'), '--version'], { env, windowsHide: true, encoding: 'utf8' }).trim(), '12.2.1', 'Bundled installer runs without system Node/npm');
   const localPackage = path.join(work, 'fixture-cli'), installedCli = path.join(work, 'installed-cli');

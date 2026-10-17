@@ -12,7 +12,7 @@ module.exports = {
   ],
   asar: true,
   asarUnpack: ['node_modules/node-pty/**/*'],
-  extraResources: [{ from: '.build/runtime', to: 'runtime' }],
+  extraResources: [{ from: '.build/runtime', to: 'runtime' }, { from: 'electron/mobile-network.ps1', to: 'mobile-network.ps1' }],
   // node-pty ships N-API binaries. The packaged smoke test loads the x64 binary
   // and exercises real ConPTY sessions against the bundled Electron version.
   npmRebuild: false,

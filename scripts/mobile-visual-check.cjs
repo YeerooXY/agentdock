@@ -13,7 +13,7 @@ const reports = []; let browser;
   for (const [name, engine, options] of profiles) {
     browser = await engine.launch(); const context = await browser.newContext(options); const state = structuredClone(fixture);
     state.mode = 'dashboard'; state.settings.setupComplete = true; state.settings.sidebarCollapsed = false;
-    state.mobile = { enabled: true, host: '192.168.1.5', port: 47831, interfaces: [{ address: '192.168.1.5', name: 'Wi-Fi', tailscale: false }], devices: [{ id: 'phone-demo', name: 'Android phone', connected: true, alerts: true }], push: { configured: true, project: 'agent-dock-demo' }, pairingExpires: Date.now() + 300000 };
+    state.mobile = { enabled: true, mode: 'local', host: '192.168.1.5', port: 47831, routerMode: 'automatic', network: {}, interfaces: [{ address: '192.168.1.5', name: 'Wi-Fi', tailscale: false }], devices: [{ id: 'phone-demo', name: 'Android phone', connected: true, alerts: true }], push: { configured: true, project: 'agent-dock-demo' }, pairingExpires: Date.now() + 300000 };
     state.workbench.results = [{ id: '01010101-0101-4101-8101-010101010101', title: '2 changed files', kind: 'code', status: 'needs-review', summary: 'Changes during this turn', ext: '.json', size: 700, at: Date.now(), project: 'C:/Projects/Trader', consoleKey: 'trader', consoleName: 'Trader', groupId: 'turn-demo', seenAt: null, image: false, source: 'Agent' }];
     let unsafeMarkdown = false;
     state.workbench.results.push({ ...state.workbench.results[0], id: '02020202-0202-4202-8202-020202020202', title: 'Verification notes', kind: 'test', ext: '.md' });
@@ -22,6 +22,12 @@ const reports = []; let browser;
       if (method === 'session.buffer') return { ok: true, value: { data: '', sequence: 0 } };
       if (method === 'session.models') return { ok: true, value: [] };
       if (method === 'mobile.invite') return { ok: true, value: { code: 'visual-fixture-only', qr, expires: state.mobile.pairingExpires } };
+      if (method === 'mobile.status') return { ok: true, value: state.mobile };
+      if (method === 'mobile.inspect-network') { state.mobile.network = { checkedAt: Date.now(), relation: 'upstream', upnp: true, routerName: 'MiWiFi router', gateway: '192.168.1.1', wanAddress: '192.168.100.4', publicAddress: '8.8.8.8' }; return { ok: true, value: state.mobile.network }; }
+      if (method === 'mobile.configure') {
+        if (payload.mode === 'internet' && !payload.publicHost) return { ok: false, error: 'Enter a public IPv4 address or hostname, without https:// or a port.' };
+        Object.assign(state.mobile, payload); return { ok: true };
+      }
       if (method === 'workbench.results.preview' && (payload.id || payload) === '02020202-0202-4202-8202-020202020202') return { ok: true, value: { text: unsafeMarkdown ? '# Unsafe fixture\n<script>window.unsafeResult=true</script>\n<img src="https://example.invalid/tracker" onerror="window.unsafeResult=true">\n[Run](javascript:alert(1))\n![Remote](https://example.invalid/image)' : markdown } };
       if (method === 'workbench.results.preview') return { ok: true, value: { diff: { notes: ['Other consoles were active in this folder. Authorship may overlap.'], changes: [{ file: 'src/components/page.js', type: 'modified', patch: '--- src/components/page.js\n+++ src/components/page.js\n@@ -1 +1 @@\n-const status = "waiting";\n+const status = "ready";' }, { file: 'assets/preview.png', type: 'added', omitted: 'Binary file' }] } } };
       if (method === 'settings') Object.assign(state.settings, payload);
@@ -40,9 +46,17 @@ const reports = []; let browser;
       const overflow = await page.evaluate(() => { const d = document.querySelector('dialog[open]'); return d ? d.scrollWidth > d.clientWidth + 1 || d.getBoundingClientRect().right > innerWidth + 1 : document.documentElement.scrollWidth > innerWidth + 1; }); assert.equal(overflow, false, `${name} ${view} overflow`); checks.push(view);
     }
     await page.locator('[data-page=settings]').click(); await page.locator('[data-mobile=open]').click(); await capture('connection');
+    await page.locator('#mobile-mode').selectOption('internet');
+    await page.locator('[data-field=publicHost]').fill(''); await page.locator('[data-mobile=enable]').click();
+    assert.match(await page.locator('.mobile-setup .form-error').textContent(), /public IPv4/);
+    await page.locator('[data-mobile=inspect]').click(); await page.locator('.mobile-network-note strong').waitFor();
+    assert.equal(await page.locator('[data-field=publicHost]').inputValue(), '8.8.8.8');
+    await page.locator('[data-field=publicHost]').fill('my-dock.duckdns.org'); await capture('internet-setup');
     await page.locator('.mobile-step summary').focus(); await page.keyboard.press('Enter');
     assert.equal(await page.locator('.mobile-step details[open]').count(), 1); await capture('remote-help');
     await page.keyboard.press('Enter'); assert.equal(await page.locator('.mobile-step details[open]').count(), 0);
+    await page.locator('[data-mobile=enable]').click(); await page.getByRole('heading', { name: 'Router & Windows' }).waitFor();
+    assert.match(await page.locator('.mobile-upstream-rule').textContent(), /192\.168\.100\.4:47831/); await capture('router');
     await page.locator('[data-mobile=next]').click(); await page.locator('[data-mobile=pair]').click(); await capture('pair-phone');
     await page.locator('[data-mobile=next]').click(); await capture('alerts');
     await page.keyboard.press('Tab'); assert.ok(await page.evaluate(() => document.querySelector('dialog[open]').contains(document.activeElement)));
@@ -53,6 +67,8 @@ const reports = []; let browser;
     assert.equal(await page.locator('.result-markdown table').count(), 1); assert.equal(await page.locator('.result-markdown pre code').count(), 1);
     await page.keyboard.press('Escape'); unsafeMarkdown = true; await page.getByRole('button', { name: 'Verification notes', exact: true }).click(); await page.locator('.result-markdown h1').waitFor();
     assert.equal(await page.locator('.result-markdown script,.result-markdown img,.result-markdown iframe,.result-markdown a').count(), 0); assert.equal(await page.evaluate(() => window.unsafeResult), undefined);
+    await page.keyboard.press('Escape'); await page.locator('[data-page=settings]').click(); await page.locator('[data-action=agent-setup]').click();
+    await page.locator('#first-run [name=mobileSetup]').check(); await page.locator('#first-run [name=mobileMode]').selectOption('internet'); await capture('first-run');
     assert.deepEqual(errors, []); reports.push({ profile: name, engine: browser.version(), emulated: name !== 'pc', captures, checks }); console.log('PASS ' + name + ' mobile setup, keyboard flow and code diff'); await browser.close(); browser = null;
   }
   fs.writeFileSync(path.join(out, 'report.json'), JSON.stringify(reports, null, 2));

@@ -66,23 +66,12 @@ class DockClient extends ChangeNotifier {
       ),
     ) as Map<String, dynamic>;
     final uri = Uri.parse(invite['url'] as String);
-    final ip = InternetAddress.tryParse(uri.host);
-    final b = ip?.rawAddress;
-    final private =
-        b?.length == 4 &&
-        (b![0] == 10 ||
-            b[0] == 127 ||
-            b[0] == 192 && b[1] == 168 ||
-            b[0] == 172 && b[1] >= 16 && b[1] <= 31 ||
-            b[0] == 100 && b[1] >= 64 && b[1] <= 127);
-    if (invite['v'] != 1 ||
-        uri.scheme != 'https' ||
-        !private ||
-        uri.userInfo.isNotEmpty ||
-        uri.path.isNotEmpty ||
-        uri.hasQuery ||
-        uri.hasFragment ||
-        uri.port < 1024 ||
+    final internet = invite['v'] == 2 && invite['mode'] == 'internet';
+    if ((!internet && invite['v'] != 1) ||
+        !validEndpoint(uri, internet: internet) ||
+        (invite.containsKey('localUrl') &&
+            (!internet ||
+                !validEndpoint(Uri.parse(invite['localUrl'] as String)))) ||
         !RegExp(r'^[a-f0-9]{64}$').hasMatch(invite['pin'] as String? ?? '') ||
         !RegExp(r'^[A-Za-z0-9_-]{43}$')
             .hasMatch(invite['secret'] as String? ?? '')) {
@@ -97,12 +86,67 @@ class DockClient extends ChangeNotifier {
     return invite;
   }
 
+  static bool validEndpoint(Uri uri, {bool internet = false}) {
+    final ip = InternetAddress.tryParse(uri.host);
+    final b = ip?.rawAddress;
+    final private =
+        b?.length == 4 &&
+        (b![0] == 10 ||
+            b[0] == 127 ||
+            b[0] == 192 && b[1] == 168 ||
+            b[0] == 172 && b[1] >= 16 && b[1] <= 31 ||
+            b[0] == 100 && b[1] >= 64 && b[1] <= 127);
+    final publicIp =
+        b?.length == 4 &&
+        !private &&
+        b![0] != 0 &&
+        b[0] < 224 &&
+        !(b[0] == 169 && b[1] == 254) &&
+        !(b[0] == 192 && b[1] == 0 && (b[2] == 0 || b[2] == 2)) &&
+        !(b[0] == 198 &&
+            (b[1] == 18 || b[1] == 19 || b[1] == 51 && b[2] == 100)) &&
+        !(b[0] == 203 && b[1] == 0 && b[2] == 113);
+    final hostname =
+        ip == null &&
+        uri.host.length <= 253 &&
+        uri.host.contains('.') &&
+        !RegExp(r'^[\d.]+$').hasMatch(uri.host) &&
+        !RegExp(r'\.(local|localhost|lan|internal|home|invalid|test)$')
+            .hasMatch(uri.host) &&
+        uri.host
+            .split('.')
+            .every(
+              (x) =>
+                  RegExp(r'^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$').hasMatch(x),
+            );
+    if (uri.scheme != 'https' ||
+        !(internet ? publicIp || hostname : private) ||
+        uri.userInfo.isNotEmpty ||
+        uri.path.isNotEmpty ||
+        uri.hasQuery ||
+        uri.hasFragment ||
+        !uri.hasPort ||
+        uri.port < 1024 ||
+        uri.port > 65535) {
+      return false;
+    }
+    return true;
+  }
+
+  static List<String> endpoints(Map<String, dynamic> config) => {
+    if (config['localUrl'] is String) config['localUrl'] as String,
+    config['url'] as String,
+  }.toList();
+
+  static Duration routeTimeout(Map<String, dynamic> config, String url) =>
+      Duration(seconds: config['localUrl'] == url ? 2 : 12);
+
   HttpClient pinned(Map<String, dynamic> config) {
     final endpoint = Uri.parse(config['url'] as String);
     final client = HttpClient(
       context: SecurityContext(withTrustedRoots: false),
     );
-    client.connectionTimeout = const Duration(seconds: 12);
+    client.connectionTimeout = routeTimeout(config, config['url'] as String);
     client.badCertificateCallback = (cert, host, port) =>
         host == endpoint.host &&
         port == endpoint.port &&
@@ -113,45 +157,90 @@ class DockClient extends ChangeNotifier {
   }
 
   Future<void> pair(String code) async {
-    final invite = parseInvite(code), client = pinned(parseInvite(code));
-    try {
-      final request = await client.postUrl(
-        Uri.parse('${invite['url']}/v1/pair'),
-      );
-      request.followRedirects = false;
-      request.headers.set(
-        HttpHeaders.authorizationHeader,
-        'Bearer ${invite['secret']}',
-      );
-      request.headers.contentType = ContentType.json;
-      request.write(jsonEncode({'name': 'Android phone'}));
-      final response = await request.close().timeout(
-        const Duration(seconds: 15),
-      );
-      if (response.statusCode != 200) {
-        throw const FormatException(
-          'Pairing expired or was already used. Show a new code on your PC.',
+    final invite = parseInvite(code);
+    Object? failure;
+    for (final url in endpoints(invite)) {
+      final client = pinned({...invite, 'url': url});
+      try {
+        final request = await client
+            .postUrl(Uri.parse('$url/v1/pair'))
+            .timeout(routeTimeout(invite, url));
+        request.followRedirects = false;
+        request.headers.set(
+          HttpHeaders.authorizationHeader,
+          'Bearer ${invite['secret']}',
         );
-      }
-      final text = await utf8.decoder.bind(response).join();
-      final result = jsonDecode(text) as Map<String, dynamic>;
-      if (result['token'] is! String || result['id'] is! String) {
-        throw const FormatException(
-          'The PC returned an invalid pairing response.',
+        request.headers.contentType = ContentType.json;
+        request.write(jsonEncode({'name': 'Android phone'}));
+        final response = await request.close().timeout(
+          routeTimeout(invite, url),
         );
+        if (response.statusCode != 200) {
+          throw const FormatException(
+            'Pairing expired or was already used. Show a new code on your PC.',
+          );
+        }
+        final chunks = <int>[];
+        await for (final chunk in response.timeout(
+          const Duration(seconds: 10),
+        )) {
+          chunks.addAll(chunk);
+          if (chunks.length > 8192) {
+            throw const FormatException('The pairing response was too large.');
+          }
+        }
+        final text = utf8.decode(chunks);
+        final result = jsonDecode(text) as Map<String, dynamic>;
+        if (result['token'] is! String || result['id'] is! String) {
+          throw const FormatException(
+            'The PC returned an invalid pairing response.',
+          );
+        }
+        pairing = {
+          'url': invite['url'],
+          if (invite['localUrl'] != null) 'localUrl': invite['localUrl'],
+          'pin': invite['pin'],
+          'token': result['token'],
+          'id': result['id'],
+          'name': result['name'],
+        };
+        await storage.write(key: 'pc', value: jsonEncode(pairing));
+        await connect();
+        return;
+      } on FormatException {
+        rethrow;
+      } catch (error) {
+        failure = error;
+      } finally {
+        client.close(force: true);
       }
-      pairing = {
-        'url': invite['url'],
-        'pin': invite['pin'],
-        'token': result['token'],
-        'id': result['id'],
-        'name': result['name'],
-      };
-      await storage.write(key: 'pc', value: jsonEncode(pairing));
-      await connect();
-    } finally {
-      client.close(force: true);
     }
+    throw failure ?? StateError('The PC could not be reached.');
+  }
+
+  Future<WebSocket> openSocket(Map<String, dynamic> config, int current) async {
+    Object? failure;
+    for (final endpoint in endpoints(config)) {
+      if (!foreground || current != generation) {
+        throw StateError('Connection paused.');
+      }
+      final client = pinned({...config, 'url': endpoint});
+      transport = client;
+      try {
+        return await WebSocket.connect(
+          Uri.parse('$endpoint/v1/events').replace(scheme: 'wss').toString(),
+          headers: {
+            HttpHeaders.authorizationHeader: 'Bearer ${config['token']}',
+          },
+          customClient: client,
+          compression: CompressionOptions.compressionOff,
+        ).timeout(routeTimeout(config, endpoint));
+      } catch (error) {
+        failure = error;
+        client.close(force: true);
+      }
+    }
+    throw failure ?? StateError('The PC could not be reached.');
   }
 
   Future<void> connect() async {
@@ -161,20 +250,8 @@ class DockClient extends ChangeNotifier {
     status = 'Connecting…';
     notifyListeners();
     retry?.cancel();
-    final client = pinned(pairing!);
-    transport = client;
     try {
-      final url = Uri.parse('${pairing!['url']}/v1/events')
-          .replace(scheme: 'wss')
-          .toString();
-      final ws = await WebSocket.connect(
-        url,
-        headers: {
-          HttpHeaders.authorizationHeader: 'Bearer ${pairing!['token']}',
-        },
-        customClient: client,
-        compression: CompressionOptions.compressionOff,
-      ).timeout(const Duration(seconds: 15));
+      final ws = await openSocket(pairing!, current);
       if (current != generation || !foreground) {
         await ws.close();
         return;

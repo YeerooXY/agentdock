@@ -757,7 +757,7 @@ document.addEventListener('submit', async event => {
       const { permissions, ...consoleDefaults } = data;
       await call('settings', { consoleDefaults, agentPermissions: permissions }); toast('Defaults saved.');
     } else if (form.getAttribute('id') === 'vault-form') {
-      $('#vault-error').textContent = ''; await call('vault.save', data); form.elements.key.value = ''; renderPage(); toast('Key encrypted and saved.');
+      $('#vault-error').textContent = ''; await call('vault.save', data); form.elements.key.value = ''; renderPage(); toast('Key encrypted and saved.'); document.dispatchEvent(new CustomEvent('dock-key-saved', { detail: { id: data.provider } }));
     } else if (form.getAttribute('id') === 'instructions-form') {
       await call('shared.instructions', data.instructions); renderPage(); toast('Instructions saved.');
     } else if (form.getAttribute('id') === 'tool-form') {

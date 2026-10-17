@@ -71,6 +71,23 @@ test('one selected terminal streams and resumes without replaying commands', asy
   f.sessions.items.delete('console-2'); f.sessions.emit('changed'); assert.equal(f.m.streams.has('console-2'), false);
   d.ws.close();
 });
+
+test('internet mode preserves pairing authentication and device revocation across public peers', async t => {
+  const f = await fixture(t);
+  const paired = await f.request('/v1/pair', f.invite.secret);
+  const request = { headers: { authorization: 'Bearer ' + paired.data.token }, socket: { remoteAddress: '8.8.8.8' } };
+  assert.equal(f.m.authenticate(request), null, 'local mode blocks public peers even with a valid token');
+  Object.assign(f.m.config, { mode: 'internet', publicHost: 'test.duckdns.org', externalPort: 49000 });
+  assert.equal(f.m.authenticate(request).id, paired.data.id);
+  assert.equal(f.m.authenticate({ ...request, headers: { authorization: 'Bearer wrong' } }), null);
+  assert.equal(f.m.authenticate({ ...request, headers: { ...request.headers, origin: 'https://evil.example' } }), null);
+  assert.equal(f.m.authenticate({ headers: { ...request.headers, 'x-forwarded-for': '192.168.1.1' }, socket: { remoteAddress: '169.254.1.1' } }), null);
+  const invite = JSON.parse(Buffer.from((await f.m.invite()).code.slice(10), 'base64url'));
+  assert.equal(invite.v, 2); assert.equal(invite.mode, 'internet'); assert.equal(invite.url, 'https://test.duckdns.org:49000'); assert.equal(invite.localUrl, `https://127.0.0.1:${f.port}`); assert.equal(invite.pin, f.invite.pin);
+  f.m.revoke(paired.data.id); assert.equal(f.m.authenticate(request), null);
+  let allowed = 0; for (let i = 0; i < 1000; i++) allowed += Number(f.m.allowAttempt({ socket: { remoteAddress: '1.1.1.1' } }));
+  assert.equal(allowed, 30); assert.ok(f.m.attempts.size < 250);
+});
 test('terminal checkpoint retains screen modes and resynchronizes after history eviction', async () => {
   const s = new TerminalStream({ buffer: '', sequence: 0, cols: 80, rows: 24 });
   s.write({ sequence: 1, data: '\x1b[?1049h\x1b[31mHello\x1b[0m' });

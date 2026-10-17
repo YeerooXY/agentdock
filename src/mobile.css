@@ -15,6 +15,17 @@
 .mobile-steps li { margin-bottom:14px; }
 .mobile-footer { margin-top:24px; }
 .mobile-success { color:#9de0bb; }
+.mobile-fields { display:grid; grid-template-columns:1fr 1.7fr; gap:16px; }
+.mobile-fields label { min-width:0; }
+.mobile-network-note { border:1px solid #8b739d; border-radius:10px; padding:14px; margin:16px 0; background:linear-gradient(120deg,#13223b,#301b32); }
+.mobile-network-note strong { color:#f1c3ea; }
+.mobile-network-note p { margin:8px 0; }
+.mobile-route { display:flex; flex-wrap:wrap; gap:12px; padding:16px; border:1px solid #776598; border-radius:10px; background:#04050b; }
+.mobile-route strong { display:block; color:#b9cfff; overflow-wrap:anywhere; }
+.mobile-enable { margin-top:22px; }
+.mobile-progress { color:#c7b7ed; }
+.mobile-setup input,.mobile-setup select { width:100%; min-width:0; }
+.mobile-step h2:focus { outline:none; }
 .pairing-code { text-align:center; }
 .pairing-code img { max-width:100%; height:auto; border-radius:10px; }
 .mobile-device { padding:14px 0; border-bottom:1px solid #2e283b; }
@@ -26,4 +37,4 @@
 .diff-add { color:#b8ecc7; background:#133a29; }
 .diff-remove { color:#ffc0cf; background:#451c2e; }
 .diff-hunk { color:#b7cbff; }
-@media(max-width:600px) { .mobile-setup{padding:18px} .mobile-tabs button{font-size:12px} .mobile-step{min-height:0} }
+@media(max-width:600px) { .mobile-setup{padding:18px} .mobile-tabs button{font-size:12px;flex-basis:40%} .mobile-step{min-height:0} .mobile-fields{grid-template-columns:1fr;gap:0} }

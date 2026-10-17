@@ -48,6 +48,8 @@ try {
   if ($LASTEXITCODE -ne 0) { throw 'The installed application failed its smoke test.' }
   & node (Join-Path $PSScriptRoot 'workbench-smoke.cjs') "--app=$exe"
   if ($LASTEXITCODE -ne 0) { throw 'The installed gallery, inbox, website review or console move checks failed.' }
+  & node (Join-Path $PSScriptRoot 'setup-smoke.cjs') "--app=$exe"
+  if ($LASTEXITCODE -ne 0) { throw 'The installed first-run phone setup failed.' }
 } finally {
   try {
     $uninstaller = Join-Path $installDir 'Uninstall Agent Dock.exe'

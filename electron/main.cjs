@@ -172,7 +172,7 @@ app.whenReady().then(async () => {
   turns = new Turns(workbench.results, { getSession: id => sessions.items.get(id), getSecrets: () => vault.list().flatMap(x => { try { return [vault.get(x.id)]; } catch { return []; } }) });
   workbench.turns = turns;
   turns.on('tracking-error', ({ owner, message }) => workbench.inbox.add({ title: 'Code capture needs attention', message, sessionId: owner, kind: 'error' }));
-  mobile = new MobileCompanion(root, safeStorage, { sessions, results: workbench.results, inbox: workbench.inbox, getUsage: () => ({ limits, summary: ledgerSummary(ledger || []) }), getDefaults: () => ({ ...settings.consoleDefaults, permissions: settings.agentPermissions }), testMode });
+  mobile = new MobileCompanion(root, safeStorage, { sessions, results: workbench.results, inbox: workbench.inbox, getUsage: () => ({ limits, summary: ledgerSummary(ledger || []) }), getDefaults: () => ({ ...settings.consoleDefaults, permissions: settings.agentPermissions }), getKey: id => vault.get(id), networkScript: app.isPackaged ? path.join(process.resourcesPath, 'mobile-network.ps1') : path.join(__dirname, 'mobile-network.ps1'), program: process.execPath, testMode });
   mobile.on('changed', publish);
   if (!testMode) mobile.start().catch(() => publish());
   const savedLimits = readJson(path.join(root, 'limits.json'), []);
@@ -257,6 +257,14 @@ app.whenReady().then(async () => {
           case 'mobile.cancel-pairing': mobile.pairing = null; publish(); break;
           case 'mobile.revoke': mobile.revoke(payload); break;
           case 'mobile.status': value = mobile.snapshot(); publish(); break;
+          case 'mobile.inspect-network': value = await mobile.network.inspect(payload?.host); break;
+          case 'mobile.firewall': if (!mobile.server && payload?.remove !== true) throw new Error('Enable the phone connection first.'); value = await mobile.network.firewall(mobile.config, payload?.remove === true); break;
+          case 'mobile.windows-network': await shell.openExternal('ms-settings:network-status'); break;
+          case 'mobile.router': {
+            const gateway = mobile.network.snapshot().gateway;
+            if (!gateway || !require('./mobile-address.cjs').isPrivate(gateway)) throw new Error('Check your network first.');
+            await shell.openExternal(`http://${gateway}/`); break;
+          }
           case 'mobile.test-push': if (testMode) throw new Error('Push requests are disabled in tests.'); await mobile.sendPush('test', payload); break;
           case 'mobile.remove-push': mobile.removeFirebase(); break;
           case 'mobile.import-push': {
@@ -438,7 +446,7 @@ app.whenReady().then(async () => {
         }
         case 'docs': {
           const urls = { codex: 'https://learn.chatgpt.com/docs/codex/cli', claude: 'https://code.claude.com/docs/en/overview', openai: 'https://developers.openai.com/api/docs/pricing', anthropic: 'https://platform.claude.com/docs/en/about-claude/pricing' };
-          Object.assign(urls, { tailscale: 'https://tailscale.com/download', firebase: 'https://console.firebase.google.com/', 'mobile-guide': 'https://github.com/YeerooXY/agentdock/blob/main/docs/android-setup.md', 'android-download': 'https://github.com/YeerooXY/agentdock/releases' });
+          Object.assign(urls, { tailscale: 'https://tailscale.com/download', duckdns: 'https://www.duckdns.org/', firebase: 'https://console.firebase.google.com/', 'mobile-guide': 'https://github.com/YeerooXY/agentdock/blob/main/docs/android-setup.md', 'android-download': 'https://github.com/YeerooXY/agentdock/releases' });
           for (const item of integrationDefinitions) urls[item.id] = item.docs;
           for (const item of cliCatalog) urls[item.id] = item.docs;
           urls.zai = 'https://docs.z.ai/devpack/tool/opencode';

@@ -4,12 +4,13 @@ A Windows desktop app for up to nine agent consoles, shared tools and usage trac
 
 ## Install
 
-Download **[Agent-Dock-0.5.0-Setup-x64.exe](https://github.com/YeerooXY/agentdock/releases/download/v0.5.0/Agent-Dock-0.5.0-Setup-x64.exe)** for Windows 10/11 on an Intel or AMD 64-bit PC.
+Download **[Agent-Dock-0.6.0-preview.2-Setup-x64.exe](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.2/Agent-Dock-0.6.0-preview.2-Setup-x64.exe)** for Windows 10/11 on an Intel or AMD 64-bit PC. This preview includes Android setup. The previous [stable desktop-only release](https://github.com/YeerooXY/agentdock/releases/tag/v0.5.0) is also available.
 
 1. Run the installer and choose where to install Dock. It adds desktop and Start menu shortcuts.
 2. Choose your **project folder**. Tick any agents you want Dock to install; already installed agents are detected.
 3. Choose your **default console**. Tick **Open this console when setup finishes** to launch it immediately.
-4. Sign in through that agent's console. After setup, **+** launches your saved choice. Run the wizard again from **Settings → Set up agents**.
+4. Optionally tick **Connect my Android phone next** and choose **Same Wi-Fi** or **Direct internet through my router**. Dock walks you through the connection, router, Windows Firewall, pairing and optional alerts.
+5. Sign in through that agent's console. After setup, **+** launches your saved choice. Run the wizard again from **Settings → Set up agents**.
 
 Dock includes Node.js and its package installer; you do not need a separate Node installation. PowerShell works immediately. Optional agents download from their official installers or npm packages and use your own accounts or API billing. Some agents have newer Windows requirements, shown in setup. Git and other project tools may still be needed by your chosen agent. Additional MCP servers may need their own software.
 
@@ -19,9 +20,11 @@ This release is unsigned, so Windows may show an unknown-publisher or SmartScree
 
 ## Android preview
 
-The [0.6 preview](https://github.com/YeerooXY/agentdock/releases/tag/v0.6.0-preview.1) adds a native Android companion, turn-by-turn code diffs in Results, formatted Markdown previews, and Windows notifications that bring Dock forward. Install both preview builds to try the phone connection; the stable 0.5 installer above does not include it.
+The [0.6 preview 2](https://github.com/YeerooXY/agentdock/releases/tag/v0.6.0-preview.2) includes a native Android companion, direct internet setup, turn-by-turn code diffs in Results, formatted Markdown previews, and Windows notifications that bring Dock forward. Install both matching preview builds; older Android builds cannot read internet pairing codes.
 
-On the same Wi-Fi, connect directly: no VPN app or extra account is needed. Away-from-home access currently uses a private VPN connection; Tailscale is one option. Optional cloud alerts use your own Firebase project. No terminal traffic goes through an Agent Dock account or hosted relay. Setup is in **Settings → Android → Connect a phone**, and the first-run wizard can open it for you. See the [setup and privacy guide](docs/android-setup.md) and [verification notes](docs/android-review.md). Real-phone and live Firebase checks are still pending.
+Phone and PC connect directly on the same Wi-Fi. For access away from home, choose **Direct internet**: Dock checks your network, can forward a port on a compatible router, helps with Windows Firewall, and pairs your phone by QR code. This needs a reachable public IPv4 address. An upstream router or provider NAT may need a manual step; the wizard does not claim internet access works until a phone connects from outside. A private VPN you already use still works too.
+
+An optional free Duck DNS hostname follows a changing address; its token stays in Keys. Completion alerts use your own Firebase project. No terminal traffic goes through an Agent Dock account or hosted relay. See the [setup and privacy guide](docs/android-setup.md) and [direct-internet verification](docs/direct-internet-review.md). Physical-phone internet access and live Firebase delivery still need testing.
 
 ## Run from source
 

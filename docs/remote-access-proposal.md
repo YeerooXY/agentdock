@@ -1,5 +1,7 @@
 # Remote access without a separate VPN app
 
+Update, 17 October 2026: direct internet access through the user's own router is implemented in `0.6.0-preview.2`. See [setup](android-setup.md#direct-internet-without-a-relay). A paid relay is not required when the home connection supports incoming traffic. The relay described below remains an optional proposal for networks where direct access is unavailable.
+
 Proposal, 17 October 2026. Remote relay support is not implemented or deployed. The existing direct local-network connection works without Tailscale. No server has been purchased or account configured.
 
 ## First version

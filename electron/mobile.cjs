@@ -9,6 +9,8 @@ const { WebSocketServer, WebSocket } = require('ws');
 const { readJson, atomicJson } = require('./storage.cjs');
 const { TerminalStream } = require('./mobile-stream.cjs');
 const { MobilePush, publicConfig, serviceAccount } = require('./mobile-push.cjs');
+const { isPrivate, isPublic, internetOptions } = require('./mobile-address.cjs');
+const { MobileNetwork } = require('./mobile-network.cjs');
 const token = () => crypto.randomBytes(32).toString('base64url');
 const digest = text => crypto.createHash('sha256').update(text).digest('hex');
 const match = (value, stored) => {
@@ -16,15 +18,17 @@ const match = (value, stored) => {
   const a = Buffer.from(value), b = Buffer.from(stored);
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 };
-const isPrivate = ip => /^(127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(ip) || /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(ip);
 function interfaces() {
   return Object.entries(os.networkInterfaces()).flatMap(([name, addresses]) => addresses.filter(a => a.family === 'IPv4' && isPrivate(a.address)).map(a => ({ name, address: a.address, tailscale: /^100\./.test(a.address), local: a.internal }))).sort((a, b) => Number(b.tailscale) - Number(a.tailscale));
 }
 class MobileCompanion extends EventEmitter {
-  constructor(root, safeStorage, { sessions, results, inbox, getUsage, getDefaults, testMode = false } = {}) {
+  constructor(root, safeStorage, { sessions, results, inbox, getUsage, getDefaults, getKey, networkScript, program, network, testMode = false } = {}) {
     super(); this.file = path.join(root, 'mobile.json'); this.crypto = safeStorage;
     this.sessions = sessions; this.results = results; this.inbox = inbox; this.getUsage = getUsage; this.getDefaults = getDefaults; this.testMode = testMode;
     this.config = readJson(this.file, { enabled: false, host: '', port: 47831 });
+    this.config.mappingId ||= crypto.randomUUID();
+    this.network = network || new MobileNetwork({ getKey, script: networkScript, program, testMode, changed: () => this.emit('changed') });
+    this.attempts = new Map(); this.attemptPeriod = Date.now(); this.attemptTotal = 0;
     this.private = { devices: [] }; this.clients = new Set(); this.streams = new Map(); this.sent = new Set(); this.counters = { sent: 0, received: 0 }; this.error = ''; this.pairing = null;
     if (this.config.encrypted) { try { this.private = JSON.parse(safeStorage.decryptString(Buffer.from(this.config.encrypted, 'base64'))); } catch { this.error = 'Mobile credentials could not be unlocked. Set up this PC again.'; this.config.enabled = false; } }
     this.push = new MobilePush({ credential: () => this.private.firebase?.credential });
@@ -48,13 +52,17 @@ class MobileCompanion extends EventEmitter {
     if (!this.available()) throw new Error('Windows credential encryption is unavailable.');
     this.config.encrypted = this.crypto.encryptString(JSON.stringify(this.private)).toString('base64'); atomicJson(this.file, this.config); this.emit('changed');
   }
-  snapshot() { return { enabled: !!this.server, host: this.config.host, port: this.config.port, interfaces: interfaces(), error: this.error, devices: this.private.devices.map(({ id, name, at, pushToken }) => ({ id, name, at, alerts: !!pushToken, connected: [...this.clients].some(x => x.device.id === id) })), push: { project: this.private.firebase?.public.projectId || '', configured: !!this.private.firebase?.credential, error: this.push.error, lastSent: this.push.lastSent }, pairingExpires: this.pairing?.expires || 0, bytes: this.counters }; }
-  async configure({ enabled, host, port = 47831 }) {
+  snapshot() { return { enabled: !!this.server, host: this.config.host, port: this.config.port, mode: this.config.mode || 'local', publicHost: this.config.publicHost || '', externalPort: this.config.externalPort || 47831, routerMode: this.config.routerMode || 'manual', duckKeyId: this.config.duckKeyId || '', network: this.network.snapshot(), interfaces: interfaces(), error: this.error, devices: this.private.devices.map(({ id, name, at, pushToken, lastInternetAt }) => ({ id, name, at, lastInternetAt, alerts: !!pushToken, connected: [...this.clients].some(x => x.device.id === id) })), push: { project: this.private.firebase?.public.projectId || '', configured: !!this.private.firebase?.credential, error: this.push.error, lastSent: this.push.lastSent }, pairingExpires: this.pairing?.expires || 0, bytes: this.counters }; }
+  async configure({ enabled, host, port = 47831, ...remote }) {
     if (!enabled) { await this.stop(); this.config.enabled = false; this.persist(); return; }
     if (!interfaces().some(x => x.address === host) || !isPrivate(host)) throw new Error('Choose this PC’s private network address.');
     if (!Number.isInteger(port) || port < 1024 || port > 65535) throw new Error('Use a port from 1024 to 65535.');
     if (!this.available()) throw new Error('Windows credential encryption is unavailable.');
-    await this.stop(); Object.assign(this.config, { enabled: true, host, port }); this.persist(); await this.start();
+    const options = internetOptions(remote);
+    if (options.mode === 'internet' && (host.startsWith('127.') || /^100\./.test(host))) throw new Error('Use your Wi-Fi or Ethernet address for direct internet.');
+    const changed = host !== this.config.host || port !== this.config.port || ['mode', 'publicHost', 'externalPort'].some(key => options[key] !== this.config[key]);
+    if (changed) { for (const device of this.private.devices) delete device.lastInternetAt; this.network.state.firewall = ''; }
+    await this.stop(); Object.assign(this.config, { enabled: true, host, port }, options); this.persist(); await this.start();
   }
   async start() {
     if (!this.config.enabled || this.server) return;
@@ -78,9 +86,21 @@ class MobileCompanion extends EventEmitter {
     this.server = server; this.wss = wss; this.error = '';
     for (const s of this.sessions.items.values()) this.ensureStream(s.id);
     this.timer = setInterval(() => this.flush(), 100); this.timer.unref(); this.emit('changed');
+    await this.network.start({ ...this.config });
+  }
+  acceptsPeer(req) {
+    const address = req.socket.remoteAddress?.replace('::ffff:', '') || '';
+    return !req.headers.origin && (isPrivate(address) || this.config.mode === 'internet' && isPublic(address));
+  }
+  allowAttempt(req) {
+    const now = Date.now();
+    if (now - this.attemptPeriod > 60000) { this.attemptPeriod = now; this.attemptTotal = 0; this.attempts.clear(); }
+    if (++this.attemptTotal > 240) return false;
+    const address = req.socket.remoteAddress || '', count = (this.attempts.get(address) || 0) + 1;
+    this.attempts.set(address, count); return count <= 30;
   }
   authenticate(req) {
-    if (req.headers.origin || !isPrivate(req.socket.remoteAddress?.replace('::ffff:', '') || '')) return null;
+    if (!this.acceptsPeer(req) || !this.allowAttempt(req)) return null;
     const bearer = req.headers.authorization?.replace(/^Bearer /, '');
     return this.private.devices.find(x => match(bearer, x.token)) || null;
   }
@@ -89,12 +109,15 @@ class MobileCompanion extends EventEmitter {
     if (this.private.devices.length >= 9) throw new Error('Remove an old phone before pairing another.');
     this.pairing = { secret: token(), expires: Date.now() + 5 * 60000, attempts: 0 };
     const cert = new crypto.X509Certificate(this.private.identity.cert);
-    const invite = { v: 1, url: `https://${this.config.host}:${this.config.port}`, pin: digest(cert.raw), secret: this.pairing.secret, expires: this.pairing.expires };
+    const localUrl = `https://${this.config.host}:${this.config.port}`;
+    const invite = { v: this.config.mode === 'internet' ? 2 : 1, url: localUrl, pin: digest(cert.raw), secret: this.pairing.secret, expires: this.pairing.expires };
+    if (this.config.mode === 'internet') Object.assign(invite, { mode: 'internet', url: `https://${this.config.publicHost}:${this.config.externalPort}`, localUrl });
     this.emit('changed'); return { code: 'agentdock:' + Buffer.from(JSON.stringify(invite)).toString('base64url'), expires: invite.expires };
   }
   async http(req, res) {
     res.setHeader('Cache-Control', 'no-store'); res.setHeader('Content-Type', 'application/json');
-    if (req.method !== 'POST' || req.url !== '/v1/pair' || req.headers.origin || !isPrivate(req.socket.remoteAddress?.replace('::ffff:', '') || '')) { res.writeHead(404); res.end('{}'); return; }
+    if (req.method !== 'POST' || req.url !== '/v1/pair' || !this.acceptsPeer(req)) { res.writeHead(404); res.end('{}'); return; }
+    if (!this.allowAttempt(req)) { res.writeHead(429); res.end('{}'); return; }
     const p = this.pairing;
     if (!p || p.expires < Date.now() || ++p.attempts > 20 || !match(req.headers.authorization?.replace(/^Bearer /, ''), p.secret)) { res.writeHead(401); res.end('{}'); return; }
     let text = '';
@@ -127,6 +150,7 @@ class MobileCompanion extends EventEmitter {
     this.counters.sent += Buffer.byteLength(packet); client.ws.send(packet); return true;
   }
   attach(ws, device) {
+    if (isPublic(ws._socket?.remoteAddress?.replace('::ffff:', '') || '')) { device.lastInternetAt = Date.now(); this.persist(); }
     for (const old of this.clients) if (old.device.id === device.id) old.ws.close(1000, 'Opened on another connection');
     const client = { ws, device, selected: '', sequence: -1, epoch: 0, saver: true, requests: 0, period: Date.now(), inflight: false, seen: new Set() };
     this.clients.add(client); this.send(client, { type: 'state', state: this.publicState() }); this.emit('changed');
@@ -203,7 +227,8 @@ class MobileCompanion extends EventEmitter {
     clearInterval(this.timer); clearTimeout(this.stateTimer); this.stateTimer = null; this.pairing = null;
     for (const client of this.clients) client.ws.terminate(); this.clients.clear(); this.wss?.close();
     for (const stream of this.streams.values()) stream.dispose(); this.streams.clear();
-    const server = this.server; this.server = null; if (server) await new Promise(resolve => server.close(resolve)); this.emit('changed');
+    const server = this.server; this.server = null; server?.closeAllConnections(); if (server) await new Promise(resolve => server.close(resolve));
+    await this.network.stop(); this.emit('changed');
   }
 }
 module.exports = { MobileCompanion, interfaces, isPrivate };

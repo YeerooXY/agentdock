@@ -76,7 +76,7 @@ class _PairPageState extends State<PairPage> {
                 ),
                 const SizedBox(height: 20),
                 const Text(
-                  'Connect your phone and PC to the same Wi-Fi. On your PC, open Agent Dock → Settings → Connect a phone. No extra app or account is needed.',
+                  'On your PC, open Agent Dock → Settings → Connect a phone. Choose same Wi-Fi or direct internet, then scan its code. To test internet access, switch your phone to mobile data.',
                   style: TextStyle(height: 1.6, color: Color(0xffc8cbe0)),
                 ),
                 const SizedBox(height: 28),

@@ -6,22 +6,41 @@ This is an Android preview. iPhone support comes later. Live Firebase delivery a
 
 ## Install and pair
 
-1. Install the matching Windows and Android builds from the [0.6 preview release](https://github.com/YeerooXY/agentdock/releases/tag/v0.6.0-preview.1). Most phones use the **arm64** APK. Android 7 or later is required. The APK uses a development signing key; a future store build may require uninstalling this preview first.
+1. Install the matching Windows and Android builds from the [0.6 preview 2 release](https://github.com/YeerooXY/agentdock/releases/tag/v0.6.0-preview.2). Most phones use the **arm64** APK. Android 7 or later is required. The APK uses a development signing key; a future store build may require uninstalling this preview first.
 2. Put the PC and phone on the same Wi-Fi or local network. **No VPN app, extra account or internet server is needed** for this connection.
 3. On the PC, open **Settings → Android → Connect a phone**. First-time setup also offers **Connect my Android phone next**.
 4. Select the PC's Wi-Fi or Ethernet address and enable the connection. Use **Refresh addresses** if you just changed networks. The **This PC only** address cannot be reached by your phone.
-5. Open **Pair phone → Show QR code**. In Android, choose **Scan QR code**, or paste the code. The code expires after five minutes and works once. Treat it like a temporary password.
+5. On **Router**, choose **Allow Dock in Windows Firewall** if needed. Windows asks for administrator approval for a rule scoped to Dock's executable, TCP port, address and network adapter. Open **Pair phone → Show QR code**. In Android, choose **Scan QR code**, or paste the code. The code expires after five minutes and works once. Treat it like a temporary password.
 6. Keep the PC awake with Dock running. Closing Dock to its tray preserves the connection and consoles; choosing Quit stops them.
 
 Current source builds keep the PC awake while an agent is marked Thinking or a Dock API request runs. You can switch this off in **Settings → Desktop**. The screen can still turn off, and normal sleep resumes when work finishes. For phone access while every console is idle, the PC still needs to remain awake. This setting was added after the 0.6 preview 1 installer.
 
-Windows Firewall may need an inbound TCP rule for port **47831** on the selected private network. Allow only the network/address you intend to use. Do not forward this port on your router or expose it publicly. Tailscale device approval or access rules can also block the connection.
+The local-only mode accepts private network peers. Forwarding a port alone does not enable internet access: choose **Direct internet** first. The firewall helper accepts only the local subnet in local mode; internet mode also permits authenticated phones arriving through the router. A VPN's device approval or access rules can still block a private connection.
 
 A paired phone can type commands using the console's existing permissions. This is access to your PC, so pair only devices you control. **Remove** beside a phone immediately revokes its token. **Turn off** stops mobile access without ending local consoles.
 
-## Away from home
+## Direct internet, without a relay
 
-The current build needs a private network connection between the devices for access over the internet. A private VPN you already use may work; Tailscale is one option, not a requirement for local use. With Tailscale, install it on both devices, sign in to your own account on both, and select the PC's Tailscale address (usually starting with `100.`) during pairing. Built-in internet discovery and relay support are not implemented yet.
+The first-run wizard offers this under **Connect my Android phone next → Direct internet through my router**. You can also open Phone setup from Settings later. Nothing is opened on your router merely by installing Dock.
+
+1. Choose **Direct internet**, select the PC's Wi-Fi or Ethernet address and press **Check my network**. This reads the router's UPnP information and asks [ipify](https://www.ipify.org/) for your public IPv4 address. No terminal content is sent.
+2. Enter a public IPv4 address or a hostname you control. The check can fill the address. Keep the outside TCP port at **47831**, or choose an unused port above 1023.
+3. Choose **Try automatic forwarding**, then **Enable direct internet**. A compatible UPnP router receives one TCP rule pointing to this PC. Dock checks for existing rules and will not overwrite another application's mapping. It requests a one-hour lease and refreshes it every five minutes. Turning the connection off or quitting removes the rule Dock created; manual rules remain yours to remove. If the router refuses the request, use its port-forwarding page and the exact rule shown in Dock. Reserve the PC's LAN address in your router.
+4. **Another router is in the way** means the router's outside address is private or differs from the observed public address. If you own the upstream router, forward the same outside TCP port there to the downstream router's WAN address and reserve that address too. If your ISP uses CGNAT, ask whether it can provide a reachable public IPv4 address. A static address is not required; availability and any ISP fee depend on the plan. Dock cannot change the ISP's network. See [port-forwarding troubleshooting](https://www.tp-link.com/ph/support/faq/785/).
+5. Use **Allow Dock in Windows Firewall**. The helper changes only a Dock rule; it does not disable the firewall or change the network's trust profile. After changing the PC address, port, network adapter or installed app location, run it again.
+6. Switch your phone to **mobile data**, then scan a fresh code on **Pair phone**. A successful authenticated connection from a public peer records **Internet connection verified**, with the connection date retained on the PC. A router check or local Wi-Fi pairing alone is not proof of internet reachability.
+
+Your PC must stay awake with Dock running. The Android app tries the paired local route first, then the internet route, using the same pinned PC certificate. Only the selected terminal streams. Console input is never replayed automatically after reconnecting. Direct IPv6 and internet relays are not implemented in this preview.
+
+### A hostname that follows your IP
+
+Under **Keep my address up to date**, create a free hostname at [Duck DNS](https://www.duckdns.org/about.jsp). Choose **Add token in Keys**, paste the token into Dock's existing encrypted vault, and save. Setup returns with your previous entries intact. Put your full `name.duckdns.org` hostname in the address field and select the saved token. Dock updates it every five minutes while direct internet is enabled. The token is read only by the PC main process for that fixed HTTPS endpoint. It is never sent to the phone or agents. [Duck DNS API](https://www.duckdns.org/spec.jsp).
+
+You can use a hostname maintained by your router or another provider instead; leave the Duck DNS token unselected. A numeric address also works, but if it changes, update it and pair the phone again. This avoids a hosting bill when the home connection supports incoming traffic. Normal electricity, internet and mobile data costs still apply.
+
+### Existing private VPN
+
+A private VPN you already use remains compatible. Choose **Same Wi-Fi / private network**, then the PC's VPN address. Tailscale is one option; no VPN is required for the two direct modes above.
 
 ## Optional completion alerts
 
@@ -51,6 +70,7 @@ Firebase Cloud Messaging is currently a no-cost product. This setup does not dep
 - Results downloads its list first. A picture or report loads when you open it; larger images need another tap. Markdown previews do not load remote images. Web links open in your browser only when tapped.
 - **Data saver** is on by default. Usage shows compressed application bytes for the current app session, not TLS, VPN, Firebase, or carrier overhead. It is not a billing meter.
 - The connection uses HTTPS/WSS with the PC certificate pinned during pairing. PC device tokens, certificate key, FCM tokens, and Firebase service-account credentials are encrypted with Windows safeStorage. The phone stores its pairing credential through Android Keystore-backed secure storage. There is no plaintext fallback for PC secrets.
+- Direct internet is opt-in. Router discovery stays on the selected local network. The optional public-address check contacts ipify; optional DNS updates send the selected hostname, token and connection IP to Duck DNS. Neither receives terminal text, files or model API keys. Network-check details stay in memory; chosen connection settings, bound key ID and the last verified internet connection time are stored locally. Removing a phone deletes its device record; removing a key in Keys deletes its saved credential. **Remove firewall rule** removes Dock's Windows rule with administrator approval. Turning off mobile stops its listener and DNS updates. A narrow firewall rule may remain until explicitly removed; no service listens while mobile is off.
 - Google receives the Firebase installation/registration identifiers and generic alert metadata needed to deliver notifications. The public Firebase app configuration is stored on Android; the service-account private key stays on the PC. No Google Analytics SDK is enabled. Tailscale has its own account and network data practices. [Firebase privacy information](https://firebase.google.com/support/privacy).
 - QR scanning uses Google ML Kit locally. Google states that scan images/results stay on the device, while the SDK sends performance and usage metrics and may request updates. Paste a code instead if you prefer not to use scanning. [ML Kit privacy information](https://developers.google.com/ml-kit/terms).
 - Code, terminal output, selected Results, and account usage go directly from your PC to its paired phone. Terminal buffers and opened previews stay in app memory; reconnect credentials persist until forgotten. The phone app does not upload these to Agent Dock hosting.
