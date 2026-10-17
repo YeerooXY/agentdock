@@ -132,7 +132,7 @@ function summarizeLog(file, stat) {
     } catch {}
   }
   if (state === 'active' && Date.now() - stat.mtimeMs > 15 * 60000) state = 'recent';
-  return { id: meta.id || path.basename(file), cwd: meta.cwd || '', provider: 'codex', name: path.basename(meta.cwd || 'Codex session'), usage, state, model, updatedAt: stat.mtimeMs, eventAt };
+  return { id: meta.id || path.basename(file), cwd: meta.cwd || '', provider: 'codex', name: path.basename(meta.cwd || 'Codex session'), usage, messages: require('./message-usage.cjs').codexMessages(lines, { complete: offset === 0 }), state, model, updatedAt: stat.mtimeMs, eventAt };
 }
 class RecentCodex {
   constructor(root = path.join(process.env.CODEX_HOME || path.join(os.homedir(), '.codex'), 'sessions')) { this.root = root; this.cache = new Map(); }
@@ -145,15 +145,15 @@ class RecentCodex {
     }
     files.sort((a, b) => b.stat.mtimeMs - a.stat.mtimeMs);
     const result = [];
-    for (const { file, stat } of files.slice(0, 20)) {
+    for (const { file, stat } of files.slice(0, 64)) {
       try {
         const cached = this.cache.get(file);
         if (!cached || cached.mtime !== stat.mtimeMs) this.cache.set(file, { mtime: stat.mtimeMs, value: summarizeLog(file, stat) });
         result.push(this.cache.get(file).value);
       } catch {}
     }
-    for (const file of this.cache.keys()) if (!files.slice(0, 20).some(x => x.file === file)) this.cache.delete(file);
-    return result.slice(0, 9);
+    for (const file of this.cache.keys()) if (!files.slice(0, 64).some(x => x.file === file)) this.cache.delete(file);
+    return result;
   }
 }
 module.exports = { findProgram, nativeCodex, findClaude, wslPath, consoleModels, CodexAccount, RecentCodex, summarizeLog };

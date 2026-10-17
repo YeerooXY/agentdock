@@ -4,6 +4,8 @@ A native Flutter companion for the Windows app. It connects to your own PC over 
 
 For installation, pairing and Firebase setup, see [the Android guide](../docs/android-setup.md).
 
+From preview 4, **Usage → Updates** checks GitHub and opens the APK download for the phone's architecture. Installation remains an Android action. Upgrades signed with the same key preserve pairing; no background update polling runs.
+
 ## Build
 
 Tested with Flutter **3.47.7**, Dart **3.13.5**, JDK **17**, and Android SDK **36** on Windows. Android 7/API 24 is the minimum. Install Flutter and the Android SDK using their official setup instructions, accept the SDK licenses, then run from this folder:
@@ -23,7 +25,7 @@ Do not put `google-services.json` or service-account JSON in the app source. Eac
 
 ## Checks
 
-`flutter test` covers invalid pairing, narrow layout, separate message submission, interrupted sends, terminal checkpoint replacement, draft retention, on-demand Results and native Markdown. Root `npm test` exercises the HTTPS/WebSocket protocol, resize ordering, token revocation, compressed reconnects, and mocked Firebase sends. The [preview 3 checks](../docs/mobile-input-resize-review.md) also exercise the installed Codex CLI against a local mock API.
+`flutter test` covers invalid pairing, narrow layout, separate message submission, interrupted sends, terminal checkpoint replacement, draft retention, on-demand Results, native Markdown and update selection. Root `npm test` exercises the HTTPS/WebSocket protocol, resize ordering, token revocation, compressed reconnects, and mocked Firebase sends. The [preview 3 checks](../docs/mobile-input-resize-review.md) also exercise the installed Codex CLI against a local mock API.
 
 `scripts/mobile-device-fixture.cjs` starts an isolated unpaid Windows test instance for an emulator. `scripts/mobile-adb.cjs` only targets `emulator-5554`; it never chooses a physical phone. Generated pairing codes and profiles stay under ignored `artifacts/mobile-device` and must not be published. Browser profile screenshots test the desktop renderer's responsive fallback, not an iOS app.
 

@@ -79,7 +79,7 @@ class Turns extends EventEmitter {
   context(owner) {
     const s = this.session(owner); if (!s) return null;
     const turn = this.active.get(owner) || this.latest.get(owner);
-    return { project: s.cwd, sessionId: s.id, consoleKey: s.consoleKey || s.id, consoleName: s.name, ...(turn ? { turnId: turn.id, git: turn.git } : {}) };
+    return { project: s.cwd, projectId: s.projectId || null, sessionId: s.id, consoleKey: s.consoleKey || s.id, consoleName: s.name, ...(turn ? { turnId: turn.id, git: turn.git } : {}) };
   }
   serial(owner, fn) {
     const task = (this.queues.get(owner) || Promise.resolve()).catch(() => {}).then(fn);

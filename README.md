@@ -1,10 +1,10 @@
 ﻿# Agent Dock
 
-A Windows desktop app for up to nine agent consoles, shared tools and usage tracking.
+A Windows desktop app for agent consoles, projects, shared tools and usage tracking.
 
 ## Install
 
-Download **[Agent-Dock-0.6.0-preview.3-Setup-x64.exe](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.3/Agent-Dock-0.6.0-preview.3-Setup-x64.exe)** for Windows 10/11 on an Intel or AMD 64-bit PC. This preview includes Android setup. The previous [stable desktop-only release](https://github.com/YeerooXY/agentdock/releases/tag/v0.5.0) is also available.
+Download **[Agent-Dock-0.6.0-preview.4-Setup-x64.exe](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.4/Agent-Dock-0.6.0-preview.4-Setup-x64.exe)** for Windows 10/11 on an Intel or AMD 64-bit PC. This preview includes Android setup. The previous [stable desktop-only release](https://github.com/YeerooXY/agentdock/releases/tag/v0.5.0) is also available.
 
 1. Run the installer and choose where to install Dock. It adds desktop and Start menu shortcuts.
 2. Choose your **project folder**. Tick any agents you want Dock to install; already installed agents are detected.
@@ -20,7 +20,7 @@ This release is unsigned, so Windows may show an unknown-publisher or SmartScree
 
 ## Android preview
 
-The [0.6 preview 3](https://github.com/YeerooXY/agentdock/releases/tag/v0.6.0-preview.3) includes a native Android companion, direct internet setup, turn-by-turn code diffs in Results, formatted Markdown previews, and Windows notifications that bring Dock forward. Install both matching preview builds; older Android builds cannot read internet pairing codes.
+The [0.6 preview 4](https://github.com/YeerooXY/agentdock/releases/tag/v0.6.0-preview.4) adds projects, larger console grids, per-message usage and update buttons. It also includes the Android Send and terminal-resize fixes from preview 3. The native companion can control your PC consoles, view Results and receive optional completion alerts. Install both matching preview builds.
 
 Phone and PC connect directly on the same Wi-Fi. For access away from home, choose **Direct internet**: Dock checks your network, can forward a port on a compatible router, helps with Windows Firewall, and pairs your phone by QR code. This needs a reachable public IPv4 address. An upstream router or provider NAT may need a manual step; the wizard does not claim internet access works until a phone connects from outside. A private VPN you already use still works too.
 
@@ -51,16 +51,17 @@ The build downloads a pinned Node.js runtime, checks its SHA-256, bundles npm 12
 
 ## Use it
 
-Version 0.5.0 includes the agent setup wizard, resizable panels, grouped notifications and the updated theme.
+Start with **+**, or create a project first to keep its goals and next step close at hand.
 
 - **Move consoles** with the terminal icon in each panel header. A frozen copy of the terminal follows your pointer while other panels slide into place. On release, the copy expands into its destination. Drop on an empty slot to move, or an occupied slot to swap. Processes, output, names and saved conversations stay with their consoles. With the icon focused, **Alt+1–9** moves it by keyboard.
-- **Resize consoles** by dragging an edge or corner. It snaps to the 3×3 grid, including 3×1 and 2×2 panels. Other panels move to make room. A pink-blue grid preview, active edge and live size label show the new footprint. An occupied layout turns red. Escape cancels; an impossible size leaves the saved layout intact. Focus a resize handle and use arrow keys to move that edge by one cell. Sizes are saved with your workspace. Narrow browser previews stack panels for readability.
+- **Resize consoles** by dragging an edge or corner. It snaps to your grid, which starts at 3×3, including 3×1 and 2×2 panels. Other panels move to make room. A pink-blue grid preview, active edge and live size label show the new footprint. An occupied layout turns red. Escape cancels; an impossible size leaves the saved layout intact. Focus a resize handle and use arrow keys to move that edge by one cell. Sizes are saved with your workspace. Narrow browser previews stack panels for readability.
 - **Results** groups saved files by console name and task. The badge counts new batches: three screenshots from one verification and five from another count as two. Opening a result or choosing **Mark viewed** clears that batch’s badge. Names remain after a console closes. Tracked turns include code diffs and their Git branch alongside saved images and reports; **Code changes** opens that turn’s diff. Markdown opens as formatted text with tables and code blocks. ZIP results have a file browser with image, Markdown and text previews, without extracting anything. Agents are asked to save viewable files individually. Filter, preview, export, open the local folder, or delete individual files or whole batches. Deletion sends Dock’s copies to the Recycle Bin and removes them from the gallery; project originals stay in place. A failed deletion keeps its gallery entry so you can retry. Older results may show **Branch not recorded**.
 - **Inbox** keeps completion alerts, questions and errors. Open the related console or review, mark items read, dismiss them, clear read items, or **Clear inbox**. Clicking a Windows notification brings Dock out of the tray or minimization and opens its related console, result or review. Clearing alerts leaves Results and running consoles intact.
 - **Website review** captures desktop/mobile viewports, runs automated accessibility and overflow checks, and checks up to 12 same-origin links. Findings and screenshots go into Results. The 20-item checklist needs a human or agent review; an automated scan is not certification.
 
-- **Consoles** shows nine live terminals filling the window. Click **+** to launch in that panel using **Settings → Console defaults**. You can type directly in a panel or use its expand button for fullscreen. **Consoles** brings back the grid and keeps the window fullscreen. Thinking uses a blue-purple outline; ready uses green.
-- **Usage** contains subscription limits, API tokens, cost estimates and pricing settings.
+- **Consoles** fills the window with live terminals. Click **+** to launch using **Settings → Console defaults**. When the grid is full, adding a console shrinks a larger panel by one cell or grows the grid, up to 64 consoles. **Settings → Console grid** lets you choose 2–8 rows and columns. More agents use more memory and CPU. You can type directly in a panel or expand it fullscreen. Returning to **Consoles** keeps the window fullscreen. Thinking uses a blue-purple outline; ready uses green.
+- **Projects** keeps categories, goals, your approach, milestones, notes, a next step and the last worked date. A project can have several folders; a console can also launch in a subfolder. Open a project card, or right-click **+** to choose a project. Its name and brief follow the console. The shared `dock/project_progress` tool lets an agent update that project's progress.
+- **Usage** contains subscription limits, per-message tokens, API cost estimates and pricing settings. API messages include their tool-call rounds. Codex and Claude rows use the counters they expose; subscription credits per message are not available and are never guessed.
 - **Keys** stores named credentials from any service, encrypted with Windows DPAPI.
 - **Tools** connects MCP servers, HTTP tools and model APIs. Ask an agent to help configure one: it can prepare the settings here for you to apply. Missing keys are entered directly in Keys.
 - **Instructions** sets the working style shared by supported agents.
@@ -83,7 +84,7 @@ Click a panel's title to name it, for example **Trader** or **Robonslaught**. On
 
 The folder button above the grid changes the launch folder for new consoles. You can also choose it in **Settings → Console defaults**, alongside the agent, optional name and custom command. Preferences are stored for each Windows user. On a new computer the initial folder is that user's Projects folder, or their home folder if Projects does not exist.
 
-Hold **+** for a moment, or right-click it, to choose a name, agent, model and folder for that panel. **Options** has a permission override. These choices apply only to that console; a regular click still uses your saved defaults. Escape or Cancel closes the chooser without opening anything. This also works in the HUD. With a keyboard, hold Space or press Shift+Enter on a plus button.
+Hold **+** for a moment, or right-click it, to choose a project, name, agent, model and folder for that panel. You can create a project from this chooser too. **Options** has a permission override. These choices apply only to that console; a regular click still uses your saved defaults. Escape or Cancel closes the chooser without opening anything. This also works in the HUD. With a keyboard, hold Space or press Shift+Enter on a plus button.
 
 Pink-blue accents are the default. **Settings → Appearance** also offers blue or pink. Ready consoles pulse green and show a red badge on their terminal icon. Click inside a console, type or paste, or open it fullscreen to clear its badge and mark its completion alerts as read in Inbox. Results keeps its own new-batch count directly on its icon. Reduced-motion preferences disable panel motion and the ready pulse. Fullscreen terminals leave space below the last line. Window controls sit at the top right: HUD, minimize, fullscreen/restore, close to tray.
 
@@ -92,6 +93,14 @@ The console cursor is steady by default. **Settings → Appearance → Blink cur
 Codex model suggestions come from its local model cache. Claude offers its [model aliases](https://code.claude.com/docs/en/model-config). **Enter a model…** accepts another model name or alias; the CLI checks availability. **Agent default** keeps the CLI's configured model. A one-time model choice is kept with that console when startup restoration is enabled.
 
 The HUD is a normal desktop window, covered by other apps by default. It is not attached to the wallpaper; Win + D hides it too. Use the shortcut or taskbar to bring it back. Settings has an optional always-on-top switch.
+
+## Updates
+
+On Windows, open **Settings → Updates → Check for updates**. If one is available, **Download update** saves and verifies the installer. **Install update** runs it; Dock asks before ending open consoles. Wait for active work to finish first. Saved settings, keys and supported conversation IDs stay in your local profile.
+
+On Android, open **Usage → Updates → Check for updates**, then **Download update**. Your browser downloads the APK for your phone. Open it to install; Android may ask you to allow installs from that browser. Pairing stays saved when upgrading a build signed with the same key.
+
+Checks and downloads happen only when requested. Preview builds can see newer previews; stable builds only offer stable releases. These buttons update Agent Dock. See [projects, usage and updates](docs/projects-and-updates.md) for data storage and limits.
 
 ## Vim controls
 

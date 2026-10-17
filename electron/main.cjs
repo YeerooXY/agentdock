@@ -13,6 +13,9 @@ const { catalog: cliCatalog, byId: cliAgents } = require('./cli-catalog.cjs');
 const { cells: consoleCells, occupied: occupiedCells, planLayout } = require('./console-layout.cjs');
 const { Sessions, validateConsoleDefaults } = require('./sessions.cjs');
 const { Workspace } = require('./workspace.cjs');
+const { Projects } = require('./projects.cjs');
+const { MessageUsage, apiMessages } = require('./message-usage.cjs');
+const { Updates } = require('./updates.cjs');
 const { Workbench } = require('./workbench.cjs');
 const { Turns } = require('./turns.cjs');
 const { MobileCompanion } = require('./mobile.cjs');
@@ -29,7 +32,7 @@ const testMode = process.argv.includes('--smoke-test');
 const testDir = process.argv.find(x => x.startsWith('--data-dir='))?.slice(11);
 if (testMode && testDir) app.setPath('userData', testDir);
 if (!app.requestSingleInstanceLock() && !testMode) app.quit();
-let window, tray, vault, sessions, workspace, account, root, settings, ledger, notifications, hub, integrations, workbench, cliSetup, turns, mobile, workPower;
+let window, tray, vault, sessions, workspace, projects, messageUsage, updates, account, root, settings, ledger, notifications, hub, integrations, workbench, cliSetup, turns, mobile, workPower;
 let mode = 'dashboard', quitting = false, refreshing = false, lastRefresh = 0, apiBusy = false;
 let modeTarget = null, modeTask, modeSequence = 0, transitioning = false;
 let trayHidden = false, windowDrag = null;
@@ -41,8 +44,8 @@ const projectsFolder = path.join(os.homedir(), 'Projects');
 const defaultFolder = fs.existsSync(projectsFolder) && fs.statSync(projectsFolder).isDirectory() ? projectsFolder : os.homedir();
 function snapshot() {
   return { mode, transitioning, trayHidden, sessions: sessions?.list() || [], limits, recent, accountError, refreshing, lastRefresh, agents: cliSetup?.snapshot() || [], agentSetupBusy: !!cliSetup?.running,
-    capabilities, mobile: mobile?.snapshot(), workbench: workbench?.snapshot(), vault: { available: vault?.available() || false, entries: vault?.list() || [] },
-    ledger: ledger || [], summary: ledgerSummary(ledger || []), shared: hub?.snapshot(), settings, storageError, workspaceError, shortcutAvailable,
+    capabilities, projects: projects?.list() || [], messages: [...(messageUsage?.items || []), ...apiMessages(ledger || [])].sort((a,b) => b.at - a.at).slice(0, 200), mobile: mobile?.snapshot(), workbench: workbench?.snapshot(), vault: { available: vault?.available() || false, entries: vault?.list() || [] },
+    ledger: ledger || [], summary: ledgerSummary(ledger || []), shared: hub?.snapshot(), updates: updates?.snapshot(), grid: sessions?.grid || settings?.grid, settings, storageError, workspaceError, shortcutAvailable,
     integrations: integrations?.snapshot(hub?.config.connections || [], vault?.list() || []), defaultFolder, version: app.getVersion() };
 }
 function publish() { if (window && !window.isDestroyed()) window.webContents.send('dock:state', snapshot()); }
@@ -162,13 +165,23 @@ app.whenReady().then(async () => {
   const savedSettings = readJson(path.join(root, 'settings.json'), {});
   settings = initialSettings(savedSettings, defaultFolder, capabilities);
   ledger = readJson(path.join(root, 'ledger.json'), []);
+  messageUsage = new MessageUsage(root);
+  updates = new Updates(root, app.getVersion(), { onChange: publish });
   vault = new Vault(path.join(root, 'vault.json'), safeStorage);
   integrations = new ToolIntegrations(root, runtime, { onChange: publish });
   workbench = new Workbench(root, runtime, require('electron'), { testMode, onChange: publish, getSessions: () => sessions, getProject: () => settings.consoleDefaults.cwd, getWindow: () => window, getHub: () => hub, getAgents: () => cliSetup.snapshot() });
+  projects = new Projects(root); projects.on('changed', publish); workbench.projects = projects;
+  projects.on('tracking-error', message => { storageError = message; publish(); });
   hub = new SharedHub(root, vault, { integrations, workbench }); await hub.start();
-  sessions = new Sessions(root, { hub, claude, runtime, cliSetup });
+  sessions = new Sessions(root, { hub, claude, runtime, cliSetup, projects, grid: settings.grid, onLayout: ({ grid, plan }) => {
+    const slotNames = { ...settings.slotNames };
+    for (const item of plan) delete slotNames[sessions.items.get(item.id)?.slot];
+    for (const item of plan) slotNames[item.slot] = sessions.items.get(item.id)?.name || '';
+    persistSettings({ ...settings, grid, slotNames });
+  } });
   workPower = new WorkPower(powerSaveBlocker);
   sessions.on('changed', updatePower);
+  sessions.on('message-usage', ({ session, messages }) => { try { messageUsage.record(session, messages); } catch { storageError = 'Message usage could not be saved.'; } });
   turns = new Turns(workbench.results, { getSession: id => sessions.items.get(id), getSecrets: () => vault.list().flatMap(x => { try { return [vault.get(x.id)]; } catch { return []; } }) });
   workbench.turns = turns;
   turns.on('tracking-error', ({ owner, message }) => workbench.inbox.add({ title: 'Code capture needs attention', message, sessionId: owner, kind: 'error' }));
@@ -237,7 +250,7 @@ app.whenReady().then(async () => {
   workbench.inbox.on('added', item => { if (settings.notifications && !testMode) notifications.show(item); });
   shortcutAvailable = !testMode && globalShortcut.register('CommandOrControl+Alt+Space', () => trayHidden ? revealWindow() : setMode((modeTarget || mode) === 'hud' ? 'dashboard' : 'hud'));
   for (let i = 1; !testMode && i <= 9; i++) globalShortcut.register(`CommandOrControl+Alt+${i}`, () => {
-    const item = sessions.list().find(x => (x.alive || x.restoreError) && consoleCells(x).includes(i)); if (!item) return;
+    const item = sessions.list().find(x => (x.alive || x.restoreError) && consoleCells(x, sessions.grid).includes(i)); if (!item) return;
     setMode('fullscreen'); window.webContents.send('dock:select', item.id);
   });
   if (!testMode) { recent = recentReader.scan(); refreshLimits(); }
@@ -279,6 +292,19 @@ app.whenReady().then(async () => {
       if (typeof method === 'string' && method.startsWith('workbench.')) return { ok: true, value: await workbench.call(method.slice(10), payload) };
       switch (method) {
         case 'state': return { ok: true, value: snapshot() };
+        case 'updates.check': return { ok: true, value: await updates.check() };
+        case 'updates.download': if (testMode) throw new Error('Real update downloads are disabled in tests.'); return { ok: true, value: await updates.download() };
+        case 'updates.install': {
+          if (testMode) throw new Error('Installer launching is disabled in tests.');
+          const file = await updates.verifiedFile();
+          if (apiBusy) throw new Error('Wait for API work to finish before installing. The download is saved.');
+          if (sessions.list().some(x => x.alive)) {
+            const answer = await dialog.showMessageBox(window, { type: 'question', buttons: ['Keep working', 'Install update'], defaultId: 0, cancelId: 0, message: 'Install the downloaded update?', detail: 'Running console tasks will stop. Your saved panels can reopen after installation.' });
+            if (answer.response !== 1) break;
+          }
+          const error = await shell.openPath(file); if (error) throw new Error('The installer could not be opened.');
+          quitting = true; app.quit(); break;
+        }
         case 'mode': await setMode(payload); break;
         case 'minimize': window.minimize(); break;
         case 'tray': hideToTray(); break;
@@ -312,15 +338,16 @@ app.whenReady().then(async () => {
           return { ok: true, value: result.filePaths[0] || null };
         }
         case 'session.create': {
-          const occupied = occupiedCells(sessions.items.values());
-          const slot = payload?.slot ?? Array.from({ length: 9 }, (_, i) => i + 1).find(x => !occupied.has(x));
+          payload = payload?.projectId ? projects.launch(payload) : payload;
+          const occupied = occupiedCells(sessions.items.values(), sessions.grid);
+          const slot = payload?.slot ?? Array.from({ length: sessions.grid.columns * sessions.grid.rows }, (_, i) => i + 1).find(x => !occupied.has(x));
           const session = await sessions.create({ ...settings.consoleDefaults, ...(settings.slotNames?.[slot] ? { name: settings.slotNames[slot] } : {}), ...payload, permissions: payload?.permissions ?? settings.agentPermissions });
           persistSettings({ ...settings, slotNames: { ...settings.slotNames, [session.slot]: session.name } }); publish();
           return { ok: true, value: session };
         }
         case 'slot.name': {
           const slot = payload?.slot;
-          if (!Number.isInteger(slot) || slot < 1 || slot > 9) throw new Error('Choose a console slot from 1 to 9.');
+          if (!Number.isInteger(slot) || slot < 1 || slot > sessions.grid.columns * sessions.grid.rows) throw new Error('Choose a slot inside the console grid.');
           if (typeof payload.name !== 'string' || payload.name.length > 64 || /[\x00-\x1f\x7f]/.test(payload.name)) throw new Error('Use a name up to 64 characters, on one line.');
           const item = sessions.list().find(x => x.slot === slot && (x.alive || x.restoreError));
           if ((item?.id || null) !== (payload.sessionId || null)) throw new Error('This slot has changed. Try naming it again.');
@@ -330,8 +357,16 @@ app.whenReady().then(async () => {
           if (item) { sessions.rename(item.id, name); workbench.results.renameConsole(item.consoleKey || item.id, sessions.items.get(item.id).name); } else publish();
           break;
         }
+        case 'projects.save': { const project = projects.save(payload); publish(); return { ok: true, value: project }; }
+        case 'projects.progress': { const project = projects.progress(payload?.id, payload); publish(); return { ok: true, value: project }; }
+        case 'projects.remove': {
+          projects.remove(payload);
+          for (const item of sessions.items.values()) if (item.projectId === payload) item.projectId = null;
+          sessions.emit('changed'); publish(); break;
+        }
         case 'session.models': return { ok: true, value: consoleModels(payload) };
-        case 'session.layout.preview': return { ok: true, value: planLayout(sessions.items.values(), { id: payload?.id, slot: payload?.slot, width: payload?.width, height: payload?.height }) };
+        case 'grid.configure': sessions.setGrid(payload); break;
+        case 'session.layout.preview': return { ok: true, value: planLayout(sessions.items.values(), { id: payload?.id, slot: payload?.slot, width: payload?.width, height: payload?.height }, sessions.grid) };
         case 'session.move':
         case 'session.layout': {
           sessions.layout(method === 'session.move' ? { id: payload?.id, slot: payload?.slot } : { id: payload?.id, slot: payload?.slot, width: payload?.width, height: payload?.height }, plan => {
@@ -419,12 +454,15 @@ app.whenReady().then(async () => {
           const profile = hub.config.profiles.find(x => x.id === payload?.provider);
           if (!profile) throw new Error('Choose an API connection.');
           const key = profile.keyId ? vault.get(profile.keyId) : '';
+          const project = payload.projectId ? projects.launch({ projectId: payload.projectId }) : {};
           apiBusy = true; updatePower();
           const apiOwner = 'api:' + require('node:crypto').randomUUID();
-          turns.virtual.set(apiOwner, { id: apiOwner, consoleKey: 'api:' + profile.id, name: profile.name, cwd: settings.consoleDefaults.cwd, alive: true });
-          const apiHub = { summary: () => hub.summary(), invoke: (name, args) => hub.invoke(name, args, apiOwner) };
+          turns.virtual.set(apiOwner, { id: apiOwner, consoleKey: 'api:' + profile.id, projectId: project.projectId || null, name: profile.name, cwd: project.cwd || settings.consoleDefaults.cwd, alive: true });
+          projects.touch(project.projectId);
+          const apiHub = { summary: () => hub.summary() + projects.summary(project.projectId), invoke: (name, args) => hub.invoke(name, args, apiOwner) };
           let result;
           try { await turns.begin(apiOwner); result = await runApi(payload, key, settings.rates[`${profile.id}:${payload.model?.trim()}`], { profile, hub: apiHub, onEntry: entry => {
+            entry.projectId = project.projectId || null; entry.consoleName = project.name || profile.name; entry.turnId = turns.context(apiOwner)?.turnId || null;
             ledger = [entry, ...ledger];
             try { atomicJson(path.join(root, 'ledger.json'), ledger); }
             catch { storageError = 'Latest API usage is only in memory. Export it before quitting.'; }

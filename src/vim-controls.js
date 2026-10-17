@@ -48,7 +48,8 @@ export function vimControls({ context, focusSlot, action, onError }) {
     if (current) slot = current;
   }
   function select(next) {
-    slot = Math.max(1, Math.min(9, next)); clearPending();
+    const grid = context().grid || { columns: 3, rows: 3 };
+    slot = Math.max(1, Math.min(grid.columns * grid.rows, next)); clearPending();
     focusSlot(slot); refresh();
   }
   function enterNormal() {
@@ -105,10 +106,10 @@ export function vimControls({ context, focusSlot, action, onError }) {
       if (!grid && !['j', 'k'].includes(key)) return;
       consume();
       if (!grid) { scroll(key === 'j' ? 1 : -1); return; }
-      const col = (slot - 1) % 3;
-      select(key === 'h' && col > 0 ? slot - 1 : key === 'l' && col < 2 ? slot + 1 : key === 'j' && slot < 7 ? slot + 3 : key === 'k' && slot > 3 ? slot - 3 : slot);
+      const { columns, rows } = current.grid || { columns: 3, rows: 3 }, col = (slot - 1) % columns;
+      select(key === 'h' && col > 0 ? slot - 1 : key === 'l' && col < columns - 1 ? slot + 1 : key === 'j' && slot <= columns * (rows - 1) ? slot + columns : key === 'k' && slot > columns ? slot - columns : slot);
     } else if (/^[1-9]$/.test(key)) { consume(); select(Number(key)); }
-    else if (key === 'G') { consume(); if (grid) select(9); else document.querySelector('#content').scrollTop = document.querySelector('#content').scrollHeight; }
+    else if (key === 'G') { consume(); if (grid) select((current.grid?.columns || 3) * (current.grid?.rows || 3)); else document.querySelector('#content').scrollTop = document.querySelector('#content').scrollHeight; }
     else if (key === '?') { consume(); if (!event.repeat) showHelp(); }
     else if (key === 'Enter') {
       const otherControl = event.target.closest('button, a, summary');
@@ -117,10 +118,10 @@ export function vimControls({ context, focusSlot, action, onError }) {
     } else if (['i', 'r', 'n', 'N', 'b', 'f', 'd'].includes(key)) {
       consume(); if (event.repeat) return;
       if (key === 'n' || key === 'N') {
-        const occupied = current.sessions.filter(x => x.alive || x.restoreError).map(x => x.slot);
-        const empty = !occupied.includes(slot) ? slot : Array.from({ length: 9 }, (_, i) => i + 1).find(x => !occupied.includes(x));
-        if (!empty) { onError('All nine consoles are open.'); return; }
-        select(empty); run(key === 'n' ? 'new' : 'choose');
+        const { columns, rows } = current.grid || { columns: 3, rows: 3 };
+        const occupied = current.sessions.filter(x => x.alive || x.restoreError).flatMap(x => Array.from({ length: x.height || 1 }, (_, y) => Array.from({ length: x.width || 1 }, (_, dx) => x.slot + y * columns + dx)).flat());
+        const empty = !occupied.includes(slot) ? slot : Array.from({ length: columns * rows }, (_, i) => i + 1).find(x => !occupied.includes(x));
+        if (empty) select(empty); run(key === 'n' ? 'new' : 'choose', empty || 0);
       } else run({ i: 'type', r: 'rename', b: 'sidebar', f: 'fullscreen', d: 'dock' }[key]);
     }
   }, true);

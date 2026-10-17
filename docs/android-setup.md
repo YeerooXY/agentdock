@@ -2,11 +2,11 @@
 
 Leave Dock running on your PC, then use your phone to work in the same consoles. The Android app shows one terminal at a time. You can switch consoles, start one with your saved defaults, view Results, and check usage.
 
-This is an Android preview. iPhone support comes later. Live Firebase delivery and physical-phone testing are still pending; the terminal connection has been tested with an Android emulator and real Windows consoles. See [verification](android-review.md).
+This is an Android preview. iPhone support comes later. The owner has connected a physical phone over Wi-Fi; the latest Send and resize fixes still need a physical-phone retest. Emulator checks cover real Windows consoles. Internet access from a physical phone and live Firebase delivery remain unverified. See [the Send and resize checks](mobile-input-resize-review.md).
 
 ## Install and pair
 
-1. Install the matching Windows and Android builds from the [0.6 preview 3 release](https://github.com/YeerooXY/agentdock/releases/tag/v0.6.0-preview.3). Most phones use the **arm64** APK. Android 7 or later is required. The APK uses a development signing key; a future store build may require uninstalling this preview first.
+1. Install the matching Windows and Android builds from the [0.6 preview 4 release](https://github.com/YeerooXY/agentdock/releases/tag/v0.6.0-preview.4). Most phones use the **arm64** APK. Android 7 or later is required. The APK uses a development signing key; a future store build may require uninstalling this preview first.
 2. Put the PC and phone on the same Wi-Fi or local network. **No VPN app, extra account or internet server is needed** for this connection.
 3. On the PC, open **Settings → Android → Connect a phone**. First-time setup also offers **Connect my Android phone next**.
 4. Select the PC's Wi-Fi or Ethernet address and enable the connection. Use **Refresh addresses** if you just changed networks. The **This PC only** address cannot be reached by your phone.
@@ -18,6 +18,12 @@ Current source builds keep the PC awake while an agent is marked Thinking or a D
 The local-only mode accepts private network peers. Forwarding a port alone does not enable internet access: choose **Direct internet** first. The firewall helper accepts only the local subnet in local mode; internet mode also permits authenticated phones arriving through the router. A VPN's device approval or access rules can still block a private connection.
 
 A paired phone can type commands using the console's existing permissions. This is access to your PC, so pair only devices you control. **Remove** beside a phone immediately revokes its token. **Turn off** stops mobile access without ending local consoles.
+
+## Updates
+
+In the phone app, open **Usage → Updates → Check for updates**. **Download update** opens the matching APK download in your browser. Open that file to install it. Android may ask you to allow installs from your browser. The existing pairing stays saved when upgrading with the same signing key; do not uninstall first.
+
+On the PC, use **Settings → Updates** to check, download and install a newer Windows build. The PC verifies the download's size and SHA-256 before offering installation. Update both devices when a release asks for matching versions. Checks are manual and contact GitHub; no terminal content or keys are sent. Preview builds offer newer previews as well as stable releases.
 
 ## Direct internet, without a relay
 
@@ -69,6 +75,7 @@ Firebase Cloud Messaging is currently a no-cost product. This setup does not dep
 - Switching away from Console stops terminal streaming. Backgrounding the app closes its private connection; FCM handles optional background alerts. There is no background terminal polling.
 - Results downloads its list first. A picture or report loads when you open it; larger images need another tap. Markdown previews do not load remote images. Web links open in your browser only when tapped.
 - **Data saver** is on by default. Usage shows compressed application bytes for the current app session, not TLS, VPN, Firebase, or carrier overhead. It is not a billing meter.
+- **Check for updates** contacts GitHub for public release metadata. **Download update** sends your browser to GitHub's APK download. These requests expose ordinary connection information, such as your IP address, to GitHub; they send no pairing credentials, projects, terminal text or model keys. Update downloads are not included in the private-connection byte counter.
 - The connection uses HTTPS/WSS with the PC certificate pinned during pairing. PC device tokens, certificate key, FCM tokens, and Firebase service-account credentials are encrypted with Windows safeStorage. The phone stores its pairing credential through Android Keystore-backed secure storage. There is no plaintext fallback for PC secrets.
 - Direct internet is opt-in. Router discovery stays on the selected local network. The optional public-address check contacts ipify; optional DNS updates send the selected hostname, token and connection IP to Duck DNS. Neither receives terminal text, files or model API keys. Network-check details stay in memory; chosen connection settings, bound key ID and the last verified internet connection time are stored locally. Removing a phone deletes its device record; removing a key in Keys deletes its saved credential. **Remove firewall rule** removes Dock's Windows rule with administrator approval. Turning off mobile stops its listener and DNS updates. A narrow firewall rule may remain until explicitly removed; no service listens while mobile is off.
 - Google receives the Firebase installation/registration identifiers and generic alert metadata needed to deliver notifications. The public Firebase app configuration is stored on Android; the service-account private key stays on the PC. No Google Analytics SDK is enabled. Tailscale has its own account and network data practices. [Firebase privacy information](https://firebase.google.com/support/privacy).

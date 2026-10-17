@@ -19,10 +19,10 @@ async function runApi(raw, key, rates, { profile, hub, fetcher = fetch, onEntry 
   const messages = [{ role: 'user', content: prompt }];
   if (instructions && protocol === 'chat') messages.unshift({ role: 'system', content: instructions });
   const input = [{ role: 'user', content: prompt }];
-  const entries = []; let lastText = '';
+  const entries = [], messageId = crypto.randomUUID(); let lastText = '';
   const finish = async (entry, extra = {}) => { entries.push(entry); await onEntry(entry); return { entry, entries, text: lastText, ...extra }; };
   for (let round = 0; round < 8; round++) {
-    const entry = { id: crypto.randomUUID(), at: Date.now(), provider: profile.id, model, usage: null, estimatedCost: null, status: 'failed' };
+    const entry = { id: crypto.randomUUID(), messageId, step: round + 1, at: Date.now(), provider: profile.id, model, usage: null, estimatedCost: null, status: 'failed' };
     const headers = protocol === 'anthropic' ? { ...(key ? { 'x-api-key': key } : {}), 'anthropic-version': '2023-06-01' } : key ? { Authorization: `Bearer ${key}` } : {};
     const body = protocol === 'responses' ? { model, input, max_output_tokens: maxOutput, store: false, ...(instructions ? { instructions } : {}) } : protocol === 'anthropic' ? { model, messages, max_tokens: maxOutput, ...(instructions ? { system: instructions } : {}) } : { model, messages, max_tokens: maxOutput };
     if (tools.length) body.tools = tools;

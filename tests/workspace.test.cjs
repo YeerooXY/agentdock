@@ -236,3 +236,15 @@ test('a CLI failing to reopen a saved chat keeps the saved panel and conversatio
   first.sessions.end(first.sessions.list()[0].id); first.workspace.save();
   assert.deepEqual(first.saved(), []);
 });
+
+test('an automatically expanded workspace restores more than nine consoles and their project links', async t => {
+  const first = fixture(t);
+  for (let i = 0; i < 12; i++) await first.sessions.create({ provider: 'shell', cwd: first.root, name: `Project ${i}`, projectId: 'project-metadata' });
+  assert.deepEqual(first.sessions.grid, { columns: 3, rows: 4 });
+  first.workspace.freeze();
+  const second = fixture(t, first.root); await second.workspace.restore();
+  assert.deepEqual(second.sessions.grid, first.sessions.grid);
+  assert.equal(second.sessions.list().length, 12);
+  assert.ok(second.sessions.list().every(x => x.projectId === 'project-metadata'));
+  assert.deepEqual(second.errors, []);
+});

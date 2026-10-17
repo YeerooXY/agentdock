@@ -13,29 +13,30 @@ export function consoleLayoutUI({ call, getState, motion, toast }) {
     feedback.style.top = Math.max(12, point.y + height + 28 > innerHeight ? point.y - height - 20 : point.y + 20) + 'px';
   }
   function showFeedback(g, change, blocked = false) {
-    const { rect, x, y } = g.metrics, gapX = x * 3 - rect.width, gapY = y * 3 - rect.height;
-    const left = (change.slot - 1) % 3, top = Math.floor((change.slot - 1) / 3);
+    const { rect, x, y, columns, rows } = g.metrics, gapX = x * columns - rect.width, gapY = y * rows - rect.height;
+    const left = (change.slot - 1) % columns, top = Math.floor((change.slot - 1) / columns);
     guide.hidden = false; feedback.hidden = false;
     guide.dataset.state = feedback.dataset.state = blocked ? 'blocked' : 'resizing';
-    guide.style.cssText = `left:${rect.left}px;top:${rect.top}px;width:${rect.width}px;height:${rect.height}px;--guide-column-gap:${gapX}px;--guide-row-gap:${gapY}px`;
+    guide.style.cssText = `left:${rect.left}px;top:${rect.top}px;width:${rect.width}px;height:${rect.height}px;--guide-column-gap:${gapX}px;--guide-row-gap:${gapY}px;--grid-columns:${columns};--grid-rows:${rows}`;
     guide.querySelector('.resize-footprint').style.cssText = `left:${left * x}px;top:${top * y}px;width:${change.width * x - gapX}px;height:${change.height * y - gapY}px`;
     feedback.querySelector('.resize-feedback-label').textContent = blocked ? 'Not enough room' : 'Resizing';
     feedback.querySelector('.resize-feedback-size').textContent = `${change.width} \u00d7 ${change.height}`;
     feedback.querySelector('.resize-feedback-hint').textContent = blocked ? `Release to keep ${g.session.width || 1} \u00d7 ${g.session.height || 1}` : 'Release to set \u00b7 Esc to cancel';
     guide.querySelectorAll('.resize-guide-cells i').forEach((cell, index) => {
-      const col = index % 3, row = Math.floor(index / 3);
+      const col = index % columns, row = Math.floor(index / columns);
       cell.classList.toggle('selected', col >= left && col < left + change.width && row >= top && row < top + change.height);
     });
     positionFeedback(g);
   }
   function changeFor(g, dx, dy) {
-    const left = (g.session.slot - 1) % 3, top = Math.floor((g.session.slot - 1) / 3);
+    const { columns, rows } = g.metrics;
+    const left = (g.session.slot - 1) % columns, top = Math.floor((g.session.slot - 1) / columns);
     let l = left, t = top, r = left + (g.session.width || 1), b = top + (g.session.height || 1);
-    if (g.edge.includes('e')) r = Math.max(l + 1, Math.min(3, r + dx));
+    if (g.edge.includes('e')) r = Math.max(l + 1, Math.min(columns, r + dx));
     if (g.edge.includes('w')) l = Math.max(0, Math.min(r - 1, l + dx));
-    if (g.edge.includes('s')) b = Math.max(t + 1, Math.min(3, b + dy));
+    if (g.edge.includes('s')) b = Math.max(t + 1, Math.min(rows, b + dy));
     if (g.edge.includes('n')) t = Math.max(0, Math.min(b - 1, t + dy));
-    return { id: g.session.id, slot: t * 3 + l + 1, width: r - l, height: b - t };
+    return { id: g.session.id, slot: t * columns + l + 1, width: r - l, height: b - t };
   }
   function preview(g, change) {
     const stamp = JSON.stringify(change);
@@ -77,6 +78,7 @@ export function consoleLayoutUI({ call, getState, motion, toast }) {
     const session = getState().sessions.find(x => x.id === handle.closest('.session-card').dataset.consoleId);
     if (!session || !motion.begin()) return null;
     gesture = { session: { ...session }, edge: handle.dataset.resizeEdge, handle, metrics: motion.metrics() };
+    guide.querySelector('.resize-guide-cells').innerHTML = '<i></i>'.repeat(gesture.metrics.columns * gesture.metrics.rows);
     handle.classList.add('resize-edge-active'); handle.closest('.session-card').classList.add('console-resize-active');
     document.body.classList.add('console-resizing');
     document.body.style.setProperty('--resize-cursor', getComputedStyle(handle).cursor);

@@ -31,6 +31,9 @@ async function accept(raw) {
       if (mode === 'codex-notify' && input.type !== 'agent-turn-complete') return;
       if (name === 'Notification' && !['permission_prompt', 'idle_prompt', 'elicitation_dialog'].includes(input.notification_type)) return;
       event.state = statuses[name] || statuses[mode];
+      if (['Stop', 'StopFailure'].includes(name) && input.transcript_path) {
+        try { const message = require('./message-usage.cjs').claudeMessage(input.transcript_path); if (message) event.messageUsage = { ...message, status: name === 'StopFailure' ? 'failed' : 'completed' }; } catch {}
+      }
       // Await the baseline before the agent can edit. No prompts or answers leave this helper.
       const tool = event.state === 'active' ? 'dock/start_turn' : ['ready', 'error', 'ended'].includes(event.state) ? 'dock/finish_turn' : null;
       if (tool && process.env.AGENT_DOCK_BRIDGE_URL && process.env.AGENT_DOCK_BRIDGE_TOKEN) {

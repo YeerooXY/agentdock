@@ -209,7 +209,7 @@ async function eventually(predicate, message) {
   await page.locator('nav [data-page=usage]').click();
   await page.locator('nav [data-page=api]').click();
   assert.equal(await page.locator('#api-form textarea[name=prompt]').inputValue(), 'Keep this draft while switching views.');
-  await page.locator('#api-form select').selectOption('anthropic');
+  await page.locator('#api-form select[name=provider]').selectOption('anthropic');
   assert.equal(await page.locator('#api-form textarea[name=prompt]').inputValue(), 'Keep this draft while switching views.');
   assert.equal(await page.locator('#api-form button[type=submit]').isDisabled(), true);
   await capture({ path: path.join(artifacts, 'test-api.png') });
@@ -424,7 +424,8 @@ async function eventually(predicate, message) {
   checks.push('Shared web guide preserves drafts; Unity folder picker and encrypted Meshy binding work; bundled Meshy discovers tools without a paid request');
   checks.push('Dragging works in dashboard, fullscreen and HUD; close hides to tray and reopening preserves fullscreen and all running consoles');
   const tenth = await page.evaluate(cwd => window.dock.call('session.create', { provider: 'shell', cwd }), root);
-  assert.equal(tenth.ok, false); assert.match(tenth.error, /nine consoles/);
+  assert.equal(tenth.ok, true); assert.equal(tenth.value.slot, 10); assert.equal((await invoke('state')).grid.rows, 4);
+  await invoke('session.end', tenth.value.id); await eventually(async () => !(await invoke('state')).sessions.find(x => x.id === tenth.value.id)?.alive); await invoke('grid.configure', { columns: 3, rows: 3 });
   const workingHook = spawnSync(process.execPath, [path.join(root, 'electron', 'agent-event.cjs'), 'UserPromptSubmit'], { input: JSON.stringify({ session_id: 'test-thread' }), windowsHide: true, env: { ...process.env, AGENT_DOCK_DATA_DIR: dataDir, AGENT_DOCK_SESSION_ID: session.id } });
   assert.equal(workingHook.status, 0);
   await page.waitForSelector(`.session-card.active[data-console-id="${session.id}"]`);

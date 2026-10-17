@@ -166,7 +166,12 @@ class SharedHub {
     await this.disconnect(id); const result = await this.connect(item); return { count: result.tools.length, message: `${result.tools.length} tools available.` };
   }
   async invoke(name, args = {}, owner = null) {
-    if (name === 'dock_context') { const turnId = owner ? await this.workbench?.turns?.begin(owner) : null; return textResult(this.summary() + (turnId ? `\n\nCurrent turn: ${turnId}. Saved images, tests and code changes are grouped together. Call dock/notify with kind ready when finished, and tell the user to open Results.` : '')); }
+    if (name === 'dock_context') {
+      const turnId = owner ? await this.workbench?.turns?.begin(owner) : null;
+      const session = this.workbench?.turns?.session(owner);
+      this.workbench?.projects?.touch(session?.projectId);
+      return textResult(this.summary() + (this.workbench?.projects?.summary(session?.projectId) || '') + (turnId ? `\n\nCurrent turn: ${turnId}. Saved images, tests and code changes are grouped together. Call dock/notify with kind ready when finished, and tell the user to open Results.` : ''));
+    }
     if (name === 'dock_tools') return textResult(JSON.stringify(await this.list(args.connection)));
     if (name !== 'dock_call' || typeof args.tool !== 'string') throw new Error('Unknown shared tool.');
     if (this.workbench && args.tool.startsWith('dock/')) {

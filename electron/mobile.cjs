@@ -141,7 +141,7 @@ class MobileCompanion extends EventEmitter {
     const stream = this.streams.get(id); stream.resize(s.cols, s.rows); return stream;
   }
   publicState() {
-    return { sessions: this.sessions.list().map(({ id, slot, name, provider, alive, state, cols, rows, consoleKey }) => ({ id, slot, name, provider, alive, state, cols, rows, consoleKey })), unreadResults: this.results.unreadGroups(), resultVersion: digest(this.results.items.map(x => x.id + ':' + x.seenAt).join(',')).slice(0, 16) };
+    return { capacity: (this.sessions.grid?.columns || 3) * (this.sessions.grid?.rows || 3), sessions: this.sessions.list().map(({ id, slot, name, provider, alive, state, cols, rows, consoleKey }) => ({ id, slot, name, provider, alive, state, cols, rows, consoleKey })), unreadResults: this.results.unreadGroups(), resultVersion: digest(this.results.items.map(x => x.id + ':' + x.seenAt).join(',')).slice(0, 16) };
   }
   scheduleState() {
     if (!this.server || this.stateTimer) return;

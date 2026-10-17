@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'dock_client.dart';
 import 'help_link.dart';
+import 'update_panel.dart';
 import 'main.dart' show blue, pink, formatBytes;
 
 class SettingsPage extends StatefulWidget {
@@ -41,6 +42,8 @@ class _SettingsPageState extends State<SettingsPage> {
     return ListView(
       padding: const EdgeInsets.all(20),
       children: [
+        const UpdatePanel(),
+        const Divider(height: 34),
         const Text('Mobile data', style: TextStyle(fontSize: 23, color: pink)),
         const SizedBox(height: 12),
         Text(

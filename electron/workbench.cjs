@@ -9,6 +9,7 @@ const { SetupRequests } = require('./setup-requests.cjs');
 const schema = (properties, required = []) => ({ type: 'object', properties, required, additionalProperties: false });
 const string = { type: 'string' };
 const nativeTools = [
+  ['project_progress', 'Update the current project only: add a factual progress note, set the next step, or check an existing milestone (zero-based index). Only mark verified work done. Project selection belongs to the user.', schema({ note: string, nextStep: string, milestone: { type: 'integer', minimum: 0 }, done: { type: 'boolean' } })],
   ['start_turn', 'Start tracking a new task before editing files. Idempotent until finish_turn or a ready notification. Called automatically by dock_context. Returns the turn ID used to group code changes, tests and images.', schema({})],
   ['finish_turn', 'Save code changes for this task in Results. Native supported-agent stop hooks and ready notifications also do this.', schema({})],
   ['setup_status', 'Inspect installed agents, saved key names and shared tool/API settings. Never returns key values.', schema({})],
@@ -37,6 +38,7 @@ class Workbench {
     if (owner && !session?.alive) throw new Error('This console is no longer open.');
     const context = this.turns?.context(owner) || { project: session?.cwd || this.getProject(), sessionId: session?.id || null, consoleKey: session?.consoleKey || session?.id || null, consoleName: session?.name || '' };
     switch (name) {
+      case 'dock/project_progress': return this.projects.progress(session?.projectId, args);
       case 'dock/start_turn': return { turnId: await this.turns?.begin(owner) };
       case 'dock/finish_turn': return { turnId: await this.turns?.finish(owner) };
       case 'dock/setup_status': return this.setup.status();

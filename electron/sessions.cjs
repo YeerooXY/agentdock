@@ -5,7 +5,7 @@ const crypto = require('node:crypto');
 const { EventEmitter } = require('node:events');
 const { findProgram, nativeCodex, wslPath } = require('./adapters.cjs');
 const { atomicJson, readJson } = require('./storage.cjs');
-const { cells, occupied: occupiedCells, planLayout } = require('./console-layout.cjs');
+const { planLayout, planOpening, planGrid, gridSize } = require('./console-layout.cjs');
 const { providers, byId: cliAgents } = require('./cli-catalog.cjs');
 const { prepareCli } = require('./cli-launch.cjs');
 const { prepareCodexSession } = require('./codex-session.cjs');
@@ -26,20 +26,23 @@ class Sessions extends EventEmitter {
     this.findProgram = dependencies.findProgram || findProgram;
     this.nativeCodex = dependencies.nativeCodex || nativeCodex;
     this.hub = dependencies.hub;
+    this.projects = dependencies.projects;
     this.claude = dependencies.claude;
     this.runtime = dependencies.runtime;
     this.cliSetup = dependencies.cliSetup;
     this.agentHome = dependencies.agentHome;
     this.prepareCodexSession = dependencies.prepareCodexSession || prepareCodexSession;
+    this.grid = gridSize(dependencies.grid); this.onLayout = dependencies.onLayout || (() => {});
   }
   list() { return [...this.items.values()].map(({ terminal, buffer, command, claudeTarget, ...session }) => session).sort((a, b) => a.slot - b.slot); }
   savedConsoles() {
     return [...this.items.values()].filter(x => (x.alive || x.restoreError) && !x.dismissed).map(x => ({
-      slot: x.slot, width: x.width || 1, height: x.height || 1, consoleKey: x.consoleKey || x.id, name: x.name, cwd: x.cwd, provider: x.provider, permissions: x.permissions,
+      slot: x.slot, width: x.width || 1, height: x.height || 1, consoleKey: x.consoleKey || x.id, projectId: x.projectId || null, name: x.name, cwd: x.cwd, provider: x.provider, permissions: x.permissions,
       command: x.command || '', model: x.launchModel || '', providerSessionId: ['codex', 'claude'].includes(x.provider) ? x.providerSessionId : null, claudeTarget: x.claudeTarget
     })).sort((a, b) => a.slot - b.slot);
   }
   async restore(entry) {
+    if (entry.projectId && this.projects && !this.projects.get(entry.projectId)) entry = { ...entry, projectId: null };
     try {
       return await this.create({ ...entry, permissions: entry.permissions === 'system' ? 'default' : entry.permissions }, { resumeId: entry.providerSessionId, claudeTarget: entry.claudeTarget });
     } catch (error) {
@@ -56,16 +59,26 @@ class Sessions extends EventEmitter {
     this.items.delete(id);
     return this.restore(entry);
   }
-  async create(raw, { resumeId = null, claudeTarget = null } = {}) {
+  create(raw, options) {
+    return this.createOne(raw, options);
+  }
+  commitLayout(plan, grid = this.grid) {
+    this.onLayout({ plan, grid });
+    this.grid = grid;
+    for (const placed of plan) if (this.items.has(placed.id)) Object.assign(this.items.get(placed.id), placed);
+  }
+  setGrid(raw) {
+    if (this.starting.size) throw new Error('Wait for the console to open.');
+    const { plan, grid } = planGrid(this.items.values(), this.grid, raw);
+    this.commitLayout(plan, grid); this.emit('changed');
+  }
+  async createOne(raw, { resumeId = null, claudeTarget = null } = {}) {
     if (this.stopping) throw new Error('Agent Dock is closing.');
-    const occupied = occupiedCells([...this.items.values(), ...this.starting.values()]);
-    const requestedSlot = raw?.slot === undefined ? null : Number(raw.slot);
-    if (requestedSlot !== null && (!Number.isInteger(requestedSlot) || requestedSlot < 1 || requestedSlot > 9)) throw new Error('Choose a console slot from 1 to 9.');
-    if (occupied.has(requestedSlot)) throw new Error('That console is already open.');
-    const slot = requestedSlot ?? Array.from({ length: 9 }, (_, i) => i + 1).find(x => !occupied.has(x));
-    if (!slot) throw new Error('All nine consoles are open. End a console to free a slot.');
-    const width = raw.width ?? 1, height = raw.height ?? 1;
-    if (cells({ slot, width, height }).some(x => occupied.has(x))) throw new Error('That space belongs to another console.');
+    raw = this.projects?.launch(raw) || raw;
+    const opening = planOpening([...this.items.values(), ...this.starting.values()], raw, this.grid);
+    if (this.starting.size && (JSON.stringify(opening.grid) !== JSON.stringify(this.grid) || opening.plan.some(x => { const before = this.items.get(x.id) || this.starting.get(x.id); return before && ['slot','width','height'].some(k => x[k] !== before[k]); }))) throw new Error('Wait for the console to open before changing the layout.');
+    opening.plan = opening.plan.filter(x => this.items.has(x.id));
+    const { slot, width, height } = opening;
     if (!providers.includes(raw?.provider)) throw new Error('Choose a console type.');
     if (resumeId != null && !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(resumeId)) throw new Error('The saved conversation ID is invalid.');
     const selectedPermissions = raw.permissions ?? 'default';
@@ -78,6 +91,9 @@ class Sessions extends EventEmitter {
     const name = String(raw.name || path.basename(cwd)).trim().slice(0, 64);
     const id = crypto.randomUUID();
     const dir = path.join(this.root, 'sessions', id); fs.mkdirSync(dir, { recursive: true });
+    const summary = this.hub ? this.hub.summary() + (this.projects?.summary(raw.projectId) || '') : '';
+    const summaryPath = this.hub && raw.projectId ? path.join(dir, 'AGENT_DOCK.md') : this.hub?.summaryPath;
+    if (this.hub && raw.projectId) fs.writeFileSync(summaryPath, summary, { mode: 0o600 });
     const helper = this.runtime?.event || path.join(__dirname, 'agent-event.cjs');
     const node = this.runtime?.node || this.findProgram('node.exe') || this.findProgram('node');
     const claudeInstall = claudeTarget || this.claude || (raw.provider === 'claude' && { kind: 'native', path: this.findProgram('claude') });
@@ -94,8 +110,7 @@ class Sessions extends EventEmitter {
       args = [...(resumeId ? ['resume', resumeId] : []), '-c', `notify=${JSON.stringify([node, helper, 'codex-notify'])}`];
       if (model) args.push('--model', model);
       if (this.hub) {
-        const summary = this.hub.summary();
-        const context = JSON.stringify(summary).length < 22000 ? summary : `Before doing any work, call the agent_dock dock_context tool to load the shared user instructions and tool summary. The same instructions are in ${this.hub.summaryPath}. Refresh them at the start of each task. Use dock_tools to discover tools and dock_call to invoke them.`;
+        const context = JSON.stringify(summary).length < 22000 ? summary : `Before doing any work, call the agent_dock dock_context tool to load the shared user instructions and tool summary. The same instructions are in ${summaryPath}. Refresh them at the start of each task. Use dock_tools to discover tools and dock_call to invoke them.`;
         const values = { developer_instructions: context, 'mcp_servers.agent_dock.command': node, 'mcp_servers.agent_dock.args': [bridgeHelper], 'mcp_servers.agent_dock.env_vars': ['AGENT_DOCK_BRIDGE_URL', 'AGENT_DOCK_BRIDGE_TOKEN'], 'mcp_servers.agent_dock.tool_timeout_sec': 150 };
         for (const [key, value] of Object.entries(values)) args.push('-c', `${key}=${JSON.stringify(value)}`);
       }
@@ -112,7 +127,7 @@ class Sessions extends EventEmitter {
       const claudeArgs = ['--settings', isWsl ? wslPath(settings) : settings];
       if (model) claudeArgs.push('--model', model);
       if (resumeId) claudeArgs.push('--resume', resumeId);
-      if (this.hub) claudeArgs.push('--append-system-prompt-file', isWsl ? wslPath(this.hub.summaryPath) : this.hub.summaryPath, '--mcp-config', isWsl ? wslPath(mcpConfig) : mcpConfig);
+      if (this.hub) claudeArgs.push('--append-system-prompt-file', isWsl ? wslPath(summaryPath) : summaryPath, '--mcp-config', isWsl ? wslPath(mcpConfig) : mcpConfig);
       if (permissions === 'unrestricted') claudeArgs.push('--dangerously-skip-permissions');
       if (isWsl) { executable = 'wsl.exe'; args = ['-d', claudeInstall.distro, '--cd', cwd, '--exec', claude, ...claudeArgs]; }
       else if (claude.toLowerCase().endsWith('.exe')) { executable = claude; args = claudeArgs; }
@@ -121,19 +136,20 @@ class Sessions extends EventEmitter {
       const agent = cliAgents.get(raw.provider);
       const program = this.cliSetup?.executable(raw.provider) || this.findProgram(agent.command);
       if (!program) throw new Error(`${agent.name} was not found. Open Settings → Set up agents to install it.`);
-      const prepared = this.hub ? prepareCli(raw.provider, { directory: dir, runtime: { ...this.runtime, node, tools: bridgeHelper }, summary: this.hub.summary(), summaryPath: this.hub.summaryPath, home: this.agentHome, model, permissions }) : { args: [...(agent.args || []), ...(model && agent.model ? [agent.model, model] : [])], env: {} };
+      const prepared = this.hub ? prepareCli(raw.provider, { directory: dir, runtime: { ...this.runtime, node, tools: bridgeHelper }, summary, summaryPath, home: this.agentHome, model, permissions }) : { args: [...(agent.args || []), ...(model && agent.model ? [agent.model, model] : [])], env: {} };
       cliEnv = prepared.env;
       if (program.toLowerCase().endsWith('.exe')) { executable = program; args = prepared.args; }
       else args.push('-ExecutionPolicy', 'Bypass', '-Command', `& ${psQuote(program)} ${prepared.args.map(psQuote).join(' ')}`);
     } else if (raw.provider === 'custom') {
       if (typeof raw.command !== 'string' || !raw.command.trim() || raw.command.length > 4000 || raw.command.includes('\0')) throw new Error('Enter the command you want this console to run.');
-      const command = this.hub ? raw.command.replaceAll('{instructions}', psQuote(this.hub.summaryPath)).replaceAll('{mcp_config}', psQuote(mcpConfig)) : raw.command;
+      const command = this.hub ? raw.command.replaceAll('{instructions}', psQuote(summaryPath)).replaceAll('{mcp_config}', psQuote(mcpConfig)) : raw.command;
       args.push('-NoExit', '-EncodedCommand', Buffer.from(command, 'utf16le').toString('base64'));
     }
     const env = { ...process.env, AGENT_DOCK_DATA_DIR: this.root, AGENT_DOCK_SESSION_ID: id, TERM: 'xterm-256color', COLORTERM: 'truecolor' };
     delete env.ELECTRON_RUN_AS_NODE;
     for (const key of ['OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'GOOGLE_API_KEY', 'GEMINI_API_KEY']) delete env[key];
     if (this.hub) Object.assign(env, this.hub.grant(id), { AGENT_DOCK_MCP_CONFIG: mcpConfig });
+    if (summaryPath) env.AGENT_DOCK_INSTRUCTIONS = summaryPath;
     Object.assign(env, cliEnv);
     if (node) {
       const currentPath = Object.entries(env).find(([key]) => key.toLowerCase() === 'path')?.[1] || '';
@@ -143,7 +159,7 @@ class Sessions extends EventEmitter {
     if (isWsl) env.WSLENV = [...new Set([...(env.WSLENV || '').split(':').filter(Boolean), 'AGENT_DOCK_DATA_DIR', 'AGENT_DOCK_SESSION_ID', 'AGENT_DOCK_BRIDGE_URL', 'AGENT_DOCK_BRIDGE_TOKEN', 'AGENT_DOCK_INSTRUCTIONS/p', 'AGENT_DOCK_MCP_CONFIG/p'])].join(':');
     let trackingWarning = '';
     if (raw.provider === 'codex') {
-      this.starting.set(id, { slot, width, height, alive: true });
+      this.starting.set(id, { id, slot, width, height, alive: true });
       try { args.push(...await this.prepareCodexSession(executable, { node, helper, root: this.root, session: id, cwd, env })); }
       catch { trackingWarning = 'Agent Dock: Update Codex to restore chats before the first reply finishes.\r\n'; }
       finally { this.starting.delete(id); }
@@ -152,11 +168,14 @@ class Sessions extends EventEmitter {
     let terminal;
     try { terminal = this.pty.spawn(executable, args, { name: 'xterm-256color', cols: 110, rows: 30, cwd, env, useConpty: true }); }
     catch (error) { this.hub?.revoke(id); throw error; }
+    try { this.commitLayout(opening.plan, opening.grid); }
+    catch (error) { terminal.kill(); this.hub?.revoke(id); throw error; }
     for (const [oldId, old] of this.items) if (old.slot === slot && !old.alive) this.items.delete(oldId);
     const consoleKey = /^[a-f0-9-]{36}$/i.test(raw.consoleKey || '') ? raw.consoleKey : id;
-    const session = { id, consoleKey, slot, width, height, name, cwd, provider: raw.provider, permissions, launchModel: model, command: raw.provider === 'custom' ? raw.command : '', claudeTarget: raw.provider === 'claude' ? claudeInstall : undefined, state: 'open', alive: true, cols: 110, rows: 30, createdAt: Date.now(), updatedAt: Date.now(), terminal, buffer: '', sequence: 0, usage: null, providerSessionId: resumeId };
+    const session = { id, consoleKey, projectId: raw.projectId || null, slot, width, height, name, cwd, provider: raw.provider, permissions, launchModel: model, command: raw.provider === 'custom' ? raw.command : '', claudeTarget: raw.provider === 'claude' ? claudeInstall : undefined, state: 'open', alive: true, cols: 110, rows: 30, createdAt: Date.now(), updatedAt: Date.now(), terminal, buffer: '', sequence: 0, usage: null, providerSessionId: resumeId };
     if (trackingWarning) session.buffer = trackingWarning;
     this.items.set(id, session);
+    this.projects?.touch(session.projectId);
     terminal.onData(data => { session.buffer = (session.buffer + data).slice(-250000); this.emit('output', { id, data, sequence: ++session.sequence }); });
     terminal.onExit(({ exitCode }) => {
       this.hub?.revoke(id); session.alive = false; session.state = 'ended'; session.exitCode = exitCode; session.updatedAt = Date.now();
@@ -173,6 +192,7 @@ class Sessions extends EventEmitter {
     if (!item?.alive) return;
     if (typeof data !== 'string' || data.length > 65536) throw new Error('Terminal input is too large.');
     item.terminal.write(data);
+    if (!draft && /[\r\n]/.test(data)) this.projects?.touch(item.projectId);
     if (!draft && /[\r\n]/.test(data) && cliAgents.has(item.provider)) { item.state = 'active'; item.updatedAt = Date.now(); this.emit('changed'); }
   }
   signal(id, kind) {
@@ -197,12 +217,12 @@ class Sessions extends EventEmitter {
   move(id, slot, beforeMove = () => {}) {
     const item = this.items.get(id);
     if (!item || (!item.alive && !item.restoreError)) throw new Error('This console is no longer open.');
-    if (!Number.isInteger(slot) || slot < 1 || slot > 9) throw new Error('Choose a console slot from 1 to 9.');
+    if (!Number.isInteger(slot) || slot < 1 || slot > this.grid.columns * this.grid.rows) throw new Error('Choose a slot inside the console grid.');
     return this.layout({ id, slot }, beforeMove);
   }
   layout(change, beforeMove = () => {}) {
     if (this.starting.size) throw new Error('Wait for the new console to open before moving panels.');
-    const plan = planLayout(this.items.values(), change);
+    const plan = planLayout(this.items.values(), change, this.grid);
     beforeMove(plan);
     for (const placed of plan) Object.assign(this.items.get(placed.id), placed);
     for (const [id, old] of this.items) if (!old.alive && !old.restoreError && plan.some(x => x.slot === old.slot)) this.items.delete(id);
@@ -238,6 +258,7 @@ class Sessions extends EventEmitter {
           if (item.provider === 'codex' && this.codexIdentities.has(item.id) && event.providerSessionId && event.providerSessionId !== this.codexIdentities.get(item.id)) continue;
           if (event.providerSessionId) item.providerSessionId = event.providerSessionId;
           if (event.usage) item.usage = event.usage;
+          if (event.messageUsage) this.emit('message-usage', { session: item, messages: [event.messageUsage] });
           if (event.model) item.model = event.model;
           if (event.contextPercent !== undefined) item.contextPercent = event.contextPercent;
           if (event.state && item.alive) {
@@ -251,7 +272,7 @@ class Sessions extends EventEmitter {
     }
     if (changed) this.emit('changed');
   }
-  updateUsage(recent) { for (const session of this.items.values()) { const match = recent.find(x => x.id === session.providerSessionId); if (match?.usage) session.usage = match.usage; } }
+  updateUsage(recent) { for (const session of this.items.values()) { const match = recent.find(x => x.id === session.providerSessionId); if (match?.usage) session.usage = match.usage; if (match?.messages?.length) this.emit('message-usage', { session, messages: match.messages }); } }
   async stop() {
     this.stopping = true;
     const active = [...this.items.values()].filter(x => x.alive);

@@ -7,6 +7,12 @@ import io.flutter.plugin.common.MethodChannel
 class MainActivity : FlutterActivity() {
     override fun configureFlutterEngine(engine: FlutterEngine) {
         super.configureFlutterEngine(engine)
+        MethodChannel(engine.dartExecutor.binaryMessenger, "agentdock/updates").setMethodCallHandler { call, result ->
+            if (call.method == "installed") {
+                val info = packageManager.getPackageInfo(packageName, 0)
+                result.success(mapOf("version" to info.versionName, "abis" to android.os.Build.SUPPORTED_ABIS.toList()))
+            } else result.notImplemented()
+        }
         MethodChannel(engine.dartExecutor.binaryMessenger, "agentdock/push").setMethodCallHandler { call, result ->
             try {
                 when (call.method) {

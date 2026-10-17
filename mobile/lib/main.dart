@@ -326,7 +326,7 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
                 ),
               ),
               Text(
-                '${session['slot']} / 9',
+                '${session['slot']} / ${c.state['capacity'] ?? 9}',
                 style: const TextStyle(color: blue, fontSize: 12),
               ),
             ],

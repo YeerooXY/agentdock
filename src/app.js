@@ -17,6 +17,8 @@ import { workbenchUI } from './workbench-ui.js';
 import { toolFeatures, syncIntegrationJobs } from './tool-features.js';
 import './console-polish.css';
 import './setup.css';
+import { projectsUI } from './projects-ui.js';
+import { updatesUI } from './updates-ui.js';
 
 const $ = selector => document.querySelector(selector);
 const escape = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
@@ -49,10 +51,12 @@ const number = value => Number.isFinite(value) ? Intl.NumberFormat('en', { notat
 const money = value => value == null ? 'Not priced' : '$' + value.toFixed(value && value < 0.01 ? 4 : 2);
 const labels = { open: 'Open', active: 'Thinking', ready: 'Ready', attention: 'Needs attention', error: 'Error', ended: 'Ended', recent: 'Recent', interrupted: 'Interrupted' };
 let state, page = 'consoles', selectedId = null, selectedApi = 'openai', apiBusy = false, outputText = '', toastTimer;
-let apiDraft = { model: '', prompt: '', maxOutput: '1024' }, responseMeta = 'TEXT OUTPUT', responseError = '';
+let apiDraft = { model: '', prompt: '', maxOutput: '1024', projectId: '' }, responseMeta = 'TEXT OUTPUT', responseError = '';
 const terminals = new Map();
+const gridSize = () => state?.grid || { columns: 3, rows: 3 };
+const gridCapacity = () => gridSize().columns * gridSize().rows;
 let openingConsole = false;
-let launchGesture, chooserOpener, vim, setup, workbench, layoutMotion, phone;
+let launchGesture, chooserOpener, vim, setup, workbench, layoutMotion, phone, projects, updates;
 const nameSaves = new Map();
 const launchHint = 'title="Click to open. Hold or right-click to choose." aria-haspopup="dialog"';
 let renderedView = null, viewAnimation, windowMoving = false;
@@ -93,6 +97,7 @@ $('#app').innerHTML = `
     <nav aria-label="Main navigation">
 
       <button data-page="consoles"><span class="notification-icon">${icon('terminal')}<span id="ready-count" class="notification-badge" hidden></span></span>Consoles <span id="nav-count">0</span></button>
+      <button data-page="projects">${icon('folder')}Projects</button>
       <button data-page="inbox">${icon('check')}Inbox <span id="inbox-count" hidden></span></button>
       <button data-page="results"><span class="notification-icon">${icon('grid')}<span id="results-count" class="notification-badge" hidden></span></span>Results</button>
       <button data-page="reviews">${icon('star')}Website review</button>
@@ -107,7 +112,7 @@ $('#app').innerHTML = `
   <div class="workspace">
     <header class="titlebar"><button id="sidebar-toggle" class="icon-button" data-action="sidebar" aria-label="Hide sidebar" title="Hide sidebar" aria-controls="sidebar" aria-expanded="true">${icon('menu')}</button><button id="launch-folder" class="launch-folder" data-action="launch-folder" aria-label="Choose launch folder">${icon('folder')}<span></span></button><div class="window-drag-handle" data-window-drag title="Drag to move. Double-click for fullscreen." aria-label="Move window"><span></span></div><div class="window-actions"><button data-action="hud" title="Collapse to corner HUD" aria-label="Collapse to corner HUD">${icon('corner')}</button><button data-action="minimize" aria-label="Minimize">${icon('minus')}</button><button data-action="fullscreen" aria-label="Fullscreen" title="Fullscreen">${icon('expand')}</button><button data-action="tray" aria-label="Hide in system tray" title="Hide in system tray">${icon('close')}</button></div></header>
     <main id="content" tabindex="-1"></main>
-    <section id="consoles-page" class="console-grid-view" hidden aria-label="Consoles"><div class="consoles-only"><div class="session-grid"></div></div></section>
+    <section id="consoles-page" class="console-grid-view" hidden aria-label="Consoles"><div class="consoles-only"><div class="session-grid"></div></div><button id="grid-add" class="primary" data-action="new" aria-label="Add console" title="Add console · Ctrl Shift N" hidden>${icon('plus')}</button></section>
     <section id="terminal-page" hidden><div class="terminal-toolbar"><div id="terminal-heading"></div><div class="toolbar-actions"><button data-page="consoles" class="subtle" aria-label="Back to consoles">${icon('grid')}Consoles</button><button data-action="end-session" class="subtle danger">End console</button></div></div><div id="terminal-tabs" role="tablist" aria-label="Open consoles"></div><div id="terminal-host"></div></section>
     <div id="terminal-cache" hidden></div>
   </div>
@@ -116,6 +121,7 @@ $('#app').innerHTML = `
 <dialog id="console-chooser" aria-labelledby="console-chooser-title" aria-describedby="console-chooser-hint">
   <form id="one-off-console-form">
     <div class="dialog-heading"><div><h2 id="console-chooser-title">Open console</h2><p id="console-chooser-hint">Just for this console.</p></div><button type="button" class="icon-button" data-action="cancel-console" aria-label="Close chooser">${icon('close')}</button></div>
+    <div class="chooser-project"><label>Project<div class="folder-input"><select name="projectId"><option value="">No project</option></select><button type="button" class="secondary" id="chooser-new-project">New project</button></div></label><label id="chooser-project-folders" hidden>Start in<select name="projectFolder"></select></label></div>
     <label>Name <span class="optional">optional</span><input name="name" maxlength="64" placeholder="Uses the folder name" autocomplete="off"></label>
     <div class="form-pair"><label>Agent or shell<select name="provider">${consoleProviders().map(provider => `<option value="${provider}">${providerName(provider)}</option>`).join('')}</select></label><label id="one-off-model">Model<select name="model"><option value="">Agent default</option><option value="__custom__">Enter a model…</option></select></label></div>
     <label id="one-off-custom-model" hidden>Model name<input name="customModel" maxlength="200" spellcheck="false" autocomplete="off" placeholder="Model name or alias"></label>
@@ -164,7 +170,7 @@ function sessionCard(slot) {
   return `<article class="session-card ${escape(session.state)}" data-console-id="${session.id}" data-slot="${slot}"><header class="console-panel-header"><button class="console-grip" draggable="true" data-console-drag="${session.id}" aria-label="Move console ${slot}" title="Drag to move or swap. Focus here and press Alt + 1–9 to move.">${readyIcon(session)}</button><span class="slot" title="${escape(providerName(session.provider) + ' · ' + session.cwd)}">${String(slot).padStart(2, '0')}</span>${slotNameInput(slot, session)}<span class="panel-status">${badge(session.state)}</span><button class="icon-button" data-session="${session.id}" aria-label="Expand console ${slot}" title="Expand console">${icon('expand')}</button></header><div class="console-panel-body" data-terminal-mount="${session.id}"></div>${resizeHandles(slot)}</article>`;
 }
 function coveredSlots() {
-  return new Map(state.sessions.filter(x => x.alive || x.restoreError).flatMap(x => Array.from({ length: x.height || 1 }, (_, y) => Array.from({ length: x.width || 1 }, (_, dx) => [x.slot + y * 3 + dx, x])).flat()));
+  return new Map(state.sessions.filter(x => x.alive || x.restoreError).flatMap(x => Array.from({ length: x.height || 1 }, (_, y) => Array.from({ length: x.width || 1 }, (_, dx) => [x.slot + y * gridSize().columns + dx, x])).flat()));
 }
 function recentSection() {
   const entries = state.recent.filter(x => !state.sessions.some(s => s.providerSessionId === x.id));
@@ -174,7 +180,10 @@ function renderConsoles() {
   if (layoutMotion?.active) return;
   const before = layoutMotion?.capture();
   const grid = $('.session-grid'), covered = coveredSlots();
-  for (let slot = 1; slot <= 9; slot++) {
+  grid.style.setProperty('--grid-columns', gridSize().columns); grid.style.setProperty('--grid-rows', gridSize().rows);
+  $('#grid-add').hidden = covered.size < gridCapacity();
+  while (grid.children.length > gridCapacity()) grid.lastElementChild.remove();
+  for (let slot = 1; slot <= gridCapacity(); slot++) {
     const session = state.sessions.find(x => x.slot === slot && (x.alive || x.restoreError));
     let panel = grid.children[slot - 1];
     if (!panel || (panel.dataset.consoleId || '') !== (session?.id || '')) {
@@ -186,8 +195,8 @@ function renderConsoles() {
       panel = replacement;
     }
     panel.hidden = covered.has(slot) && covered.get(slot).slot !== slot;
-    panel.style.gridColumn = `${(slot - 1) % 3 + 1} / span ${session?.width || 1}`;
-    panel.style.gridRow = `${Math.floor((slot - 1) / 3) + 1} / span ${session?.height || 1}`;
+    panel.style.gridColumn = `${(slot - 1) % gridSize().columns + 1} / span ${session?.width || 1}`;
+    panel.style.gridRow = `${Math.floor((slot - 1) / gridSize().columns) + 1} / span ${session?.height || 1}`;
     syncSlotName(panel.querySelector('.console-name'), slot, session);
     panel.tabIndex = -1;
     panel.setAttribute('aria-label', `Console ${slot}${session?.name || state.settings.slotNames?.[slot] ? ': ' + (session?.name || state.settings.slotNames[slot]) : ''}`);
@@ -216,12 +225,16 @@ function renderUsage() {
     '<div class="usage-grid">' + quotaCard('codex', true) + quotaCard('claude', true) + '</div><p class="section-note">Limits are shared across each account. Missing values stay blank.</p><section class="ledger-panel"><div class="section-label"><div><h2>API requests</h2><p>Requests made through Agent Dock.</p></div><button class="subtle" data-action="export">Export</button></div>' + ledgerTable() + '<div class="ledger-foot">' + (state.ledger.length > 100 ? 'Latest 100 shown. Export includes all records. ' : '') + 'Costs are estimates, not invoices. Tool steps count as separate requests.</div></section>' +
     '<details class="surface pricing-details"><summary>Cost estimate settings</summary><form id="rates-form"><div class="form-pair"><label>API<select name="provider">' + state.shared.profiles.map(x => '<option value="' + escape(x.id) + '">' + escape(x.name) + '</option>').join('') + '</select></label><label>Model ID<input name="model" required placeholder="Model to price"></label></div><p class="field-hint">USD per million tokens. Leave unknown rates blank.</p><div class="price-grid">' + [['input', 'Input'], ['output', 'Output'], ['cached', 'Cache reads'], ['cacheWrite', 'Cache writes']].map(([key,label]) => '<label>' + label + '<input name="' + key + '" type="number" min="0" step="any" placeholder="Unknown"></label>').join('') + '</div><button type="submit" class="primary">Save rates</button><p class="form-error" role="alert"></p></form></details>';
 }
+function messageUsageTable() {
+  const rows = state.messages || [];
+  return `<section class="surface message-usage"><div class="section-label"><h2>Per message</h2><span>Latest ${rows.length}</span></div><p class="section-note">Reported tokens and API cost estimates. Subscription credits per message are not exposed by these agents. Claude counts cover the main agent.</p>${rows.length ? `<div class="table-scroll"><table><thead><tr><th>Time / console</th><th>Model</th><th>Input</th><th>Output</th><th>Cache reads</th><th>Est. USD</th></tr></thead><tbody>${rows.map(row => `<tr><td>${escape(new Date(row.at).toLocaleString([], { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' }))}<small>${escape(row.consoleName || providerName(row.provider))}</small></td><td>${escape(row.model || providerName(row.provider))}<small>${escape(row.source)}${row.steps ? ' · ' + row.steps + ' steps' : ''} · ${escape(row.status)}</small></td><td class="mono">${number(row.usage?.input)}</td><td class="mono">${number(row.usage?.output)}</td><td class="mono">${number(row.usage?.cached)}</td><td class="mono">${row.source === 'Dock API' ? money(row.estimatedCost) : '—'}</td></tr>`).join('')}</tbody></table></div>` : '<p class="section-note">Usage appears after a supported agent or API finishes a message. Missing counters stay blank.</p>'}</section>`;
+}
 function renderApi() {
   const profiles = state.shared.profiles;
   if (!profiles.some(x => x.id === selectedApi)) selectedApi = profiles[0]?.id || '';
   const profile = profiles.find(x => x.id === selectedApi);
   const hasKey = profile && (!profile.keyId || state.vault.entries.some(x => x.id === profile.keyId));
-  return pageHeading('', 'API', 'Your shared tools and instructions are included.') + '<div class="api-columns"><form id="api-form" class="surface api-form"><h2>New request</h2><label>API<select name="provider">' + profiles.map(x => '<option value="' + escape(x.id) + '" ' + (x.id === selectedApi ? 'selected' : '') + '>' + escape(x.name) + '</option>').join('') + '</select></label><div class="key-state ' + (hasKey ? 'saved' : '') + '">' + icon('lock') + (hasKey ? profile.keyId ? 'Key connected' : 'No key required' : 'Add the key in Keys, or choose one in Tools.') + '</div><label>Model<input name="model" required maxlength="150" placeholder="Model ID" autocomplete="off"></label><label>Prompt<textarea name="prompt" rows="9" required maxlength="100000" placeholder="What are we working on?"></textarea></label><label>Max output tokens per step<input type="number" name="maxOutput" min="16" max="32768" value="1024" required></label><p class="field-hint">Each request starts fresh. Up to 8 model steps with tools.</p><p id="api-error" class="form-error" role="alert"></p><button type="submit" class="primary wide" ' + (!hasKey || apiBusy ? 'disabled' : '') + '>' + icon('arrow') + (apiBusy ? 'Working…' : 'Send') + '</button></form><section class="surface response-panel"><div class="section-label"><h2>Response</h2><span id="response-meta" class="small-label"></span></div><pre id="api-response">' + escape(outputText || 'Your response will appear here.') + '</pre></section></div>';
+  return pageHeading('', 'API', 'Your shared tools and instructions are included.') + '<div class="api-columns"><form id="api-form" class="surface api-form"><h2>New request</h2><label>Project<select name="projectId"><option value="">No project</option>' + (state.projects || []).filter(x => x.status !== 'archived').map(x => '<option value="' + escape(x.id) + '">' + escape(x.name) + '</option>').join('') + '</select></label><label>API<select name="provider">' + profiles.map(x => '<option value="' + escape(x.id) + '" ' + (x.id === selectedApi ? 'selected' : '') + '>' + escape(x.name) + '</option>').join('') + '</select></label><div class="key-state ' + (hasKey ? 'saved' : '') + '">' + icon('lock') + (hasKey ? profile.keyId ? 'Key connected' : 'No key required' : 'Add the key in Keys, or choose one in Tools.') + '</div><label>Model<input name="model" required maxlength="150" placeholder="Model ID" autocomplete="off"></label><label>Prompt<textarea name="prompt" rows="9" required maxlength="100000" placeholder="What are we working on?"></textarea></label><label>Max output tokens per step<input type="number" name="maxOutput" min="16" max="32768" value="1024" required></label><p class="field-hint">Each request starts fresh. Up to 8 model steps with tools.</p><p id="api-error" class="form-error" role="alert"></p><button type="submit" class="primary wide" ' + (!hasKey || apiBusy ? 'disabled' : '') + '>' + icon('arrow') + (apiBusy ? 'Working…' : 'Send') + '</button></form><section class="surface response-panel"><div class="section-label"><h2>Response</h2><span id="response-meta" class="small-label"></span></div><pre id="api-response">' + escape(outputText || 'Your response will appear here.') + '</pre></section></div>';
 }
 function renderVault() { return sharedViews(state, { escape, icon, pageHeading }).vault(); }
 function renderTools() { return sharedViews(state, { escape, icon, pageHeading }).tools(); }
@@ -248,6 +261,9 @@ function renderStartupSettings() {
 }
 function renderAppearanceSettings() {
   return `<section class="surface"><h2>Appearance</h2><label>Accent style<select data-setting="accentStyle">${[['pink-blue', 'Pink + blue'], ['blue', 'Blue'], ['pink', 'Pink']].map(([value, label]) => `<option value="${value}" ${(state.settings.accentStyle || 'pink-blue') === value ? 'selected' : ''}>${label}</option>`).join('')}</select></label><label class="toggle-row"><span><strong>Blink cursor</strong><small>Off keeps the console cursor steady.</small></span><input type="checkbox" data-setting="cursorBlink" ${state.settings.cursorBlink ? 'checked' : ''}></label></section>`;
+}
+function renderGridSettings() {
+  return `<form id="grid-form" class="surface"><h2>Console grid</h2><div class="form-pair">${[['columns','Columns'],['rows','Rows']].map(([name,label]) => `<label>${label}<input name="${name}" type="number" min="2" max="8" value="${gridSize()[name]}" required></label>`).join('')}</div><p class="field-hint">A full grid makes room or grows when you add a console. Up to 64 panels.</p><p class="form-error" role="alert"></p><button type="submit" class="primary">Apply grid</button></form>`;
 }
 function renderKeyboardSettings() {
   return `<section class="surface"><h2>Keyboard</h2><div class="shortcut-row"><span>New console</span><kbd>Ctrl Shift N</kbd></div><p class="field-hint">Right-click + to choose a name, agent or folder.</p><label class="toggle-row"><span><strong>Vim controls</strong><small>Use h/j/k/l to move around Dock.</small></span><input type="checkbox" data-setting="vimControls" ${state.settings.vimControls ? 'checked' : ''}></label><p class="field-hint">Ctrl+Shift+Space returns control to Dock. Press i to type in a console.</p><button class="subtle" data-action="vim-help">View shortcuts</button></section>`;
@@ -278,14 +294,16 @@ function renderPage() {
   document.querySelectorAll('[data-page]').forEach(button => button.classList.toggle('selected', button.dataset.page === page));
   if (terminalView) { renderTerminal(); return; }
   if (consoleView) { renderConsoles(); return; }
-  const renderer = { results: () => workbench.render('results'), inbox: () => workbench.render('inbox'), reviews: () => workbench.render('reviews'), usage: renderUsage, api: renderApi, vault: renderVault, tools: renderTools, instructions: renderInstructions, settings: renderSettings }[page] || renderSettings;
+  const renderer = { projects: () => projects.render(), results: () => workbench.render('results'), inbox: () => workbench.render('inbox'), reviews: () => workbench.render('reviews'), usage: renderUsage, api: renderApi, vault: renderVault, tools: renderTools, instructions: renderInstructions, settings: renderSettings }[page] || renderSettings;
   $('#content').innerHTML = (state.storageError ? `<div class="error-banner" role="alert">${escape(state.storageError)}</div>` : '') + renderer();
   workbench?.mount();
+  if (page === 'settings') $('.settings-layout').insertAdjacentHTML('afterbegin', updates?.render() || '');
+  if (page === 'usage') $('#content').insertAdjacentHTML('beforeend', messageUsageTable());
   if (page === 'usage' && state.workbench?.conceptUsage?.length) $('#content').insertAdjacentHTML('beforeend', `<section class="surface"><h2>Meshy concepts</h2><p class="field-hint">Credits reported for concepts created here. Separate from API dollar estimates.</p>${state.workbench.conceptUsage.map(x => `<div class="connection-row"><span>${new Date(x.at).toLocaleString()}</span><span>${escape(x.state)}</span><strong>${x.credits == null ? 'Credits unavailable' : number(x.credits) + ' credits'}</strong></div>`).join('')}</section>`);
-  if (page === 'settings') { $('.settings-layout').insertAdjacentHTML('afterbegin', (phone?.renderSettings() || '') + renderAppearanceSettings() + renderKeyboardSettings() + renderStartupSettings() + renderLaunchDefaults()); launchDefaultsFields(); }
+  if (page === 'settings') { $('.settings-layout').insertAdjacentHTML('afterbegin', (phone?.renderSettings() || '') + renderGridSettings() + renderAppearanceSettings() + renderKeyboardSettings() + renderStartupSettings() + renderLaunchDefaults()); launchDefaultsFields(); }
   if (page === 'api') {
     const form = $('#api-form');
-    for (const key of ['model', 'prompt', 'maxOutput']) form.elements[key].value = apiDraft[key];
+    for (const key of ['model', 'prompt', 'maxOutput', 'projectId']) form.elements[key].value = apiDraft[key];
 
     $('#response-meta').textContent = apiBusy ? 'IN PROGRESS' : responseMeta;
     $('#api-error').textContent = responseError;
@@ -299,10 +317,10 @@ function hudHtml() {
   const quota = state.limits.find(x => x.id === `${quotaProvider}:account` || x.id === `${quotaProvider}:codex`) || state.limits.find(x => x.provider === quotaProvider);
   const weekly = quota?.windows.find(x => x.minutes === 10080), five = quota?.windows.find(x => x.minutes === 300);
   const covered = coveredSlots();
-  const slots = Array.from({ length: 9 }, (_, i) => {
+  const slots = Array.from({ length: gridCapacity() }, (_, i) => {
     const item = covered.get(i + 1);
     if (item && item.slot !== i + 1) return '';
-    const area = `grid-column:${i % 3 + 1}/span ${item?.width || 1};grid-row:${Math.floor(i / 3) + 1}/span ${item?.height || 1}`;
+    const area = `grid-column:${i % gridSize().columns + 1}/span ${item?.width || 1};grid-row:${Math.floor(i / gridSize().columns) + 1}/span ${item?.height || 1}`;
     const name = state.settings.slotNames?.[i + 1];
     return item ? `<button style="${area}" class="hud-slot ${item.state} ${item.id === selectedId ? 'current' : ''}" data-slot="${i + 1}" data-session="${item.id}" title="${escape(item.name)} · ${labels[item.state]}"><span>${i + 1}</span>${readyIcon(item)}<small>${escape(item.name)}</small></button>` : `<button style="${area}" class="hud-slot empty ${name ? 'named' : ''}" data-action="new" data-slot="${i + 1}" aria-label="Open console ${i + 1}${name ? ': ' + escape(name) : ''}" ${launchHint} ${openingConsole ? 'disabled' : ''}>${newConsoleMark()}${name ? `<small class="hud-slot-name">${escape(name)}</small>` : ''}</button>`;
   }).join('');
@@ -331,6 +349,7 @@ function updatePreview() {
 }
 function receive(next) {
   state = next;
+  document.body.style.setProperty('--grid-columns', gridSize().columns); document.body.style.setProperty('--grid-rows', gridSize().rows);
   document.body.dataset.accent = state.settings.accentStyle || 'pink-blue';
   document.body.classList.toggle('is-fullscreen', state.mode === 'fullscreen');
   document.body.classList.toggle('steady-cursor', !state.settings.cursorBlink);
@@ -345,6 +364,7 @@ function receive(next) {
   workbench?.sync();
   setup?.receive();
   phone?.receive();
+  updates?.sync();
   const providerSelect = $('#one-off-console-form [name=provider]');
   if (providerSelect && !$('#console-chooser').open) for (const provider of consoleProviders()) if (!providerSelect.querySelector(`[value="${provider}"]`)) providerSelect.add(new Option(providerName(provider), provider));
   if ($('#workspace-error')) $('#workspace-error').textContent = state.workspaceError || '';
@@ -556,17 +576,31 @@ function chooseConsole(button) {
   const dialog = $('#console-chooser');
   if (openingConsole || dialog.open) return;
   const occupied = coveredSlots();
-  const slot = Number(button.dataset.slot) || Array.from({ length: 9 }, (_, i) => i + 1).find(x => !occupied.has(x));
-  if (!slot || occupied.has(slot)) return;
-  const form = $('#one-off-console-form'); form.reset(); form.dataset.slot = slot;
+  const slot = Number(button.dataset.slot) || Array.from({ length: gridCapacity() }, (_, i) => i + 1).find(x => !occupied.has(x));
+  if (slot && occupied.has(slot)) return;
+  const form = $('#one-off-console-form'); form.reset(); form.dataset.slot = slot || '';
+  form.elements.projectId.innerHTML = '<option value="">No project</option>' + (state.projects || []).filter(x => x.status !== 'archived').map(x => `<option value="${escape(x.id)}">${escape(x.name)}${x.category ? ' · ' + escape(x.category) : ''}</option>`).join('');
+  $('#chooser-project-folders').hidden = true;
   for (const key of ['provider', 'cwd', 'name', 'command']) form.elements[key].value = state.settings.consoleDefaults[key] || '';
   form.elements.name.value = state.settings.slotNames?.[slot] || form.elements.name.value;
   form.elements.permissions.value = state.settings.agentPermissions;
   form.querySelector('details').open = false; form.querySelector('.form-error').textContent = '';
-  $('#console-chooser-title').textContent = `Console ${slot}`;
+  $('#console-chooser-title').textContent = slot ? `Console ${slot}` : 'New console';
   chooserOpener = button; dialog.showModal(); chooserModels(); form.elements.name.focus();
 }
 launchGesture = holdToChoose({ onChoose: chooseConsole, disabled: () => openingConsole || $('#console-chooser').open });
+function selectProject(id) {
+  const form = $('#one-off-console-form'), project = state.projects?.find(x => x.id === id);
+  form.elements.projectId.value = id || '';
+  $('#chooser-project-folders').hidden = !project;
+  if (!project) return;
+  form.elements.projectFolder.innerHTML = project.folders.map(x => `<option value="${escape(x.path)}">${escape(x.label || x.path)}</option>`).join('');
+  form.elements.cwd.value = project.folders[0].path; form.elements.name.value = project.name;
+}
+$('#chooser-new-project').addEventListener('click', () => {
+  const slot = $('#one-off-console-form').dataset.slot; $('#console-chooser').close();
+  projects.edit(undefined, project => { chooseConsole({ dataset: { slot } }); selectProject(project.id); });
+});
 $('#console-chooser').addEventListener('cancel', event => { if (openingConsole) event.preventDefault(); });
 $('#console-chooser').addEventListener('close', () => {
   ++chooserModelRequest; launchGesture.cancel();
@@ -580,8 +614,8 @@ $('#console-chooser').addEventListener('close', () => {
 });
 async function openNew(slot, overrides = null) {
   if (openingConsole) return;
-  if (!slot) slot = Array.from({ length: 9 }, (_, i) => i + 1).find(x => !coveredSlots().has(x));
-  if (!slot || coveredSlots().has(Number(slot))) { toast('No free space. Shrink a console or end one first.'); return; }
+  if (!slot) slot = Array.from({ length: gridCapacity() }, (_, i) => i + 1).find(x => !coveredSlots().has(x));
+  if (slot && coveredSlots().has(Number(slot))) { toast('That space is already open.'); return; }
   openingConsole = true;
   document.querySelectorAll('[data-action="new"]').forEach(button => button.disabled = true);
   try {
@@ -729,6 +763,8 @@ document.addEventListener('change', async event => {
   if (input.form?.getAttribute('id') === 'one-off-console-form') {
     if (input.name === 'provider') chooserModels();
     else if (input.name === 'model') chooserFields();
+    else if (input.name === 'projectId') selectProject(input.value);
+    else if (input.name === 'projectFolder') input.form.elements.cwd.value = input.value;
   }
   if (input.form?.getAttribute('id') === 'api-form' && input.name === 'provider') { selectedApi = input.value; renderPage(); }
   if (input.form?.getAttribute('id') === 'tool-form' && input.name === 'type') toolFields();
@@ -741,17 +777,21 @@ function loadRates(form) {
 }
 document.addEventListener('input', event => {
   const input = event.target;
-  if (input.form?.getAttribute('id') === 'api-form' && ['model', 'prompt', 'maxOutput'].includes(input.name)) apiDraft[input.name] = input.value;
+  if (input.form?.getAttribute('id') === 'api-form' && ['model', 'prompt', 'maxOutput', 'projectId'].includes(input.name)) apiDraft[input.name] = input.value;
 });
 document.addEventListener('submit', async event => {
+  if (event.target.id === 'project-form') return;
   event.preventDefault(); const form = event.target, data = Object.fromEntries(new FormData(form)); const submit = form.querySelector('[type="submit"]');
   if (submit) submit.disabled = true;
   try {
     if (form.getAttribute('id') === 'one-off-console-form') {
       form.querySelector('.form-error').textContent = '';
-      const { customModel, ...overrides } = data;
+      const { customModel, projectFolder, ...overrides } = data;
       if (overrides.model === '__custom__') overrides.model = customModel;
       await openNew(form.dataset.slot, overrides);
+    } else if (form.getAttribute('id') === 'grid-form') {
+      form.querySelector('.form-error').textContent = '';
+      await call('grid.configure', { columns: Number(data.columns), rows: Number(data.rows) }); toast('Grid updated.');
     } else if (form.getAttribute('id') === 'console-defaults-form') {
       form.querySelector('.form-error').textContent = '';
       const { permissions, ...consoleDefaults } = data;
@@ -827,10 +867,12 @@ async function vimAction(action, value) {
   }
 }
 vim = vimControls({
-  context: () => ({ enabled: state?.settings.vimControls === true, view: state?.mode === 'hud' ? 'hud' : page, sessions: state?.sessions || [], busy: windowMoving || openingConsole }),
+  context: () => ({ enabled: state?.settings.vimControls === true, view: state?.mode === 'hud' ? 'hud' : page, sessions: state?.sessions || [], grid: gridSize(), busy: windowMoving || openingConsole }),
   focusSlot: focusVimSlot, action: vimAction, onError: message => toast(message, true)
 });
 phone = mobileUI({ call, escape, icon, getState: () => state, toast });
+projects = projectsUI({ call, getState: () => state, escape, icon, toast, renderPage, openNew });
+updates = updatesUI({ call, getState: () => state, escape, icon, toast });
 setup = firstRun({ call, escape, icon, getState: () => state });
 windowDragging(call, () => state);
 layoutMotion = consoleMotion({ render: renderConsoles, fit: scheduleFits });
