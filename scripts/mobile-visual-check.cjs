@@ -13,7 +13,7 @@ const reports = []; let browser;
   for (const [name, engine, options] of profiles) {
     browser = await engine.launch(); const context = await browser.newContext(options); const state = structuredClone(fixture);
     state.mode = 'dashboard'; state.settings.setupComplete = true; state.settings.sidebarCollapsed = false;
-    state.mobile = { enabled: true, host: '100.64.0.5', port: 47831, interfaces: [{ address: '100.64.0.5', name: 'Tailscale', tailscale: true }], devices: [{ id: 'phone-demo', name: 'Android phone', connected: true, alerts: true }], push: { configured: true, project: 'agent-dock-demo' }, pairingExpires: Date.now() + 300000 };
+    state.mobile = { enabled: true, host: '192.168.1.5', port: 47831, interfaces: [{ address: '192.168.1.5', name: 'Wi-Fi', tailscale: false }], devices: [{ id: 'phone-demo', name: 'Android phone', connected: true, alerts: true }], push: { configured: true, project: 'agent-dock-demo' }, pairingExpires: Date.now() + 300000 };
     state.workbench.results = [{ id: '01010101-0101-4101-8101-010101010101', title: '2 changed files', kind: 'code', status: 'needs-review', summary: 'Changes during this turn', ext: '.json', size: 700, at: Date.now(), project: 'C:/Projects/Trader', consoleKey: 'trader', consoleName: 'Trader', groupId: 'turn-demo', seenAt: null, image: false, source: 'Agent' }];
     let unsafeMarkdown = false;
     state.workbench.results.push({ ...state.workbench.results[0], id: '02020202-0202-4202-8202-020202020202', title: 'Verification notes', kind: 'test', ext: '.md' });
@@ -40,6 +40,9 @@ const reports = []; let browser;
       const overflow = await page.evaluate(() => { const d = document.querySelector('dialog[open]'); return d ? d.scrollWidth > d.clientWidth + 1 || d.getBoundingClientRect().right > innerWidth + 1 : document.documentElement.scrollWidth > innerWidth + 1; }); assert.equal(overflow, false, `${name} ${view} overflow`); checks.push(view);
     }
     await page.locator('[data-page=settings]').click(); await page.locator('[data-mobile=open]').click(); await capture('connection');
+    await page.locator('.mobile-step summary').focus(); await page.keyboard.press('Enter');
+    assert.equal(await page.locator('.mobile-step details[open]').count(), 1); await capture('remote-help');
+    await page.keyboard.press('Enter'); assert.equal(await page.locator('.mobile-step details[open]').count(), 0);
     await page.locator('[data-mobile=next]').click(); await page.locator('[data-mobile=pair]').click(); await capture('pair-phone');
     await page.locator('[data-mobile=next]').click(); await capture('alerts');
     await page.keyboard.press('Tab'); assert.ok(await page.evaluate(() => document.querySelector('dialog[open]').contains(document.activeElement)));

@@ -21,7 +21,7 @@ This release is unsigned, so Windows may show an unknown-publisher or SmartScree
 
 The [0.6 preview](https://github.com/YeerooXY/agentdock/releases/tag/v0.6.0-preview.1) adds a native Android companion, turn-by-turn code diffs in Results, formatted Markdown previews, and Windows notifications that bring Dock forward. Install both preview builds to try the phone connection; the stable 0.5 installer above does not include it.
 
-Use your own Tailscale account, or stay on the same Wi-Fi. Optional cloud alerts use your own Firebase project. No terminal traffic goes through an Agent Dock account or hosted relay. Setup is in **Settings → Android → Connect a phone**, and the first-run wizard can open it for you. See the [setup and privacy guide](docs/android-setup.md) and [verification notes](docs/android-review.md). Real-phone and live Firebase checks are still pending.
+On the same Wi-Fi, connect directly: no VPN app or extra account is needed. Away-from-home access currently uses a private VPN connection; Tailscale is one option. Optional cloud alerts use your own Firebase project. No terminal traffic goes through an Agent Dock account or hosted relay. Setup is in **Settings → Android → Connect a phone**, and the first-run wizard can open it for you. See the [setup and privacy guide](docs/android-setup.md) and [verification notes](docs/android-review.md). Real-phone and live Firebase checks are still pending.
 
 ## Run from source
 

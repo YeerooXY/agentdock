@@ -223,7 +223,7 @@ class DockClient extends ChangeNotifier {
     }
     pending.clear();
     status = foreground
-        ? 'PC unavailable. Check Tailscale and keep Dock open.'
+        ? 'PC unavailable. Check your network and keep Dock open.'
         : 'Paused';
     if (foreground && pairing != null) {
       retry?.cancel();

@@ -51,7 +51,7 @@ class MobileCompanion extends EventEmitter {
   snapshot() { return { enabled: !!this.server, host: this.config.host, port: this.config.port, interfaces: interfaces(), error: this.error, devices: this.private.devices.map(({ id, name, at, pushToken }) => ({ id, name, at, alerts: !!pushToken, connected: [...this.clients].some(x => x.device.id === id) })), push: { project: this.private.firebase?.public.projectId || '', configured: !!this.private.firebase?.credential, error: this.push.error, lastSent: this.push.lastSent }, pairingExpires: this.pairing?.expires || 0, bytes: this.counters }; }
   async configure({ enabled, host, port = 47831 }) {
     if (!enabled) { await this.stop(); this.config.enabled = false; this.persist(); return; }
-    if (!interfaces().some(x => x.address === host) || !isPrivate(host)) throw new Error('Choose this PC’s Tailscale or private network address.');
+    if (!interfaces().some(x => x.address === host) || !isPrivate(host)) throw new Error('Choose this PC’s private network address.');
     if (!Number.isInteger(port) || port < 1024 || port > 65535) throw new Error('Use a port from 1024 to 65535.');
     if (!this.available()) throw new Error('Windows credential encryption is unavailable.');
     await this.stop(); Object.assign(this.config, { enabled: true, host, port }); this.persist(); await this.start();
@@ -59,7 +59,7 @@ class MobileCompanion extends EventEmitter {
   async start() {
     if (!this.config.enabled || this.server) return;
     if (!this.available()) throw new Error('Windows credential encryption is unavailable.');
-    if (!interfaces().some(x => x.address === this.config.host)) { this.error = 'Connect Tailscale, then enable Mobile again.'; this.emit('changed'); return; }
+    if (!interfaces().some(x => x.address === this.config.host)) { this.error = 'That network address is unavailable. Choose another address in Phone setup.'; this.emit('changed'); return; }
     if (!this.private.identity) {
       const pems = await require('selfsigned').generate([{ name: 'commonName', value: 'Agent Dock' }], { keyType: 'ec', curve: 'P-256', algorithm: 'sha256', notBeforeDate: new Date(Date.now() - 60000), notAfterDate: new Date(Date.now() + 5 * 365 * 86400000) });
       this.private.identity = { cert: pems.cert, key: pems.private }; this.persist();

@@ -33,7 +33,7 @@ class _PairPageState extends State<PairPage> {
     } catch (e) {
       if (mounted) {
         setState(
-          () => error = e is FormatException ? e.message : 'Could not reach your PC. Check Tailscale, the address and Windows Firewall.',
+          () => error = e is FormatException ? e.message : 'Could not reach your PC. Check the network, PC address and Windows Firewall.',
         );
       }
     } finally {
@@ -76,7 +76,7 @@ class _PairPageState extends State<PairPage> {
                 ),
                 const SizedBox(height: 20),
                 const Text(
-                  'On your PC, open Agent Dock → Settings → Connect a phone. Use your own Tailscale account on both devices, or the same Wi-Fi.',
+                  'Connect your phone and PC to the same Wi-Fi. On your PC, open Agent Dock → Settings → Connect a phone. No extra app or account is needed.',
                   style: TextStyle(height: 1.6, color: Color(0xffc8cbe0)),
                 ),
                 const SizedBox(height: 28),

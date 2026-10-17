@@ -8,6 +8,9 @@
 .mobile-step p,.mobile-step li { line-height:1.65; }
 .mobile-step code { color:#c9b8fa; overflow-wrap:anywhere; }
 .mobile-step label { display:grid; gap:7px; margin:18px 0; }
+.mobile-step details { margin-top:16px; }
+.mobile-step summary { cursor:pointer; min-height:44px; padding:12px 0; color:#c8c4e6; }
+.mobile-step summary:focus-visible { outline:2px solid #bcb1ff; outline-offset:3px; border-radius:4px; }
 .mobile-steps { padding-left:22px; }
 .mobile-steps li { margin-bottom:14px; }
 .mobile-footer { margin-top:24px; }

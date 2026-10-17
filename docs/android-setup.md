@@ -7,9 +7,9 @@ This is an Android preview. iPhone support comes later. Live Firebase delivery a
 ## Install and pair
 
 1. Install the matching Windows and Android builds from the [0.6 preview release](https://github.com/YeerooXY/agentdock/releases/tag/v0.6.0-preview.1). Most phones use the **arm64** APK. Android 7 or later is required. The APK uses a development signing key; a future store build may require uninstalling this preview first.
-2. Install [Tailscale](https://tailscale.com/download) on the PC and phone. Create **your own account** and sign in on both. Nobody needs the Agent Dock author's account. For use only on the same Wi-Fi, you can skip Tailscale.
+2. Put the PC and phone on the same Wi-Fi or local network. **No VPN app, extra account or internet server is needed** for this connection.
 3. On the PC, open **Settings → Android → Connect a phone**. First-time setup also offers **Connect my Android phone next**.
-4. Select the PC's Tailscale address, usually starting with `100.`, and enable the connection. Use **Refresh addresses** if you just connected Tailscale. For same-Wi-Fi use, select the PC's local network address instead.
+4. Select the PC's Wi-Fi or Ethernet address and enable the connection. Use **Refresh addresses** if you just changed networks. The **This PC only** address cannot be reached by your phone.
 5. Open **Pair phone → Show QR code**. In Android, choose **Scan QR code**, or paste the code. The code expires after five minutes and works once. Treat it like a temporary password.
 6. Keep the PC awake with Dock running. Closing Dock to its tray preserves the connection and consoles; choosing Quit stops them.
 
@@ -18,6 +18,10 @@ Current source builds keep the PC awake while an agent is marked Thinking or a D
 Windows Firewall may need an inbound TCP rule for port **47831** on the selected private network. Allow only the network/address you intend to use. Do not forward this port on your router or expose it publicly. Tailscale device approval or access rules can also block the connection.
 
 A paired phone can type commands using the console's existing permissions. This is access to your PC, so pair only devices you control. **Remove** beside a phone immediately revokes its token. **Turn off** stops mobile access without ending local consoles.
+
+## Away from home
+
+The current build needs a private network connection between the devices for access over the internet. A private VPN you already use may work; Tailscale is one option, not a requirement for local use. With Tailscale, install it on both devices, sign in to your own account on both, and select the PC's Tailscale address (usually starting with `100.`) during pairing. Built-in internet discovery and relay support are not implemented yet.
 
 ## Optional completion alerts
 
