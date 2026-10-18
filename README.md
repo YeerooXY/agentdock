@@ -1,10 +1,27 @@
 ﻿# Agent Dock
 
+## Downloads
+
+| Device | Download |
+| --- | --- |
+| Windows 10/11 — Intel or AMD 64-bit | **[Windows installer](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.4/Agent-Dock-0.6.0-preview.4-Setup-x64.exe)** |
+| Android — most phones (ARM64) | **[Android APK](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.4/Agent-Dock-0.6.0-preview.4-Android-arm64.apk)** |
+| Android — older 32-bit phones (ARMv7) | [Android ARMv7 APK](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.4/Agent-Dock-0.6.0-preview.4-Android-armv7.apk) |
+
+Current preview: **0.6.0-preview.4**. [Release notes](https://github.com/YeerooXY/agentdock/releases/tag/v0.6.0-preview.4) · [All releases](https://github.com/YeerooXY/agentdock/releases) · [Previous stable desktop-only release](https://github.com/YeerooXY/agentdock/releases/tag/v0.5.0).
+
 A Windows desktop app for agent consoles, projects, shared tools and usage tracking.
 
-## Install
+## Updates
 
-Download **[Agent-Dock-0.6.0-preview.4-Setup-x64.exe](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.4/Agent-Dock-0.6.0-preview.4-Setup-x64.exe)** for Windows 10/11 on an Intel or AMD 64-bit PC. This preview includes Android setup. The previous [stable desktop-only release](https://github.com/YeerooXY/agentdock/releases/tag/v0.5.0) is also available.
+- **Windows:** open **Settings → Updates → Check for updates**, then **Download update → Install update**. Dock verifies the download and asks before ending open consoles. Let active work finish before installing. Settings, keys and supported conversation IDs stay in your local profile.
+- **Android:** open **Usage → Updates → Check for updates → Download update**. Open the downloaded APK and confirm the update. Android may ask you to allow installs from that browser. Pairing stays saved when upgrading a build signed with the same key.
+
+**No update button in your version?** Use the downloads above and run the Windows installer or open the Android APK to update the existing app. You do not need to uninstall first. Keep your PC and phone on matching versions.
+
+Updates are manual. Preview builds can see newer previews; stable builds only offer stable releases. To switch from stable to this preview, use the downloads above. These buttons update Agent Dock. See [projects, usage and updates](docs/projects-and-updates.md) for data storage and limits.
+
+## Install
 
 1. Run the installer and choose where to install Dock. It adds desktop and Start menu shortcuts.
 2. Choose your **project folder**. Tick any agents you want Dock to install; already installed agents are detected.
@@ -93,14 +110,6 @@ The console cursor is steady by default. **Settings → Appearance → Blink cur
 Codex model suggestions come from its local model cache. Claude offers its [model aliases](https://code.claude.com/docs/en/model-config). **Enter a model…** accepts another model name or alias; the CLI checks availability. **Agent default** keeps the CLI's configured model. A one-time model choice is kept with that console when startup restoration is enabled.
 
 The HUD is a normal desktop window, covered by other apps by default. It is not attached to the wallpaper; Win + D hides it too. Use the shortcut or taskbar to bring it back. Settings has an optional always-on-top switch.
-
-## Updates
-
-On Windows, open **Settings → Updates → Check for updates**. If one is available, **Download update** saves and verifies the installer. **Install update** runs it; Dock asks before ending open consoles. Wait for active work to finish first. Saved settings, keys and supported conversation IDs stay in your local profile.
-
-On Android, open **Usage → Updates → Check for updates**, then **Download update**. Your browser downloads the APK for your phone. Open it to install; Android may ask you to allow installs from that browser. Pairing stays saved when upgrading a build signed with the same key.
-
-Checks and downloads happen only when requested. Preview builds can see newer previews; stable builds only offer stable releases. These buttons update Agent Dock. See [projects, usage and updates](docs/projects-and-updates.md) for data storage and limits.
 
 ## Vim controls
 
