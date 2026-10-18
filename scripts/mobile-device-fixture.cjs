@@ -20,6 +20,7 @@ if (process.argv.includes('--usage')) {
 const results = new Results(profile);
 results.add({ text: JSON.stringify({ version: 1, notes: ['Integration fixture — no real project was changed.'], changes: [{ file: 'src/page.js', type: 'modified', patch: '--- src/page.js\n+++ src/page.js\n@@ -1 +1 @@\n-const status = "waiting";\n+const status = "ready";' }] }), ext: '.json', title: '1 changed file', kind: 'code', groupId: 'mobile-turn' }, { project, consoleName: 'Trader', consoleKey: 'mobile-fixture' });
 results.add({ file: path.join(root, 'assets', 'icon.png'), title: 'Page concept', kind: 'concept', groupId: 'mobile-turn' }, { project, consoleName: 'Trader', consoleKey: 'mobile-fixture', trusted: true });
+results.add({ file: path.join(root, 'assets', 'icon.png'), title: 'Phone concept', kind: 'concept', groupId: 'mobile-turn' }, { project, consoleName: 'Trader', consoleKey: 'mobile-fixture', trusted: true });
 results.add({ text: fs.readFileSync(path.join(__dirname, 'fixtures/result-preview.md'), 'utf8'), title: 'Verification', kind: 'test', status: 'passed', groupId: 'mobile-turn' }, { project, consoleName: 'Trader', consoleKey: 'mobile-fixture' });
 let app;
 (async () => {
@@ -41,6 +42,14 @@ let app;
     if (fs.existsSync(actionsFile)) {
       const actions = JSON.parse(fs.readFileSync(actionsFile, 'utf8')); fs.unlinkSync(actionsFile);
       for (const action of actions) {
+        if (action.method === 'mobile.invite') {
+          const fresh = await call('mobile.invite');
+          fs.writeFileSync(path.join(out, 'connection.json'), JSON.stringify({port,code:fresh.code,sessions,profile},null,2)); continue;
+        }
+        if (action.method === 'mobile.decide-pairing') {
+          if (action.payload.id !== (await call('mobile.status')).pendingPairing?.id) throw Error('Not the pending fixture phone');
+          await call(action.method, action.payload); continue;
+        }
         if (action.method !== 'session.resize' && action.method !== 'session.input') throw Error('Unsupported fixture action');
         if (!sessions.some(x => x.id === action.payload.id)) throw Error('Not a fixture console');
         await call(action.method, action.payload);

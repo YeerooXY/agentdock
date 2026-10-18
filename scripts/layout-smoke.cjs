@@ -171,7 +171,7 @@ async function resize(id, edge, dx, dy, cancel = false, snapshot) {
   assert.equal(await page.locator('#ready-count').isVisible(), false);
   await page.locator('#terminal-page [data-page=consoles]').click();
   await page.locator('nav [data-page=results]').click(); await page.locator('.result-console-heading h2').waitFor();
-  assert.equal(await page.locator('.result-console-heading h2').innerText(), 'Robonslaught'); assert.equal(await page.locator('.result-batch').count(), 2);
+  assert.equal(await page.locator('.result-console-heading h2').innerText(), path.basename(root)); assert.equal(await page.locator('.result-batch').count(), 2);
   await capture('results');
   await page.locator('nav [data-page=inbox]').click(); await page.locator('[data-wb=clear-all]').click();
   await until(async () => (await call('state')).workbench.inbox.length === 0);

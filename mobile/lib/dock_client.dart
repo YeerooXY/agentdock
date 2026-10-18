@@ -11,6 +11,8 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:xterm/xterm.dart';
 
+import 'pairing_request.dart';
+
 class ConsoleScreen {
   final Terminal terminal = Terminal(maxLines: 1000);
   int sequence = -1, epoch = 0, cols = 110, rows = 30;
@@ -26,6 +28,9 @@ class DockClient extends ChangeNotifier {
   final Map<String, Completer<dynamic>> pending = {};
   WebSocket? socket;
   HttpClient? transport;
+  PairingRequest? _pairingRequest;
+  String pairingCode = '';
+  bool _disposed = false;
   Timer? retry, heartbeat;
   StreamSubscription<String>? tokenRefresh;
   bool connected = false,
@@ -158,64 +163,91 @@ class DockClient extends ChangeNotifier {
 
   Future<void> pair(String code) async {
     final invite = parseInvite(code);
-    Object? failure;
-    for (final url in endpoints(invite)) {
-      final client = pinned({...invite, 'url': url});
-      try {
-        final request = await client
-            .postUrl(Uri.parse('$url/v1/pair'))
-            .timeout(routeTimeout(invite, url));
-        request.followRedirects = false;
-        request.headers.set(
-          HttpHeaders.authorizationHeader,
-          'Bearer ${invite['secret']}',
-        );
-        request.headers.contentType = ContentType.json;
-        request.write(jsonEncode({'name': 'Android phone'}));
-        final response = await request.close().timeout(
-          routeTimeout(invite, url),
-        );
-        if (response.statusCode != 200) {
-          throw const FormatException(
-            'Pairing expired or was already used. Show a new code on your PC.',
+    await cancelPairing();
+    String? preferred;
+    final operation = PairingRequest(invite, (route, auth, body) async {
+      Object? failure;
+      for (final url in {
+        if (preferred != null) preferred!,
+        ...endpoints(invite),
+      }) {
+        final client = pinned({...invite, 'url': url});
+        try {
+          final request = await client
+              .postUrl(Uri.parse('$url$route'))
+              .timeout(routeTimeout(invite, url));
+          request.followRedirects = false;
+          request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $auth');
+          request.headers.contentType = ContentType.json;
+          request.write(jsonEncode(body));
+          final response = await request.close().timeout(
+            routeTimeout(invite, url),
           );
-        }
-        final chunks = <int>[];
-        await for (final chunk in response.timeout(
-          const Duration(seconds: 10),
-        )) {
-          chunks.addAll(chunk);
-          if (chunks.length > 8192) {
-            throw const FormatException('The pairing response was too large.');
+          final chunks = <int>[];
+          await for (final chunk in response.timeout(
+            const Duration(seconds: 10),
+          )) {
+            chunks.addAll(chunk);
+            if (chunks.length > 8192) {
+              throw const FormatException(
+                'The pairing response was too large.',
+              );
+            }
           }
+          final decoded = jsonDecode(utf8.decode(chunks));
+          if (decoded is! Map<String, dynamic>) {
+            throw const FormatException(
+              'The PC returned an invalid pairing response.',
+            );
+          }
+          preferred = url;
+          return PairReply(response.statusCode, decoded);
+        } on FormatException {
+          rethrow;
+        } catch (error) {
+          failure = error;
+        } finally {
+          client.close(force: true);
         }
-        final text = utf8.decode(chunks);
-        final result = jsonDecode(text) as Map<String, dynamic>;
-        if (result['token'] is! String || result['id'] is! String) {
-          throw const FormatException(
-            'The PC returned an invalid pairing response.',
-          );
-        }
-        pairing = {
-          'url': invite['url'],
-          if (invite['localUrl'] != null) 'localUrl': invite['localUrl'],
-          'pin': invite['pin'],
-          'token': result['token'],
-          'id': result['id'],
-          'name': result['name'],
-        };
-        await storage.write(key: 'pc', value: jsonEncode(pairing));
-        await connect();
-        return;
-      } on FormatException {
-        rethrow;
-      } catch (error) {
-        failure = error;
-      } finally {
-        client.close(force: true);
       }
+      throw failure ?? StateError('The PC could not be reached.');
+    });
+    _pairingRequest = operation;
+    try {
+      final result = await operation.run((code) {
+        pairingCode = code;
+        if (!_disposed) notifyListeners();
+      });
+      operation.checkCancelled();
+      final saved = {
+        'url': invite['url'],
+        if (invite['localUrl'] != null) 'localUrl': invite['localUrl'],
+        'pin': invite['pin'],
+        'token': result['token'],
+        'id': result['id'],
+        'name': result['name'],
+      };
+      await storage.write(key: 'pc', value: jsonEncode(saved));
+      if (operation.cancelled || _disposed) {
+        await storage.delete(key: 'pc');
+        throw const FormatException('Pairing canceled.');
+      }
+      pairing = saved;
+      _pairingRequest = null;
+      pairingCode = '';
+      await connect();
+    } catch (_) {
+      if (pairing == null) await operation.cancel();
+      rethrow;
+    } finally {
+      if (_pairingRequest == operation) _pairingRequest = null;
+      pairingCode = '';
+      if (!_disposed) notifyListeners();
     }
-    throw failure ?? StateError('The PC could not be reached.');
+  }
+
+  Future<void> cancelPairing() async {
+    await _pairingRequest?.cancel();
   }
 
   Future<WebSocket> openSocket(Map<String, dynamic> config, int current) async {
@@ -475,6 +507,7 @@ class DockClient extends ChangeNotifier {
     if (value) {
       connect();
     } else {
+      unawaited(cancelPairing());
       generation++;
       retry?.cancel();
       heartbeat?.cancel();
@@ -581,6 +614,8 @@ class DockClient extends ChangeNotifier {
 
   @override
   void dispose() {
+    _disposed = true;
+    unawaited(cancelPairing());
     foreground = false;
     generation++;
     retry?.cancel();

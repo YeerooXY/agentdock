@@ -29,7 +29,7 @@ class MobileCompanion extends EventEmitter {
     this.config.mappingId ||= crypto.randomUUID();
     this.network = network || new MobileNetwork({ getKey, script: networkScript, program, testMode, changed: () => this.emit('changed') });
     this.attempts = new Map(); this.attemptPeriod = Date.now(); this.attemptTotal = 0;
-    this.private = { devices: [] }; this.clients = new Set(); this.streams = new Map(); this.sent = new Set(); this.counters = { sent: 0, received: 0 }; this.error = ''; this.pairing = null;
+    this.private = { devices: [] }; this.clients = new Set(); this.streams = new Map(); this.sent = new Set(); this.counters = { sent: 0, received: 0 }; this.error = ''; this.pairing = null; this.pendingPairing = null;
     if (this.config.encrypted) { try { this.private = JSON.parse(safeStorage.decryptString(Buffer.from(this.config.encrypted, 'base64'))); } catch { this.error = 'Mobile credentials could not be unlocked. Set up this PC again.'; this.config.enabled = false; } }
     this.push = new MobilePush({ credential: () => this.private.firebase?.credential });
     this.output = packet => {
@@ -57,7 +57,7 @@ class MobileCompanion extends EventEmitter {
     if (!this.available()) throw new Error('Windows credential encryption is unavailable.');
     this.config.encrypted = this.crypto.encryptString(JSON.stringify(this.private)).toString('base64'); atomicJson(this.file, this.config); this.emit('changed');
   }
-  snapshot() { return { enabled: !!this.server, host: this.config.host, port: this.config.port, mode: this.config.mode || 'local', publicHost: this.config.publicHost || '', externalPort: this.config.externalPort || 47831, routerMode: this.config.routerMode || 'manual', duckKeyId: this.config.duckKeyId || '', network: this.network.snapshot(), interfaces: interfaces(), error: this.error, devices: this.private.devices.map(({ id, name, at, pushToken, lastInternetAt }) => ({ id, name, at, lastInternetAt, alerts: !!pushToken, connected: [...this.clients].some(x => x.device.id === id) })), push: { project: this.private.firebase?.public.projectId || '', configured: !!this.private.firebase?.credential, error: this.push.error, lastSent: this.push.lastSent }, pairingExpires: this.pairing?.expires || 0, bytes: this.counters }; }
+  snapshot() { const p = this.pendingPairing; return { enabled: !!this.server, host: this.config.host, port: this.config.port, mode: this.config.mode || 'local', publicHost: this.config.publicHost || '', externalPort: this.config.externalPort || 47831, routerMode: this.config.routerMode || 'manual', duckKeyId: this.config.duckKeyId || '', network: this.network.snapshot(), interfaces: interfaces(), error: this.error, devices: this.private.devices.map(({ id, name, at, pushToken, lastInternetAt }) => ({ id, name, at, lastInternetAt, alerts: !!pushToken, connected: [...this.clients].some(x => x.device.id === id) })), push: { project: this.private.firebase?.public.projectId || '', configured: !!this.private.firebase?.credential, error: this.push.error, lastSent: this.push.lastSent }, pairingExpires: this.pairing?.expires || 0, pendingPairing: p && p.expires > Date.now() && ['pending', 'approved'].includes(p.state) ? { id: p.id, name: p.name, code: p.code, expires: p.expires, state: p.state } : null, bytes: this.counters }; }
   async configure({ enabled, host, port = 47831, ...remote }) {
     if (!enabled) { await this.stop(); this.config.enabled = false; this.persist(); return; }
     if (!interfaces().some(x => x.address === host) || !isPrivate(host)) throw new Error('Choose this PC’s private network address.');
@@ -112,27 +112,70 @@ class MobileCompanion extends EventEmitter {
   async invite() {
     if (!this.server) throw new Error('Enable the mobile connection first.');
     if (this.private.devices.length >= 9) throw new Error('Remove an old phone before pairing another.');
+    this.cancelPairing();
     this.pairing = { secret: token(), expires: Date.now() + 5 * 60000, attempts: 0 };
     const cert = new crypto.X509Certificate(this.private.identity.cert);
     const localUrl = `https://${this.config.host}:${this.config.port}`;
-    const invite = { v: this.config.mode === 'internet' ? 2 : 1, url: localUrl, pin: digest(cert.raw), secret: this.pairing.secret, expires: this.pairing.expires };
+    const invite = { v: this.config.mode === 'internet' ? 2 : 1, approval: true, url: localUrl, pin: digest(cert.raw), secret: this.pairing.secret, expires: this.pairing.expires };
     if (this.config.mode === 'internet') Object.assign(invite, { mode: 'internet', url: `https://${this.config.publicHost}:${this.config.externalPort}`, localUrl });
     this.emit('changed'); return { code: 'agentdock:' + Buffer.from(JSON.stringify(invite)).toString('base64url'), expires: invite.expires };
   }
+  cancelPairing() {
+    clearTimeout(this.pairingTimer); this.pairingTimer = null;
+    this.pairing = null; this.pendingPairing = null; this.emit('changed');
+  }
+  decidePairing({ id, allow } = {}) {
+    const p = this.pendingPairing;
+    if (!p || p.id !== id || p.expires <= Date.now() || p.state !== 'pending') throw new Error('This phone request is no longer waiting.');
+    if (typeof allow !== 'boolean') throw new Error('Choose Allow or Deny.');
+    if (allow && this.private.devices.length >= 9) throw new Error('Remove an old phone before pairing another.');
+    p.state = allow ? 'approved' : 'denied'; this.emit('changed');
+  }
   async http(req, res) {
     res.setHeader('Cache-Control', 'no-store'); res.setHeader('Content-Type', 'application/json');
-    if (req.method !== 'POST' || req.url !== '/v1/pair' || !this.acceptsPeer(req)) { res.writeHead(404); res.end('{}'); return; }
+    if (req.method !== 'POST' || !['/v1/pair', '/v1/pair/status', '/v1/pair/cancel'].includes(req.url) || !this.acceptsPeer(req)) { res.writeHead(404); res.end('{}'); return; }
     if (!this.allowAttempt(req)) { res.writeHead(429); res.end('{}'); return; }
-    const p = this.pairing;
-    if (!p || p.expires < Date.now() || ++p.attempts > 20 || !match(req.headers.authorization?.replace(/^Bearer /, ''), p.secret)) { res.writeHead(401); res.end('{}'); return; }
+    const auth = req.headers.authorization?.replace(/^Bearer /, '') || '', p = this.pairing, pending = this.pendingPairing, initial = req.url === '/v1/pair';
+    const validPending = pending && pending.expires > Date.now();
+    if (initial ? !(p && p.expires > Date.now() && ++p.attempts <= 20 && match(auth, p.secret)) && !(validPending && match(digest(auth), pending.inviteHash)) : !(validPending && match(digest(auth), pending.keyHash))) { res.writeHead(401); res.end('{}'); return; }
     let text = '';
     try {
       for await (const chunk of req) { text += chunk; if (text.length > 2048) throw new Error(); }
-      const data = JSON.parse(text), name = String(data.name || 'Android phone').replace(/[\x00-\x1f]/g, '').trim().slice(0, 64);
-      if (this.pairing !== p || p.expires < Date.now()) throw new Error();
-      const device = { id: crypto.randomUUID(), name, token: token(), at: Date.now(), pushToken: '' };
-      this.private.devices.push(device); this.pairing = null; this.persist();
-      res.end(JSON.stringify({ id: device.id, token: device.token, name: os.hostname(), v: 1 }));
+      const data = JSON.parse(text);
+      if (initial) {
+        if (data.approval !== true) { res.writeHead(426); res.end(JSON.stringify({ error: 'Update the Android app to pair this PC.' })); return; }
+        if (!/^[A-Za-z0-9_-]{43}$/.test(data.requestKey || '')) throw new Error();
+        // A lost initial response may retry on the other route. Only the same
+        // phone's random request key can recover that pending request.
+        let request = this.pendingPairing;
+        if (request && request.expires > Date.now() && match(digest(auth), request.inviteHash) && match(digest(data.requestKey), request.keyHash)) {
+          if (request.state === 'denied') { res.writeHead(403); res.end('{}'); return; }
+        } else {
+          if (!p || this.pairing !== p || p.expires <= Date.now() || !match(auth, p.secret)) { res.writeHead(401); res.end('{}'); return; }
+          const name = String(data.name || 'Android phone').replace(/[\x00-\x1f\x7f\u202a-\u202e\u2066-\u2069]/g, '').trim().slice(0, 64) || 'Android phone';
+          request = { id: crypto.randomUUID(), name, code: String(crypto.randomInt(100000, 1000000)), keyHash: digest(data.requestKey), inviteHash: digest(p.secret), expires: Date.now() + 120000, state: 'pending' };
+          this.pairing = null; this.pendingPairing = request;
+          clearTimeout(this.pairingTimer); this.pairingTimer = setTimeout(() => { if (this.pendingPairing === request) this.cancelPairing(); }, 120000); this.pairingTimer.unref();
+          this.emit('changed'); this.emit('pairing-requested');
+        }
+        res.writeHead(202); res.end(JSON.stringify({ id: request.id, code: request.code, expires: request.expires, status: 'pending' })); return;
+      }
+      if (this.pendingPairing !== pending || pending.expires <= Date.now() || data.id !== pending.id) { res.writeHead(401); res.end('{}'); return; }
+      if (req.url === '/v1/pair/cancel') {
+        if (pending.device) this.revoke(pending.device.id);
+        this.cancelPairing(); res.end('{}'); return;
+      }
+      if (pending.state === 'denied') { res.writeHead(403); res.end('{}'); return; }
+      if (pending.state === 'pending') { res.writeHead(202); res.end(JSON.stringify({ status: 'pending' })); return; }
+      if (!pending.device) {
+        if (this.private.devices.length >= 9) { res.writeHead(409); res.end('{}'); return; }
+        const device = { id: crypto.randomUUID(), name: pending.name, token: token(), at: Date.now(), pushToken: '' };
+        this.private.devices.push(device);
+        try { this.persist(); } catch (error) { this.private.devices = this.private.devices.filter(x => x !== device); throw error; }
+        pending.device = device; pending.state = 'claimed'; this.emit('changed');
+      }
+      const device = pending.device;
+      res.end(JSON.stringify({ id: device.id, token: device.token, name: os.hostname(), v: 2 }));
     } catch { res.writeHead(400); res.end('{}'); }
   }
   ensureStream(id) {
@@ -190,7 +233,7 @@ class MobileCompanion extends EventEmitter {
       case 'console.create': {
         const defaults = this.getDefaults(); return this.sessions.create({ ...defaults, name: typeof payload.name === 'string' ? payload.name.slice(0, 64) : defaults.name });
       }
-      case 'results.list': return this.results.list().map(({ id, title, kind, status, summary, at, size, image, ext, groupId, sessionId, consoleKey, consoleName, seenAt }) => ({ id, title, kind, status, summary, at, size, image, ext, groupId, sessionId, consoleKey, consoleName, seenAt }));
+      case 'results.list': return this.results.list().map(({ id, title, kind, status, summary, at, size, image, ext, groupId, sessionId, consoleKey, consoleName, seenAt, project, projectId, changeCount, git }) => ({ id, title, kind, status, summary, at, size, image, ext, groupId, sessionId, consoleKey, consoleName, seenAt, project, projectId, changeCount, git }));
       case 'results.preview': { const value = await this.results.preview(payload.id, payload.thumbnail !== false, payload.entry); if (JSON.stringify(value).length > 3 * 1024 * 1024) throw new Error('This preview is too large. Open it on your PC.'); return value; }
       case 'results.seen': return this.results.markSeen(payload.ids);
       case 'results.delete': return this.results.remove(payload.ids);
@@ -229,7 +272,7 @@ class MobileCompanion extends EventEmitter {
   }
   revoke(id) { this.private.devices = this.private.devices.filter(x => x.id !== id); for (const client of this.clients) if (client.device.id === id) client.ws.close(1008, 'Phone removed'); this.persist(); }
   async stop() {
-    clearInterval(this.timer); clearTimeout(this.stateTimer); this.stateTimer = null; this.pairing = null;
+    clearInterval(this.timer); clearTimeout(this.stateTimer); this.stateTimer = null; this.cancelPairing();
     for (const client of this.clients) client.ws.terminate(); this.clients.clear(); this.wss?.close();
     for (const stream of this.streams.values()) stream.dispose(); this.streams.clear();
     const server = this.server; this.server = null; server?.closeAllConnections(); if (server) await new Promise(resolve => server.close(resolve));

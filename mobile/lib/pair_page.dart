@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
@@ -14,10 +16,13 @@ class PairPage extends StatefulWidget {
 
 class _PairPageState extends State<PairPage> {
   final code = TextEditingController();
-  bool busy = false;
+  bool busy = false, cancelling = false;
   String error = '';
   @override
   void dispose() {
+    if (busy && widget.client.pairing == null) {
+      unawaited(widget.client.cancelPairing());
+    }
     code.dispose();
     super.dispose();
   }
@@ -26,6 +31,7 @@ class _PairPageState extends State<PairPage> {
     if (busy) return;
     setState(() {
       busy = true;
+      cancelling = false;
       error = '';
     });
     try {
@@ -76,7 +82,7 @@ class _PairPageState extends State<PairPage> {
                 ),
                 const SizedBox(height: 20),
                 const Text(
-                  'On your PC, open Agent Dock → Settings → Connect a phone. Choose same Wi-Fi or direct internet, then scan its code. To test internet access, switch your phone to mobile data.',
+                  'On your PC, open Agent Dock → Settings → Connect a phone. Scan its QR code, compare the code on both screens, then allow your phone on the PC.',
                   style: TextStyle(height: 1.6, color: Color(0xffc8cbe0)),
                 ),
                 const SizedBox(height: 28),
@@ -86,21 +92,82 @@ class _PairPageState extends State<PairPage> {
                   label: const Text('Scan QR code'),
                 ),
                 const SizedBox(height: 20),
-                TextField(
-                  controller: code,
-                  maxLines: 3,
-                  minLines: 1,
-                  autocorrect: false,
-                  enableSuggestions: false,
-                  decoration: const InputDecoration(
-                    labelText: 'Or paste a pairing code',
+                if (!busy)
+                  TextField(
+                    controller: code,
+                    maxLines: 3,
+                    minLines: 1,
+                    autocorrect: false,
+                    enableSuggestions: false,
+                    decoration: const InputDecoration(
+                      labelText: 'Or paste a pairing code',
+                    ),
                   ),
-                ),
                 const SizedBox(height: 12),
+                if (busy && widget.client.pairingCode.isNotEmpty)
+                  Container(
+                    margin: const EdgeInsets.symmetric(vertical: 16),
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xff112139), Color(0xff29172f)],
+                      ),
+                      border: Border.all(color: const Color(0xffbd92dd)),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Column(
+                      children: [
+                        const Text(
+                          'Approve on your PC',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Semantics(
+                          label:
+                              'Verification code ${widget.client.pairingCode}',
+                          child: ExcludeSemantics(
+                            child: Text(
+                              '${widget.client.pairingCode.substring(0, 3)} ${widget.client.pairingCode.substring(3)}',
+                              style: const TextStyle(
+                                fontSize: 30,
+                                letterSpacing: 3,
+                                color: Color(0xffe5eaff),
+                                fontFamily: 'monospace',
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        const Text(
+                          'Only allow the request if both codes match. Until then, this phone has no access.',
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
+                    ),
+                  ),
                 OutlinedButton(
                   onPressed: busy ? null : () => pair(code.text),
-                  child: Text(busy ? 'Connecting…' : 'Connect'),
+                  child: Text(
+                    busy
+                        ? widget.client.pairingCode.isEmpty
+                              ? 'Connecting…'
+                              : 'Waiting for approval…'
+                        : 'Connect',
+                  ),
                 ),
+                if (busy)
+                  TextButton(
+                    onPressed: cancelling
+                        ? null
+                        : () async {
+                            setState(() => cancelling = true);
+                            await widget.client.cancelPairing();
+                          },
+                    child: Text(cancelling ? 'Canceling…' : 'Cancel pairing'),
+                  ),
                 if (error.isNotEmpty)
                   Padding(
                     padding: const EdgeInsets.only(top: 16),

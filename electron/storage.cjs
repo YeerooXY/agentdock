@@ -2,14 +2,31 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
-function readJson(file, fallback) {
+function readJson(file, fallback, { recoverCorrupt = false, onRecovery = () => {} } = {}) {
   try { return JSON.parse(fs.readFileSync(file, 'utf8')); }
-  catch (error) { if (error.code === 'ENOENT') return fallback; throw new Error(`Cannot read ${path.basename(file)}. The file was preserved.`); }
+  catch (error) {
+    if (error.code === 'ENOENT') return fallback;
+    // Only disposable caches may recover. Settings, credentials and other saves
+    // stay strict, and access errors must never be mistaken for corrupt JSON.
+    if (recoverCorrupt && error instanceof SyntaxError) {
+      const backup = `${file}.${crypto.randomUUID()}.corrupt`;
+      try { fs.renameSync(file, backup); }
+      catch { throw new Error(`Cannot preserve damaged ${path.basename(file)}. The file was not changed.`); }
+      onRecovery(backup);
+      return fallback;
+    }
+    throw new Error(`Cannot read ${path.basename(file)}. The file was preserved.`);
+  }
 }
 function atomicJson(file, data) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const temp = `${file}.${crypto.randomUUID()}.tmp`;
-  try { fs.writeFileSync(temp, JSON.stringify(data, null, 2), { mode: 0o600 }); fs.renameSync(temp, file); }
+  try {
+    const fd = fs.openSync(temp, 'wx', 0o600);
+    try { fs.writeFileSync(fd, JSON.stringify(data, null, 2)); fs.fsyncSync(fd); }
+    finally { fs.closeSync(fd); }
+    fs.renameSync(temp, file);
+  }
   finally { try { fs.unlinkSync(temp); } catch {} }
 }
 class Vault {

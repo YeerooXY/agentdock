@@ -28,6 +28,12 @@
 .mobile-step h2:focus { outline:none; }
 .pairing-code { text-align:center; }
 .pairing-code img { max-width:100%; height:auto; border-radius:10px; }
+.mobile-approval { padding:20px; margin:18px 0; border:1px solid #bd92dd; border-radius:14px; background:linear-gradient(125deg,#112139,#29172f); }
+.mobile-approval h3 { margin:0; color:#f2d6fa; }
+.mobile-approval p { overflow-wrap:anywhere; }
+.mobile-match-code { margin:20px 0; font:600 32px/1.4 Consolas,monospace; letter-spacing:3px; color:#e5eaff; text-align:center; }
+.mobile-approval .wb-toolbar { flex-wrap:wrap; }
+.mobile-approval button { min-height:44px; }
 .mobile-device { padding:14px 0; border-bottom:1px solid #2e283b; }
 .mobile-device small { display:block; margin-top:4px; color:#c7bfd8; }
 .code-change { padding:12px 0; border-bottom:1px solid #353046; }

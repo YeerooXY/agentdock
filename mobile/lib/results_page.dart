@@ -73,12 +73,59 @@ class _ResultsPageState extends State<ResultsPage> {
     }
   }
 
+  String projectLabel(dynamic item) {
+    final projects = widget.client.state['projects'] as List? ?? [];
+    final found = projects
+        .where((p) => item['projectId'] != null && p['id'] == item['projectId'])
+        .firstOrNull;
+    return found?['name'] as String? ??
+        (item['project'] as String? ?? '')
+            .split(RegExp(r'[\\/]'))
+            .where((x) => x.isNotEmpty)
+            .lastOrNull ??
+        'Unassigned';
+  }
+
+  Widget imageGroup(List<dynamic> group) {
+    final pictures = group
+        .where((x) => x['image'] == true)
+        .cast<Map<String, dynamic>>()
+        .toList();
+    final viewed = pictures.where((x) => x['seenAt'] != null).length;
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      leading: const Icon(Icons.photo_library_outlined, color: blue),
+      title: Text('${pictures.length} pictures'),
+      subtitle: Text('$viewed of ${pictures.length} viewed'),
+      trailing: const Icon(Icons.chevron_right, color: pink),
+      onTap: () async {
+        await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => ResultDetail(
+              client: widget.client,
+              item:
+                  pictures.where((x) => x['seenAt'] == null).firstOrNull ??
+                  pictures.first,
+              ids: pictures.map((x) => x['id']).toList(),
+              images: pictures,
+            ),
+          ),
+        );
+        await load();
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final groups = <String, List<dynamic>>{};
     for (final item in items ?? []) {
-      final key =
-          '${item['consoleKey'] ?? item['sessionId']}:${item['groupId'] ?? item['id']}';
+      final key = jsonEncode([
+        item['projectId'] ?? item['project'],
+        item['consoleKey'] ?? item['sessionId'],
+        item['groupId'] ?? item['id'],
+      ]);
       groups.putIfAbsent(key, () => []).add(item);
     }
     return RefreshIndicator(
@@ -111,7 +158,7 @@ class _ResultsPageState extends State<ResultsPage> {
                       children: [
                         Expanded(
                           child: Text(
-                            group.first['consoleName'] as String? ?? 'Console',
+                            projectLabel(group.first),
                             style: const TextStyle(
                               color: pink,
                               fontWeight: FontWeight.w600,
@@ -132,14 +179,19 @@ class _ResultsPageState extends State<ResultsPage> {
                       ],
                     ),
                     Text(
-                      '${group.length} items · ${DateTime.fromMillisecondsSinceEpoch((group.first['at'] as num).toInt()).toLocal().toString().substring(0, 16)}',
+                      "${group.first['consoleName'] ?? 'Console'} · ${DateTime.fromMillisecondsSinceEpoch((group.first['at'] as num).toInt()).toLocal().toString().substring(0, 16)}",
                       style: const TextStyle(
                         color: Color(0xffafb7cd),
                         fontSize: 12,
                       ),
                     ),
                     const SizedBox(height: 8),
-                    for (final item in group)
+                    if (group.any((x) => x['image'] == true)) imageGroup(group),
+                    for (final item in group.where(
+                      (x) =>
+                          x['image'] != true &&
+                          !(x['kind'] == 'code' && x['changeCount'] == 0),
+                    ))
                       ListTile(
                         contentPadding: EdgeInsets.zero,
                         leading: Icon(
@@ -183,11 +235,13 @@ class ResultDetail extends StatefulWidget {
   final DockClient client;
   final Map<String, dynamic> item;
   final List<dynamic> ids;
+  final List<Map<String, dynamic>> images;
   const ResultDetail({
     super.key,
     required this.client,
     required this.item,
     required this.ids,
+    this.images = const [],
   });
   @override
   State<ResultDetail> createState() => _ResultDetailState();
@@ -197,38 +251,107 @@ class _ResultDetailState extends State<ResultDetail> {
   Map<String, dynamic>? content;
   String error = '';
   bool full = false;
+  late Map<String, dynamic> item;
+  int version = 0;
   @override
   void initState() {
     super.initState();
+    item = widget.item;
     load();
   }
 
   Future<void> load() async {
+    final current = ++version, id = item['id'];
     try {
       final result = await widget.client.request('results.preview', {
-        'id': widget.item['id'],
+        'id': id,
         'thumbnail': !full,
       });
-      if (mounted) {
+      if (mounted && current == version) {
         setState(() {
           content = result as Map<String, dynamic>;
           error = '';
         });
       }
-      await widget.client.request('results.seen', {'ids': widget.ids});
+      if (!mounted || current != version) return;
+      await widget.client.request('results.seen', {
+        'ids': [id],
+      });
+      if (mounted && current == version) {
+        setState(() => item['seenAt'] = DateTime.now().millisecondsSinceEpoch);
+      }
     } catch (e) {
-      if (mounted) setState(() => error = e.toString());
+      if (mounted && current == version) setState(() => error = e.toString());
     }
+  }
+
+  int get imageIndex => widget.images.indexWhere((x) => x['id'] == item['id']);
+  void switchImage(int index) {
+    setState(() {
+      item = widget.images[index];
+      content = null;
+      full = false;
+      error = '';
+    });
+    load();
   }
 
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
-      title: Text(
-        widget.item['title'] as String,
-        overflow: TextOverflow.ellipsis,
-      ),
+      title: Text(item['title'] as String, overflow: TextOverflow.ellipsis),
     ),
+    bottomNavigationBar: widget.images.length > 1
+        ? SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      IconButton(
+                        tooltip: 'Previous picture',
+                        onPressed: imageIndex > 0
+                            ? () => switchImage(imageIndex - 1)
+                            : null,
+                        icon: const Icon(Icons.chevron_left),
+                      ),
+                      Text('${imageIndex + 1} / ${widget.images.length}'),
+                      IconButton(
+                        tooltip: 'Next picture',
+                        onPressed: imageIndex < widget.images.length - 1
+                            ? () => switchImage(imageIndex + 1)
+                            : null,
+                        icon: const Icon(Icons.chevron_right),
+                      ),
+                    ],
+                  ),
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        for (var i = 0; i < widget.images.length; i++)
+                          Padding(
+                            padding: const EdgeInsets.only(right: 8),
+                            child: ChoiceChip(
+                              label: Text(
+                                '${i + 1}${widget.images[i]['seenAt'] != null ? ' · Viewed' : ''}',
+                              ),
+                              tooltip: widget.images[i]['title'] as String,
+                              selected: i == imageIndex,
+                              onSelected: (_) => switchImage(i),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          )
+        : null,
     body: SafeArea(
       child: ListView(
         padding: const EdgeInsets.all(16),
@@ -241,7 +364,7 @@ class _ResultDetailState extends State<ResultDetail> {
             InteractiveViewer(
               child: Image.memory(
                 base64Decode((content!['image'] as String).split(',').last),
-                semanticLabel: widget.item['title'] as String,
+                semanticLabel: item['title'] as String,
               ),
             ),
             if (!full)
@@ -253,7 +376,7 @@ class _ResultDetailState extends State<ResultDetail> {
                 child: const Text('Load larger image'),
               ),
           ],
-          if (content?['text'] != null && widget.item['ext'] == '.md')
+          if (content?['text'] != null && item['ext'] == '.md')
             MarkdownBody(
               data: content!['text'] as String,
               selectable: true,
@@ -338,6 +461,11 @@ class _ResultDetailState extends State<ResultDetail> {
                       color: const Color(0xff49475c),
                     ),
                   ),
+            )
+          else if (content?['text'] != null && item['ext'] == '.json')
+            ExpansionTile(
+              title: const Text('Supporting data'),
+              children: [SelectableText(content!['text'] as String)],
             )
           else if (content?['text'] != null)
             SelectableText(

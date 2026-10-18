@@ -18,6 +18,7 @@ const report = []; let browser;
     await context.exposeFunction('fixtureCall', async (method, payload) => {
       if (method === 'state') return { ok: true, value: state };
       if (method === 'workbench.results.preview') return { ok: true, value: fixture.previews[(payload.id || payload) + (payload.entry == null ? '' : ':' + payload.entry)] };
+      if (method === 'workbench.results.seen') { for (const item of state.workbench.results) if(payload.includes(item.id)) item.seenAt ||= Date.now(); return {ok:true}; }
       if (method === 'session.buffer') return { ok: true, value: { data: '', sequence: 0 } };
       return { ok: true };
     });
@@ -32,6 +33,11 @@ const report = []; let browser;
       assert.equal(await page.evaluate(() => { const d = document.querySelector('dialog[open]'); return d ? d.scrollWidth > d.clientWidth + 1 || d.getBoundingClientRect().right > innerWidth + 1 : document.documentElement.scrollWidth > innerWidth + 1; }), false, `${name}/${view}: overflow`);
     }
     await page.locator('nav [data-page=results]').click(); await capture('gallery');
+    await page.getByRole('button',{name:'Browse 2 pictures',exact:true}).click(); await page.locator('.result-full-image').waitFor(); await capture('gallery-viewer');
+    const active = await page.locator('.result-filmstrip [aria-current=true]').getAttribute('data-id');
+    await page.keyboard.press(active===fixture.pictureIds[0] ? 'ArrowRight' : 'ArrowLeft');
+    await page.waitForFunction(() => document.querySelectorAll('.result-filmstrip button[aria-label$="viewed"]:not([aria-label$="not viewed"])').length===2);
+    await capture('gallery-viewed'); await page.keyboard.press('Escape');
     await page.getByRole('button', { name: 'Verification files', exact: true }).click(); await page.locator('.archive-content img').waitFor(); await capture('archive-image');
     await page.locator('[data-entry="1"]').focus(); await page.keyboard.press('Enter'); await page.locator('.result-markdown h1').waitFor(); await capture('archive-markdown');
     assert.equal(await page.locator('.result-markdown table').count(), 1); assert.equal(await page.locator('.result-markdown pre code').count(), 1);

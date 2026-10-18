@@ -82,6 +82,27 @@ test('turning auto-save off discards current captures; enabling starts again on 
   assert.ok(patch.includes('+changed after re-enabling'));
 });
 
+test('turn identity survives reassignment; following turns use the new project', async t => {
+  const f = fixture(t), session = f.sessions.get('a'); session.projectId = 'dock';
+  f.write('app.js', 'before'); await f.turns.begin('a');
+  const other = path.join(f.root, 'learning'); fs.mkdirSync(other);
+  Object.assign(session, { name: 'Learning application', projectId: 'learning', cwd: other });
+  f.write('app.js', 'after'); await f.turns.finish('a');
+  const saved = f.results.items[0];
+  assert.equal(saved.project, f.project); assert.equal(saved.projectId, 'dock'); assert.equal(saved.consoleName, 'Project a');
+  assert.equal(f.results.preview(saved.id).diff.changes[0].file, 'app.js');
+  await f.turns.begin('a'); assert.equal(f.turns.context('a').projectId, 'learning');
+  f.results.add({ text: 'explicit report' }, f.turns.context('a')); await f.turns.finish('a');
+  assert.equal(f.results.items[0].projectId, 'learning'); assert.equal(f.results.items[0].consoleName, 'Learning application');
+  assert.equal(f.results.items.length, 2, 'No empty code snapshot is generated');
+});
+
+test('a parent workspace does not capture changes or images in child repositories', async t => {
+  const f = fixture(t); f.sessions.get('a').cwd = f.root;
+  await f.turns.begin('a'); f.write('unrelated.js', 'another console'); f.write('screen.png', 'another project image');
+  await f.turns.finish('a'); assert.equal(f.results.items.length, 0);
+});
+
 test('disabled auto-save never reads even an unavailable project folder', async t => {
   const f = fixture(t); f.turns.setEnabled(false);
   f.sessions.get('a').cwd = path.join(f.root, 'not-present');

@@ -46,7 +46,7 @@ test('result notifications count batches, remember names and preserve unread sta
   results.markSeen(first.map(x => x.id)); assert.equal(results.unreadGroups(), 1);
   results.renameConsole(context.consoleKey, 'Robonslaught');
   const loaded = new Results(root, { trash: results.trash });
-  assert.equal(loaded.unreadGroups(), 1); assert.ok(loaded.list().every(x => x.consoleName === 'Robonslaught'));
+  assert.equal(loaded.unreadGroups(), 1); assert.ok(loaded.list().every(x => x.consoleName === 'Trader'), 'Renaming a reused console must not relabel earlier results');
   loaded.markSeen(second.map(x => x.id)); assert.equal(loaded.unreadGroups(), 0);
   loaded.add({ title: 'Late screen', text: 'fixture', groupId: 'verification-two' }, { ...context, sessionId: 'restored-id' });
   assert.equal(loaded.unreadGroups(), 1);

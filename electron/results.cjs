@@ -15,10 +15,15 @@ class Results extends EventEmitter {
     super(); this.root = root; this.dir = path.join(root, 'results'); this.file = path.join(this.dir, 'index.json');
     fs.mkdirSync(this.dir, { recursive: true });
     this.items = readJson(this.file, []).filter(x => /^[a-f0-9-]{36}$/.test(x.id) && extensions.has(x.ext)).slice(0, 1000);
+    // Older captures did not store the count. Read only our bounded code reports,
+    // so empty snapshot diagnostics do not become prominent gallery cards.
+    for (const item of this.items) if (item.kind === 'code' && item.ext === '.json' && item.changeCount == null && item.size < 2 * 1024 * 1024) {
+      try { const report = JSON.parse(fs.readFileSync(this.path(item.id), 'utf8')); if (Array.isArray(report.changes)) item.changeCount = report.changes.length; } catch {}
+    }
     this.trash = trash; this.nativeImage = nativeImage; this.deleting = false;
   }
   list() { return this.items.map(x => ({ ...x, image: imageExtensions.has(x.ext) })); }
-  groupKey(item) { return JSON.stringify([item.consoleKey || item.sessionId || item.source || 'Dock', item.groupId || item.id]); }
+  groupKey(item) { return JSON.stringify([item.projectId || item.project || '', item.consoleKey || item.sessionId || item.source || 'Dock', item.groupId || item.id]); }
   unreadGroups() { return new Set(this.items.filter(x => !x.seenAt).map(x => this.groupKey(x))).size; }
   markSeen(ids) {
     if (!Array.isArray(ids) || ids.length > 1000) throw new Error('Choose results to mark as seen.');
@@ -26,7 +31,7 @@ class Results extends EventEmitter {
     if (this.items.some(x => seen.has(x.id) && !x.seenAt)) this.persist(this.items.map(x => seen.has(x.id) ? { ...x, seenAt: x.seenAt || at } : x));
   }
   renameConsole(consoleKey, name) {
-    if (this.items.some(x => (x.consoleKey || x.sessionId) === consoleKey && x.consoleName !== name)) this.persist(this.items.map(x => (x.consoleKey || x.sessionId) === consoleKey ? { ...x, consoleName: short(name, 64) } : x));
+    // A slot can be reused for another project. Historical attribution is immutable.
   }
   persist(next) { atomicJson(this.file, next); this.items = next; this.emit('changed'); }
   directory(id) {
@@ -42,7 +47,7 @@ class Results extends EventEmitter {
     if (fs.lstatSync(file).isSymbolicLink()) throw new Error('The result file was redirected.');
     return file;
   }
-  add(raw, { project = '', sessionId = null, consoleKey = null, consoleName = '', trusted = false, turnId = '', git = null } = {}) {
+  add(raw, { project = '', projectId = null, sessionId = null, consoleKey = null, consoleName = '', trusted = false, turnId = '', git = null } = {}) {
     if (this.items.length >= 1000) throw new Error('The gallery is full. Delete some saved results first.');
     let buffer, ext;
     if (raw.file) {
@@ -65,6 +70,8 @@ class Results extends EventEmitter {
       status: ['passed', 'failed', 'needs-review'].includes(raw.status) ? raw.status : 'needs-review',
       summary: short(raw.summary, 1500), project: short(project, 1000), sessionId, consoleKey: consoleKey || sessionId, consoleName: short(consoleName, 64), seenAt: null, reviewId: trusted ? short(raw.reviewId, 80) : null, groupId: short(turnId || raw.groupId, 80), originalFile: raw.file && project ? path.relative(project, raw.file).replaceAll('\\', '/') : null, source: short(raw.source || 'Agent', 60) };
     const dir = this.directory(item.id); fs.mkdirSync(dir); fs.writeFileSync(path.join(dir, 'result' + ext), buffer, { flag: 'wx' });
+    item.projectId = projectId;
+    if (item.kind === 'code' && ext === '.json') { try { const report = JSON.parse(buffer.toString('utf8')); if (Array.isArray(report.changes)) item.changeCount = report.changes.length; } catch {} }
     if (git) item.git = { branch: short(git.branch, 250) || null, commit: /^[a-f0-9]{40,64}$/i.test(git.commit || '') ? git.commit : null, detached: git.detached === true };
     this.persist([item, ...this.items]); return item;
   }

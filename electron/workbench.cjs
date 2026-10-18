@@ -27,7 +27,7 @@ const nativeTools = [
 class Workbench {
   constructor(root, runtime, electron, { testMode, onChange, getSessions, getProject, getWindow, getHub, getAgents } = {}) {
     this.electron = electron; this.getSessions = getSessions; this.getProject = getProject; this.getWindow = getWindow;
-    this.results = new Results(root, { trash: file => electron.shell.trashItem(file), nativeImage: electron.nativeImage });
+    this.results = new Results(root, { trash: file => fs.promises.rm(file, { recursive: true, maxRetries: 2, retryDelay: 100 }), nativeImage: electron.nativeImage });
     this.inbox = new Inbox(root); this.reviews = new Reviews(root, this.results, this.inbox, electron);
     this.concepts = new Concepts(root, runtime, this.results, this.reviews, this.inbox, { testMode, getSettings: () => getHub?.()?.config.imageGeneration, getKey: id => getHub().vault.get(id) });
     this.imageGuidance = () => imageInstructions(getHub?.()?.config.imageGeneration);
@@ -39,7 +39,7 @@ class Workbench {
   async invoke(name, args, owner) {
     const session = owner ? this.getSessions().items.get(owner) || this.turns?.session(owner) : null;
     if (owner && !session?.alive) throw new Error('This console is no longer open.');
-    const context = this.turns?.context(owner) || { project: session?.cwd || this.getProject(), sessionId: session?.id || null, consoleKey: session?.consoleKey || session?.id || null, consoleName: session?.name || '' };
+    const context = this.turns?.context(owner) || { project: session?.cwd || this.getProject(), projectId: session?.projectId || null, sessionId: session?.id || null, consoleKey: session?.consoleKey || session?.id || null, consoleName: session?.name || '' };
     switch (name) {
       case 'dock/project_progress': return this.projects.progress(session?.projectId, args);
       case 'dock/start_turn': return { turnId: await this.turns?.begin(owner), autoCapture: this.turns?.active.get(owner)?.capture === true };

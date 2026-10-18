@@ -187,8 +187,12 @@ app.whenReady().then(async () => {
   turns.on('tracking-error', ({ owner, message }) => workbench.inbox.add({ title: 'Code capture needs attention', message, sessionId: owner, kind: 'error' }));
   mobile = new MobileCompanion(root, safeStorage, { sessions, results: workbench.results, inbox: workbench.inbox, getUsage: () => ({ limits, summary: ledgerSummary(ledger || []) }), getDefaults: () => ({ ...settings.consoleDefaults, permissions: settings.agentPermissions }), getKey: id => vault.get(id), networkScript: app.isPackaged ? path.join(process.resourcesPath, 'mobile-network.ps1') : path.join(__dirname, 'mobile-network.ps1'), program: process.execPath, testMode });
   mobile.on('changed', publish);
+  mobile.on('pairing-requested', () => { if (settings.notifications && !testMode) notifications?.show({ title: 'Approve a phone?', message: 'Compare the codes on your PC and phone before allowing access.', destination: 'phone-pairing' }); });
   if (!testMode) mobile.start().catch(() => publish());
-  const savedLimits = readJson(path.join(root, 'limits.json'), []);
+  const savedLimits = readJson(path.join(root, 'limits.json'), [], {
+    recoverCorrupt: true,
+    onRecovery: () => { storageError = 'Cached usage limits were damaged. The original file was kept with a .corrupt suffix. Limits will refresh when available.'; }
+  });
   limits = Array.isArray(savedLimits) ? savedLimits : [];
   account = new CodexAccount(values => {
     limits = [...limits.filter(x => x.provider !== 'codex'), ...values];
@@ -267,7 +271,8 @@ app.whenReady().then(async () => {
         switch (method) {
           case 'mobile.configure': await mobile.configure(payload); break;
           case 'mobile.invite': { const invite = await mobile.invite(); value = { ...invite, qr: await require('qrcode').toDataURL(invite.code, { width: 280, margin: 2, errorCorrectionLevel: 'M' }) }; break; }
-          case 'mobile.cancel-pairing': mobile.pairing = null; publish(); break;
+          case 'mobile.cancel-pairing': mobile.cancelPairing(); break;
+          case 'mobile.decide-pairing': mobile.decidePairing(payload); break;
           case 'mobile.revoke': mobile.revoke(payload); break;
           case 'mobile.status': value = mobile.snapshot(); publish(); break;
           case 'mobile.inspect-network': value = await mobile.network.inspect(payload?.host); break;

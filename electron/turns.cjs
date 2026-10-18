@@ -36,7 +36,13 @@ async function snapshot(project, { maxFiles = 10000, maxBytes = 32 * 1024 * 1024
         if (++visited >= maxFiles * 2 || names.length >= maxFiles || Date.now() > deadline) { complete = false; return; }
         const name = prefix + entry.name;
         if (SKIP.test(name) || SECRET.test(name) || entry.isSymbolicLink()) continue;
-        if (entry.isDirectory()) await walk(path.join(dir, entry.name), name + '/');
+        if (entry.isDirectory()) {
+          // A workspace containing several repositories is not one project.
+          // Never automatically attribute sibling repository work to this turn.
+          const child = path.join(dir, entry.name);
+          try { await fs.lstat(path.join(child, '.git')); notes.push(`Separate repository excluded: ${name}. Open a console in that project to capture it.`); continue; } catch (error) { if (error.code !== 'ENOENT') { complete = false; continue; } }
+          await walk(child, name + '/');
+        }
         else if (entry.isFile()) names.push(name);
       }
     }
@@ -86,7 +92,7 @@ class Turns extends EventEmitter {
   context(owner) {
     const s = this.session(owner); if (!s) return null;
     const turn = this.active.get(owner) || this.latest.get(owner);
-    return { project: s.cwd, projectId: s.projectId || null, sessionId: s.id, consoleKey: s.consoleKey || s.id, consoleName: s.name, ...(turn ? { turnId: turn.id, git: turn.git } : {}) };
+    return { ...(turn?.context || { project: s.cwd, projectId: s.projectId || null, sessionId: s.id, consoleKey: s.consoleKey || s.id, consoleName: s.name }), ...(turn ? { turnId: turn.id, git: turn.git } : {}) };
   }
   serial(owner, fn) {
     const task = (this.queues.get(owner) || Promise.resolve()).catch(() => {}).then(fn);
@@ -96,10 +102,11 @@ class Turns extends EventEmitter {
     if (this.active.has(owner)) return this.active.get(owner).id;
     const session = this.session(owner); if (!session?.alive) return null;
     const turn = { id: randomUUID(), startedAt: Date.now(), consoleName: session.name, overlap: false, baseline: null, error: '', capture: this.enabled };
+    turn.context = { project: session.cwd, projectId: session.projectId || null, sessionId: session.id, consoleKey: session.consoleKey || session.id, consoleName: session.name };
     this.active.set(owner, turn);
     for (const [other, current] of this.active) {
       if (other === owner) continue;
-      const a = path.resolve(this.session(other)?.cwd || ''), b = path.resolve(session.cwd);
+      const a = path.resolve(current.context.project), b = path.resolve(turn.context.project);
       if (a === b || inside(a, b) || inside(b, a)) current.overlap = turn.overlap = true;
     }
     if (turn.capture) {
@@ -146,7 +153,7 @@ class Turns extends EventEmitter {
           }
         }
       }
-      if (changes.length || notes.length || this.results.items.some(x => x.groupId === turn.id)) {
+      if (changes.length) {
         const report = { version: 2, turnId: turn.id, startedAt: turn.startedAt, finishedAt: Date.now(), git: { before: turn.git || null, after: endGit }, attribution: turn.overlap ? 'overlapping-folder-activity' : 'folder-during-turn', notes: [...new Set(notes)], changes };
         this.results.add({ text: JSON.stringify(report), ext: '.json', title: `${changes.length} changed ${changes.length === 1 ? 'file' : 'files'}`, kind: 'code', status, summary: turn.overlap ? 'Overlapping console activity' : 'Changes during this turn', groupId: turn.id }, context);
       }

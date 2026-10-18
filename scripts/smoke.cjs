@@ -27,6 +27,8 @@ async function eventually(predicate, message) {
     page.on('pageerror', error => problems.push(error.message));
     await page.waitForSelector('.session-grid');
   };
+  const damagedLimits = Buffer.alloc(403);
+  fs.writeFileSync(path.join(dataDir, 'limits.json'), damagedLimits);
   await launch();
   const capture = async options => {
     await page.waitForFunction(() => getComputedStyle(document.querySelector('#app')).opacity === '1' &&
@@ -36,6 +38,15 @@ async function eventually(predicate, message) {
   const invoke = (method, payload) => page.evaluate(async ([m, p]) => {
     const result = await window.dock.call(m, p); if (!result.ok) throw new Error(result.error); return result.value;
   }, [method, payload]);
+  assert.deepEqual((await invoke('state')).limits, []);
+  assert.match((await invoke('state')).storageError, /Cached usage limits were damaged/);
+  const recoveredLimits = fs.readdirSync(dataDir).filter(name => name.startsWith('limits.json.') && name.endsWith('.corrupt'));
+  assert.equal(recoveredLimits.length, 1);
+  assert.deepEqual(fs.readFileSync(path.join(dataDir, recoveredLimits[0])), damagedLimits);
+  await app.close(); await launch();
+  assert.equal((await invoke('state')).storageError, null);
+  assert.deepEqual((await invoke('state')).limits, []);
+  checks.push('A zero-filled limits cache preserves its exact bytes, reports recovery and allows startup and restart with unknown usage');
   await checkFirstRun({ app, page, invoke, dataDir, screenshot: path.join(artifacts, 'test-first-run.png') });
   checks.push('First launch validates and saves the chosen folder and console, preserves drafts, and stays completed after reload');
   assert.equal(await page.locator('.session-card').count(), 9);

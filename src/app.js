@@ -522,6 +522,7 @@ document.fonts.ready.then(() => { for (const record of terminals.values()) recor
 window.dock.onSelect(id => selectSession(id).catch(error => toast(error.message, true)));
 window.dock.onNotice?.(item => {
   for (const dialog of document.querySelectorAll('dialog[open]')) dialog.close();
+  if (item.destination === 'phone-pairing') { phone.open({ pair: true }); return; }
   workbench.openNotice(item).catch(error => toast(error.message, true));
 });
 window.dock.onState(receive);

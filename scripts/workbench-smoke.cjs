@@ -52,11 +52,11 @@ async function eventually(check, message='Timed out') {const end=Date.now()+4500
   await page.locator('[data-wb="copy-brief"]').click();const brief=await app.evaluate(({clipboard})=>clipboard.readText());assert.ok(brief.includes('own image generation capability first'));assert.ok(brief.includes('reference')||brief.includes('Reference'));
   await assert.rejects(call('workbench.concept.start',{reviewId:review.id,nativeStatus:'failed'}),/disabled/);
   await page.locator('[data-wb="close"]').click(); await page.locator('nav [data-page="results"]').click(); await page.locator('.result-card').first().waitFor();
-  await eventually(async()=>page.locator('.result-image img').evaluateAll(xs=>xs.length===2&&xs.every(x=>x.complete&&x.naturalWidth>0)));
+  await eventually(async()=>page.locator('.result-image img').evaluateAll(xs=>xs.length===1&&xs.every(x=>x.complete&&x.naturalWidth>0)));
   assert.ok(await page.locator('.result-image img').evaluateAll(xs=>xs.every(x=>x.naturalWidth<=360&&x.naturalHeight<=400)),'Gallery loads bounded thumbnails');
   await capture('test-results.png');
-  const screenshot=state.workbench.results.find(x=>x.kind==='screenshot');await page.locator(`[data-result-select="${screenshot.id}"]`).check();await page.locator('[data-wb="delete-selected"]').click();await eventually(async()=>(await call('state')).workbench.results.length===2);
-  await page.locator('[data-page="inbox"]').click();await capture('test-inbox.png');
+  const screenshot=state.workbench.results.find(x=>x.kind==='screenshot');await page.locator(`[data-wb="preview"][data-id="${screenshot.id}"]`).first().click();await page.locator('[data-wb="delete-one"]').click();await eventually(async()=>(await call('state')).workbench.results.length===2);
+  await page.locator('.wb-dialog [data-wb=close]').click();await page.locator('[data-page="inbox"]').click();await capture('test-inbox.png');
   await page.locator('[data-wb="clear-read"]').click();assert.ok((await call('state')).workbench.inbox.every(x=>!x.read));
   await page.reload();await page.waitForSelector('.session-grid');assert.equal((await call('state')).workbench.results.length,2);assert.equal((await call('state')).workbench.reviews[0].checks[0].status,'needs-work');
   await call('workbench.review.delete',review.id);assert.equal((await call('state')).workbench.results.length,0);assert.equal((await call('state')).workbench.reviews.length,0);
