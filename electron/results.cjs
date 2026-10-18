@@ -5,6 +5,7 @@ const crypto = require('node:crypto');
 const { EventEmitter } = require('node:events');
 const { atomicJson, readJson } = require('./storage.cjs');
 const { previewArchive } = require('./result-archive.cjs');
+const { cleanGit } = require('./git-context.cjs');
 const extensions = new Set(['.png', '.jpg', '.jpeg', '.webp', '.txt', '.md', '.json', '.log', '.html', '.pdf', '.glb', '.gltf', '.obj', '.stl', '.zip']);
 const imageExtensions = new Set(['.png', '.jpg', '.jpeg', '.webp']);
 const textExtensions = new Set(['.txt', '.md', '.json', '.log', '.html']);
@@ -17,8 +18,13 @@ class Results extends EventEmitter {
     this.items = readJson(this.file, []).filter(x => /^[a-f0-9-]{36}$/.test(x.id) && extensions.has(x.ext)).slice(0, 1000);
     // Older captures did not store the count. Read only our bounded code reports,
     // so empty snapshot diagnostics do not become prominent gallery cards.
-    for (const item of this.items) if (item.kind === 'code' && item.ext === '.json' && item.changeCount == null && item.size < 2 * 1024 * 1024) {
-      try { const report = JSON.parse(fs.readFileSync(this.path(item.id), 'utf8')); if (Array.isArray(report.changes)) item.changeCount = report.changes.length; } catch {}
+    for (const item of this.items) if (item.kind === 'code' && item.ext === '.json' && (item.changeCount == null || !Object.hasOwn(item, 'gitEnd')) && item.size < 2 * 1024 * 1024) {
+      try {
+        const report = JSON.parse(fs.readFileSync(this.path(item.id), 'utf8'));
+        if (Array.isArray(report.changes)) item.changeCount = report.changes.length;
+        item.git ||= cleanGit(report.git?.before);
+        item.gitEnd = cleanGit(report.git?.after);
+      } catch {}
     }
     this.trash = trash; this.nativeImage = nativeImage; this.deleting = false;
   }
@@ -32,6 +38,10 @@ class Results extends EventEmitter {
   }
   renameConsole(consoleKey, name) {
     // A slot can be reused for another project. Historical attribution is immutable.
+  }
+  finishGit(turnId, consoleKey, repository, git) {
+    const end = cleanGit(git); if (!end || end.repository !== repository) return;
+    this.persist(this.items.map(item => item.groupId === turnId && item.consoleKey === consoleKey && item.git?.repository === repository ? { ...item, gitEnd: end } : item));
   }
   persist(next) { atomicJson(this.file, next); this.items = next; this.emit('changed'); }
   directory(id) {
@@ -71,8 +81,8 @@ class Results extends EventEmitter {
       summary: short(raw.summary, 1500), project: short(project, 1000), sessionId, consoleKey: consoleKey || sessionId, consoleName: short(consoleName, 64), seenAt: null, reviewId: trusted ? short(raw.reviewId, 80) : null, groupId: short(turnId || raw.groupId, 80), originalFile: raw.file && project ? path.relative(project, raw.file).replaceAll('\\', '/') : null, source: short(raw.source || 'Agent', 60) };
     const dir = this.directory(item.id); fs.mkdirSync(dir); fs.writeFileSync(path.join(dir, 'result' + ext), buffer, { flag: 'wx' });
     item.projectId = projectId;
-    if (item.kind === 'code' && ext === '.json') { try { const report = JSON.parse(buffer.toString('utf8')); if (Array.isArray(report.changes)) item.changeCount = report.changes.length; } catch {} }
-    if (git) item.git = { branch: short(git.branch, 250) || null, commit: /^[a-f0-9]{40,64}$/i.test(git.commit || '') ? git.commit : null, detached: git.detached === true };
+    if (item.kind === 'code' && ext === '.json') { try { const report = JSON.parse(buffer.toString('utf8')); if (Array.isArray(report.changes)) item.changeCount = report.changes.length; item.gitEnd = cleanGit(report.git?.after); } catch {} }
+    if (git) item.git = cleanGit(git);
     this.persist([item, ...this.items]); return item;
   }
   preview(id, thumbnail = false, entry = null) {

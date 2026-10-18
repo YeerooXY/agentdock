@@ -9,3 +9,16 @@ test('gallery partitions projects before turns and never treats a console name a
   assert.deepEqual(resultGroups(items).map(x => x.length), [80,1]);
   assert.equal(projectLabel(items[0], [{ id: 'dock', name: 'Agent Dock' }]), 'Agent Dock');
 });
+
+test('revision badges show commit and branch together, retain detached/unknown states and separate repositories', async () => {
+  const { revisionLabel, resultRevision, turnRevisions } = await import('../src/results-model.js');
+  const start = { repository: '/dock', branch: 'main', commit: 'a'.repeat(40), dirty: true };
+  const end = { ...start, commit: 'b'.repeat(40), dirty: false };
+  assert.equal(revisionLabel(resultRevision({ git: start, gitEnd: end })), 'main · bbbbbbbb');
+  assert.equal(revisionLabel(start), 'main · aaaaaaaa · Uncommitted changes');
+  assert.equal(revisionLabel({ commit: start.commit, detached: true }), 'Detached HEAD · aaaaaaaa');
+  assert.equal(revisionLabel({ branch: 'main', unborn: true }), 'main · No commits yet');
+  assert.equal(revisionLabel({ branch: 'main' }), 'main · Commit unavailable');
+  assert.equal(revisionLabel(null), 'Revision unavailable');
+  assert.equal(turnRevisions([{ git: start, gitEnd: end }, { git: start, gitEnd: end }, { git: { ...end, repository: '/other' } }]).length, 2);
+});

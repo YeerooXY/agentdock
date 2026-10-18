@@ -73,6 +73,15 @@ void main() {
             'image': true,
             'ext': '.png',
             'seenAt': null,
+            'git': {
+              'branch': 'main',
+              'commit': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+            },
+            'gitEnd': {
+              'branch': 'main',
+              'commit': 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+              'dirty': true,
+            },
           },
       ];
       await tester.pumpWidget(
@@ -87,6 +96,10 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(phone.viewed, ['r1']);
+      expect(
+        find.text('main · bbbbbbbb · Uncommitted changes'),
+        findsOneWidget,
+      );
       expect(find.text('1 · Viewed'), findsOneWidget);
       await tester.tap(find.byTooltip('Next picture'));
       await tester.pumpAndSettle();

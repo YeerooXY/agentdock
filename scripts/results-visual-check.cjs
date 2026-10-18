@@ -6,7 +6,7 @@ const fixture = JSON.parse(fs.readFileSync(path.join(out, 'fixture.json'))); // 
 const server = http.createServer((req, res) => {
   const pathname = req.url.split('?')[0], file = pathname === '/_axe.js' ? require.resolve('axe-core/axe.min.js') : path.join(dist, pathname === '/' ? 'index.html' : pathname);
   if ((pathname !== '/_axe.js' && !file.startsWith(dist + path.sep)) || !fs.existsSync(file)) { res.writeHead(404); return res.end(); }
-  res.setHeader('Content-Type', file.endsWith('.js') ? 'text/javascript' : file.endsWith('.css') ? 'text/css' : 'text/html'); fs.createReadStream(file).pipe(res);
+  res.setHeader('Content-Type', { '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png' }[path.extname(file)] || 'text/html'); fs.createReadStream(file).pipe(res);
 });
 const profiles = [['pc', chromium, { viewport: { width: 1440, height: 1000 } }], ['mac', webkit, { ...devices['Desktop Safari'], viewport: { width: 1440, height: 1000 } }], ['android', chromium, devices['Pixel 7']], ['iphone', webkit, devices['iPhone 13']]];
 const report = []; let browser;
@@ -42,9 +42,21 @@ const report = []; let browser;
     await page.locator('[data-entry="1"]').focus(); await page.keyboard.press('Enter'); await page.locator('.result-markdown h1').waitFor(); await capture('archive-markdown');
     assert.equal(await page.locator('.result-markdown table').count(), 1); assert.equal(await page.locator('.result-markdown pre code').count(), 1);
     await page.locator('.wb-dialog [data-wb=preview]').click(); await page.locator('.code-diff').waitFor(); await capture('code-diff');
-    assert.match(await page.locator('.code-git-context').innerText(), /fix\/console-restore/);
+    assert.match(await page.locator('.code-git-context').innerText(), /main · aaaaaaaa/);
+    assert.match(await page.locator('.code-git-context').innerText(), /main · bbbbbbbb/);
     await page.keyboard.press('Escape'); assert.equal(await page.locator('dialog[open]').count(), 0);
-    assert.deepEqual(errors, []); report.push({ profile: name, engine: browser.version(), emulated: name !== 'pc', screenshots, checks: ['archive image and Markdown', 'branch and code diff', 'keyboard selection and Escape', 'contrast and labels', 'overflow', 'no page errors'] });
+    await page.locator('nav [data-page=tools]').click();
+    await page.waitForFunction(() => [...document.querySelectorAll('.integration-heading img')].length === 3 && [...document.querySelectorAll('.integration-heading img')].every(img => img.complete && img.naturalWidth > 0));
+    assert.equal(await page.locator('.integration-heading img').count(), 3);
+    await capture('tools');
+    if (['android', 'iphone'].includes(name)) for (const id of ['unity', 'meshy']) {
+      await page.locator(`[data-integration="${id}"]`).scrollIntoViewIfNeeded();
+      await capture('tools-' + id);
+    }
+    await page.getByText('Logo credits', { exact: true }).focus(); await page.keyboard.press('Enter');
+    assert.equal(await page.locator('.tool-brand-notices').getAttribute('open'), '');
+    assert.match(await page.locator('.tool-brand-notices').innerText(), /Unity and the Unity logo/);
+    assert.deepEqual(errors, []); report.push({ profile: name, engine: browser.version(), emulated: name !== 'pc', screenshots, checks: ['archive image and Markdown', 'branch and commit pairs', 'code diff', 'bundled Blender/Unity/Meshy logos', 'keyboard selection and Escape', 'contrast and labels', 'overflow', 'no page errors'] });
     await browser.close(); browser = null; console.log('PASS ' + name + ' Results');
   }
   fs.writeFileSync(path.join(out, 'visual-checks.json'), JSON.stringify(report, null, 2));

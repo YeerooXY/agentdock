@@ -6,22 +6,13 @@ const { promisify } = require('node:util');
 const { randomUUID, createHash } = require('node:crypto');
 const { createTwoFilesPatch } = require('diff');
 const { EventEmitter } = require('node:events');
+const { gitInfo } = require('./git-context.cjs');
 const exec = promisify(execFile);
 const IMAGE = /\.(png|jpe?g|webp)$/i;
 const SKIP = /(^|\/)(\.git|node_modules|\.dart_tool|\.build|build|dist|release|vendor|\.gradle|\.idea|\.next|coverage|\.venv|venv)(\/|$)/i;
 const SECRET = /(^|\/)(\.env(?:\..*)?|\.npmrc|\.pypirc|credentials?[^/]*|secrets?[^/]*|vault[^/]*|id_rsa|id_ed25519|google-services\.json|[^/]*\.(?:pem|p12|pfx|key|keystore|jks))$/i;
 const inside = (root, target) => { const r = path.relative(root, target); return r && !r.startsWith('..' + path.sep) && r !== '..' && !path.isAbsolute(r); };
 const hash = value => createHash('sha256').update(value).digest('hex');
-async function gitInfo(root) {
-  const options = { windowsHide: true, maxBuffer: 8192, timeout: 2000 };
-  const [branch, head] = await Promise.allSettled([
-    exec('git', ['-C', root, 'symbolic-ref', '--quiet', '--short', 'HEAD'], options),
-    exec('git', ['-C', root, 'rev-parse', '--verify', 'HEAD'], options)
-  ]);
-  const name = branch.status === 'fulfilled' ? branch.value.stdout.trim() : null;
-  const commit = head.status === 'fulfilled' && /^[a-f0-9]{40,64}$/i.test(head.value.stdout.trim()) ? head.value.stdout.trim() : null;
-  return name || commit ? { branch: name, commit, detached: !name } : null;
-}
 // Bound snapshots without touching Git's index, HEAD, or the user's working tree.
 async function snapshot(project, { maxFiles = 10000, maxBytes = 32 * 1024 * 1024 } = {}) {
   const root = await fs.realpath(project), files = new Map(), notes = [], git = await gitInfo(root); const deadline = Date.now() + 9000; let complete = true;
@@ -114,7 +105,7 @@ class Turns extends EventEmitter {
         const baseline = await snapshot(session.cwd);
         if (turn.capture && this.enabled) { turn.baseline = baseline; turn.git = baseline.git; }
       } catch { if (turn.capture && this.enabled) turn.error = 'The project baseline could not be read.'; }
-    }
+    } else turn.git = await gitInfo(session.cwd);
     this.emit('started', { owner, id: turn.id }); return turn.id;
   }); }
   finish(owner, status = 'needs-review') { return this.serial(owner, async () => {
@@ -158,7 +149,19 @@ class Turns extends EventEmitter {
         this.results.add({ text: JSON.stringify(report), ext: '.json', title: `${changes.length} changed ${changes.length === 1 ? 'file' : 'files'}`, kind: 'code', status, summary: turn.overlap ? 'Overlapping console activity' : 'Changes during this turn', groupId: turn.id }, context);
       }
     } catch { this.emit('tracking-error', { owner, message: 'This turn’s code changes could not be saved.' }); }
-    finally { this.active.delete(owner); delete turn.baseline; this.latest.set(owner, turn); if (this.latest.size > 100) this.latest.delete(this.latest.keys().next().value); this.emit('finished', { owner, id: turn.id }); }
+    finally {
+      try {
+        // Also finish explicitly saved results when automatic file capture is off.
+        // Each saved repository gets its own revision; a parent workspace does
+        // not lend another repository's commit to unrelated artifacts.
+        const repositories = new Set(this.results.items.filter(x => x.groupId === turn.id && x.consoleKey === context.consoleKey).map(x => x.git?.repository).filter(Boolean));
+        for (const repository of repositories) {
+          const ending = endGit?.repository === repository && turn.capture && this.enabled ? endGit : await gitInfo(repository);
+          if (ending) this.results.finishGit(turn.id, context.consoleKey, repository, ending);
+        }
+      } catch { this.emit('tracking-error', { owner, message: 'The final Git revision could not be saved.' }); }
+      this.active.delete(owner); delete turn.baseline; this.latest.set(owner, turn); if (this.latest.size > 100) this.latest.delete(this.latest.keys().next().value); this.emit('finished', { owner, id: turn.id });
+    }
     return turn.id;
   }); }
 }

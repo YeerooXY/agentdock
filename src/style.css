@@ -171,7 +171,8 @@ button[data-action="new"].is-holding .new-console-mark>.icon{transform:scale(1.1
 .integrations{margin-bottom:30px}.integration-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
 .integration-card{display:flex;flex-direction:column;gap:14px;padding:22px;border:1px solid #292538;border-radius:14px;background:linear-gradient(145deg,#0d0b17,#050609 65%);min-width:0}
 .integration-heading{display:flex;align-items:center;gap:10px}.integration-heading h3{font-size:17px;margin:0}.integration-heading .subtle{margin-left:auto;padding:4px;font-size:11px}
-.integration-mark{display:grid;place-items:center;width:30px;height:30px;border:1px solid #5a4875;border-radius:9px;color:#d4b2f3;font:16px Consolas,monospace;flex-shrink:0}
+.integration-mark{display:grid;place-items:center;width:44px;height:44px;padding:6px;border:1px solid #5a4875;border-radius:9px;background:#111119;flex-shrink:0;box-sizing:border-box}
+.integration-mark img{display:block;width:100%;height:100%;object-fit:contain}.integration-mark-unity{background:#f4f4f5;border-color:#c5c5ce}.tool-brand-notices{margin-top:14px}.tool-brand-notices summary{cursor:pointer}.tool-brand-notices p{max-width:850px}
 .integration-card p{font-size:12px;line-height:1.65;margin:0;color:#c2bed2}.integration-card .field-hint{font-size:11px;color:#a9a4bc}.integration-card label{margin:0}.integration-card .integration-status{margin-top:auto;color:#d2b6ed;min-height:2em}
 .integration-card .button-row{flex-wrap:wrap}.integration-card .button-row button{font-size:12px}.integration-card .folder-input input{width:0;min-width:0;flex:1}
 .working-guides{margin-bottom:20px}.working-guides h2{margin:0 0 16px}.working-guide .check-row{align-items:flex-start}.working-guide small{display:block;font-weight:400;margin-top:6px;color:#b7b1ca;font-size:12px}.working-guide details{margin:12px 0 0 24px}

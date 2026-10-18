@@ -47,6 +47,7 @@
 @media(max-width:650px) { .result-image-pager { gap:8px }.result-image-pager button { font-size:12px; padding:8px }.result-full-image { max-height:46vh } }
 .result-branch { display:inline-flex; align-items:center; gap:7px; max-width:100%; padding:5px 9px; border:1px solid #7562a0; border-radius:7px; background:linear-gradient(110deg,#111c31,#24102b); color:#d2caff; font:12px var(--mono); overflow-wrap:anywhere }
 .result-branch svg { color:#e5a8d9; flex-shrink:0 }
+.result-branch > span { min-width:0 }
 .result-detail-meta,.code-git-context { display:flex; align-items:center; flex-wrap:wrap; gap:10px; margin:12px 0 20px; color:#bcb5cd; font-size:12px }
 .archive-preview { display:grid; grid-template-columns:minmax(180px,260px) minmax(0,1fr); gap:20px; align-items:start }
 .archive-files { max-height:60vh; overflow:auto; border:1px solid #4c3a65; border-radius:10px; padding:8px; background:#05050b }

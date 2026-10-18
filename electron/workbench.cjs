@@ -7,6 +7,7 @@ const { Reviews } = require('./reviews.cjs');
 const { Concepts } = require('./concepts.cjs');
 const { SetupRequests } = require('./setup-requests.cjs');
 const { imageInstructions } = require('./image-generation.cjs');
+const { resultGitContext } = require('./git-context.cjs');
 const schema = (properties, required = []) => ({ type: 'object', properties, required, additionalProperties: false });
 const string = { type: 'string' };
 const nativeTools = [
@@ -50,7 +51,7 @@ class Workbench {
         this.inbox.add({ title: 'Setup ready: ' + (args.config.name || args.config.id || 'Screen previews'), message: result.message, kind: 'question', destination: 'tools' });
         return result;
       }
-      case 'dock/save_result': return this.results.add(args, context);
+      case 'dock/save_result': return this.results.add(args, await resultGitContext(args, context, this.results.root));
       case 'dock/list_results': return this.results.list();
       case 'dock/notify': if (['ready', 'error'].includes(args.kind || 'ready')) await this.turns?.finish(owner); this.getSessions().signal?.(context.sessionId, args.kind || 'ready'); return this.inbox.add({ ...args, sessionId: context.sessionId });
       case 'dock/review_page': return { id: this.reviews.start({ ...args, ...context }) };
@@ -75,7 +76,7 @@ class Workbench {
       case 'results.import': {
         const selected = await this.electron.dialog.showOpenDialog(this.getWindow(), { title: 'Add results', properties: ['openFile','multiSelections'], filters: [{ name: 'Results', extensions: ['png','jpg','jpeg','webp','txt','md','json','log','html','pdf','glb','gltf','obj','stl','zip'] }] });
         const imported = [], errors = [], groupId = randomUUID();
-        for (const file of selected.filePaths.slice(0, 50)) { try { imported.push(this.results.add({ file, groupId, title: path.basename(file), source: 'Import', kind: /\.(png|jpe?g|webp)$/i.test(file) ? 'screenshot' : 'report' }, { project: this.getProject(), trusted: true }).id); } catch (error) { errors.push(path.basename(file) + ': ' + error.message); } }
+        for (const file of selected.filePaths.slice(0, 50)) { try { imported.push(this.results.add({ file, groupId, title: path.basename(file), source: 'Import', kind: /\.(png|jpe?g|webp)$/i.test(file) ? 'screenshot' : 'report' }, await resultGitContext({ file }, { project: this.getProject(), trusted: true }, this.results.root)).id); } catch (error) { errors.push(path.basename(file) + ': ' + error.message); } }
         return { imported, errors };
       }
       case 'results.export': {

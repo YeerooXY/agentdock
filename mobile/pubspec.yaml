@@ -1,7 +1,7 @@
 name: agent_dock_mobile
 description: A private Android companion for Agent Dock terminals and results.
 publish_to: 'none'
-version: 0.6.0-preview.8+8
+version: 0.6.0-preview.9+9
 
 environment:
   sdk: ^3.13.5

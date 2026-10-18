@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import 'dock_client.dart';
 import 'main.dart' show blue, pink, formatBytes;
+import 'result_revision.dart';
 
 class ResultsPage extends StatefulWidget {
   final DockClient client;
@@ -186,6 +187,7 @@ class _ResultsPageState extends State<ResultsPage> {
                       ),
                     ),
                     const SizedBox(height: 8),
+                    for (final git in turnRevisions(group)) ResultRevision(git),
                     if (group.any((x) => x['image'] == true)) imageGroup(group),
                     for (final item in group.where(
                       (x) =>
@@ -356,6 +358,7 @@ class _ResultDetailState extends State<ResultDetail> {
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          ResultRevision(resultRevision(item)),
           if (error.isNotEmpty)
             Text(error, style: const TextStyle(color: pink)),
           if (content == null && error.isEmpty)
@@ -475,6 +478,13 @@ class _ResultDetailState extends State<ResultDetail> {
           if (content?['truncated'] == true)
             const Text('Preview shortened. Open the full file on your PC.'),
           if (content?['diff'] != null) ...[
+            if (content!['diff']['git']?['before'] != null)
+              Text(
+                'Started at ${revisionLabel(content!['diff']['git']['before'] as Map)}',
+                style: const TextStyle(color: blue, fontSize: 12),
+              ),
+            if (content!['diff']['git']?['after'] != null)
+              ResultRevision(content!['diff']['git']['after'] as Map),
             for (final note in (content!['diff']['notes'] as List? ?? []))
               Padding(
                 padding: const EdgeInsets.only(bottom: 12),
