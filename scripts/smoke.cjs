@@ -7,6 +7,7 @@ const { spawnSync } = require('node:child_process');
 const { checkVimControls } = require('./vim-check.cjs');
 const { checkFirstRun } = require('./first-run-check.cjs');
 const { checkToolsAndWindow } = require('./tool-window-check.cjs');
+const { checkWindowsIdentity } = require('./windows-identity-check.cjs');
 const root = path.resolve(__dirname, '..');
 const testParent = path.join(root, 'test-data');
 fs.mkdirSync(testParent, { recursive: true });
@@ -30,6 +31,8 @@ async function eventually(predicate, message) {
   const damagedLimits = Buffer.alloc(403);
   fs.writeFileSync(path.join(dataDir, 'limits.json'), damagedLimits);
   await launch();
+  await checkWindowsIdentity({ app, dataDir });
+  if (process.platform === 'win32') checks.push('Native taskbar properties and real shortcuts share Dock identity and icon; old shortcuts migrate and other installations are preserved');
   const capture = async options => {
     await page.waitForFunction(() => getComputedStyle(document.querySelector('#app')).opacity === '1' &&
       ['#content', '#consoles-page', '#terminal-page', '#sidebar', '#console-chooser'].every(selector => document.querySelector(selector).getAnimations().length === 0));

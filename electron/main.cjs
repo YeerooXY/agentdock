@@ -25,8 +25,9 @@ const { runApi } = require('./api-run.cjs');
 const { SharedHub } = require('./shared.cjs');
 const { ToolIntegrations, definitions: integrationDefinitions } = require('./integrations.cjs');
 const { validateProvider, validateRequest, ledgerSummary, number } = require('./domain.cjs');
+const { APP_ID, taskbarIcon, developmentShortcuts } = require('./windows-identity.cjs');
 app.setName('Agent Dock');
-const appModelId = app.isPackaged ? 'com.yeeroo.agentdock' : process.execPath;
+const appModelId = APP_ID;
 if (process.platform === 'win32') app.setAppUserModelId(appModelId);
 const testMode = process.argv.includes('--smoke-test');
 const testDir = process.argv.find(x => x.startsWith('--data-dir='))?.slice(11);
@@ -218,21 +219,20 @@ app.whenReady().then(async () => {
   });
   workspace = new Workspace(root, sessions, safeStorage, { enabled: settings.restoreConsoles, onError: message => { workspaceError = message; publish(); } });
   await workspace.restore();
-  window = new BrowserWindow({ width: 1240, height: 840, minWidth: 720, minHeight: 520, frame: false, show: false, backgroundColor: '#010103', title: 'Agent Dock', icon: path.join(__dirname, '..', 'assets', 'icon.png'),
+  const windowIcon = path.join(__dirname, '..', 'assets', process.platform === 'win32' && !app.isPackaged ? 'icon.ico' : 'icon.png');
+  window = new BrowserWindow({ width: 1240, height: 840, minWidth: 720, minHeight: 520, frame: false, show: false, backgroundColor: '#010103', title: 'Agent Dock', icon: windowIcon,
     webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true, webSecurity: true, spellcheck: false } });
   if (process.platform === 'win32') {
-    // Windows Shell cannot read an icon inside app.asar. Installed builds use
-    // their executable resource; development uses a versioned, readable ICO.
-    let taskbarIcon = process.execPath;
-    if (!app.isPackaged) {
-      const iconData = fs.readFileSync(path.join(__dirname, '..', 'assets', 'icon.ico'));
-      const hash = require('node:crypto').createHash('sha256').update(iconData).digest('hex').slice(0, 12);
-      const iconsDir = path.join(root, 'icons'); fs.mkdirSync(iconsDir, { recursive: true });
-      taskbarIcon = path.join(iconsDir, `agent-dock-${hash}.ico`);
-      if (!fs.existsSync(taskbarIcon)) fs.writeFileSync(taskbarIcon, iconData);
+    const icon = taskbarIcon({ projectDir: app.getAppPath(), dataDir: root, packaged: app.isPackaged });
+    if (!app.isPackaged && !testMode) {
+      try {
+        developmentShortcuts({ shell, desktop: app.getPath('desktop'), programs: path.join(app.getPath('appData'), 'Microsoft', 'Windows', 'Start Menu', 'Programs'), projectDir: app.getAppPath(), icon });
+      } catch (error) { console.warn('Could not update Agent Dock shortcuts:', error.message); }
     }
-    window.setAppDetails({ appId: appModelId, appIconPath: taskbarIcon, appIconIndex: 0,
+    window.setAppDetails({ appIconPath: icon, appIconIndex: 0,
       relaunchCommand: `"${process.execPath}"${app.isPackaged ? '' : ` "${app.getAppPath()}"`}`, relaunchDisplayName: 'Agent Dock' });
+    // Set the identity after its relaunch properties, before the window is shown.
+    window.setAppDetails({ appId: appModelId });
   }
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   window.webContents.on('will-navigate', event => event.preventDefault());

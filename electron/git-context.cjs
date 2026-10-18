@@ -22,10 +22,14 @@ async function gitInfo(folder) {
     // One status observation supplies HEAD, branch and working-tree state together.
     // Disable optional locks so recording a result never refreshes Git's index.
     const options = { windowsHide: true, maxBuffer: 1024 * 1024, timeout: 3000 };
-    const [status, root] = await Promise.all([
+    // Both processes must settle even outside a repository. Returning after the
+    // first rejection can leave the other process holding a folder on Windows.
+    const probes = await Promise.allSettled([
       exec('git', ['--no-optional-locks', '-C', folder, 'status', '--porcelain=v2', '--branch', '--untracked-files=normal', '-z'], options),
       exec('git', ['--no-optional-locks', '-C', folder, 'rev-parse', '--show-toplevel'], options)
     ]);
+    if (probes.some(probe => probe.status !== 'fulfilled')) return null;
+    const [status, root] = probes.map(probe => probe.value);
     const records = status.stdout.split('\0').filter(Boolean);
     const head = records.find(x => x.startsWith('# branch.head '))?.slice(14);
     const commit = records.find(x => x.startsWith('# branch.oid '))?.slice(13);
