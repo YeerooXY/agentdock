@@ -1,11 +1,13 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:agent_dock_mobile/main.dart';
 import 'package:agent_dock_mobile/dock_client.dart';
 import 'package:agent_dock_mobile/results_page.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
+import 'package:xterm/xterm.dart';
 
 class FakeDock extends DockClient {
   bool markdown = false;
@@ -82,6 +84,153 @@ class FakeDock extends DockClient {
 }
 
 void main() {
+  testWidgets('slow terminal swipes scroll without opening the keyboard', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(393, 852);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final c = FakeDock();
+    addTearDown(c.dispose);
+    c.screen!.terminal.write(
+      List.generate(150, (i) => 'History line $i\r\n').join(),
+    );
+    await tester.pumpWidget(DockApp(client: c));
+    final terminal = find.byType(TerminalView);
+    final scroll = tester
+        .state<ScrollableState>(
+          find
+              .descendant(of: terminal, matching: find.byType(Scrollable))
+              .first,
+        )
+        .position;
+    scroll.jumpTo(scroll.maxScrollExtent);
+    await tester.pump();
+    final before = scroll.pixels;
+    final gesture = await tester.startGesture(
+      tester.getRect(terminal).topLeft + const Offset(160, 180),
+      kind: PointerDeviceKind.touch,
+    );
+    // xterm's tap-down callback runs before a slow touch becomes a drag.
+    await tester.pump(const Duration(milliseconds: 150));
+    expect(tester.testTextInput.isVisible, isFalse);
+    expect(tester.widget<TerminalView>(terminal).focusNode!.hasFocus, isFalse);
+    await gesture.moveBy(const Offset(0, 24));
+    await tester.pump(const Duration(milliseconds: 20));
+    await gesture.moveBy(const Offset(0, 106));
+    await tester.pump(const Duration(milliseconds: 100));
+    await gesture.up();
+    await tester.pumpAndSettle();
+    expect(scroll.pixels, lessThan(before));
+    expect(tester.testTextInput.isVisible, isFalse);
+    expect(c.inputs, isEmpty);
+
+    await tester.dragFrom(
+      tester.getRect(terminal).topLeft + const Offset(220, 150),
+      const Offset(-140, 0),
+      kind: PointerDeviceKind.touch,
+    );
+    await tester.pumpAndSettle();
+    expect(tester.testTextInput.isVisible, isFalse);
+    expect(c.inputs, isEmpty);
+  });
+
+  testWidgets('terminal taps and long presses do not start typing', (
+    tester,
+  ) async {
+    final c = FakeDock();
+    addTearDown(c.dispose);
+    await tester.pumpWidget(DockApp(client: c));
+    final terminal = find.byType(TerminalView);
+    await tester.tap(terminal);
+    await tester.pumpAndSettle();
+    expect(tester.testTextInput.isVisible, isFalse);
+    await tester.longPress(terminal);
+    await tester.pumpAndSettle();
+    expect(tester.testTextInput.isVisible, isFalse);
+    expect(c.inputs, isEmpty);
+  });
+
+  testWidgets('direct typing is explicit and scrolling closes its keyboard', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(393, 852);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final c = FakeDock();
+    addTearDown(c.dispose);
+    await tester.pumpWidget(DockApp(client: c));
+    final keyboardButton = tester.getRect(
+      find.byTooltip('Type directly in terminal'),
+    );
+    expect(keyboardButton.right, lessThanOrEqualTo(393));
+    await tester.tap(find.byTooltip('Type directly in terminal'));
+    await tester.pumpAndSettle();
+    expect(tester.testTextInput.isVisible, isTrue);
+    tester.testTextInput.enterText('  hello');
+    await tester.pump();
+    expect(c.inputs, [
+      {'id': 'one', 'data': 'hello'},
+    ]);
+
+    final readingPoint =
+        tester.getTopLeft(find.byType(TerminalView)) + const Offset(150, 150);
+    await tester.dragFrom(readingPoint, const Offset(0, 100));
+    await tester.pumpAndSettle();
+    expect(tester.testTextInput.isVisible, isFalse);
+    await tester.tapAt(readingPoint);
+    await tester.pumpAndSettle();
+    expect(tester.testTextInput.isVisible, isFalse);
+    expect(c.inputs, hasLength(1));
+
+    await tester.tap(find.byTooltip('Type directly in terminal'));
+    await tester.pumpAndSettle();
+    expect(tester.testTextInput.isVisible, isTrue);
+  });
+
+  testWidgets(
+    'reading the terminal dismisses the composer and keeps its draft',
+    (tester) async {
+      final c = FakeDock();
+      addTearDown(c.dispose);
+      await tester.pumpWidget(DockApp(client: c));
+      await tester.enterText(find.byType(TextField).last, 'keep this draft');
+      await tester.drag(find.byType(TerminalView), const Offset(0, 100));
+      await tester.pumpAndSettle();
+      expect(tester.testTextInput.isVisible, isFalse);
+      expect(
+        tester.widget<TextField>(find.byType(TextField).last).controller!.text,
+        'keep this draft',
+      );
+      expect(c.inputs, isEmpty);
+    },
+  );
+
+  testWidgets('dismissing the direct keyboard does not let touches reopen it', (
+    tester,
+  ) async {
+    addTearDown(tester.view.resetViewInsets);
+    final c = FakeDock();
+    addTearDown(c.dispose);
+    await tester.pumpWidget(DockApp(client: c));
+    await tester.tap(find.byTooltip('Type directly in terminal'));
+    await tester.pumpAndSettle();
+    expect(tester.testTextInput.isVisible, isTrue);
+    tester.view.viewInsets = const FakeViewPadding(bottom: 150);
+    await tester.pumpAndSettle();
+    tester.testTextInput.hide();
+    tester.view.viewInsets = FakeViewPadding.zero;
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(TerminalView));
+    await tester.pumpAndSettle();
+    expect(tester.testTextInput.isVisible, isFalse);
+    await tester.tap(find.byTooltip('Type directly in terminal'));
+    await tester.pumpAndSettle();
+    expect(tester.testTextInput.isVisible, isTrue);
+  });
+
   test(
     'plain shells receive text and Enter separately without paste markers',
     () async {

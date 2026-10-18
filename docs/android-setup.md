@@ -6,7 +6,7 @@ This is an Android preview. iPhone support comes later. The owner has connected 
 
 ## Install and pair
 
-1. Install the matching Windows and Android builds from the [0.6 preview 4 release](https://github.com/YeerooXY/agentdock/releases/tag/v0.6.0-preview.4). Most phones use the **arm64** APK. Android 7 or later is required. The APK uses a development signing key; a future store build may require uninstalling this preview first.
+1. Use the [Windows and Android downloads](../README.md#downloads). Android preview 5 works with Windows preview 4 or 5. Most phones use the **arm64** APK. Android 7 or later is required. The APK uses a development signing key; a future store build may require uninstalling this preview first.
 2. Put the PC and phone on the same Wi-Fi or local network. **No VPN app, extra account or internet server is needed** for this connection.
 3. On the PC, open **Settings → Android → Connect a phone**. First-time setup also offers **Connect my Android phone next**.
 4. Select the PC's Wi-Fi or Ethernet address and enable the connection. Use **Refresh addresses** if you just changed networks. The **This PC only** address cannot be reached by your phone.
@@ -20,6 +20,8 @@ The local-only mode accepts private network peers. Forwarding a port alone does 
 A paired phone can type commands using the console's existing permissions. This is access to your PC, so pair only devices you control. **Remove** beside a phone immediately revokes its token. **Turn off** stops mobile access without ending local consoles.
 
 ## Updates
+
+Android preview 5 fixes the keyboard opening during terminal scrolling. Tap **Command or message** to write a prompt, or the keyboard button beside the terminal controls for direct input. Touching the terminal closes the keyboard without deleting your draft. This update does not require a new Windows installer.
 
 In the phone app, open **Usage → Updates → Check for updates**. **Download update** opens the matching APK download in your browser. Open that file to install it. Android may ask you to allow installs from your browser. The existing pairing stays saved when upgrading with the same signing key; do not uninstall first.
 

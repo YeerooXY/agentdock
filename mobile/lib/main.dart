@@ -65,20 +65,48 @@ class DockHome extends StatefulWidget {
 class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
   DockClient get c => widget.client;
   int page = 0;
-  final composer = TextEditingController(), terminalFocus = FocusNode();
+  final composer = TextEditingController(), composerFocus = FocusNode();
+  // xterm requests focus on touch-down, before it can recognize a scroll.
+  // Only the keyboard button may enable terminal focus.
+  final terminalFocus = FocusNode(canRequestFocus: false, skipTraversal: true);
+  bool keyboardWasVisible = false;
   bool sending = false;
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    terminalFocus.addListener(terminalFocusChanged);
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     composer.dispose();
+    composerFocus.dispose();
+    terminalFocus.removeListener(terminalFocusChanged);
     terminalFocus.dispose();
     super.dispose();
+  }
+
+  void terminalFocusChanged() {
+    if (!terminalFocus.hasFocus) stopTerminalTyping();
+  }
+
+  void stopTerminalTyping() {
+    terminalFocus.canRequestFocus = false;
+  }
+
+  void startTerminalTyping() {
+    terminalFocus.canRequestFocus = true;
+    terminalFocus.requestFocus();
+  }
+
+  @override
+  void didChangeMetrics() {
+    final visible = View.of(context).viewInsets.bottom > 0;
+    // Android's Back button hides the IME without clearing xterm's focus.
+    if (keyboardWasVisible && !visible) stopTerminalTyping();
+    keyboardWasVisible = visible;
   }
 
   @override
@@ -89,6 +117,7 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
       AppLifecycleState.hidden,
       AppLifecycleState.detached,
     ].contains(state)) {
+      stopTerminalTyping();
       c.setForeground(false);
     }
   }
@@ -149,6 +178,8 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
   }
 
   Future<void> switchConsole() async {
+    stopTerminalTyping();
+    composerFocus.unfocus();
     final id = await showModalBottomSheet<String>(
       context: context,
       showDragHandle: true,
@@ -264,6 +295,8 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
         bottomNavigationBar: NavigationBar(
           selectedIndex: page,
           onDestinationSelected: (value) {
+            stopTerminalTyping();
+            composerFocus.unfocus();
             setState(() => page = value);
             run(() => c.setStreaming(value == 0));
           },
@@ -350,6 +383,8 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
                 : LayoutBuilder(
                     builder: (ctx, size) => Listener(
                       onPointerDown: (_) {
+                        stopTerminalTyping();
+                        composerFocus.unfocus();
                         if (['ready', 'attention'].contains(session['state'])) {
                           run(c.acknowledge);
                         }
@@ -380,33 +415,39 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
                   ),
           ),
         ),
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Row(
-            children: [
-              for (final key in [
-                ('Enter', '\r'),
-                ('Esc', '\x1b'),
-                ('Tab', '\t'),
-                ('Ctrl C', '\x03'),
-                ('↑', '\x1b[A'),
-                ('↓', '\x1b[B'),
-                ('←', '\x1b[D'),
-                ('→', '\x1b[C'),
-              ])
-                TextButton(
-                  onPressed: c.connected && !sending
-                      ? () => run(() => c.input(key.$2))
-                      : null,
-                  child: Text(key.$1),
+        Row(
+          children: [
+            Expanded(
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    for (final key in [
+                      ('Enter', '\r'),
+                      ('Esc', '\x1b'),
+                      ('Tab', '\t'),
+                      ('Ctrl C', '\x03'),
+                      ('↑', '\x1b[A'),
+                      ('↓', '\x1b[B'),
+                      ('←', '\x1b[D'),
+                      ('→', '\x1b[C'),
+                    ])
+                      TextButton(
+                        onPressed: c.connected && !sending
+                            ? () => run(() => c.input(key.$2))
+                            : null,
+                        child: Text(key.$1),
+                      ),
+                  ],
                 ),
-              IconButton(
-                tooltip: 'Type directly in terminal',
-                onPressed: () => terminalFocus.requestFocus(),
-                icon: const Icon(Icons.keyboard_alt_outlined, color: pink),
               ),
-            ],
-          ),
+            ),
+            IconButton(
+              tooltip: 'Type directly in terminal',
+              onPressed: c.connected ? startTerminalTyping : null,
+              icon: const Icon(Icons.keyboard_alt_outlined, color: pink),
+            ),
+          ],
         ),
         if (c.inputError.isNotEmpty)
           Padding(
@@ -424,6 +465,7 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
               Expanded(
                 child: TextField(
                   controller: composer,
+                  focusNode: composerFocus,
                   minLines: 1,
                   maxLines: 3,
                   textInputAction: TextInputAction.newline,

@@ -2,7 +2,7 @@
 
 ## Keep a project moving
 
-Open **Projects → New project**. Give it a name and folder, then add whatever helps: a category, goal, approach, milestones and a next step. Add several folders if the game, website and backend live separately. The folder picker adds one; the text field also accepts one folder per line, optionally as `Label | path`.
+Open **Projects → New project**. Give it a name and folder, describe your goals, and optionally choose a category. That is enough to start. Add an approach, milestones, notes or a next step later through **Edit**. Add several folders if the game, website and backend live separately. The folder picker adds one; the text field also accepts one folder per line, optionally as `Label | path`.
 
 Choose **Open console** on its card, or right-click/hold **+** and select the project. **Start in** lists its saved folders. The editable folder below also accepts a subfolder or another existing folder. The console inherits the project name unless you enter a different name. Regular **+** still uses your defaults.
 

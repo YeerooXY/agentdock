@@ -6,6 +6,8 @@ For installation, pairing and Firebase setup, see [the Android guide](../docs/an
 
 From preview 4, **Usage → Updates** checks GitHub and opens the APK download for the phone's architecture. Installation remains an Android action. Upgrades signed with the same key preserve pairing; no background update polling runs.
 
+Android preview 5 works with Windows preview 4 or 5. Terminal scrolling, taps and long presses do not open the keyboard. Use the message field for a prompt, or the always-visible keyboard button for direct terminal input. Touching the terminal closes the keyboard and preserves the message draft.
+
 ## Build
 
 Tested with Flutter **3.47.7**, Dart **3.13.5**, JDK **17**, and Android SDK **36** on Windows. Android 7/API 24 is the minimum. Install Flutter and the Android SDK using their official setup instructions, accept the SDK licenses, then run from this folder:

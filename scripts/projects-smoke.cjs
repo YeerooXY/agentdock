@@ -10,9 +10,13 @@ let app;
   await page.waitForSelector('.session-grid');
   const call=(method,payload)=>page.evaluate(async({method,payload})=>{const r=await window.dock.call(method,payload);if(!r.ok)throw Error(r.error);return r.value;},{method,payload});
   await page.locator('[data-page=projects]').click(); await page.locator('.page-heading [data-project-new]').click();
-  const form=page.locator('#project-form');await form.locator('[name=name]').fill('Robonslaught');await form.locator('[name=category]').fill('Game');await form.locator('[name=goals]').fill('Ship a playable arena');await form.locator('[name=nextStep]').fill('Build the first wave');await form.locator('[name=milestones]').fill('[x] Prototype\n[ ] First wave');
+  const form=page.locator('#project-form');await form.locator('[name=name]').fill('Robonslaught');await form.locator('[name=category]').fill('Game');await form.locator('[name=goals]').fill('Ship a playable arena');
+  for(const key of ['approach','nextStep','milestones','notes','status']){assert.equal(await form.locator(`[name=${key}]`).isVisible(),false);assert.equal(await form.locator(`[name=${key}]`).isDisabled(),true);}
   await form.locator('[name=folders]').fill('Game | '+folder+'\nCode | '+sub);await form.locator('[type=submit]').click();await page.locator('#project-editor').waitFor({state:'hidden'});await page.locator('.project-card h2').filter({hasText:'Robonslaught'}).waitFor();
-  const project=(await call('state')).projects[0];assert.equal(project.progress.done,1);
+  let project=(await call('state')).projects[0];assert.equal(project.goals,'Ship a playable arena');assert.equal(project.nextStep,'');assert.equal(project.approach,'');assert.deepEqual(project.milestones,[]);
+  await page.locator('[data-project-edit]').click();await form.locator('[name=approach]').fill('Build a small playable prototype');await form.locator('[name=nextStep]').fill('Build the first wave');await form.locator('[name=milestones]').fill('[x] Prototype\n[ ] First wave');await form.locator('[type=submit]').click();await page.locator('#project-editor').waitFor({state:'hidden'});
+  project=(await call('state')).projects[0];assert.equal(project.progress.done,1);assert.equal(project.approach,'Build a small playable prototype');assert.equal(project.nextStep,'Build the first wave');
+  await page.locator('.page-heading [data-project-new]').click();assert.equal(await form.locator('[name=approach]').isVisible(),false);assert.equal(await form.locator('[name=nextStep]').inputValue(),'');await page.keyboard.press('Escape');
   await page.locator('[data-project-open]').click();await page.locator('.session-card:not(.empty)').waitFor();
   let state=await call('state');assert.equal(state.sessions[0].name,'Robonslaught');assert.equal(state.sessions[0].projectId,project.id);
   assert.match(fs.readFileSync(path.join(profile,'sessions',state.sessions[0].id,'AGENT_DOCK.md'),'utf8'),/Ship a playable arena/);

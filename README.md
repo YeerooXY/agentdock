@@ -4,11 +4,11 @@
 
 | Device | Download |
 | --- | --- |
-| Windows 10/11 — Intel or AMD 64-bit | **[Windows installer](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.4/Agent-Dock-0.6.0-preview.4-Setup-x64.exe)** |
-| Android — most phones (ARM64) | **[Android APK](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.4/Agent-Dock-0.6.0-preview.4-Android-arm64.apk)** |
-| Android — older 32-bit phones (ARMv7) | [Android ARMv7 APK](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.4/Agent-Dock-0.6.0-preview.4-Android-armv7.apk) |
+| Windows 10/11 — Intel or AMD 64-bit | **[Windows installer](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.5/Agent-Dock-0.6.0-preview.5-Setup-x64.exe)** |
+| Android — most phones (ARM64) | **[Android APK](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.5/Agent-Dock-0.6.0-preview.5-Android-arm64.apk)** |
+| Android — older 32-bit phones (ARMv7) | [Android ARMv7 APK](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.5/Agent-Dock-0.6.0-preview.5-Android-armv7.apk) |
 
-Current preview: **0.6.0-preview.4**. [Release notes](https://github.com/YeerooXY/agentdock/releases/tag/v0.6.0-preview.4) · [All releases](https://github.com/YeerooXY/agentdock/releases) · [Previous stable desktop-only release](https://github.com/YeerooXY/agentdock/releases/tag/v0.5.0).
+Current preview: **0.6.0-preview.5**. [Release notes](https://github.com/YeerooXY/agentdock/releases/tag/v0.6.0-preview.5) · [All releases](https://github.com/YeerooXY/agentdock/releases) · [Previous stable desktop-only release](https://github.com/YeerooXY/agentdock/releases/tag/v0.5.0).
 
 A Windows desktop app for agent consoles, projects, shared tools and usage tracking.
 
@@ -17,7 +17,7 @@ A Windows desktop app for agent consoles, projects, shared tools and usage track
 - **Windows:** open **Settings → Updates → Check for updates**, then **Download update → Install update**. Dock verifies the download and asks before ending open consoles. Let active work finish before installing. Settings, keys and supported conversation IDs stay in your local profile.
 - **Android:** open **Usage → Updates → Check for updates → Download update**. Open the downloaded APK and confirm the update. Android may ask you to allow installs from that browser. Pairing stays saved when upgrading a build signed with the same key.
 
-**No update button in your version?** Use the downloads above and run the Windows installer or open the Android APK to update the existing app. You do not need to uninstall first. Keep your PC and phone on matching versions.
+**No update button in your version?** Use the downloads above and run the Windows installer or open the Android APK to update the existing app. You do not need to uninstall first. Release notes say when both devices need updating; Android preview 5 works with Windows preview 4.
 
 Updates are manual. Preview builds can see newer previews; stable builds only offer stable releases. To switch from stable to this preview, use the downloads above. These buttons update Agent Dock. See [projects, usage and updates](docs/projects-and-updates.md) for data storage and limits.
 
@@ -37,7 +37,7 @@ This release is unsigned, so Windows may show an unknown-publisher or SmartScree
 
 ## Android preview
 
-The [0.6 preview 4](https://github.com/YeerooXY/agentdock/releases/tag/v0.6.0-preview.4) adds projects, larger console grids, per-message usage and update buttons. It also includes the Android Send and terminal-resize fixes from preview 3. The native companion can control your PC consoles, view Results and receive optional completion alerts. Install both matching preview builds.
+The native companion can control your PC consoles, view Results and receive optional completion alerts. Android preview 5 fixes the keyboard opening while you scroll. Tap the message field to write a prompt, or the keyboard button beside the terminal controls to type directly. Touching the terminal returns to reading and keeps your message draft. Use the Windows and Android downloads above.
 
 Phone and PC connect directly on the same Wi-Fi. For access away from home, choose **Direct internet**: Dock checks your network, can forward a port on a compatible router, helps with Windows Firewall, and pairs your phone by QR code. This needs a reachable public IPv4 address. An upstream router or provider NAT may need a manual step; the wizard does not claim internet access works until a phone connects from outside. A private VPN you already use still works too.
 
@@ -68,7 +68,7 @@ The build downloads a pinned Node.js runtime, checks its SHA-256, bundles npm 12
 
 ## Use it
 
-Start with **+**, or create a project first to keep its goals and next step close at hand.
+Start with **+**, or create a project first. Give it a name, choose its folder and describe your goals. Add a plan, next step and milestones later through **Edit**.
 
 - **Move consoles** with the terminal icon in each panel header. A frozen copy of the terminal follows your pointer while other panels slide into place. On release, the copy expands into its destination. Drop on an empty slot to move, or an occupied slot to swap. Processes, output, names and saved conversations stay with their consoles. With the icon focused, **Alt+1–9** moves it by keyboard.
 - **Resize consoles** by dragging an edge or corner. It snaps to your grid, which starts at 3×3, including 3×1 and 2×2 panels. Other panels move to make room. A pink-blue grid preview, active edge and live size label show the new footprint. An occupied layout turns red. Escape cancels; an impossible size leaves the saved layout intact. Focus a resize handle and use arrow keys to move that edge by one cell. Sizes are saved with your workspace. Narrow browser previews stack panels for readability.
