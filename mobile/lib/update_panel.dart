@@ -170,7 +170,7 @@ class _UpdatePanelState extends State<UpdatePanel> {
     children: [
       const Text(
         'Updates',
-        style: TextStyle(fontSize: 23, color: Color(0xffe9a0d4)),
+        style: TextStyle(fontSize: 18, color: Color(0xff9cbfff)),
       ),
       if (version.isNotEmpty)
         Padding(

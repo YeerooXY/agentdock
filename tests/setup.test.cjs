@@ -13,6 +13,7 @@ test('fresh installs choose an available console; existing and unfinished setups
     const settings = initialSettings({}, folder, capabilities);
     assert.equal(settings.setupComplete, false); assert.equal(settings.consoleDefaults.provider, provider);
     assert.equal(settings.keepAwakeWhileWorking, true);
+    assert.equal(settings.autoSaveResults, true);
   }
   const existing = { consoleDefaults: { provider: 'custom', cwd: folder, command: 'my-agent' }, agentPermissions: 'unrestricted', slotNames: { 4: 'Trader' }, vimControls: true };
   const migrated = initialSettings(existing, 'unused', {});
@@ -20,6 +21,8 @@ test('fresh installs choose an available console; existing and unfinished setups
   assert.equal(migrated.consoleDefaults.cwd, folder); assert.equal(migrated.agentPermissions, 'unrestricted');
   assert.equal(migrated.vimControls, true); assert.equal(migrated.slotNames[4], 'Trader');
   assert.equal(migrated.keepAwakeWhileWorking, true);
+  assert.equal(migrated.autoSaveResults, true);
+  assert.equal(initialSettings({ ...existing, autoSaveResults: false }, folder, {}).autoSaveResults, false);
   assert.equal(initialSettings({ ...existing, keepAwakeWhileWorking: false }, folder, {}).keepAwakeWhileWorking, false);
   assert.equal(initialSettings({ ...existing, setupComplete: false }, folder, {}).setupComplete, false);
 });

@@ -47,3 +47,46 @@ test('concurrent consoles mark folder attribution as overlapping; idle files do 
   assert.ok(f.results.items.every(x => f.results.preview(x.id).diff.attribution === 'overlapping-folder-activity'));
   const count = f.results.items.length; await f.turns.begin('a'); await f.turns.finish('a'); assert.equal(f.results.items.length, count);
 });
+
+test('disabled auto-save skips file capture but keeps explicitly saved files and turn grouping', async t => {
+  const f = fixture(t); f.turns.setEnabled(false);
+  const finished = []; f.turns.on('finished', event => finished.push(event));
+  const id = await f.turns.begin('a');
+  assert.equal(f.turns.active.get('a').baseline, null);
+  assert.equal(f.turns.active.get('a').capture, false);
+  f.write('new.js', 'not automatically captured');
+  f.results.add({ title: 'Requested report', text: 'A manually saved report' }, f.turns.context('a'));
+  await f.turns.finish('a');
+  assert.equal(f.results.items.length, 1);
+  assert.equal(f.results.items[0].title, 'Requested report');
+  assert.equal(f.results.items[0].groupId, id);
+  assert.equal(f.turns.active.size, 0);
+  assert.deepEqual(finished, [{ owner: 'a', id }]);
+});
+
+test('turning auto-save off discards current captures; enabling starts again on the next turn', async t => {
+  const f = fixture(t); f.write('app.js', 'original');
+  await f.turns.begin('a');
+  assert.ok(f.turns.active.get('a').baseline);
+  f.turns.setEnabled(false);
+  assert.equal(f.turns.active.get('a').baseline, undefined);
+  f.write('app.js', 'changed while off');
+  f.turns.setEnabled(true);
+  await f.turns.finish('a');
+  assert.equal(f.results.items.length, 0);
+  await f.turns.begin('a'); f.write('app.js', 'changed after re-enabling');
+  await f.turns.finish('a');
+  assert.equal(f.results.items.length, 1);
+  const patch = f.results.preview(f.results.items[0].id).diff.changes[0].patch;
+  assert.ok(patch.includes('-changed while off'));
+  assert.ok(patch.includes('+changed after re-enabling'));
+});
+
+test('disabled auto-save never reads even an unavailable project folder', async t => {
+  const f = fixture(t); f.turns.setEnabled(false);
+  f.sessions.get('a').cwd = path.join(f.root, 'not-present');
+  await f.turns.begin('a');
+  assert.equal(f.turns.active.get('a').error, '');
+  await f.turns.finish('a');
+  assert.equal(f.results.items.length, 0);
+});

@@ -170,7 +170,8 @@ class SharedHub {
       const turnId = owner ? await this.workbench?.turns?.begin(owner) : null;
       const session = this.workbench?.turns?.session(owner);
       this.workbench?.projects?.touch(session?.projectId);
-      return textResult(this.summary() + (this.workbench?.projects?.summary(session?.projectId) || '') + (turnId ? `\n\nCurrent turn: ${turnId}. Saved images, tests and code changes are grouped together. Call dock/notify with kind ready when finished, and tell the user to open Results.` : ''));
+      const capture = this.workbench?.turns?.active.get(owner)?.capture !== false;
+      return textResult(this.summary() + (this.workbench?.projects?.summary(session?.projectId) || '') + (turnId ? `\n\nCurrent turn: ${turnId}. ${capture ? 'Saved images, tests and code changes are grouped together.' : 'Automatic Results capture is off for this turn. Only explicitly saved files are added; no automatic diff or image capture.'} Call dock/notify with kind ready when finished${capture ? ', and tell the user to open Results' : ''}.` : ''));
     }
     if (name === 'dock_tools') return textResult(JSON.stringify(await this.list(args.connection)));
     if (name !== 'dock_call' || typeof args.tool !== 'string') throw new Error('Unknown shared tool.');

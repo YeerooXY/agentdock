@@ -39,7 +39,7 @@ class Workbench {
     const context = this.turns?.context(owner) || { project: session?.cwd || this.getProject(), sessionId: session?.id || null, consoleKey: session?.consoleKey || session?.id || null, consoleName: session?.name || '' };
     switch (name) {
       case 'dock/project_progress': return this.projects.progress(session?.projectId, args);
-      case 'dock/start_turn': return { turnId: await this.turns?.begin(owner) };
+      case 'dock/start_turn': return { turnId: await this.turns?.begin(owner), autoCapture: this.turns?.active.get(owner)?.capture === true };
       case 'dock/finish_turn': return { turnId: await this.turns?.finish(owner) };
       case 'dock/setup_status': return this.setup.status();
       case 'dock/prepare_setup': {

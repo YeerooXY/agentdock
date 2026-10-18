@@ -4,13 +4,13 @@ import 'package:flutter/material.dart';
 import 'package:xterm/xterm.dart';
 
 import 'dock_client.dart';
+import 'dock_style.dart';
 import 'pair_page.dart';
 import 'results_page.dart';
 import 'settings_page.dart';
 
-const blue = Color(0xff9cbfff),
-    pink = Color(0xffee9fd7),
-    ink = Color(0xff030407);
+export 'dock_style.dart' show blue, pink, ink;
+
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
   runApp(DockApp(client: DockClient()..restore()));
@@ -38,9 +38,29 @@ class DockApp extends StatelessWidget {
         filled: true,
         fillColor: const Color(0xff11131e),
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide(color: blue.withValues(alpha: .55)),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: pink, width: 1.5),
+        ),
       ),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(minimumSize: const Size(48, 48)),
+      ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          minimumSize: const Size(48, 48),
+          side: BorderSide(color: blue.withValues(alpha: .55)),
+        ),
+      ),
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(minimumSize: const Size(48, 48)),
+      ),
+      iconButtonTheme: IconButtonThemeData(
+        style: IconButton.styleFrom(minimumSize: const Size(48, 48)),
       ),
       navigationBarTheme: const NavigationBarThemeData(
         backgroundColor: Color(0xff090a11),
@@ -247,7 +267,7 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
                 ? (current?['name'] as String? ?? 'Consoles')
                 : page == 1
                 ? 'Results'
-                : 'Usage & settings',
+                : 'Usage',
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(color: pink, fontWeight: FontWeight.w600),
           ),
@@ -314,7 +334,7 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
               label: 'Results',
             ),
             const NavigationDestination(
-              icon: Icon(Icons.tune, color: blue),
+              icon: Icon(Icons.bar_chart_rounded, color: blue),
               label: 'Usage',
             ),
           ],
@@ -366,53 +386,51 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
           ),
         ),
         Expanded(
-          child: Container(
-            margin: const EdgeInsets.symmetric(horizontal: 8),
-            decoration: BoxDecoration(
-              color: Colors.black,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(
-                color: session['state'] == 'ready'
-                    ? const Color(0xff4c9b70)
-                    : const Color(0xff6c5494),
-              ),
-            ),
-            clipBehavior: Clip.antiAlias,
-            child: view == null
-                ? const Center(child: CircularProgressIndicator())
-                : LayoutBuilder(
-                    builder: (ctx, size) => Listener(
-                      onPointerDown: (_) {
-                        stopTerminalTyping();
-                        composerFocus.unfocus();
-                        if (['ready', 'attention'].contains(session['state'])) {
-                          run(c.acknowledge);
-                        }
-                      },
-                      child: SingleChildScrollView(
-                        key: ValueKey((c.selected, view.cols)),
-                        scrollDirection: Axis.horizontal,
-                        child: SizedBox(
-                          width: max(size.maxWidth, view.cols * 7.3 + 16),
-                          height: size.maxHeight,
-                          child: TerminalView(
-                            view.terminal,
-                            key: ValueKey((c.selected, view.terminal)),
-                            autoResize: false,
-                            readOnly: !c.connected,
-                            focusNode: terminalFocus,
-                            deleteDetection: true,
-                            textStyle: const TerminalStyle(
-                              fontSize: 12,
-                              height: 1.3,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: DockFrame(
+              radius: 14,
+              background: Colors.black,
+              ready: session['state'] == 'ready',
+              child: view == null
+                  ? const Center(child: CircularProgressIndicator())
+                  : LayoutBuilder(
+                      builder: (ctx, size) => Listener(
+                        onPointerDown: (_) {
+                          stopTerminalTyping();
+                          composerFocus.unfocus();
+                          if ([
+                            'ready',
+                            'attention',
+                          ].contains(session['state'])) {
+                            run(c.acknowledge);
+                          }
+                        },
+                        child: SingleChildScrollView(
+                          key: ValueKey((c.selected, view.cols)),
+                          scrollDirection: Axis.horizontal,
+                          child: SizedBox(
+                            width: max(size.maxWidth, view.cols * 7.3 + 16),
+                            height: size.maxHeight,
+                            child: TerminalView(
+                              view.terminal,
+                              key: ValueKey((c.selected, view.terminal)),
+                              autoResize: false,
+                              readOnly: !c.connected,
+                              focusNode: terminalFocus,
+                              deleteDetection: true,
+                              textStyle: const TerminalStyle(
+                                fontSize: 12,
+                                height: 1.3,
+                              ),
+                              padding: const EdgeInsets.all(8),
+                              theme: terminalTheme,
                             ),
-                            padding: const EdgeInsets.all(8),
-                            theme: terminalTheme,
                           ),
                         ),
                       ),
                     ),
-                  ),
+            ),
           ),
         ),
         Row(
@@ -478,16 +496,9 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
                 ),
               ),
               const SizedBox(width: 8),
-              IconButton.filled(
+              DockSendButton(
                 onPressed: c.connected && !sending ? send : null,
-                icon: sending
-                    ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.arrow_upward),
-                tooltip: 'Send to console',
+                sending: sending,
               ),
             ],
           ),

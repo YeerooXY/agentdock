@@ -259,6 +259,9 @@ function renderSettings() {
 function renderStartupSettings() {
   return `<section class="surface"><h2>Startup</h2><label class="toggle-row"><span><strong>Restore previous consoles</strong><small>Reopen your panels and folders. Saved agent chats resume; shells and custom commands restart.</small></span><input type="checkbox" data-setting="restoreConsoles" ${state.settings.restoreConsoles ? 'checked' : ''}></label><p id="workspace-error" class="form-error" role="alert">${escape(state.workspaceError || '')}</p></section>`;
 }
+function renderResultsSettings() {
+  return `<section class="surface"><h2>Results</h2><label class="toggle-row"><span><strong>Automatically save results</strong><small>Capture code changes and new images after each turn.</small></span><input type="checkbox" data-setting="autoSaveResults" ${state.settings.autoSaveResults !== false ? 'checked' : ''}></label><p class="field-hint">Turning this off stops current captures. Files you add or ask an agent to save still appear here.</p></section>`;
+}
 function renderAppearanceSettings() {
   return `<section class="surface"><h2>Appearance</h2><label>Accent style<select data-setting="accentStyle">${[['pink-blue', 'Pink + blue'], ['blue', 'Blue'], ['pink', 'Pink']].map(([value, label]) => `<option value="${value}" ${(state.settings.accentStyle || 'pink-blue') === value ? 'selected' : ''}>${label}</option>`).join('')}</select></label><label class="toggle-row"><span><strong>Blink cursor</strong><small>Off keeps the console cursor steady.</small></span><input type="checkbox" data-setting="cursorBlink" ${state.settings.cursorBlink ? 'checked' : ''}></label></section>`;
 }
@@ -300,7 +303,7 @@ function renderPage() {
   if (page === 'settings') $('.settings-layout').insertAdjacentHTML('afterbegin', updates?.render() || '');
   if (page === 'usage') $('#content').insertAdjacentHTML('beforeend', messageUsageTable());
   if (page === 'usage' && state.workbench?.conceptUsage?.length) $('#content').insertAdjacentHTML('beforeend', `<section class="surface"><h2>Meshy concepts</h2><p class="field-hint">Credits reported for concepts created here. Separate from API dollar estimates.</p>${state.workbench.conceptUsage.map(x => `<div class="connection-row"><span>${new Date(x.at).toLocaleString()}</span><span>${escape(x.state)}</span><strong>${x.credits == null ? 'Credits unavailable' : number(x.credits) + ' credits'}</strong></div>`).join('')}</section>`);
-  if (page === 'settings') { $('.settings-layout').insertAdjacentHTML('afterbegin', (phone?.renderSettings() || '') + renderGridSettings() + renderAppearanceSettings() + renderKeyboardSettings() + renderStartupSettings() + renderLaunchDefaults()); launchDefaultsFields(); }
+  if (page === 'settings') { $('.settings-layout').insertAdjacentHTML('afterbegin', (phone?.renderSettings() || '') + renderGridSettings() + renderAppearanceSettings() + renderKeyboardSettings() + renderResultsSettings() + renderStartupSettings() + renderLaunchDefaults()); launchDefaultsFields(); }
   if (page === 'api') {
     const form = $('#api-form');
     for (const key of ['model', 'prompt', 'maxOutput', 'projectId']) form.elements[key].value = apiDraft[key];

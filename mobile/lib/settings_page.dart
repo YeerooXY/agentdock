@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 
+import 'account_usage.dart';
 import 'dock_client.dart';
+import 'dock_style.dart';
 import 'help_link.dart';
 import 'update_panel.dart';
-import 'main.dart' show blue, pink, formatBytes;
+import 'main.dart' show formatBytes;
 
 class SettingsPage extends StatefulWidget {
   final DockClient client;
@@ -14,157 +16,307 @@ class SettingsPage extends StatefulWidget {
 
 class _SettingsPageState extends State<SettingsPage> {
   Map<String, dynamic>? usage;
-  String message = '';
-  bool busy = false;
+  String usageError = '', message = '';
+  bool loading = false, busy = false;
+  bool wasConnected = false, refreshPending = false;
+
   @override
   void initState() {
     super.initState();
-    action(() async {
-      usage = await widget.client.request('usage') as Map<String, dynamic>;
-    });
+    wasConnected = widget.client.connected;
+    widget.client.addListener(connectionChanged);
+    loadUsage();
   }
 
-  Future<void> action(Future<void> Function() fn) async {
-    if (busy) return;
-    setState(() => busy = true);
+  void connectionChanged() {
+    final connected = widget.client.connected;
+    if (connected && !wasConnected) {
+      if (loading) {
+        refreshPending = true;
+      } else {
+        loadUsage();
+      }
+    }
+    wasConnected = connected;
+  }
+
+  @override
+  void dispose() {
+    widget.client.removeListener(connectionChanged);
+    super.dispose();
+  }
+
+  Future<void> loadUsage() async {
+    if (loading) return;
+    setState(() {
+      loading = true;
+      usageError = '';
+    });
     try {
-      await fn();
+      final next = await widget.client.request('usage') as Map<String, dynamic>;
+      if (mounted) setState(() => usage = next);
+    } catch (_) {
+      if (mounted) {
+        setState(
+          () => usageError = widget.client.connected
+              ? 'Could not refresh usage. Try again.'
+              : 'Connect to your PC to refresh usage.',
+        );
+      }
+    } finally {
+      if (mounted) setState(() => loading = false);
+      if (mounted && refreshPending && widget.client.connected) {
+        refreshPending = false;
+        loadUsage();
+      }
+    }
+  }
+
+  Future<void> action(Future<String?> Function() fn) async {
+    if (busy) return;
+    setState(() {
+      busy = true;
+      message = '';
+    });
+    try {
+      final next = await fn();
+      if (mounted) setState(() => message = next ?? '');
     } catch (e) {
-      message = e.toString().replaceFirst('Bad state: ', '');
+      if (mounted) {
+        setState(() => message = e.toString().replaceFirst('Bad state: ', ''));
+      }
     } finally {
       if (mounted) setState(() => busy = false);
     }
   }
 
+  Widget panel(Widget child) => Padding(
+    padding: const EdgeInsets.only(top: 14),
+    child: DockFrame(
+      child: Padding(padding: const EdgeInsets.all(18), child: child),
+    ),
+  );
+
   @override
   Widget build(BuildContext context) {
     final c = widget.client;
-    return ListView(
-      padding: const EdgeInsets.all(20),
-      children: [
-        const UpdatePanel(),
-        const Divider(height: 34),
-        const Text('Mobile data', style: TextStyle(fontSize: 23, color: pink)),
-        const SizedBox(height: 12),
-        Text(
-          '${formatBytes(c.received + c.sent)} this app session',
-          style: const TextStyle(fontSize: 19, color: blue),
-        ),
-        const Text(
-          'Compressed app traffic. VPN, TLS and push overhead are not included.',
-          style: TextStyle(color: Color(0xffb3bad0), height: 1.5),
-        ),
-        SwitchListTile(
-          contentPadding: EdgeInsets.zero,
-          title: const Text('Data saver'),
-          subtitle: const Text(
-            'Batch terminal updates. Images load only when opened.',
+    final limits = (usage?['limits'] is List ? usage!['limits'] as List : [])
+        .whereType<Map>();
+    final summary = usage?['summary'];
+    return RefreshIndicator(
+      onRefresh: loadUsage,
+      color: pink,
+      child: ListView(
+        key: const PageStorageKey('mobile-usage'),
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+        children: [
+          Row(
+            children: [
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Account usage',
+                      style: TextStyle(fontSize: 23, color: pink),
+                    ),
+                    Text(
+                      'Shared across your consoles',
+                      style: TextStyle(color: muted, fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                tooltip: 'Refresh usage',
+                onPressed: loading || !c.connected ? null : loadUsage,
+                icon: loading
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          semanticsLabel: 'Loading account usage',
+                        ),
+                      )
+                    : const Icon(Icons.refresh, color: blue),
+              ),
+            ],
           ),
-          value: c.dataSaver,
-          onChanged: (value) => action(() => c.setSaver(value)),
-        ),
-        const Divider(height: 34),
-        const Text('Cloud alerts', style: TextStyle(fontSize: 23, color: pink)),
-        const SizedBox(height: 10),
-        const Text(
-          'Configure your own Firebase project in PC setup → Alerts. Google Play services are required.',
-        ),
-        const SizedBox(height: 14),
-        FilledButton.icon(
-          onPressed: busy
-              ? null
-              : () => action(() async {
-                  await c.enableAlerts();
-                  message = 'Alerts enabled. Send a test to check delivery.';
-                }),
-          icon: const Icon(Icons.notifications_outlined),
-          label: const Text('Enable alerts'),
-        ),
-        TextButton(
-          onPressed: busy || !c.connected
-              ? null
-              : () => action(() async {
-                  await c.request('push.test');
-                  message = 'Test alert sent. Put Dock in the background to check it.';
-                }),
-          child: const Text('Send test alert'),
-        ),
-        if (message.isNotEmpty)
-          Text(message, style: const TextStyle(color: pink)),
-        const Divider(height: 34),
-        const Text(
-          'Account usage',
-          style: TextStyle(fontSize: 23, color: pink),
-        ),
-        const SizedBox(height: 12),
-        ...usageViews(),
-        const Divider(height: 34),
-        Text(
-          c.pairing?['name'] as String? ?? 'Your PC',
-          style: const TextStyle(color: blue, fontSize: 20),
-        ),
-        const SizedBox(height: 12),
-        OutlinedButton(
-          onPressed: () => action(c.forget),
-          child: const Text('Forget this PC'),
-        ),
-        const SizedBox(height: 12),
-        const Text(
-          'Your terminals and Results stay on the PC. Removing a phone in PC setup revokes its access.',
-          style: TextStyle(color: Color(0xffb3bad0), height: 1.6),
-        ),
-        const HelpLink(),
-        TextButton(
-          onPressed: () => showLicensePage(
-            context: context,
-            applicationName: 'Agent Dock',
-            applicationVersion: '0.6 preview',
+          if (usageError.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 16),
+              child: Semantics(
+                liveRegion: true,
+                child: Text(
+                  '$usageError${usage == null ? '' : ' Showing previous data.'}',
+                  style: const TextStyle(color: pink),
+                ),
+              ),
+            ),
+          if (!loading && usage != null && limits.isEmpty)
+            panel(
+              const Text(
+                'No account limits reported yet. Open your agent on the PC, then refresh.',
+                style: TextStyle(color: muted, height: 1.5),
+              ),
+            ),
+          for (final limit in limits)
+            Padding(
+              padding: const EdgeInsets.only(top: 14),
+              child: AccountUsageCard(account: limit),
+            ),
+          if (summary is Map)
+            Padding(
+              padding: const EdgeInsets.only(top: 14),
+              child: ApiUsageCard(summary: summary),
+            ),
+          const SizedBox(height: 28),
+          const Text(
+            'App & connection',
+            style: TextStyle(color: pink, fontSize: 20),
           ),
-          child: const Text('Open-source licenses'),
-        ),
-      ],
+          panel(const UpdatePanel()),
+          panel(
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Mobile data',
+                  style: TextStyle(fontSize: 18, color: blue),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '${formatBytes(c.received + c.sent)} this app session',
+                  style: const TextStyle(fontSize: 22, color: pink),
+                ),
+                const Text(
+                  'App traffic only. Excludes updates, TLS, VPN and push overhead.',
+                  style: TextStyle(color: muted, fontSize: 12, height: 1.5),
+                ),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Data saver'),
+                  subtitle: const Text(
+                    'Batch terminal updates. Load images on demand.',
+                  ),
+                  value: c.dataSaver,
+                  onChanged: busy
+                      ? null
+                      : (value) => action(() async {
+                          await c.setSaver(value);
+                          return null;
+                        }),
+                ),
+              ],
+            ),
+          ),
+          panel(
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Notifications',
+                  style: TextStyle(fontSize: 18, color: blue),
+                ),
+                const SizedBox(height: 10),
+                const Text(
+                  'Console badges work while Dock is open. Background alerts currently use optional Firebase setup on your PC.',
+                  style: TextStyle(color: muted, height: 1.5),
+                ),
+                const SizedBox(height: 12),
+                ExpansionTile(
+                  key: const PageStorageKey('firebase-alerts'),
+                  tilePadding: EdgeInsets.zero,
+                  childrenPadding: const EdgeInsets.only(top: 8),
+                  title: const Text(
+                    'Firebase alerts',
+                    style: TextStyle(color: pink),
+                  ),
+                  subtitle: Text(c.alerts),
+                  children: [
+                    const Text(
+                      'PC setup → Alerts. Google Play services are required.',
+                      style: TextStyle(color: muted, fontSize: 12),
+                    ),
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        FilledButton.icon(
+                          onPressed: busy || !c.connected
+                              ? null
+                              : () => action(() async {
+                                  await c.enableAlerts();
+                                  return 'Alerts enabled. Send a test to check delivery.';
+                                }),
+                          icon: const Icon(Icons.notifications_outlined),
+                          label: const Text('Enable alerts'),
+                        ),
+                        TextButton(
+                          onPressed: busy || !c.connected
+                              ? null
+                              : () => action(() async {
+                                  await c.request('push.test');
+                                  return 'Test alert sent. Put Dock in the background to check it.';
+                                }),
+                          child: const Text('Send test alert'),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          if (message.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 12),
+              child: Semantics(
+                liveRegion: true,
+                child: Text(message, style: const TextStyle(color: pink)),
+              ),
+            ),
+          panel(
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  c.pairing?['name'] as String? ?? 'Your PC',
+                  style: const TextStyle(color: blue, fontSize: 18),
+                ),
+                const SizedBox(height: 12),
+                OutlinedButton(
+                  onPressed: busy
+                      ? null
+                      : () => action(() async {
+                          await c.forget();
+                          return null;
+                        }),
+                  child: const Text('Forget this PC'),
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'Your terminals and Results stay on the PC. Removing a phone in PC setup revokes its access.',
+                  style: TextStyle(color: muted, fontSize: 12, height: 1.5),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          const HelpLink(),
+          TextButton(
+            onPressed: () => showLicensePage(
+              context: context,
+              applicationName: 'Agent Dock',
+              applicationVersion: '0.6 preview',
+            ),
+            child: const Text('Open-source licenses'),
+          ),
+        ],
+      ),
     );
-  }
-
-  List<Widget> usageViews() {
-    final limits = usage?['limits'] as List? ?? [],
-        summary = usage?['summary'] as Map<String, dynamic>?;
-    return [
-      if (limits.isEmpty) const Text('No account limits available yet.'),
-      for (final limit in limits) ...[
-        Text(
-          '${limit['name'] ?? limit['provider']}',
-          style: const TextStyle(color: blue),
-        ),
-        Text(
-          limit['observedAt'] == null
-              ? 'Last update unknown'
-              : '${DateTime.now().millisecondsSinceEpoch - (limit['observedAt'] as num) > 600000 ? 'Stale · ' : ''}Updated ${DateTime.fromMillisecondsSinceEpoch((limit['observedAt'] as num).toInt()).toLocal().toString().substring(0, 16)}',
-          style: const TextStyle(fontSize: 12),
-        ),
-        for (final window in limit['windows'] as List? ?? [])
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            title: Text(
-              window['minutes'] == 300
-                  ? '5 hours'
-                  : window['minutes'] == 10080
-                  ? 'Weekly'
-                  : window['minutes'] == null
-                  ? 'Account window'
-                  : '${window['minutes']} minutes',
-            ),
-            subtitle: Text(
-              '${window['usedPercent'] ?? 'Unknown'}% used${window['resetsAt'] == null ? '' : ' · Resets ${DateTime.fromMillisecondsSinceEpoch((window['resetsAt'] as num).toInt()).toLocal().toString().substring(0, 16)}'}',
-            ),
-          ),
-        const SizedBox(height: 12),
-      ],
-      if (summary != null)
-        Text(
-          'Known API estimate: ${summary['cost'] == null ? 'Unknown' : '\$${(summary['cost'] as num).toStringAsFixed(4)}'} · last 30 days\n${summary['unpriced'] ?? 0} unpriced requests · ${summary['unknownUsage'] ?? 0} with unknown usage\nOnly requests made through Dock are included.',
-          style: const TextStyle(height: 1.7, fontSize: 12),
-        ),
-    ];
   }
 }

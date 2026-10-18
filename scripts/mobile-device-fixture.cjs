@@ -7,6 +7,16 @@ const root = path.resolve(__dirname, '..'), out = path.join(root, 'artifacts', '
 fs.mkdirSync(out, { recursive: true });
 const profile = fs.mkdtempSync(path.join(out, 'profile-')), project = path.join(profile, 'project'); fs.mkdirSync(project);
 fs.writeFileSync(path.join(profile, 'settings.json'), JSON.stringify({ setupComplete: true, restoreConsoles: false, consoleDefaults: { cwd: project, provider: 'shell', name: 'Trader', command: '' } }));
+// Synthetic account-wide readings, only inside this isolated test profile.
+if (process.argv.includes('--usage')) {
+  const now = Date.now();
+  fs.writeFileSync(path.join(profile, 'limits.json'), JSON.stringify([
+    { id: 'codex:fixture', provider: 'codex', name: 'Codex · Sample account', observedAt: now,
+      windows: [{ minutes: 300, usedPercent: 38, resetsAt: now + 2 * 3600000 }, { minutes: 10080, usedPercent: 72, resetsAt: now + 3 * 86400000 }] },
+    { id: 'claude:fixture', provider: 'claude', name: 'Claude Code · Sample account', observedAt: now - 21 * 60000,
+      windows: [{ minutes: 300, usedPercent: 91, resetsAt: now + 3600000 }, { minutes: 10080, usedPercent: null, resetsAt: null }] },
+  ]));
+}
 const results = new Results(profile);
 results.add({ text: JSON.stringify({ version: 1, notes: ['Integration fixture — no real project was changed.'], changes: [{ file: 'src/page.js', type: 'modified', patch: '--- src/page.js\n+++ src/page.js\n@@ -1 +1 @@\n-const status = "waiting";\n+const status = "ready";' }] }), ext: '.json', title: '1 changed file', kind: 'code', groupId: 'mobile-turn' }, { project, consoleName: 'Trader', consoleKey: 'mobile-fixture' });
 results.add({ file: path.join(root, 'assets', 'icon.png'), title: 'Page concept', kind: 'concept', groupId: 'mobile-turn' }, { project, consoleName: 'Trader', consoleKey: 'mobile-fixture', trusted: true });

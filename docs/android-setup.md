@@ -6,7 +6,7 @@ This is an Android preview. iPhone support comes later. The owner has connected 
 
 ## Install and pair
 
-1. Use the [Windows and Android downloads](../README.md#downloads). Android preview 5 works with Windows preview 4 or 5. Most phones use the **arm64** APK. Android 7 or later is required. The APK uses a development signing key; a future store build may require uninstalling this preview first.
+1. Use the [Windows and Android downloads](../README.md#downloads). Android preview 6 works with Windows preview 4 or later. Most phones use the **arm64** APK. Android 7 or later is required. The APK uses a development signing key; a future store build may require uninstalling this preview first.
 2. Put the PC and phone on the same Wi-Fi or local network. **No VPN app, extra account or internet server is needed** for this connection.
 3. On the PC, open **Settings → Android → Connect a phone**. First-time setup also offers **Connect my Android phone next**.
 4. Select the PC's Wi-Fi or Ethernet address and enable the connection. Use **Refresh addresses** if you just changed networks. The **This PC only** address cannot be reached by your phone.
@@ -21,7 +21,9 @@ A paired phone can type commands using the console's existing permissions. This 
 
 ## Updates
 
-Android preview 5 fixes the keyboard opening during terminal scrolling. Tap **Command or message** to write a prompt, or the keyboard button beside the terminal controls for direct input. Touching the terminal closes the keyboard without deleting your draft. This update does not require a new Windows installer.
+Android preview 6 puts account usage first, with separate pink-blue bars for each reported limit, reset times and pull-to-refresh. Unknown and stale readings remain labeled. API estimates stay separate from subscription limits. The console's Send button and borders also follow the pink-blue theme.
+
+The scrolling fix from preview 5 is included. Tap **Command or message** to write a prompt, or the keyboard button beside the terminal controls for direct input. Touching the terminal closes the keyboard without deleting your draft. The mobile UI update works with Windows preview 4 or later; the new **Automatically save results** setting needs Windows preview 6.
 
 In the phone app, open **Usage → Updates → Check for updates**. **Download update** opens the matching APK download in your browser. Open that file to install it. Android may ask you to allow installs from your browser. The existing pairing stays saved when upgrading with the same signing key; do not uninstall first.
 
@@ -71,6 +73,17 @@ The phone talks to **your PC** over your own connection. Agent Dock operates no 
 
 Firebase Cloud Messaging is currently a no-cost product. This setup does not deploy Cloud Run, Functions, a database, or storage. Google project limits and service terms still apply. Do not enable unrelated paid services just to configure alerts. Mobile carrier data and your chosen AI subscriptions/API calls remain your costs. [Firebase pricing](https://firebase.google.com/pricing), [FCM HTTP v1 setup](https://firebase.google.com/docs/cloud-messaging/send/v1-api).
 
+### Can alerts work without Firebase?
+
+Yes. Firebase is the background delivery option implemented in this preview, not a requirement for Android notifications. Console badges already work over your private connection while Dock is open.
+
+Two alternatives could be added:
+
+- A user-enabled direct connection with an ongoing Android notification. This avoids a push server, but uses more background connection time. Doze can still suspend network access; a foreground service alone does not guarantee immediate alerts. Battery settings and physical-device testing matter. [Android background restrictions](https://developer.android.com/training/monitoring-device-state/doze-standby).
+- UnifiedPush, using a distributor app such as ntfy and either its public server or your own server. This avoids creating a Firebase project, but still needs a delivery service and app integration. [UnifiedPush distributors](https://unifiedpush.org/users/distributors/).
+
+Neither alternative is implemented yet. Installing ntfy alone will not connect it to Dock. No shared author-operated push account or server is required by the current app.
+
 ## Data use and privacy
 
 - Only the selected terminal streams. Updates are compressed and batched, and reconnects request missing output or a bounded screen snapshot. Commands are never resent automatically after a disconnect.
@@ -90,6 +103,8 @@ The author does not hold your private connection or project data. There is no au
 ## Code changes in Results
 
 Dock takes a folder snapshot at the start of a tracked task and saves a diff when it finishes. Images, test reports and code changes share the turn's batch and console name. One unread turn counts as one badge, even with several pictures.
+
+In Windows preview 6, **Settings → Results → Automatically save results** controls automatic code diffs and image copies. Turning it off discards unfinished captures immediately. Turning it back on resumes capture with the next turn. Existing Results and explicitly saved/imported files remain available. This is a global PC setting, so it also controls automatic Results viewed on the phone.
 
 Claude's prompt/stop hooks and Dock's API requests start/end tracking automatically. For Codex and other MCP agents, call **`dock_context` before editing** on each new task. Finish with **`dock/notify`** (`kind: ready`) or **`dock/finish_turn`**; supported completion hooks also finish it. Shell commands and agents that skip the start call cannot be reconstructed reliably afterward.
 

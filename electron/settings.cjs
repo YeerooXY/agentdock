@@ -2,7 +2,7 @@
 
 function initialSettings(saved, folder, capabilities) {
   const defaults = {
-    hudAlwaysOnTop: false, notifications: true, restoreConsoles: true, keepAwakeWhileWorking: true,
+    hudAlwaysOnTop: false, notifications: true, restoreConsoles: true, keepAwakeWhileWorking: true, autoSaveResults: true,
     agentPermissions: 'default', sidebarCollapsed: false, vimControls: false, accentStyle: 'pink-blue', cursorBlink: false,
     slotNames: {}, rates: {}, grid: { columns: 3, rows: 3 },
     consoleDefaults: { provider: capabilities.codex ? 'codex' : capabilities.claude ? 'claude' : 'shell', cwd: folder, name: '', command: '' }

@@ -71,11 +71,18 @@ async function snapshot(project, { maxFiles = 10000, maxBytes = 32 * 1024 * 1024
   return { root, files, notes, complete, git };
 }
 class Turns extends EventEmitter {
-  constructor(results, { getSession, getSecrets = () => [] } = {}) {
+  constructor(results, { getSession, getSecrets = () => [], enabled = true } = {}) {
     super(); this.results = results; this.getSession = getSession; this.getSecrets = getSecrets;
+    this.enabled = enabled;
     this.active = new Map(); this.latest = new Map(); this.queues = new Map(); this.virtual = new Map();
   }
   session(owner) { return this.getSession?.(owner) || this.virtual.get(owner); }
+  setEnabled(enabled) {
+    this.enabled = enabled;
+    if (!enabled) for (const turn of this.active.values()) {
+      turn.capture = false; delete turn.baseline; turn.error = '';
+    }
+  }
   context(owner) {
     const s = this.session(owner); if (!s) return null;
     const turn = this.active.get(owner) || this.latest.get(owner);
@@ -88,14 +95,19 @@ class Turns extends EventEmitter {
   begin(owner) { return this.serial(owner, async () => {
     if (this.active.has(owner)) return this.active.get(owner).id;
     const session = this.session(owner); if (!session?.alive) return null;
-    const turn = { id: randomUUID(), startedAt: Date.now(), consoleName: session.name, overlap: false, baseline: null, error: '' };
+    const turn = { id: randomUUID(), startedAt: Date.now(), consoleName: session.name, overlap: false, baseline: null, error: '', capture: this.enabled };
     this.active.set(owner, turn);
     for (const [other, current] of this.active) {
       if (other === owner) continue;
       const a = path.resolve(this.session(other)?.cwd || ''), b = path.resolve(session.cwd);
       if (a === b || inside(a, b) || inside(b, a)) current.overlap = turn.overlap = true;
     }
-    try { turn.baseline = await snapshot(session.cwd); turn.git = turn.baseline.git; } catch { turn.error = 'The project baseline could not be read.'; }
+    if (turn.capture) {
+      try {
+        const baseline = await snapshot(session.cwd);
+        if (turn.capture && this.enabled) { turn.baseline = baseline; turn.git = baseline.git; }
+      } catch { if (turn.capture && this.enabled) turn.error = 'The project baseline could not be read.'; }
+    }
     this.emit('started', { owner, id: turn.id }); return turn.id;
   }); }
   finish(owner, status = 'needs-review') { return this.serial(owner, async () => {
@@ -104,16 +116,20 @@ class Turns extends EventEmitter {
     if (turn.error) notes.push(turn.error);
     if (turn.overlap) notes.push('Other consoles were active in this folder. Changes are a folder snapshot; authorship may overlap.');
     try {
+      if (!turn.capture || !this.enabled) return turn.id;
       if (turn.baseline) {
-        const after = await snapshot(context.project); notes.push(...after.notes);
+        const baseline = turn.baseline;
+        const after = await snapshot(context.project);
+        if (!turn.capture || !this.enabled) return turn.id;
+        notes.push(...after.notes);
         endGit = after.git;
         if (turn.git?.branch !== endGit?.branch) notes.push('The Git branch changed during this turn.');
         const redact = value => { for (const secret of this.getSecrets().filter(x => x && x.length > 5)) value = value.split(secret).join('[redacted]'); return value; };
         let imageCount = 0, patchBytes = 0;
         const diffDeadline = Date.now() + 3000;
-        for (const file of new Set([...turn.baseline.files.keys(), ...after.files.keys()])) {
-          const before = turn.baseline.files.get(file), next = after.files.get(file);
-          if (!before && !turn.baseline.complete || !next && !after.complete) continue;
+        for (const file of new Set([...baseline.files.keys(), ...after.files.keys()])) {
+          const before = baseline.files.get(file), next = after.files.get(file);
+          if (!before && !baseline.complete || !next && !after.complete) continue;
           if (before?.signature === next?.signature) continue;
           if (changes.length >= 1000) { notes.push('Only the first 1,000 changed files are listed. Review the remaining changes in your project.'); break; }
           const change = { file, type: !before ? 'added' : !next ? 'deleted' : 'modified', patch: null, omitted: before?.omitted || next?.omitted || null };
@@ -135,8 +151,8 @@ class Turns extends EventEmitter {
         this.results.add({ text: JSON.stringify(report), ext: '.json', title: `${changes.length} changed ${changes.length === 1 ? 'file' : 'files'}`, kind: 'code', status, summary: turn.overlap ? 'Overlapping console activity' : 'Changes during this turn', groupId: turn.id }, context);
       }
     } catch { this.emit('tracking-error', { owner, message: 'This turn’s code changes could not be saved.' }); }
-    finally { this.active.delete(owner); delete turn.baseline; this.latest.set(owner, turn); if (this.latest.size > 100) this.latest.delete(this.latest.keys().next().value); }
-    this.emit('finished', { owner, id: turn.id }); return turn.id;
+    finally { this.active.delete(owner); delete turn.baseline; this.latest.set(owner, turn); if (this.latest.size > 100) this.latest.delete(this.latest.keys().next().value); this.emit('finished', { owner, id: turn.id }); }
+    return turn.id;
   }); }
 }
 module.exports = { Turns, snapshot };

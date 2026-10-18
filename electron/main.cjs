@@ -182,7 +182,7 @@ app.whenReady().then(async () => {
   workPower = new WorkPower(powerSaveBlocker);
   sessions.on('changed', updatePower);
   sessions.on('message-usage', ({ session, messages }) => { try { messageUsage.record(session, messages); } catch { storageError = 'Message usage could not be saved.'; } });
-  turns = new Turns(workbench.results, { getSession: id => sessions.items.get(id), getSecrets: () => vault.list().flatMap(x => { try { return [vault.get(x.id)]; } catch { return []; } }) });
+  turns = new Turns(workbench.results, { enabled: settings.autoSaveResults !== false, getSession: id => sessions.items.get(id), getSecrets: () => vault.list().flatMap(x => { try { return [vault.get(x.id)]; } catch { return []; } }) });
   workbench.turns = turns;
   turns.on('tracking-error', ({ owner, message }) => workbench.inbox.add({ title: 'Code capture needs attention', message, sessionId: owner, kind: 'error' }));
   mobile = new MobileCompanion(root, safeStorage, { sessions, results: workbench.results, inbox: workbench.inbox, getUsage: () => ({ limits, summary: ledgerSummary(ledger || []) }), getDefaults: () => ({ ...settings.consoleDefaults, permissions: settings.agentPermissions }), getKey: id => vault.get(id), networkScript: app.isPackaged ? path.join(process.resourcesPath, 'mobile-network.ps1') : path.join(__dirname, 'mobile-network.ps1'), program: process.execPath, testMode });
@@ -422,6 +422,7 @@ app.whenReady().then(async () => {
           if (typeof payload?.notifications === 'boolean') next.notifications = payload.notifications;
           if (typeof payload?.keepAwakeWhileWorking === 'boolean') next.keepAwakeWhileWorking = payload.keepAwakeWhileWorking;
           if (typeof payload?.restoreConsoles === 'boolean') next.restoreConsoles = payload.restoreConsoles;
+          if (typeof payload?.autoSaveResults === 'boolean') next.autoSaveResults = payload.autoSaveResults;
           if (typeof payload?.sidebarCollapsed === 'boolean') next.sidebarCollapsed = payload.sidebarCollapsed;
           if (typeof payload?.vimControls === 'boolean') next.vimControls = payload.vimControls;
           if (typeof payload?.cursorBlink === 'boolean') next.cursorBlink = payload.cursorBlink;
@@ -435,7 +436,7 @@ app.whenReady().then(async () => {
             next.agentPermissions = payload.agentPermissions;
           }
           workspace.setEnabled(next.restoreConsoles);
-          persistSettings(next); if (mode === 'hud') window.setAlwaysOnTop(settings.hudAlwaysOnTop); publish(); break;
+          persistSettings(next); turns.setEnabled(settings.autoSaveResults !== false); if (mode === 'hud') window.setAlwaysOnTop(settings.hudAlwaysOnTop); publish(); break;
         }
         case 'rates.save': {
           if (!hub.config.profiles.some(x => x.id === payload?.provider)) throw new Error('Choose an API connection.');
