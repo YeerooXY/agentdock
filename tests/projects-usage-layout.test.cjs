@@ -1,6 +1,7 @@
 'use strict';
 const test = require('node:test'), assert = require('node:assert/strict'), fs = require('node:fs'), os = require('node:os'), path = require('node:path');
 const { Projects } = require('../electron/projects.cjs');
+const { Sessions } = require('../electron/sessions.cjs');
 const { cells, planOpening, planLayout, planGrid } = require('../electron/console-layout.cjs');
 const { MessageUsage, apiMessages, codexMessages, claudeMessage } = require('../electron/message-usage.cjs');
 const { runApi } = require('../electron/api-run.cjs');
@@ -25,6 +26,25 @@ test('project goals, multiple folders, progress and last activity persist; delet
   projects.commit = commit;
   projects.remove(p.id); assert.ok(fs.existsSync(sub)); assert.deepEqual(new Projects(root).list(), []);
 });
+test('linking a live chat preserves its PTY, folder, buffer and exact resume ID; invalid links leave it intact', async t => {
+  const root = temp(t), projects = new Projects(root), launches = [];
+  const p = projects.save({ name: 'Existing game', goals: 'Ship a demo', folders: [{ path: root }] });
+  const make = () => new Sessions(root, { projects, nativeCodex: () => 'codex.exe', findProgram: () => process.execPath, prepareCodexSession: async () => [], pty: {
+    spawn(executable, args) { const terminal = { onData() {}, onExit() {}, write() { assert.fail('Linking must not send terminal input'); }, kill() { assert.fail('Linking must not stop the process'); } }; launches.push({ args, terminal }); return terminal; }
+  } });
+  const sessions = make(), resumeId = '9c656179-0272-492b-9073-c56e3c091dbb';
+  const s = await sessions.create({ provider: 'codex', cwd: root, name: 'Old conversation' }, { resumeId });
+  const live = sessions.items.get(s.id); live.buffer = 'Existing output'; const before = { ...live };
+  sessions.assignProject(s.id, p.id);
+  assert.equal(launches.length, 1); assert.deepEqual(live, { ...before, projectId: p.id });
+  for (const invalid of [undefined, 42, {}, 'missing-project']) assert.throws(() => sessions.assignProject(s.id, invalid), /existing project/);
+  assert.equal(live.projectId, p.id);
+  const restored = make(); await restored.restore(sessions.savedConsoles()[0]);
+  assert.deepEqual(launches[1].args.slice(0, 2), ['resume', resumeId]); assert.equal(restored.list()[0].projectId, p.id);
+  sessions.assignProject(s.id, null); assert.deepEqual(live, { ...before, projectId: null });
+  live.alive = false; assert.throws(() => sessions.assignProject(s.id, p.id), /no longer open/);
+});
+
 test('a full three-row layout shrinks one panel; the tenth console grows the grid without replacing any console', () => {
   const wide = [1,4,7].map((slot,i) => ({ id: ''+i, slot, width: 3, height: 1, alive: true }));
   const opening = planOpening(wide);

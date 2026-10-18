@@ -18,6 +18,8 @@ import { toolFeatures, syncIntegrationJobs } from './tool-features.js';
 import './console-polish.css';
 import './setup.css';
 import { projectsUI } from './projects-ui.js';
+import { consoleProjects } from './console-projects.js';
+import { imageGenerationUI } from './image-generation-ui.js';
 import { updatesUI } from './updates-ui.js';
 
 const $ = selector => document.querySelector(selector);
@@ -56,7 +58,7 @@ const terminals = new Map();
 const gridSize = () => state?.grid || { columns: 3, rows: 3 };
 const gridCapacity = () => gridSize().columns * gridSize().rows;
 let openingConsole = false;
-let launchGesture, chooserOpener, vim, setup, workbench, layoutMotion, phone, projects, updates;
+let launchGesture, chooserOpener, vim, setup, workbench, layoutMotion, phone, projects, projectChats, imageGenerator, updates;
 const nameSaves = new Map();
 const launchHint = 'title="Click to open. Hold or right-click to choose." aria-haspopup="dialog"';
 let renderedView = null, viewAnimation, windowMoving = false;
@@ -167,7 +169,7 @@ function syncSlotName(input, slot, session) {
 function sessionCard(slot) {
   const session = state.sessions.find(x => x.slot === slot && (x.alive || x.restoreError));
   if (!session) return `<article class="session-card empty" data-slot="${slot}"><header class="empty-panel-header">${slotNameInput(slot)}</header><button class="console-launch" data-action="new" data-slot="${slot}" aria-label="Open console ${slot}" ${launchHint} ${openingConsole ? 'disabled' : ''}>${newConsoleMark()}</button></article>`;
-  return `<article class="session-card ${escape(session.state)}" data-console-id="${session.id}" data-slot="${slot}"><header class="console-panel-header"><button class="console-grip" draggable="true" data-console-drag="${session.id}" aria-label="Move console ${slot}" title="Drag to move or swap. Focus here and press Alt + 1–9 to move.">${readyIcon(session)}</button><span class="slot" title="${escape(providerName(session.provider) + ' · ' + session.cwd)}">${String(slot).padStart(2, '0')}</span>${slotNameInput(slot, session)}<span class="panel-status">${badge(session.state)}</span><button class="icon-button" data-session="${session.id}" aria-label="Expand console ${slot}" title="Expand console">${icon('expand')}</button></header><div class="console-panel-body" data-terminal-mount="${session.id}"></div>${resizeHandles(slot)}</article>`;
+  return `<article class="session-card ${escape(session.state)}" data-console-id="${session.id}" data-slot="${slot}"><header class="console-panel-header"><button class="console-grip" draggable="true" data-console-drag="${session.id}" aria-label="Move console ${slot}" title="Drag to move or swap. Focus here and press Alt + 1–9 to move.">${readyIcon(session)}</button><span class="slot" title="${escape(providerName(session.provider) + ' · ' + session.cwd)}">${String(slot).padStart(2, '0')}</span>${slotNameInput(slot, session)}<span class="panel-status">${badge(session.state)}</span>${projectChats.button(session)}<button class="icon-button" data-session="${session.id}" aria-label="Expand console ${slot}" title="Expand console">${icon('expand')}</button></header><div class="console-panel-body" data-terminal-mount="${session.id}"></div>${resizeHandles(slot)}</article>`;
 }
 function coveredSlots() {
   return new Map(state.sessions.filter(x => x.alive || x.restoreError).flatMap(x => Array.from({ length: x.height || 1 }, (_, y) => Array.from({ length: x.width || 1 }, (_, dx) => [x.slot + y * gridSize().columns + dx, x])).flat()));
@@ -213,6 +215,7 @@ function renderConsoles() {
     mountTerminal(session, panel.querySelector('.console-panel-body'), true);
   }
   if (before) layoutMotion.animate(before);
+  projectChats?.sync();
   scheduleFits();
 }
 function ledgerTable() {
@@ -262,6 +265,9 @@ function renderStartupSettings() {
 function renderResultsSettings() {
   return `<section class="surface"><h2>Results</h2><label class="toggle-row"><span><strong>Automatically save results</strong><small>Capture code changes and new images after each turn.</small></span><input type="checkbox" data-setting="autoSaveResults" ${state.settings.autoSaveResults !== false ? 'checked' : ''}></label><p class="field-hint">Turning this off stops current captures. Files you add or ask an agent to save still appear here.</p></section>`;
 }
+function renderProjectSettings() {
+  return `<section class="surface" id="project-settings"><h2>Projects</h2><label class="toggle-row"><span><strong>Suggest project setup</strong><small>Ask when a chat has no project. “Don't ask again” turns this off.</small></span><input type="checkbox" data-setting="suggestProjects" ${state.settings.suggestProjects !== false ? 'checked' : ''}></label><button class="subtle" data-page="projects">View project progress ${icon('arrow')}</button></section>`;
+}
 function renderAppearanceSettings() {
   return `<section class="surface"><h2>Appearance</h2><label>Accent style<select data-setting="accentStyle">${[['pink-blue', 'Pink + blue'], ['blue', 'Blue'], ['pink', 'Pink']].map(([value, label]) => `<option value="${value}" ${(state.settings.accentStyle || 'pink-blue') === value ? 'selected' : ''}>${label}</option>`).join('')}</select></label><label class="toggle-row"><span><strong>Blink cursor</strong><small>Off keeps the console cursor steady.</small></span><input type="checkbox" data-setting="cursorBlink" ${state.settings.cursorBlink ? 'checked' : ''}></label></section>`;
 }
@@ -275,6 +281,7 @@ function renderPage() {
   if (!state) return;
   queueMicrotask(() => vim?.refresh());
   applySidebar();
+  projectChats?.sync();
   if ($('#workspace-error')) $('#workspace-error').textContent = state.workspaceError || '';
   const terminalView = page === 'terminal', consoleView = ['consoles', 'overview'].includes(page);
   $('#terminal-page').hidden = !terminalView;
@@ -300,10 +307,11 @@ function renderPage() {
   const renderer = { projects: () => projects.render(), results: () => workbench.render('results'), inbox: () => workbench.render('inbox'), reviews: () => workbench.render('reviews'), usage: renderUsage, api: renderApi, vault: renderVault, tools: renderTools, instructions: renderInstructions, settings: renderSettings }[page] || renderSettings;
   $('#content').innerHTML = (state.storageError ? `<div class="error-banner" role="alert">${escape(state.storageError)}</div>` : '') + renderer();
   workbench?.mount();
+  if (page === 'tools') { $('.page-heading').insertAdjacentHTML('afterend', imageGenerator.render()); imageGenerator.mount(); }
   if (page === 'settings') $('.settings-layout').insertAdjacentHTML('afterbegin', updates?.render() || '');
   if (page === 'usage') $('#content').insertAdjacentHTML('beforeend', messageUsageTable());
-  if (page === 'usage' && state.workbench?.conceptUsage?.length) $('#content').insertAdjacentHTML('beforeend', `<section class="surface"><h2>Meshy concepts</h2><p class="field-hint">Credits reported for concepts created here. Separate from API dollar estimates.</p>${state.workbench.conceptUsage.map(x => `<div class="connection-row"><span>${new Date(x.at).toLocaleString()}</span><span>${escape(x.state)}</span><strong>${x.credits == null ? 'Credits unavailable' : number(x.credits) + ' credits'}</strong></div>`).join('')}</section>`);
-  if (page === 'settings') { $('.settings-layout').insertAdjacentHTML('afterbegin', (phone?.renderSettings() || '') + renderGridSettings() + renderAppearanceSettings() + renderKeyboardSettings() + renderResultsSettings() + renderStartupSettings() + renderLaunchDefaults()); launchDefaultsFields(); }
+  if (page === 'usage') $('#content').insertAdjacentHTML('beforeend', imageGenerator.usage());
+  if (page === 'settings') { $('.settings-layout').insertAdjacentHTML('afterbegin', (phone?.renderSettings() || '') + renderGridSettings() + renderAppearanceSettings() + renderKeyboardSettings() + renderProjectSettings() + renderResultsSettings() + renderStartupSettings() + renderLaunchDefaults()); launchDefaultsFields(); }
   if (page === 'api') {
     const form = $('#api-form');
     for (const key of ['model', 'prompt', 'maxOutput', 'projectId']) form.elements[key].value = apiDraft[key];
@@ -368,6 +376,7 @@ function receive(next) {
   setup?.receive();
   phone?.receive();
   updates?.sync();
+  if (page === 'projects') projects?.refreshCards();
   const providerSelect = $('#one-off-console-form [name=provider]');
   if (providerSelect && !$('#console-chooser').open) for (const provider of consoleProviders()) if (!providerSelect.querySelector(`[value="${provider}"]`)) providerSelect.add(new Option(providerName(provider), provider));
   if ($('#workspace-error')) $('#workspace-error').textContent = state.workspaceError || '';
@@ -467,7 +476,7 @@ function mountTerminal(session, host, compact) {
     record = { id, term, fit, node, compact, loading: true, queued: [] }; terminals.set(id, record);
     record.output = terminalOutput((data, done) => term.write(data, done), updatePreview);
     term.onData(data => call('session.input', { id, data }).catch(error => toast(error.message, true)));
-    node.addEventListener('focusin', () => { selectedId = id; });
+    node.addEventListener('focusin', () => { selectedId = id; projectChats?.sync(); });
     // A focused console can finish while the user is reading. Wait for their
     // next interaction; terminal output and automatic protocol replies do not count.
     for (const event of ['pointerdown', 'keydown', 'input', 'paste']) node.addEventListener(event, e => {
@@ -495,7 +504,7 @@ function renderTerminal() {
   if (!session) { page = 'consoles'; renderPage(); return; }
   $('#terminal-host').dataset.state = session.state;
   if (!$('#terminal-heading').contains(document.activeElement) && !nameSaves.has(session.slot)) {
-    $('#terminal-heading').innerHTML = `<span class="slot">${String(session.slot).padStart(2, '0')}</span><div>${slotNameInput(session.slot, session)}<small>${escape(session.cwd)}</small></div>${badge(session.state)}`;
+    $('#terminal-heading').innerHTML = `<span class="slot">${String(session.slot).padStart(2, '0')}</span><div>${slotNameInput(session.slot, session)}<small>${escape(session.cwd)}</small></div>${projectChats.button(session)}${badge(session.state)}`;
     if (session.permissions === 'unrestricted') $('#terminal-heading').insertAdjacentHTML('beforeend', '<span class="permission-tag">Full access</span>');
     if (session.restoreError) $('#terminal-heading').insertAdjacentHTML('beforeend', `<button class="secondary" data-action="retry-session" data-id="${session.id}">Try reopening</button>`);
   }
@@ -783,7 +792,7 @@ document.addEventListener('input', event => {
   if (input.form?.getAttribute('id') === 'api-form' && ['model', 'prompt', 'maxOutput', 'projectId'].includes(input.name)) apiDraft[input.name] = input.value;
 });
 document.addEventListener('submit', async event => {
-  if (event.target.id === 'project-form') return;
+  if (['project-form', 'console-project-form', 'image-generation-form'].includes(event.target.id)) return;
   event.preventDefault(); const form = event.target, data = Object.fromEntries(new FormData(form)); const submit = form.querySelector('[type="submit"]');
   if (submit) submit.disabled = true;
   try {
@@ -875,6 +884,8 @@ vim = vimControls({
 });
 phone = mobileUI({ call, escape, icon, getState: () => state, toast });
 projects = projectsUI({ call, getState: () => state, escape, icon, toast, renderPage, openNew });
+projectChats = consoleProjects({ call, getState: () => state, getView: () => ({ page, selectedId }), projects, navigate: next => { page = next; renderPage(); }, escape, icon, toast });
+imageGenerator = imageGenerationUI({ call, getState: () => state, escape, toast });
 updates = updatesUI({ call, getState: () => state, escape, icon, toast });
 setup = firstRun({ call, escape, icon, getState: () => state });
 windowDragging(call, () => state);

@@ -37,6 +37,9 @@ export function projectsUI({ call, getState, escape: e, icon, toast, renderPage,
   }
   function refreshCards() {
     const host = document.querySelector('#project-cards'); if (!host) return;
+    const fingerprint = JSON.stringify([projects(), query, category, status]);
+    if (host.dataset.fingerprint === fingerprint) return;
+    host.dataset.fingerprint = fingerprint;
     const open = [...host.querySelectorAll('.project-milestones[open]')].map(x => x.closest('[data-project-id]').dataset.projectId);
     const focused = document.activeElement, focusId = focused?.closest('[data-project-id]')?.dataset.projectId, milestone = focused?.dataset.projectMilestone;
     host.innerHTML = cards();
@@ -47,7 +50,7 @@ export function projectsUI({ call, getState, escape: e, icon, toast, renderPage,
     const categories = [...new Set(projects().map(x => x.category).filter(Boolean))].sort();
     return `<div class="page-heading"><h1>Projects</h1><button class="primary" data-project-new>${icon('plus')}New project</button></div><div class="project-filters"><label>Find a project<input data-project-search value="${e(query)}" type="search" placeholder="Name, goal or next step"></label><label>Category<select data-project-category><option value="">All categories</option>${categories.map(x => `<option ${x === category ? 'selected' : ''}>${e(x)}</option>`).join('')}</select></label><label>Status<select data-project-status>${[['active','Active'],['paused','Paused'],['complete','Complete'],['archived','Archived'],['','All projects']].map(([v, label]) => `<option value="${v}" ${v === status ? 'selected' : ''}>${label}</option>`).join('')}</select></label></div><div class="project-cards" id="project-cards">${cards()}</div>`;
   }
-  function edit(id, callback, trigger = document.activeElement) {
+  function edit(id, callback, trigger = document.activeElement, seed = {}) {
     const p = projects().find(x => x.id === id); opener = trigger; afterSave = callback;
     form.reset(); form.dataset.id = p?.id || '';
     for (const section of form.querySelectorAll('[data-project-existing]')) {
@@ -56,7 +59,8 @@ export function projectsUI({ call, getState, escape: e, icon, toast, renderPage,
       if (section.tagName === 'DETAILS') section.open = false;
     }
     for (const key of ['name','category','goals','approach','notes','nextStep','status']) form.elements[key].value = p?.[key] || (key === 'status' ? 'active' : '');
-    form.elements.folders.value = p ? p.folders.map(x => (x.label ? x.label + ' | ' : '') + x.path).join('\n') : getState().settings.consoleDefaults.cwd;
+    if (!p) { form.elements.name.value = seed.name || ''; form.elements.goals.value = seed.goals || ''; }
+    form.elements.folders.value = p ? p.folders.map(x => (x.label ? x.label + ' | ' : '') + x.path).join('\n') : seed.cwd || getState().settings.consoleDefaults.cwd;
     form.elements.milestones.value = (p?.milestones || []).map(x => `[${x.done ? 'x' : ' '}] ${x.text}`).join('\n');
     form.querySelector('.form-error').textContent = '';
     form.querySelector('[data-project-remove]').hidden = !p;
@@ -102,5 +106,11 @@ export function projectsUI({ call, getState, escape: e, icon, toast, renderPage,
       catch (error) { input.checked = !input.checked; input.disabled = false; toast(error.message, true); }
     }
   });
-  return { render, edit, refreshCards };
+  function reveal(id) {
+    query = ''; category = ''; status = '';
+    renderPage();
+    const card = [...document.querySelectorAll('.project-card')].find(x => x.dataset.projectId === id);
+    if (card) { card.tabIndex = -1; card.focus({ preventScroll: true }); card.scrollIntoView({ block: 'nearest' }); }
+  }
+  return { render, edit, refreshCards, reveal };
 }

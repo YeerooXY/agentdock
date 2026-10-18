@@ -6,6 +6,7 @@ const { Results, Inbox } = require('./results.cjs');
 const { Reviews } = require('./reviews.cjs');
 const { Concepts } = require('./concepts.cjs');
 const { SetupRequests } = require('./setup-requests.cjs');
+const { imageInstructions } = require('./image-generation.cjs');
 const schema = (properties, required = []) => ({ type: 'object', properties, required, additionalProperties: false });
 const string = { type: 'string' };
 const nativeTools = [
@@ -13,21 +14,23 @@ const nativeTools = [
   ['start_turn', 'Start tracking a new task before editing files. Idempotent until finish_turn or a ready notification. Called automatically by dock_context. Returns the turn ID used to group code changes, tests and images.', schema({})],
   ['finish_turn', 'Save code changes for this task in Results. Native supported-agent stop hooks and ready notifications also do this.', schema({})],
   ['setup_status', 'Inspect installed agents, saved key names and shared tool/API settings. Never returns key values.', schema({})],
-  ['prepare_setup', 'Prepare a tool connection, model API or key-entry request in Tools. The user reviews and applies it there. config uses the Tools form fields: tool {id,name,type,command,args,envKeys} or {id,name,type,url,headerKeys}; API {id,name,protocol,url,keyId}; key {id,name}. Key bindings use vault IDs, never secret values. Does not install software, send API requests or change an active connection.', schema({ kind: { enum: ['tool','api','key'] }, config: { type: 'object' } }, ['kind','config'])],
+  ['prepare_setup', 'Prepare a tool connection, model API, image generator or key-entry request in Tools. The user reviews and applies it there. config uses the Tools form fields: tool {id,name,type,command,args,envKeys} or {id,name,type,url,headerKeys}; API {id,name,protocol,url,keyId}; image {provider,model,url,keyId,previewFirst} with provider agent/openai/gemini/meshy/compatible; key {id,name}. Key bindings use vault IDs, never secret values. Does not install software, send API requests or change an active connection.', schema({ kind: { enum: ['tool','api','key','image'] }, config: { type: 'object' } }, ['kind','config'])],
   ['save_result', 'Save a screenshot, generated image, test report or other result in the gallery. Save images and reports as separate files so they can be previewed immediately; use ZIP only for an optional download. Files must be inside your project folder. The gallery keeps a copy.', schema({ file: string, text: string, title: string, kind: { enum: ['screenshot','concept','test','report','asset'] }, status: { enum: ['passed','failed','needs-review'] }, summary: string, groupId: string, ext: { enum: ['.md','.json','.txt'] } }, ['title'])],
   ['list_results', 'List saved results, newest first.', schema({})],
   ['notify', 'Leave a short completion, question or error in the attention inbox.', schema({ title: string, message: string, kind: { enum: ['ready','question','error'] } }, ['title'])],
   ['review_page', 'Start a website review: desktop/mobile screenshots, axe accessibility checks and a manual checklist. Returns a job ID; read review_details later.', schema({ url: string, brief: string }, ['url'])],
   ['review_details', 'Get a website review, findings, checklist and reference screenshot paths.', schema({ id: string }, ['id'])],
   ['meshy_concept', 'Fallback only: generate a 2D page concept with Meshy after your own image generator is unavailable or has failed. Uploads the reference screenshot to Meshy and uses credits. Requires Meshy CLI sign-in.', schema({ reviewId: string, nativeStatus: { enum: ['unavailable','failed'] }, prompt: string }, ['reviewId','nativeStatus'])],
-  ['concept_status', 'Read Meshy concept job status and saved result IDs. Never resubmit a waiting job.', schema({})]
+  ['generate_preview', 'Generate a screen preview using the user-selected image generator. Sends the screenshot and prompt to that provider and may use paid credits. Supply a completed reviewId or saved screenshot referenceId, and a stable requestId; repeat that ID to retrieve the same job, never a new charge. The default agent mode returns guidance to use your own generator; nativeStatus enables its Meshy fallback only after your generator is unavailable or failed. Save and show the preview before an ambiguous redesign.', schema({ reviewId: string, referenceId: string, requestId: { type: 'string', pattern: '^[a-zA-Z0-9_-]{1,100}$' }, prompt: { type: 'string', maxLength: 4000 }, nativeStatus: { enum: ['unavailable','failed'] } }, ['requestId'])],
+  ['concept_status', 'Read image generation job status and saved result IDs. Never resubmit a waiting job.', schema({})]
 ].map(([name, description, inputSchema]) => ({ name: 'dock/' + name, description, inputSchema }));
 class Workbench {
   constructor(root, runtime, electron, { testMode, onChange, getSessions, getProject, getWindow, getHub, getAgents } = {}) {
     this.electron = electron; this.getSessions = getSessions; this.getProject = getProject; this.getWindow = getWindow;
     this.results = new Results(root, { trash: file => electron.shell.trashItem(file), nativeImage: electron.nativeImage });
     this.inbox = new Inbox(root); this.reviews = new Reviews(root, this.results, this.inbox, electron);
-    this.concepts = new Concepts(root, runtime, this.results, this.reviews, this.inbox, { testMode });
+    this.concepts = new Concepts(root, runtime, this.results, this.reviews, this.inbox, { testMode, getSettings: () => getHub?.()?.config.imageGeneration, getKey: id => getHub().vault.get(id) });
+    this.imageGuidance = () => imageInstructions(getHub?.()?.config.imageGeneration);
     this.setup = new SetupRequests(root, { getHub, getAgents, onChange });
     for (const service of [this.results, this.inbox, this.reviews, this.concepts]) service.on('changed', onChange);
   }
@@ -44,7 +47,7 @@ class Workbench {
       case 'dock/setup_status': return this.setup.status();
       case 'dock/prepare_setup': {
         const result = this.setup.prepare(args, context);
-        this.inbox.add({ title: 'Setup ready: ' + (args.config.name || args.config.id), message: result.message, kind: 'question', destination: 'tools' });
+        this.inbox.add({ title: 'Setup ready: ' + (args.config.name || args.config.id || 'Screen previews'), message: result.message, kind: 'question', destination: 'tools' });
         return result;
       }
       case 'dock/save_result': return this.results.add(args, context);
@@ -52,8 +55,12 @@ class Workbench {
       case 'dock/notify': if (['ready', 'error'].includes(args.kind || 'ready')) await this.turns?.finish(owner); this.getSessions().signal?.(context.sessionId, args.kind || 'ready'); return this.inbox.add({ ...args, sessionId: context.sessionId });
       case 'dock/review_page': return { id: this.reviews.start({ ...args, ...context }) };
       case 'dock/review_details': { const review = this.reviews.get(args.id); return { ...review, screenshots: this.results.items.filter(x => (x.reviewId === review.id || x.groupId === review.id) && x.kind === 'screenshot').map(x => ({ id: x.id, title: x.title, file: this.results.path(x.id) })) }; }
-      case 'dock/meshy_concept': return { id: await this.concepts.start(args) };
-      case 'dock/concept_status': return this.concepts.list();
+      case 'dock/meshy_concept': return { id: await this.concepts.start(args, { context }) };
+      case 'dock/generate_preview': return this.concepts.generate(args, context);
+      case 'dock/concept_status': return this.concepts.list().map(job => {
+        let file = null; if (job.resultId) { try { file = this.results.path(job.resultId); } catch {} }
+        return { ...job, file };
+      });
       default: throw new Error('Unknown Dock tool.');
     }
   }
@@ -85,16 +92,17 @@ class Workbench {
         for (const job of this.concepts.items.filter(x => x.reviewId === payload)) await this.concepts.remove(job.id);
         return this.reviews.remove(payload);
       }
-      case 'review.brief': { const brief = this.reviews.brief(payload); this.electron.clipboard.writeText(brief); return brief; }
+      case 'review.brief': { const brief = this.reviews.brief(payload, this.imageGuidance()); this.electron.clipboard.writeText(brief); return brief; }
       case 'review.draft': {
         const session = this.getSessions().items.get(payload.sessionId);
         if (!session?.alive || !['codex','claude'].includes(session.provider) || !['open','ready'].includes(session.state)) throw new Error('Choose an idle Codex or Claude console.');
         // Paste a draft only. The user can inspect it before pressing Enter.
-        const brief = this.reviews.brief(payload.id).replaceAll('\x1b', '');
+        const brief = this.reviews.brief(payload.id, this.imageGuidance()).replaceAll('\x1b', '');
         this.getSessions().write(session.id, '\x1b[200~' + brief + '\x1b[201~', { draft: true });
         return session.id;
       }
       case 'concept.start': return this.concepts.start(payload);
+      case 'preview.generate': return this.concepts.generate(payload);
       case 'concept.auth-status': return this.concepts.authStatus();
       case 'concept.connect': return this.concepts.connect();
       case 'concept.open-login': {

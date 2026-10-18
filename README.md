@@ -4,11 +4,11 @@
 
 | Device | Download |
 | --- | --- |
-| Windows 10/11 — Intel or AMD 64-bit | **[Windows installer](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.6/Agent-Dock-0.6.0-preview.6-Setup-x64.exe)** |
-| Android — most phones (ARM64) | **[Android APK](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.6/Agent-Dock-0.6.0-preview.6-Android-arm64.apk)** |
-| Android — older 32-bit phones (ARMv7) | [Android ARMv7 APK](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.6/Agent-Dock-0.6.0-preview.6-Android-armv7.apk) |
+| Windows 10/11 — Intel or AMD 64-bit | **[Windows installer](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.7/Agent-Dock-0.6.0-preview.7-Setup-x64.exe)** |
+| Android — most phones (ARM64) | **[Android APK](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.7/Agent-Dock-0.6.0-preview.7-Android-arm64.apk)** |
+| Android — older 32-bit phones (ARMv7) | [Android ARMv7 APK](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.7/Agent-Dock-0.6.0-preview.7-Android-armv7.apk) |
 
-Current preview: **0.6.0-preview.6**. [Release notes](https://github.com/YeerooXY/agentdock/releases/tag/v0.6.0-preview.6) · [All releases](https://github.com/YeerooXY/agentdock/releases) · [Previous stable desktop-only release](https://github.com/YeerooXY/agentdock/releases/tag/v0.5.0).
+Current preview: **0.6.0-preview.7**. [Release notes](https://github.com/YeerooXY/agentdock/releases/tag/v0.6.0-preview.7) · [All releases](https://github.com/YeerooXY/agentdock/releases) · [Previous stable desktop-only release](https://github.com/YeerooXY/agentdock/releases/tag/v0.5.0).
 
 A Windows desktop app for agent consoles, projects, shared tools and usage tracking.
 
@@ -17,7 +17,7 @@ A Windows desktop app for agent consoles, projects, shared tools and usage track
 - **Windows:** open **Settings → Updates → Check for updates**, then **Download update → Install update**. Dock verifies the download and asks before ending open consoles. Let active work finish before installing. Settings, keys and supported conversation IDs stay in your local profile.
 - **Android:** open **Usage → Updates → Check for updates → Download update**. Open the downloaded APK and confirm the update. Android may ask you to allow installs from that browser. Pairing stays saved when upgrading a build signed with the same key.
 
-**No update button in your version?** Use the downloads above and run the Windows installer or open the Android APK to update the existing app. You do not need to uninstall first. Release notes say when both devices need updating; Android preview 6 works with Windows preview 4 or later. The automatic Results setting needs Windows preview 6.
+**No update button in your version?** Use the downloads above and run the Windows installer or open the Android APK to update the existing app. You do not need to uninstall first. Android preview 7 works with Windows preview 4 or later. Project linking and screen-preview routing need Windows preview 7; existing Android preview 6 users can keep their phone build. This Android package only updates its version number.
 
 Updates are manual. Preview builds can see newer previews; stable builds only offer stable releases. To switch from stable to this preview, use the downloads above. These buttons update Agent Dock. See [projects, usage and updates](docs/projects-and-updates.md) for data storage and limits.
 
@@ -78,7 +78,8 @@ Start with **+**, or create a project first. Give it a name, choose its folder a
 - **Website review** captures desktop/mobile viewports, runs automated accessibility and overflow checks, and checks up to 12 same-origin links. Findings and screenshots go into Results. The 20-item checklist needs a human or agent review; an automated scan is not certification.
 
 - **Consoles** fills the window with live terminals. Click **+** to launch using **Settings → Console defaults**. When the grid is full, adding a console shrinks a larger panel by one cell or grows the grid, up to 64 consoles. **Settings → Console grid** lets you choose 2–8 rows and columns. More agents use more memory and CPU. You can type directly in a panel or expand it fullscreen. Returning to **Consoles** keeps the window fullscreen. Thinking uses a blue-purple outline; ready uses green.
-- **Projects** keeps categories, goals, your approach, milestones, notes, a next step and the last worked date. A project can have several folders; a console can also launch in a subfolder. Open a project card, or right-click **+** to choose a project. Its name and brief follow the console. The shared `dock/project_progress` tool lets an agent update that project's progress.
+- **Projects** in the left sidebar shows each project's status, goals, milestone progress, next step and last worked date. Use **Edit** to change its details; agent progress updates appear here live. A project can have several folders; a console can also launch in a subfolder. Open a project card, or right-click **+** to choose a project. Its name and brief follow the console. The shared `dock/project_progress` tool lets an agent update that project's progress.
+- **Bring an existing chat into Projects:** an ungrouped console shows **Set up project**. Link it to an existing project or create one with its current name and folder already filled in. Add your goals, and the project brief becomes available through `dock_context` on the agent's next turn. Linking preserves the running chat and files; it does not import earlier conversation transcripts. **Don't ask again** switches suggestions off across all consoles, including after a restart. Re-enable them in **Settings → Projects → Suggest project setup**. The folder button in each console header always lets you link, change or remove its project, or jump to **View project**. Project management is currently in the desktop app.
 - **Usage** contains subscription limits, per-message tokens, API cost estimates and pricing settings. API messages include their tool-call rounds. Codex and Claude rows use the counters they expose; subscription credits per message are not available and are never guessed.
 - **Keys** stores named credentials from any service, encrypted with Windows DPAPI.
 - **Tools** connects MCP servers, HTTP tools and model APIs. Ask an agent to help configure one: it can prepare the settings here for you to apply. Missing keys are entered directly in Keys.
@@ -159,11 +160,15 @@ The **3D tools** cards handle these integrations:
 
 ### Web design
 
-Open a completed **Website review** and use **Draft in console** to paste a screenshot-based design brief into an idle Codex or Claude console. Review it, then press Enter to send. Agents are instructed to try their own image generator first. Use **Meshy fallback** only when that generator is unavailable or has failed.
+For a vague request such as **“improve this screen”**, agents are now instructed to inspect the screen, try one visual preview and show it in **Results** before a substantial redesign. Specific edits can proceed directly. Turn this preference off in **Tools → Screen previews** if you prefer.
+
+Choose your **Image generator** there: the agent's own tool, OpenAI, Gemini / Nano Banana, Meshy, or a compatible image API. The default still tries the agent's own tool first, with Meshy as fallback. For an API, add its credential in **Keys**, select that saved key and an image model, then save. Agent help can prepare these settings in Tools for you to apply. Saving does not generate or bill anything. [Provider setup and limits](docs/screen-previews.md).
+
+Open a completed **Website review** and choose **Generate preview** to use the selected API or Meshy. The image appears in **Results** and Inbox when ready. **Change generator** opens its settings. **Draft in console** pastes the screenshot-based brief and selected routing into an idle Codex or Claude console; review it, then press Enter to send. With the default agent mode, use that draft or ask your agent directly.
 
 Meshy fallback uses the bundled official CLI and its own sign-in, separate from the API-key MCP connection in Tools. **Check sign-in** reuses an existing CLI account; **Connect Meshy** provides a code and a browser sign-in link. The CLI manages its credentials; Dock does not copy them into its vault. Generating a concept uploads the reference screenshot to Meshy and uses credits. Accepted task IDs are saved, so **Resume task** continues checking the same job without another submission. Reported credits appear in **Usage** and remain after deleting a job. No credit amount is invented when Meshy does not report one.
 
-All agents and API sessions can discover connection `dock` with `dock_tools`. It includes `save_result`, `notify`, `review_page`, `review_details`, `meshy_concept` and job status tools. File results must be inside the calling console’s project; API sessions use the default project folder. Files are copied into the gallery, with a 50 MB file limit and a 1 GB gallery limit. Tracked turns compare bounded project snapshots and save changed code and images; see the [capture limits](docs/android-setup.md#code-changes-in-results).
+All agents and API sessions can discover connection `dock` with `dock_tools`. It includes `save_result`, `notify`, `review_page`, `review_details`, `generate_preview`, `meshy_concept` and job status tools. File results must be inside the calling console’s project; API sessions use the default project folder. Files are copied into the gallery, with a 50 MB file limit and a 1 GB gallery limit. Tracked turns compare bounded project snapshots and save changed code and images; see the [capture limits](docs/android-setup.md#code-changes-in-results).
 
 **Instructions → Ways of working → Web design** is on by default. Its [shared guide](guides/web-design.md) covers layout, typography, responsive behavior, accessibility, performance and a 20-point page review: policies, consent, data collection, SDKs, honest claims and reviews, fees, business details, children's data, unsubscribe, asset licenses and deletion requests.
 
@@ -205,7 +210,7 @@ Local data is in `%APPDATA%\Agent Dock`:
 - `ledger.json`: model, time, tokens, request status and estimated cost; no prompts or responses.
 - `results/`, `reviews.json`: saved files, page screenshots, findings and manual checklist notes. These can contain project or page content. Delete saved copies in Results, or delete a whole review from Website review.
 - `mobile.json`: connection settings plus an OS-encrypted payload containing paired device tokens, TLS identity and optional Firebase sender credentials. Disable the connection or remove phones/Firebase in Android setup.
-- `inbox.json`: attention items and read state. `concept-jobs/` holds Meshy job metadata and temporary downloads; `concept-usage.json` keeps reported credit usage. Completed downloads are copied to Results and temporary copies are recycled.
+- `inbox.json`: attention items and read state. `concept-jobs/` holds image job metadata, prompts and Meshy temporary downloads; `concept-usage.json` keeps reported usage and request IDs to prevent repeat billing. Completed images are copied to Results. Removing a job deletes its prompt and temporary files; usage metadata remains. [Image data and deletion](docs/screen-previews.md#data-and-usage).
 - `settings.json`, `limits.json`, `events`, `sessions`: preferences, cached quotas and per-session tracking/configuration.
 
 Keys are decrypted in the main process. A configured local MCP server receives only the credentials explicitly bound to it. Agent consoles do not receive vault keys. Remote keys are sent only to their configured connection, with redirects disabled. Do not paste credentials into commands, URLs, descriptions or instructions; use key bindings.

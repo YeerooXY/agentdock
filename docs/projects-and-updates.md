@@ -6,7 +6,11 @@ Open **Projects → New project**. Give it a name and folder, describe your goal
 
 Choose **Open console** on its card, or right-click/hold **+** and select the project. **Start in** lists its saved folders. The editable folder below also accepts a subfolder or another existing folder. The console inherits the project name unless you enter a different name. Regular **+** still uses your defaults.
 
-Project cards show milestone progress and the last worked date. Active projects left for a week get a quiet **Pick up again** label. Search or filter by category/status. Paused and complete projects remain available; archived projects leave the launch chooser.
+**Projects** in the left sidebar shows status, goals, milestone progress, next step and the last worked date. Agent progress updates appear live. Active projects left for a week get a quiet **Pick up again** label. Search or filter by category/status. Paused and complete projects remain available; archived projects leave the launch chooser.
+
+An existing chat without a project shows **Set up project** above the consoles. Link an existing project or create one with the chat's name and working folder filled in. Linking keeps the running console, conversation ID, files and name; it does not import earlier transcript text. Its project context becomes available on the next `dock_context` call.
+
+**Don't ask again** turns suggestions off globally and stays off after restarting. **Settings → Projects → Suggest project setup** turns them back on. The folder button in a console header always opens the project picker, including when suggestions are off. Use **View project** there to jump to its progress. Project setup and progress editing are currently desktop features.
 
 The selected project's brief is included in the console's startup instructions and in each `dock_context` refresh. Agents can call `dock/project_progress` to record a verified milestone, a note or the next step. That tool is scoped to the calling console's project. Agents with plain custom commands must read the supplied instruction file themselves. API requests have their own Project selector.
 

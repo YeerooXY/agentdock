@@ -97,10 +97,10 @@ class Reviews extends EventEmitter {
     if (deleted.failed.length) throw new Error('Some review files could not be deleted. Try again.');
     this.items = this.items.filter(x => x.id !== id); this.save();
   }
-  brief(id) {
+  brief(id, imageGuidance = 'Use your own image generation capability first. Use Meshy only if your image generator is unavailable or fails.') {
     const item = this.get(id);
     const shots = this.results.items.filter(x => (x.reviewId === id || x.groupId === id) && x.kind === 'screenshot');
-    return `Review this page and generate a visual redesign concept: ${item.url}\n${item.brief}\nReference screenshots (read these first):\n${shots.map(x => this.results.path(x.id)).join('\n')}\nUse your own image generation capability first. Use Meshy only if your image generator is unavailable or fails. Do not generate a 3D model for a web page.\nCall dock_tools with connection "dock". Save your generated concept and verification report with dock/save_result, groupId "${item.id}". Use dock/notify when ready. Keep the project’s voice and the shared web design checklist.\nAutomated findings: ${item.issues ?? 'Review still running'}. Call dock/review_details with id "${item.id}" for the full report.`;
+    return `Review this page and generate a visual redesign concept: ${item.url}\n${item.brief}\nReference screenshots (read these first):\n${shots.map(x => this.results.path(x.id)).join('\n')}\n${imageGuidance}\nShow the preview in Results for the user to review before implementing a substantial redesign. Do not generate a 3D model for a web page.\nCall dock_tools with connection "dock". Save your generated concept and verification report with dock/save_result, groupId "${item.id}". Use dock/notify when ready. Keep the project’s voice and the shared web design checklist.\nAutomated findings: ${item.issues ?? 'Review still running'}. Call dock/review_details with id "${item.id}" for the full report.`;
   }
   stop() { this.stopping = true; if (this.window && !this.window.isDestroyed()) this.window.destroy(); }
 }

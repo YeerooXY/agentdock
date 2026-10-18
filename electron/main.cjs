@@ -358,6 +358,7 @@ app.whenReady().then(async () => {
           break;
         }
         case 'projects.save': { const project = projects.save(payload); publish(); return { ok: true, value: project }; }
+        case 'session.project': return { ok: true, value: sessions.assignProject(payload?.id, payload?.projectId) };
         case 'projects.progress': { const project = projects.progress(payload?.id, payload); publish(); return { ok: true, value: project }; }
         case 'projects.remove': {
           projects.remove(payload);
@@ -395,12 +396,13 @@ app.whenReady().then(async () => {
         case 'vault.save': vault.set(payload?.provider, payload?.key, payload?.label); hub.writeSummary(); await Promise.allSettled([...hub.clients.keys()].map(id => hub.disconnect(id))); publish(); break;
         case 'vault.remove': {
           validateKeyId(payload);
-          const used = hub.config.profiles.some(x => x.keyId === payload) || hub.config.connections.some(x => [x.envKeys, x.headerKeys, x.queryKeys].some(map => Object.values(map || {}).some(ref => ref.key === payload)));
+          const used = hub.config.imageGeneration?.keyId === payload || hub.config.profiles.some(x => x.keyId === payload) || hub.config.connections.some(x => [x.envKeys, x.headerKeys, x.queryKeys].some(map => Object.values(map || {}).some(ref => ref.key === payload)));
           if (used && !testMode) { const result = await dialog.showMessageBox(window, { type: 'question', message: 'Remove this key?', detail: 'Connections using it will need another key.', buttons: ['Keep key', 'Remove'], defaultId: 0, cancelId: 0 }); if (result.response !== 1) break; }
           vault.remove(payload); hub.writeSummary(); await Promise.allSettled([...hub.clients.keys()].map(id => hub.disconnect(id))); publish(); break;
         }
         case 'shared.instructions': hub.instructions(payload); publish(); break;
         case 'shared.guides': hub.setGuides(payload); publish(); break;
+        case 'images.settings': hub.setImageGeneration(payload); publish(); break;
         case 'integrations.refresh': integrations.refresh(); publish(); break;
         case 'integrations.setup': {
           if (testMode && payload?.id !== 'meshy') throw new Error('Software installation is disabled during tests.');
@@ -423,6 +425,7 @@ app.whenReady().then(async () => {
           if (typeof payload?.keepAwakeWhileWorking === 'boolean') next.keepAwakeWhileWorking = payload.keepAwakeWhileWorking;
           if (typeof payload?.restoreConsoles === 'boolean') next.restoreConsoles = payload.restoreConsoles;
           if (typeof payload?.autoSaveResults === 'boolean') next.autoSaveResults = payload.autoSaveResults;
+          if (typeof payload?.suggestProjects === 'boolean') next.suggestProjects = payload.suggestProjects;
           if (typeof payload?.sidebarCollapsed === 'boolean') next.sidebarCollapsed = payload.sidebarCollapsed;
           if (typeof payload?.vimControls === 'boolean') next.vimControls = payload.vimControls;
           if (typeof payload?.cursorBlink === 'boolean') next.cursorBlink = payload.cursorBlink;

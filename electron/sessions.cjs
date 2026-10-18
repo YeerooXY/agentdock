@@ -214,6 +214,16 @@ class Sessions extends EventEmitter {
     item.name = name || path.basename(item.cwd) || `Console ${item.slot}`;
     this.emit('changed');
   }
+  assignProject(id, projectId) {
+    const item = this.items.get(id);
+    if (!item || (!item.alive && !item.restoreError) || item.dismissed) throw new Error('This console is no longer open.');
+    if (projectId !== null && (typeof projectId !== 'string' || !this.projects?.get(projectId))) throw new Error('Choose an existing project.');
+    // Associate metadata only. Never restart the PTY, replay input or change its folder.
+    item.projectId = projectId;
+    this.projects?.touch(projectId);
+    this.emit('changed');
+    return this.list().find(x => x.id === id);
+  }
   move(id, slot, beforeMove = () => {}) {
     const item = this.items.get(id);
     if (!item || (!item.alive && !item.restoreError)) throw new Error('This console is no longer open.');
