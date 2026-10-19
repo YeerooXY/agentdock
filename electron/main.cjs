@@ -362,7 +362,16 @@ app.whenReady().then(async () => {
           if (item) { sessions.rename(item.id, name); workbench.results.renameConsole(item.consoleKey || item.id, sessions.items.get(item.id).name); } else publish();
           break;
         }
-        case 'projects.save': { const project = projects.save(payload); publish(); return { ok: true, value: project }; }
+        case 'projects.save': { const project = projects.save({ ...payload, guided: !payload.id }); publish(); return { ok: true, value: project }; }
+        case 'projects.plan.begin': return { ok: true, value: projects.beginPlan(payload.id) };
+        case 'projects.plan.review': return { ok: true, value: projects.review(payload.id, payload) };
+        case 'projects.plan.later': return { ok: true, value: projects.addLater(payload.id, payload) };
+        case 'projects.plan.sync': return { ok: true, value: projects.syncPlan(payload.id) };
+        case 'projects.folder': {
+          const target = projects.folderPath(payload.id, payload.index ?? 0, payload.planFiles === true);
+          const error = await shell.openPath(target); if (error) throw new Error('The project folder could not be opened.');
+          return { ok: true, value: target };
+        }
         case 'session.project': return { ok: true, value: sessions.assignProject(payload?.id, payload?.projectId) };
         case 'projects.progress': { const project = projects.progress(payload?.id, payload); publish(); return { ok: true, value: project }; }
         case 'projects.remove': {

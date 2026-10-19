@@ -92,6 +92,12 @@ class Sessions extends EventEmitter {
     const id = crypto.randomUUID();
     const dir = path.join(this.root, 'sessions', id); fs.mkdirSync(dir, { recursive: true });
     const summary = this.hub ? this.hub.summary() + (this.projects?.summary(raw.projectId) || '') : '';
+    let discussion = '';
+    if (raw.planDiscussion && !resumeId) {
+      if (!['brief', 'research', 'infrastructure', 'roadmap'].includes(raw.planDiscussion)) throw new Error('Choose a planning section.');
+      this.projects?.plan(raw.projectId, raw.planDiscussion);
+      discussion = `Call dock_context, then dock/project_plan for section ${raw.planDiscussion}. Help me plan this project through a conversation. Ask one focused question and wait for my answer. Discuss alternatives and explain recommendations. Do not edit code, initialize the project or add features. Submit a proposal only after we have discussed this section; I approve it in Projects.`;
+    }
     const summaryPath = this.hub && raw.projectId ? path.join(dir, 'AGENT_DOCK.md') : this.hub?.summaryPath;
     if (this.hub && raw.projectId) fs.writeFileSync(summaryPath, summary, { mode: 0o600 });
     const helper = this.runtime?.event || path.join(__dirname, 'agent-event.cjs');
@@ -129,6 +135,7 @@ class Sessions extends EventEmitter {
       if (resumeId) claudeArgs.push('--resume', resumeId);
       if (this.hub) claudeArgs.push('--append-system-prompt-file', isWsl ? wslPath(summaryPath) : summaryPath, '--mcp-config', isWsl ? wslPath(mcpConfig) : mcpConfig);
       if (permissions === 'unrestricted') claudeArgs.push('--dangerously-skip-permissions');
+      if (discussion) claudeArgs.push('--', discussion);
       if (isWsl) { executable = 'wsl.exe'; args = ['-d', claudeInstall.distro, '--cd', cwd, '--exec', claude, ...claudeArgs]; }
       else if (claude.toLowerCase().endsWith('.exe')) { executable = claude; args = claudeArgs; }
       else { args.push('-Command', `& ${psQuote(claude)} ${claudeArgs.map(psQuote).join(' ')}`); }
@@ -165,6 +172,7 @@ class Sessions extends EventEmitter {
       finally { this.starting.delete(id); }
     }
     if (this.stopping) { this.hub?.revoke(id); throw new Error('Agent Dock is closing.'); }
+    if (raw.provider === 'codex' && discussion) args.push('--', discussion);
     let terminal;
     try { terminal = this.pty.spawn(executable, args, { name: 'xterm-256color', cols: 110, rows: 30, cwd, env, useConpty: true }); }
     catch (error) { this.hub?.revoke(id); throw error; }

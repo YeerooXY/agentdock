@@ -42,7 +42,9 @@ async function stop() { await call('quit'); await app.close(); app = null; }
   await call('session.input', { id: s.id, data: 'Write-Output $linkProbe\r' }); await until(async () => (await call('session.buffer', s.id)).data.includes('KEPT_AFTER_LINK'));
   assert.equal(fs.readFileSync(path.join(folder, 'keep.txt'), 'utf8'), 'Existing project file');
   checks.push('create a project from a live chat; folder prefilled; process and files preserved');
-  await call('projects.save', { ...p, nextStep: 'Test the arena', milestones: [{ text: 'Playable arena', done: false }] });
+  await call('projects.save', { ...p, revision: p.plan.revision, nextStep: 'Test the arena', milestones: [{ text: 'Playable arena', done: false }] });
+  for (const [section, changes] of [['brief',{audience:'Players',success:'Finish a wave'}],['research',{purpose:'personal',evidence:'Personal prototype'}],['infrastructure',{stack:'Godot',reason:'Small game',alternative:'Unity',tradeoff:'Existing Godot skills',hosting:'Local PC',data:'Local saves',security:'Offline only',operations:'Tests and backups'}],['roadmap',{scope:'Playable arena',milestones:[{text:'Playable arena',acceptance:'Can finish the arena',done:false}]}]]) { p=(await call('state')).projects[0]; await call('projects.plan.review',{id:p.id,revision:p.plan.revision,section,changes,action:'approve'}); }
+  p=(await call('state')).projects[0];
   const bridgeFile = path.join(profile, 'bridge.json');
   await call('session.input', { id: s.id, data: `@{url=$env:AGENT_DOCK_BRIDGE_URL;token=$env:AGENT_DOCK_BRIDGE_TOKEN} | ConvertTo-Json -Compress | Set-Content -LiteralPath '${bridgeFile.replaceAll("'", "''")}'\r` });
   await until(() => fs.existsSync(bridgeFile));
@@ -54,7 +56,7 @@ async function stop() { await call('quit'); await app.close(); app = null; }
   assert.match(JSON.stringify(await bridge('dock_context')), /Ship a playable game/);
   await page.locator(`[data-console-project="${s.id}"]`).click(); await page.locator('[data-project-view]').click();
   await page.locator('.project-card').waitFor();
-  await bridge('dock_call', { tool: 'dock/project_progress', arguments: { milestone: 0, done: true, nextStep: 'Gather playtest feedback' } });
+  await bridge('dock_call', { tool: 'dock/project_progress', arguments: { revision: p.plan.revision, milestone: 0, done: true, nextStep: 'Gather playtest feedback' } });
   await until(async () => (await page.locator('.project-progress').textContent()).includes('1 / 1'));
   assert.match(await page.locator('.project-next').textContent(), /Gather playtest feedback/);
   checks.push('the same agent bridge reads project context; progress updates appear live in Projects');

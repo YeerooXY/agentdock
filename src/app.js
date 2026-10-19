@@ -642,6 +642,7 @@ async function openNew(slot, overrides = null) {
       await terminals.get(session.id)?.ready;
       fitVisible(); terminals.get(session.id)?.term.focus();
     }
+    return session;
   } catch (error) {
     if (overrides) throw error;
     page = 'settings';

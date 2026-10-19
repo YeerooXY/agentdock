@@ -11,7 +11,10 @@ const { resultGitContext } = require('./git-context.cjs');
 const schema = (properties, required = []) => ({ type: 'object', properties, required, additionalProperties: false });
 const string = { type: 'string' };
 const nativeTools = [
-  ['project_progress', 'Update the current project only: add a factual progress note, set the next step, or check an existing milestone (zero-based index). Only mark verified work done. Project selection belongs to the user.', schema({ note: string, nextStep: string, milestone: { type: 'integer', minimum: 0 }, done: { type: 'boolean' } })],
+  ['project_progress', 'Update the current project only: add a factual progress note, set the next step, or check an existing milestone (zero-based index). Only mark verified work done after roadmap approval. Guided plans require the current revision from project_plan for milestone updates.', schema({ note: string, nextStep: string, milestone: { type: 'integer', minimum: 0 }, done: { type: 'boolean' }, revision: { type: 'integer' } })],
+  ['project_plan', 'Read one section of the current project plan, its revision, approvals and later features. Defaults to the next unapproved section. Project selection belongs to the user.', schema({ section: { enum: ['brief', 'research', 'infrastructure', 'roadmap'] } })],
+  ['propose_project_plan', 'Propose changes to one planning section after discussing it with the user. This cannot approve a plan or activate a project. Changes remain separate until the user reviews them in Projects. Read project_plan first for the field names and current revision.', schema({ section: { enum: ['brief', 'research', 'infrastructure', 'roadmap'] }, revision: { type: 'integer' }, changes: { type: 'object' } }, ['section', 'revision', 'changes'])],
+  ['add_later_feature', 'Save an extra idea in the current project’s Later features file. This does not add it to approved scope or authorize implementation. Read project_plan for the current revision.', schema({ revision: { type: 'integer' }, text: { type: 'string', maxLength: 1000 } }, ['revision', 'text'])],
   ['start_turn', 'Start tracking a new task before editing files. Idempotent until finish_turn or a ready notification. Called automatically by dock_context. Returns the turn ID used to group code changes, tests and images.', schema({})],
   ['finish_turn', 'Save code changes for this task in Results. Native supported-agent stop hooks and ready notifications also do this.', schema({})],
   ['setup_status', 'Inspect installed agents, saved key names and shared tool/API settings. Never returns key values.', schema({})],
@@ -43,6 +46,13 @@ class Workbench {
     const context = this.turns?.context(owner) || { project: session?.cwd || this.getProject(), projectId: session?.projectId || null, sessionId: session?.id || null, consoleKey: session?.consoleKey || session?.id || null, consoleName: session?.name || '' };
     switch (name) {
       case 'dock/project_progress': return this.projects.progress(session?.projectId, args);
+      case 'dock/project_plan': return this.projects.plan(session?.projectId, args.section);
+      case 'dock/propose_project_plan': {
+        const p = this.projects.propose(session?.projectId, args, session?.name);
+        this.inbox.add({ title: p.name + ': review ' + args.section, message: 'An agent proposal is ready in Projects → Roadmap.', kind: 'question', sessionId: session?.id });
+        return { projectId: p.id, revision: p.plan.revision, needsUserReview: true, section: args.section };
+      }
+      case 'dock/add_later_feature': { const p = this.projects.addLater(session?.projectId, args); return { revision: p.plan.revision, laterFeatures: p.plan.laterFeatures, files: p.plan.files }; }
       case 'dock/start_turn': return { turnId: await this.turns?.begin(owner), autoCapture: this.turns?.active.get(owner)?.capture === true };
       case 'dock/finish_turn': return { turnId: await this.turns?.finish(owner) };
       case 'dock/setup_status': return this.setup.status();

@@ -32,7 +32,7 @@ let browser;const reports=[];
     await nav('projects');await capture('projects');await page.locator('[data-project-search]').fill('Trader');assert.equal(await page.locator('.project-card').count(),1);await page.locator('[data-project-search]').fill('');
     await page.locator('.page-heading [data-project-new]').click();await page.locator('#project-editor').waitFor();
     assert.equal(await page.locator('#project-form [name=name]').evaluate(x=>x===document.activeElement),true);
-    for(const field of ['approach','nextStep','milestones','notes','status'])assert.equal(await page.locator(`#project-form [name=${field}]`).isVisible(),false);
+    for(const field of ['approach','nextStep','notes','status'])assert.equal(await page.locator(`#project-form [name=${field}]`).isVisible(),false);
     await page.locator('#project-form [name=name]').fill('A new idea');await page.locator('#project-form [name=goals]').fill('Make a small game that is fun to play.');
     await capture('new-project');await page.keyboard.press('Escape');assert.equal(await page.locator('#project-editor').isVisible(),false);assert.equal(await page.locator('.page-heading [data-project-new]').evaluate(x=>x===document.activeElement),true);
     await page.locator('[data-project-edit]').first().click();await page.locator('#project-editor').waitFor();await page.locator('#project-form [name=nextStep]').fill('Verify the next wave');await capture('project-editor');await page.keyboard.press('Escape');assert.equal(await page.locator('#project-editor').isVisible(),false);

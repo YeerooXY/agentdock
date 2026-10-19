@@ -19,6 +19,10 @@ The local-only mode accepts private network peers. Forwarding a port alone does 
 
 A paired phone can type commands using the console's existing permissions. This is access to your PC, so pair only devices you control. **Remove** beside a phone immediately revokes its token. **Turn off** stops mobile access without ending local consoles.
 
+### How long does pairing last?
+
+The saved pairing token has no automatic expiry and survives normal restarts and compatible updates. The PC must stay awake, Dock's connection must be enabled, and a saved local or internet address must remain reachable. Router, address or port changes can require updating the connection and pairing again. Clearing app data, removing the phone or replacing the PC's certificate also requires pairing again. The current PC certificate lasts five years; certificate expiry eventually needs renewal and re-pairing. The short QR/request expiry applies only while adding a phone.
+
 ## Updates
 
 Android preview 6 puts account usage first, with separate pink-blue bars for each reported limit, reset times and pull-to-refresh. Unknown and stale readings remain labeled. API estimates stay separate from subscription limits. The console's Send button and borders also follow the pink-blue theme.
