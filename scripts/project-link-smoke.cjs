@@ -54,6 +54,25 @@ async function stop() { await call('quit'); await app.close(); app = null; }
     assert.equal(r.status, 200); const value = await r.json(); assert.notEqual(value.isError, true); return value;
   }
   assert.match(JSON.stringify(await bridge('dock_context')), /Ship a playable game/);
+  const currentSession = async () => (await call('state')).sessions.find(x => x.id === s.id);
+  p = (await call('state')).projects[0];
+  await call('projects.save', { ...p, revision: p.plan.revision, name: 'Arena project' });
+  await until(async () => (await currentSession()).name === 'Arena project');
+  assert.equal((await currentSession()).nameMode, 'project');
+  assert.equal((await call('state')).settings.slotNames[s.slot], 'Arena project');
+  assert.match(JSON.stringify(await bridge('dock_context')), /Arena project/);
+  assert.match(fs.readFileSync(path.join(profile, 'sessions', s.id, 'AGENT_DOCK.md'), 'utf8'), /Arena project/);
+  await call('slot.name', { slot: s.slot, sessionId: s.id, name: 'Combat review' });
+  p = (await call('state')).projects[0]; await call('projects.save', { ...p, revision: p.plan.revision, name: 'Arena release' });
+  assert.equal((await currentSession()).name, 'Combat review');
+  await page.locator(`[data-console-project="${s.id}"]`).click();
+  const naming = page.locator('#console-project-form [name=useProjectName]'); assert.equal(await naming.isChecked(), false);
+  await page.screenshot({ path: path.join(out, 'desktop-title-choice.png') }); await naming.check();
+  await page.locator('#console-project-form [type=submit]').click(); await page.locator('#console-project-picker').waitFor({ state: 'hidden' });
+  await until(async () => (await currentSession()).name === 'Arena release');
+  await call('session.input', { id: s.id, data: 'Write-Output $linkProbe\r' }); await until(async () => (await call('session.buffer', s.id)).data.includes('KEPT_AFTER_LINK'));
+  p = (await call('state')).projects[0];
+  checks.push('project rename updates automatic titles and slot names; manual names persist; naming switch restores project title; context/file refresh without restarting the console');
   await page.locator(`[data-console-project="${s.id}"]`).click(); await page.locator('[data-project-view]').click();
   await page.locator('.project-card').waitFor();
   await bridge('dock_call', { tool: 'dock/project_progress', arguments: { revision: p.plan.revision, milestone: 0, done: true, nextStep: 'Gather playtest feedback' } });
@@ -79,6 +98,8 @@ async function stop() { await call('quit'); await app.close(); app = null; }
   state = await call('state'); fs.writeFileSync(path.join(out, 'fixture.json'), JSON.stringify(state));
   await stop(); await start(); await until(async () => (await call('state')).sessions.length === 2);
   state = await call('state'); assert.equal(state.sessions.find(x => x.consoleKey === s.consoleKey).projectId, p.id);
+  assert.equal(state.sessions.find(x => x.consoleKey === s.consoleKey).name, 'Arena release');
+  assert.equal(state.sessions.find(x => x.consoleKey === s.consoleKey).nameMode, 'project');
   assert.equal(state.sessions.find(x => x.consoleKey === second.consoleKey).projectId, null);
   assert.equal(state.settings.suggestProjects, false); assert.equal(await page.locator('#project-suggestion').isVisible(), false);
   checks.push('project association and opt-out survive workspace restoration');

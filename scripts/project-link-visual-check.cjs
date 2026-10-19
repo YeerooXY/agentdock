@@ -17,7 +17,7 @@ let browser; const reports = [];
     const small = ['android', 'iphone'].includes(name);
     state.mode = 'dashboard'; state.settings.suggestProjects = true; state.settings.sidebarCollapsed = small;
     state.settings.consoleDefaults.cwd = 'C:\\Projects\\Robonslaught'; state.sessions = state.sessions.slice(0, 1);
-    Object.assign(state.sessions[0], { name: 'Robonslaught', cwd: state.settings.consoleDefaults.cwd, projectId: null });
+    Object.assign(state.sessions[0], { name: 'Robonslaught', cwd: state.settings.consoleDefaults.cwd, projectId: null, nameMode: 'custom' });
     Object.assign(state.projects[0], { name: 'Robonslaught', category: 'Game', goals: 'Build a playable arena and finish a public demo.', nextStep: 'Gather playtest feedback', milestones: [{ text: 'Playable arena', done: true }, { text: 'Demo ready for players', done: false }], folders: [{ path: state.settings.consoleDefaults.cwd }] });
     await context.exposeFunction('fixtureCall', async (method, payload) => {
       let value;
@@ -26,7 +26,7 @@ let browser; const reports = [];
       if (method === 'session.models') return { ok: true, value: [] };
       if (method === 'settings') Object.assign(state.settings, payload);
       else if (method === 'mode') state.mode = payload;
-      else if (method === 'session.project') { const s = state.sessions.find(x => x.id === payload.id); s.projectId = payload.projectId; value = s; }
+      else if (method === 'session.project') { const s = state.sessions.find(x => x.id === payload.id); s.projectId = payload.projectId; s.nameMode = payload.useProjectName ? 'project' : 'custom'; if (s.nameMode === 'project') s.name = state.projects.find(x => x.id === s.projectId).name; value = s; }
       else if (method === 'projects.save') { value = { ...payload, id: payload.id || 'new-project', createdAt: Date.now(), status: payload.status || 'active', lastActiveAt: null }; state.projects = [value, ...state.projects.filter(x => x.id !== value.id)]; }
       else if (!['session.resize', 'session.input', 'session.acknowledge'].includes(method)) throw Error('Unexpected fixture call ' + method);
       return { ok: true, value, state };
@@ -52,7 +52,7 @@ let browser; const reports = [];
     await page.locator('[data-project-setup]').focus(); await page.keyboard.press('Enter'); await page.locator('#console-project-picker').waitFor();
     assert.equal(await page.locator('#console-project-form [name=projectId]').evaluate(x => x === document.activeElement), true);
     await capture('picker'); await page.keyboard.press('Escape');
-    assert.equal(await page.locator('[data-project-setup]').evaluate(x => x === document.activeElement), true);
+    await page.waitForFunction(() => document.querySelector('[data-project-setup]') === document.activeElement);
     await page.locator('[data-project-stop]').focus(); await page.keyboard.press('Enter'); await page.locator('#project-suggestion').waitFor({ state: 'hidden' });
     assert.equal(state.settings.suggestProjects, false);
     assert.equal(await page.locator('.console-project').evaluate(x => x === document.activeElement), true);
@@ -62,8 +62,11 @@ let browser; const reports = [];
     assert.equal(await page.locator('#project-form [name=folders]').inputValue(), state.sessions[0].cwd);
     await page.locator('#project-form [name=goals]').fill('Bring my existing game into Projects.'); await capture('new-project'); await page.keyboard.press('Escape');
     await page.locator('.console-project').click(); await page.locator('#console-project-form [name=projectId]').selectOption(state.projects[0].id);
+    const naming = page.locator('#console-project-form [name=useProjectName]'); assert.equal(await naming.isChecked(), false);
+    await naming.focus(); await page.keyboard.press('Space'); assert.equal(await naming.isChecked(), true); await capture('title-choice');
     await page.locator('#console-project-form [type=submit]').click(); await page.locator('#console-project-picker').waitFor({ state: 'hidden' });
     assert.equal(await page.locator('#project-suggestion').isVisible(), false);
+    assert.equal(state.sessions[0].nameMode, 'project');
     await page.locator('.session-card [data-session]').click(); await page.locator('#terminal-page').waitFor(); await capture('linked-console');
     await page.locator('#terminal-heading .console-project').click(); await page.locator('[data-project-view]').click();
     await page.locator('.project-card').waitFor(); await page.locator('.project-milestones summary').click(); await capture('progress');

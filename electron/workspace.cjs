@@ -45,6 +45,7 @@ class Workspace {
       if (!Array.isArray(entries) || entries.length > capacity || new Set(entries.map(x => x?.slot)).size !== entries.length || entries.some(x =>
         !Number.isInteger(x?.slot) || x.slot < 1 || x.slot > capacity || !providers.includes(x.provider) ||
         typeof x.cwd !== 'string' || typeof x.name !== 'string' || !['default', 'unrestricted', 'system'].includes(x.permissions) ||
+        (x.nameMode != null && !['project', 'folder', 'custom'].includes(x.nameMode)) ||
         (x.command != null && (typeof x.command !== 'string' || x.command.length > 4000 || x.command.includes('\0'))))) throw new Error('Invalid saved workspace.');
       const area = entries.flatMap(item => cells(item, grid));
       if (new Set(area).size !== area.length) throw new Error('Saved consoles overlap.');

@@ -33,16 +33,20 @@ class Sessions extends EventEmitter {
     this.agentHome = dependencies.agentHome;
     this.prepareCodexSession = dependencies.prepareCodexSession || prepareCodexSession;
     this.grid = gridSize(dependencies.grid); this.onLayout = dependencies.onLayout || (() => {});
+    this.contexts = new Map();
+    this.refreshProjectContext = () => this.syncProjects();
+    this.projects?.on('changed', this.refreshProjectContext);
+    this.hub?.on?.('context-changed', this.refreshProjectContext);
   }
   list() { return [...this.items.values()].map(({ terminal, buffer, command, claudeTarget, ...session }) => session).sort((a, b) => a.slot - b.slot); }
   savedConsoles() {
     return [...this.items.values()].filter(x => (x.alive || x.restoreError) && !x.dismissed).map(x => ({
-      slot: x.slot, width: x.width || 1, height: x.height || 1, consoleKey: x.consoleKey || x.id, projectId: x.projectId || null, name: x.name, cwd: x.cwd, provider: x.provider, permissions: x.permissions,
+      slot: x.slot, width: x.width || 1, height: x.height || 1, consoleKey: x.consoleKey || x.id, projectId: x.projectId || null, name: x.name, nameMode: x.nameMode, cwd: x.cwd, provider: x.provider, permissions: x.permissions,
       command: x.command || '', model: x.launchModel || '', providerSessionId: ['codex', 'claude'].includes(x.provider) ? x.providerSessionId : null, claudeTarget: x.claudeTarget
     })).sort((a, b) => a.slot - b.slot);
   }
   async restore(entry) {
-    if (entry.projectId && this.projects && !this.projects.get(entry.projectId)) entry = { ...entry, projectId: null };
+    if (entry.projectId && this.projects && !this.projects.get(entry.projectId)) entry = { ...entry, projectId: null, ...(entry.nameMode === 'project' ? { name: '', nameMode: 'folder' } : {}) };
     try {
       return await this.create({ ...entry, permissions: entry.permissions === 'system' ? 'default' : entry.permissions }, { resumeId: entry.providerSessionId, claudeTarget: entry.claudeTarget });
     } catch (error) {
@@ -75,6 +79,7 @@ class Sessions extends EventEmitter {
   async createOne(raw, { resumeId = null, claudeTarget = null } = {}) {
     if (this.stopping) throw new Error('Agent Dock is closing.');
     raw = this.projects?.launch(raw) || raw;
+    if (raw.nameMode != null && !['project', 'folder', 'custom'].includes(raw.nameMode)) throw new Error('Choose project naming or a custom chat title.');
     const opening = planOpening([...this.items.values(), ...this.starting.values()], raw, this.grid);
     if (this.starting.size && (JSON.stringify(opening.grid) !== JSON.stringify(this.grid) || opening.plan.some(x => { const before = this.items.get(x.id) || this.starting.get(x.id); return before && ['slot','width','height'].some(k => x[k] !== before[k]); }))) throw new Error('Wait for the console to open before changing the layout.');
     opening.plan = opening.plan.filter(x => this.items.has(x.id));
@@ -88,18 +93,19 @@ class Sessions extends EventEmitter {
     if (model && !/^[a-zA-Z0-9][a-zA-Z0-9._:/\[\]@+-]{0,199}$/.test(model)) throw new Error('Enter a model name or alias, up to 200 characters.');
     const cwd = String(raw.cwd || '');
     if (!path.isAbsolute(cwd) || !fs.existsSync(cwd) || !fs.statSync(cwd).isDirectory()) throw new Error('Choose an existing project folder.');
-    const name = String(raw.name || path.basename(cwd)).trim().slice(0, 64);
+    const nameMode = raw.nameMode || (raw.name?.trim() ? 'custom' : 'folder');
+    const name = String(nameMode === 'folder' ? path.basename(cwd) : raw.name || path.basename(cwd)).trim().slice(0, 64);
     const id = crypto.randomUUID();
     const dir = path.join(this.root, 'sessions', id); fs.mkdirSync(dir, { recursive: true });
-    const summary = this.hub ? this.hub.summary() + (this.projects?.summary(raw.projectId) || '') : '';
+    const summary = this.hub ? this.hub.summary() + (this.projects?.chatSummary({ projectId: raw.projectId, name, cwd }) || '') : '';
     let discussion = '';
     if (raw.planDiscussion && !resumeId) {
       if (!['brief', 'research', 'infrastructure', 'roadmap'].includes(raw.planDiscussion)) throw new Error('Choose a planning section.');
       this.projects?.plan(raw.projectId, raw.planDiscussion);
       discussion = `Call dock_context, then dock/project_plan for section ${raw.planDiscussion}. Help me plan this project through a conversation. Ask one focused question and wait for my answer. Discuss alternatives and explain recommendations. Do not edit code, initialize the project or add features. Submit a proposal only after we have discussed this section; I approve it in Projects.`;
     }
-    const summaryPath = this.hub && raw.projectId ? path.join(dir, 'AGENT_DOCK.md') : this.hub?.summaryPath;
-    if (this.hub && raw.projectId) fs.writeFileSync(summaryPath, summary, { mode: 0o600 });
+    const summaryPath = this.hub ? path.join(dir, 'AGENT_DOCK.md') : undefined;
+    if (summaryPath) { fs.writeFileSync(summaryPath, summary, { mode: 0o600 }); this.contexts.set(id, summary); }
     const helper = this.runtime?.event || path.join(__dirname, 'agent-event.cjs');
     const node = this.runtime?.node || this.findProgram('node.exe') || this.findProgram('node');
     const claudeInstall = claudeTarget || this.claude || (raw.provider === 'claude' && { kind: 'native', path: this.findProgram('claude') });
@@ -180,12 +186,13 @@ class Sessions extends EventEmitter {
     catch (error) { terminal.kill(); this.hub?.revoke(id); throw error; }
     for (const [oldId, old] of this.items) if (old.slot === slot && !old.alive) this.items.delete(oldId);
     const consoleKey = /^[a-f0-9-]{36}$/i.test(raw.consoleKey || '') ? raw.consoleKey : id;
-    const session = { id, consoleKey, projectId: raw.projectId || null, slot, width, height, name, cwd, provider: raw.provider, permissions, launchModel: model, command: raw.provider === 'custom' ? raw.command : '', claudeTarget: raw.provider === 'claude' ? claudeInstall : undefined, state: 'open', alive: true, cols: 110, rows: 30, createdAt: Date.now(), updatedAt: Date.now(), terminal, buffer: '', sequence: 0, usage: null, providerSessionId: resumeId };
+    const session = { id, consoleKey, projectId: raw.projectId || null, slot, width, height, name, nameMode, cwd, provider: raw.provider, permissions, launchModel: model, command: raw.provider === 'custom' ? raw.command : '', claudeTarget: raw.provider === 'claude' ? claudeInstall : undefined, state: 'open', alive: true, cols: 110, rows: 30, createdAt: Date.now(), updatedAt: Date.now(), terminal, buffer: '', sequence: 0, usage: null, providerSessionId: resumeId };
     if (trackingWarning) session.buffer = trackingWarning;
     this.items.set(id, session);
     this.projects?.touch(session.projectId);
     terminal.onData(data => { session.buffer = (session.buffer + data).slice(-250000); this.emit('output', { id, data, sequence: ++session.sequence }); });
     terminal.onExit(({ exitCode }) => {
+      this.contexts.delete(id);
       this.hub?.revoke(id); session.alive = false; session.state = 'ended'; session.exitCode = exitCode; session.updatedAt = Date.now();
       if (resumeId && exitCode !== 0 && !session.dismissed) {
         session.state = 'error'; session.restoreError = 'The saved conversation could not be reopened. Check the console output, then try again.';
@@ -216,18 +223,48 @@ class Sessions extends EventEmitter {
     item.terminal.resize(cols, rows);
   }
   buffer(id) { const item = this.items.get(id); return { data: item?.buffer || '', sequence: item?.sequence || 0 }; }
+  refreshContextFile(item) {
+    if (!this.hub) return;
+    const file = path.join(this.root, 'sessions', item.id, 'AGENT_DOCK.md'), temp = file + '.tmp';
+    try {
+      const summary = this.hub.summary() + (this.projects?.chatSummary(item) || '');
+      if (this.contexts.get(item.id) === summary) return;
+      fs.writeFileSync(temp, summary, { mode: 0o600 }); fs.renameSync(temp, file); this.contexts.set(item.id, summary);
+    } catch {
+      try { fs.unlinkSync(temp); } catch {}
+      this.emit('context-error', 'A chat instruction file could not be refreshed. Use dock_context for the current project.');
+    }
+  }
+  syncProjects() {
+    let changed = false;
+    for (const item of this.items.values()) {
+      if ((!item.alive && !item.restoreError) || item.dismissed) continue;
+      if (item.projectId && this.projects && !this.projects.get(item.projectId)) { item.projectId = null; if (item.nameMode === 'project') item.nameMode = 'folder'; changed = true; }
+      const name = item.nameMode === 'project' ? this.projects?.get(item.projectId)?.name : item.nameMode === 'folder' ? path.basename(item.cwd) : item.name;
+      if (name && name !== item.name) { item.name = name; this.emit('name-changed', item); changed = true; }
+      if (item.alive) this.refreshContextFile(item);
+    }
+    if (changed) this.emit('changed');
+  }
   rename(id, name) {
     const item = this.items.get(id);
     if (!item || (!item.alive && !item.restoreError)) throw new Error('This console is no longer open.');
-    item.name = name || path.basename(item.cwd) || `Console ${item.slot}`;
+    item.nameMode = name ? 'custom' : item.projectId ? 'project' : 'folder';
+    item.name = name || this.projects?.get(item.projectId)?.name || path.basename(item.cwd) || `Console ${item.slot}`;
+    if (item.alive) this.refreshContextFile(item);
+    this.emit('name-changed', item);
     this.emit('changed');
   }
-  assignProject(id, projectId) {
+  assignProject(id, projectId, { useProjectName } = {}) {
     const item = this.items.get(id);
     if (!item || (!item.alive && !item.restoreError) || item.dismissed) throw new Error('This console is no longer open.');
     if (projectId !== null && (typeof projectId !== 'string' || !this.projects?.get(projectId))) throw new Error('Choose an existing project.');
+    if (useProjectName != null && typeof useProjectName !== 'boolean') throw new Error('Choose whether to use the project name.');
     // Associate metadata only. Never restart the PTY, replay input or change its folder.
     item.projectId = projectId;
+    if (projectId) item.nameMode = useProjectName === true || (useProjectName == null && item.nameMode !== 'custom') ? 'project' : 'custom';
+    else if (item.nameMode === 'project') item.nameMode = 'folder';
+    this.syncProjects();
     this.projects?.touch(projectId);
     this.emit('changed');
     return this.list().find(x => x.id === id);
@@ -293,6 +330,8 @@ class Sessions extends EventEmitter {
   updateUsage(recent) { for (const session of this.items.values()) { const match = recent.find(x => x.id === session.providerSessionId); if (match?.usage) session.usage = match.usage; if (match?.messages?.length) this.emit('message-usage', { session, messages: match.messages }); } }
   async stop() {
     this.stopping = true;
+    this.projects?.off('changed', this.refreshProjectContext);
+    this.hub?.off?.('context-changed', this.refreshProjectContext);
     const active = [...this.items.values()].filter(x => x.alive);
     if (!active.length) return;
     await new Promise(resolve => {

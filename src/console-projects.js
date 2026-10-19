@@ -8,6 +8,7 @@ export function consoleProjects({ call, getState, getView, projects, navigate, e
   dialog.innerHTML = `<form id="console-project-form"><div class="dialog-heading"><h2 id="console-project-title">Console project</h2><button type="button" class="icon-button" data-project-picker-close aria-label="Close project chooser">${icon('close')}</button></div>
     <p data-project-chat></p><p class="project-current-folder" data-project-cwd></p>
     <label>Project<select name="projectId"><option value="">No project</option></select></label>
+    <label class="toggle-row" data-project-title-choice hidden><span>Use project name as chat title</span><input type="checkbox" name="useProjectName"></label>
     <div class="project-picker-links"><button type="button" class="secondary" data-project-create>${icon('plus')}New project</button><button type="button" class="subtle" data-project-view hidden>View project</button></div>
     <p class="field-hint">Your agent can read this project’s goals and progress on its next turn.</p>
     <p class="form-error" role="alert"></p><div class="project-dialog-actions"><button type="button" class="secondary" data-project-picker-close>Cancel</button><button type="submit" class="primary">Save</button></div></form>`;
@@ -39,6 +40,7 @@ export function consoleProjects({ call, getState, getView, projects, navigate, e
     form.elements.projectId.innerHTML = '<option value="">No project</option>' + (getState().projects || []).map(p => `<option value="${e(p.id)}">${e(p.name)}${p.status === 'active' ? '' : ` (${e(p.status)})`}</option>`).join('');
     form.elements.projectId.value = project(value) ? value : '';
     form.querySelector('[data-project-view]').hidden = !form.elements.projectId.value;
+    form.querySelector('[data-project-title-choice]').hidden = !form.elements.projectId.value;
   }
   function open(id, trigger = document.activeElement, selectedProject) {
     const s = session(id); if (!s) { toast('This console is no longer open.', true); return; }
@@ -47,25 +49,31 @@ export function consoleProjects({ call, getState, getView, projects, navigate, e
     form.querySelector('[data-project-cwd]').textContent = s.cwd;
     form.querySelector('.form-error').textContent = '';
     options(selectedProject || s.projectId);
+    form.elements.useProjectName.checked = s.nameMode === 'project' || s.nameMode === 'folder' || (!s.nameMode && s.name === project(s.projectId)?.name);
     dialog.showModal(); form.elements.projectId.focus();
   }
-  async function attach(id, projectId) {
-    await call('session.project', { id, projectId: projectId || null });
+  async function attach(id, projectId, useProjectName) {
+    await call('session.project', { id, projectId: projectId || null, ...(projectId && useProjectName != null ? { useProjectName } : {}) });
     sync(); toast(projectId ? 'Chat linked. See its progress in Projects.' : 'Chat removed from project.');
   }
   dialog.addEventListener('cancel', event => { if (busy) event.preventDefault(); });
   dialog.addEventListener('close', () => {
+    // Native dialogs can restore focus before this event. Preserve a user's
+    // next focused control or a newly opened dialog instead of stealing focus.
+    const focused = document.activeElement;
+    if (focused && focused !== document.body && !dialog.contains(focused) && focused.getClientRects().length) return;
     if (opener?.isConnected && opener.getClientRects().length) opener.focus({ preventScroll: true });
     else [...document.querySelectorAll('[data-console-project]')].find(b => b.dataset.consoleProject === targetId && b.getClientRects().length)?.focus({ preventScroll: true });
   });
-  form.addEventListener('change', () => { form.querySelector('[data-project-view]').hidden = !form.elements.projectId.value; });
+  form.addEventListener('change', () => { form.querySelector('[data-project-view]').hidden = !form.elements.projectId.value; form.querySelector('[data-project-title-choice]').hidden = !form.elements.projectId.value; });
   form.addEventListener('submit', async event => {
     event.preventDefault(); if (busy) return;
     const id = targetId, projectId = form.elements.projectId.value;
-    busy = true; for (const b of form.querySelectorAll('button, select')) b.disabled = true;
-    try { await attach(id, projectId); dialog.close(); }
+    const useProjectName = form.elements.useProjectName.checked;
+    busy = true; for (const b of form.querySelectorAll('button, select, input')) b.disabled = true;
+    try { await attach(id, projectId, useProjectName); dialog.close(); }
     catch (error) { form.querySelector('.form-error').textContent = error.message; }
-    finally { busy = false; for (const b of form.querySelectorAll('button, select')) b.disabled = false; }
+    finally { busy = false; for (const b of form.querySelectorAll('button, select, input')) b.disabled = false; }
   });
   document.addEventListener('click', async event => {
     const b = event.target.closest('button'); if (!b) return;

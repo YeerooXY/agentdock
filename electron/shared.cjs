@@ -3,6 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const http = require('node:http');
 const crypto = require('node:crypto');
+const { EventEmitter } = require('node:events');
 const { Client } = require('@modelcontextprotocol/sdk/client/index.js');
 const { StdioClientTransport } = require('@modelcontextprotocol/sdk/client/stdio.js');
 const { StreamableHTTPClientTransport } = require('@modelcontextprotocol/sdk/client/streamableHttp.js');
@@ -71,8 +72,9 @@ function validateProfile(raw) {
   if (!['responses', 'anthropic', 'chat'].includes(raw.protocol)) throw new Error('Choose an API format.');
   return { id, name: String(raw.name || id).slice(0, 80), keyId, protocol: raw.protocol, url: endpoint(raw.url) };
 }
-class SharedHub {
+class SharedHub extends EventEmitter {
   constructor(root, vault, { integrations, workbench } = {}) {
+    super();
     this.root = root; this.vault = vault; this.file = path.join(root, 'shared.json');
     this.integrations = integrations;
     this.workbench = workbench;
@@ -92,7 +94,7 @@ class SharedHub {
       this.vault.list().map(x => `- ${x.id}: ${x.label}`).join('\n') + '\n\n' +
       guides.filter(x => this.config.guideIds.includes(x.id)).map(x => x.content).join('\n\n') + imageInstructions(this.config.imageGeneration);
   }
-  writeSummary() { fs.mkdirSync(path.dirname(this.summaryPath), { recursive: true }); const temp = this.summaryPath + '.tmp'; fs.writeFileSync(temp, this.summary(), { mode: 0o600 }); fs.renameSync(temp, this.summaryPath); }
+  writeSummary() { fs.mkdirSync(path.dirname(this.summaryPath), { recursive: true }); const temp = this.summaryPath + '.tmp'; fs.writeFileSync(temp, this.summary(), { mode: 0o600 }); fs.renameSync(temp, this.summaryPath); this.emit('context-changed'); }
   snapshot() { return { ...this.config, guides: guides.map(x => ({ ...x, enabled: this.config.guideIds.includes(x.id) })), connections: this.config.connections.map(x => ({ ...x, status: this.status.get(x.id) || null })), summary: this.summary(), summaryPath: this.summaryPath }; }
   save(next) { atomicJson(this.file, next); this.config = next; this.writeSummary(); }
   instructions(text) { if (typeof text !== 'string' || text.length > 20000) throw new Error('Keep shared instructions under 20,000 characters.'); this.save({ ...this.config, instructions: text }); }
@@ -177,7 +179,7 @@ class SharedHub {
       const session = this.workbench?.turns?.session(owner);
       this.workbench?.projects?.touch(session?.projectId);
       const capture = this.workbench?.turns?.active.get(owner)?.capture !== false;
-      return textResult(this.summary() + (this.workbench?.projects?.summary(session?.projectId) || '') + (turnId ? `\n\nCurrent turn: ${turnId}. ${capture ? 'Saved images, tests and code changes are grouped together.' : 'Automatic Results capture is off for this turn. Only explicitly saved files are added; no automatic diff or image capture.'} Call dock/notify with kind ready when finished${capture ? ', and tell the user to open Results' : ''}.` : ''));
+      return textResult(this.summary() + (this.workbench?.projects?.chatSummary(session) || '') + (turnId ? `\n\nCurrent turn: ${turnId}. ${capture ? 'Saved images, tests and code changes are grouped together.' : 'Automatic Results capture is off for this turn. Only explicitly saved files are added; no automatic diff or image capture.'} Call dock/notify with kind ready when finished${capture ? ', and tell the user to open Results' : ''}.` : ''));
     }
     if (name === 'dock_tools') return textResult(JSON.stringify(await this.list(args.connection)));
     if (name !== 'dock_call' || typeof args.tool !== 'string') throw new Error('Unknown shared tool.');

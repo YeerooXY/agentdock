@@ -182,6 +182,11 @@ app.whenReady().then(async () => {
   } });
   workPower = new WorkPower(powerSaveBlocker);
   sessions.on('changed', updatePower);
+  sessions.on('name-changed', item => {
+    try { persistSettings({ ...settings, slotNames: { ...settings.slotNames, [item.slot]: item.name } }); }
+    catch { storageError = 'The chat title could not be saved to this slot.'; }
+  });
+  sessions.on('context-error', message => { storageError = message; publish(); });
   sessions.on('message-usage', ({ session, messages }) => { try { messageUsage.record(session, messages); } catch { storageError = 'Message usage could not be saved.'; } });
   turns = new Turns(workbench.results, { enabled: settings.autoSaveResults !== false, getSession: id => sessions.items.get(id), getSecrets: () => vault.list().flatMap(x => { try { return [vault.get(x.id)]; } catch { return []; } }) });
   workbench.turns = turns;
@@ -372,7 +377,7 @@ app.whenReady().then(async () => {
           const error = await shell.openPath(target); if (error) throw new Error('The project folder could not be opened.');
           return { ok: true, value: target };
         }
-        case 'session.project': return { ok: true, value: sessions.assignProject(payload?.id, payload?.projectId) };
+        case 'session.project': return { ok: true, value: sessions.assignProject(payload?.id, payload?.projectId, { useProjectName: payload?.useProjectName }) };
         case 'projects.progress': { const project = projects.progress(payload?.id, payload); publish(); return { ok: true, value: project }; }
         case 'projects.remove': {
           projects.remove(payload);
@@ -477,7 +482,7 @@ app.whenReady().then(async () => {
           const apiOwner = 'api:' + require('node:crypto').randomUUID();
           turns.virtual.set(apiOwner, { id: apiOwner, consoleKey: 'api:' + profile.id, projectId: project.projectId || null, name: profile.name, cwd: project.cwd || settings.consoleDefaults.cwd, alive: true });
           projects.touch(project.projectId);
-          const apiHub = { summary: () => hub.summary() + projects.summary(project.projectId), invoke: (name, args) => hub.invoke(name, args, apiOwner) };
+          const apiHub = { summary: () => hub.summary() + projects.chatSummary(turns.virtual.get(apiOwner)), invoke: (name, args) => hub.invoke(name, args, apiOwner) };
           let result;
           try { await turns.begin(apiOwner); result = await runApi(payload, key, settings.rates[`${profile.id}:${payload.model?.trim()}`], { profile, hub: apiHub, onEntry: entry => {
             entry.projectId = project.projectId || null; entry.consoleName = project.name || profile.name; entry.turnId = turns.context(apiOwner)?.turnId || null;

@@ -91,7 +91,16 @@ class Projects extends EventEmitter {
   launch(raw) {
     if (!raw?.projectId) return { ...raw, projectId: null };
     const item = this.get(raw.projectId); if (!item) throw new Error('Project not found. Choose it again.');
-    return { ...raw, projectId: item.id, name: raw.name?.trim() || item.name, cwd: folder(raw.cwd || item.folders[0].path) };
+    const nameMode = raw.nameMode || (raw.name?.trim() && raw.name.trim() !== item.name ? 'custom' : 'project');
+    return { ...raw, projectId: item.id, nameMode, name: nameMode === 'project' ? item.name : raw.name?.trim() || item.name, cwd: folder(raw.cwd || item.folders[0].path) };
+  }
+  chatSummary(session) {
+    if (!session) return '';
+    const p = this.get(session.projectId);
+    const binding = { projectId: p?.id || null, projectName: p?.name || null, chatTitle: session.name || '', launchDirectory: session.cwd || '' };
+    return '\n\n## Current chat binding\n' + JSON.stringify(binding, null, 2) + '\n' + (p
+      ? 'This is the project explicitly linked to this chat. Use its ID and project context, even when the chat has a custom title. If a request points to a different project, ask the user to change the link before project-specific work. Refresh dock_context each turn; an earlier chat message or title does not override the current binding.\n'
+      : 'No saved project is linked to this chat. Do not guess one from the chat title or earlier conversation. Use the launch directory and the user’s explicit instructions; ask which project or folder they mean when the target is unclear. The console folder button lets the user choose a project.\n') + this.summary(p?.id);
   }
   summary(id) {
     const p = this.get(id); if (!p) return '';
