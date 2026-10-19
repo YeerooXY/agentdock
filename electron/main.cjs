@@ -17,6 +17,7 @@ const { Projects } = require('./projects.cjs');
 const { MessageUsage, apiMessages } = require('./message-usage.cjs');
 const { Updates } = require('./updates.cjs');
 const { Workbench } = require('./workbench.cjs');
+const { creativeTools } = require('./creative-tools.cjs');
 const { Turns } = require('./turns.cjs');
 const { MobileCompanion } = require('./mobile.cjs');
 const { DockNotifications } = require('./notifications.cjs');
@@ -509,6 +510,7 @@ app.whenReady().then(async () => {
           const urls = { codex: 'https://learn.chatgpt.com/docs/codex/cli', claude: 'https://code.claude.com/docs/en/overview', openai: 'https://developers.openai.com/api/docs/pricing', anthropic: 'https://platform.claude.com/docs/en/about-claude/pricing' };
           Object.assign(urls, { tailscale: 'https://tailscale.com/download', duckdns: 'https://www.duckdns.org/', firebase: 'https://console.firebase.google.com/', 'mobile-guide': 'https://github.com/YeerooXY/agentdock/blob/main/docs/android-setup.md', 'android-download': 'https://github.com/YeerooXY/agentdock/releases' });
           for (const item of integrationDefinitions) urls[item.id] = item.docs;
+          for (const item of creativeTools) urls[item.id] = item.docs;
           for (const item of cliCatalog) urls[item.id] = item.docs;
           urls.zai = 'https://docs.z.ai/devpack/tool/opencode';
           if (!urls[payload]) throw new Error('Unknown documentation link.'); await shell.openExternal(urls[payload]); break;

@@ -21,6 +21,8 @@ test('optional installer uses only selected official recipes, skips installed to
   await assert.rejects(setup.install(['user-supplied-package']), /list/);
   await setup.install(['codex','claude','opencode','pi','opencode']);
   assert.equal(calls.length, 3); assert.deepEqual(Object.keys(setup.jobs), ['codex','claude','opencode','pi']);
+  assert.equal(setup.downloads.list().length, 3, 'Only tools installed in this batch are recorded');
+  assert.ok(setup.downloads.list().every(x => x.name !== 'Codex installer workspace'), 'Pre-existing agents are not claimed as Dock downloads');
   assert.ok(states.some(x => x.opencode.state === 'installing' && x.pi.state === 'queued'));
   assert.ok(calls[0].args.includes('-NonInteractive'));
   assert.ok(calls[1].args.includes('opencode-ai@latest')); assert.ok(calls[2].args.includes('--ignore-scripts'));

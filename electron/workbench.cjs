@@ -8,9 +8,12 @@ const { Concepts } = require('./concepts.cjs');
 const { SetupRequests } = require('./setup-requests.cjs');
 const { imageInstructions } = require('./image-generation.cjs');
 const { resultGitContext } = require('./git-context.cjs');
+const { ManagedDownloads } = require('./managed-downloads.cjs');
 const schema = (properties, required = []) => ({ type: 'object', properties, required, additionalProperties: false });
 const string = { type: 'string' };
 const nativeTools = [
+  ['download_tool_repository', 'Download an authorized public GitHub tool repository into Dock’s managed downloads folder and record its location for manual cleanup at uninstall. Does not build, install or run its code. Do not use this for user projects.', schema({ source: { type: 'string', maxLength: 500 }, name: { type: 'string', minLength: 1, maxLength: 120 } }, ['source'])],
+  ['downloaded_tools', 'Read Dock’s recorded tool downloads and their manual-cleanup list path. Arbitrary Git commands outside the managed helper are not tracked.', schema({})],
   ['project_progress', 'Update the current project only: add a factual progress note, set the next step, or check an existing milestone (zero-based index). Only mark verified work done after roadmap approval. Guided plans require the current revision from project_plan for milestone updates.', schema({ note: string, nextStep: string, milestone: { type: 'integer', minimum: 0 }, done: { type: 'boolean' }, revision: { type: 'integer' } })],
   ['project_plan', 'Read one section of the current project plan, its revision, approvals and later features. Defaults to the next unapproved section. Project selection belongs to the user.', schema({ section: { enum: ['brief', 'research', 'infrastructure', 'roadmap'] } })],
   ['propose_project_plan', 'Propose changes to one planning section after discussing it with the user. This cannot approve a plan or activate a project. Changes remain separate until the user reviews them in Projects. Read project_plan first for the field names and current revision.', schema({ section: { enum: ['brief', 'research', 'infrastructure', 'roadmap'] }, revision: { type: 'integer' }, changes: { type: 'object' } }, ['section', 'revision', 'changes'])],
@@ -30,6 +33,7 @@ const nativeTools = [
 ].map(([name, description, inputSchema]) => ({ name: 'dock/' + name, description, inputSchema }));
 class Workbench {
   constructor(root, runtime, electron, { testMode, onChange, getSessions, getProject, getWindow, getHub, getAgents } = {}) {
+    this.downloads = new ManagedDownloads(root); this.testMode = testMode;
     this.electron = electron; this.getSessions = getSessions; this.getProject = getProject; this.getWindow = getWindow;
     this.results = new Results(root, { trash: file => fs.promises.rm(file, { recursive: true, maxRetries: 2, retryDelay: 100 }), nativeImage: electron.nativeImage });
     this.inbox = new Inbox(root); this.reviews = new Reviews(root, this.results, this.inbox, electron);
@@ -45,6 +49,11 @@ class Workbench {
     if (owner && !session?.alive) throw new Error('This console is no longer open.');
     const context = this.turns?.context(owner) || { project: session?.cwd || this.getProject(), projectId: session?.projectId || null, sessionId: session?.id || null, consoleKey: session?.consoleKey || session?.id || null, consoleName: session?.name || '' };
     switch (name) {
+      case 'dock/downloaded_tools': return { items: this.downloads.list(), report: this.downloads.report };
+      case 'dock/download_tool_repository': {
+        if (this.testMode) throw Error('Repository downloads are disabled during tests.');
+        return this.downloads.download(args);
+      }
       case 'dock/project_progress': return this.projects.progress(session?.projectId, args);
       case 'dock/project_plan': return this.projects.plan(session?.projectId, args.section);
       case 'dock/propose_project_plan': {

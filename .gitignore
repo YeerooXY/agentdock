@@ -26,6 +26,11 @@ release/
 /concept-usage.json
 /agent-setup.json
 /setup-requests.json
+/managed-downloads.json
+/managed-downloads.txt
+/downloads/
+/empty-gitconfig
+/disabled-git-hooks/
 /agents/
 *.pem
 *.key

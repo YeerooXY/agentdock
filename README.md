@@ -150,7 +150,7 @@ Per-session hooks report completion and attention states. Claude's status line r
 3. Test an MCP connection to discover its tools. Checking an ordinary HTTP API validates its setup without sending a request.
 4. Write your preferences in **Instructions**. Managed agents and API sessions receive shared context through their launch configuration or the MCP bridge. See the [adapter details](docs/agent-setup.md).
 
-The **3D tools** cards handle these integrations:
+The **Built-in tools** cards handle these integrations:
 
 | Tool | Setup in Dock | What you need |
 | --- | --- | --- |
@@ -158,7 +158,22 @@ The **3D tools** cards handle these integrations:
 | Unity | Pick your project folder and press **Connect**. Dock installs Unity Pipeline into that project and uses the official Unity CLI MCP connection. | Install [Unity CLI](https://docs.unity.com/en-us/unity-cli/unity-cli-reference) and a compatible Unity Editor. Open the selected project to use editor tools. |
 | Meshy AI | **Add key** saves your Meshy key in the encrypted vault. Select it and press **Connect**. The MCP server and runtime are included. | Your own [Meshy API key](https://www.meshy.ai/developers/keys). Asset generation uses Meshy credits. |
 
+| Reverse Engineer Anything | **Set up REA** installs the pinned local MCP package and shares its tools and investigation guidance. | No service key; external engines/browser depend on the target. [Setup](docs/reverse-engineering.md). |
+| MiroFish | Enter your local backend URL and **Connect MiroFish**. Agents can prepare scenarios, run bounded simulations and retrieve reports. | A separately running MiroFish backend with its own model/Zep configuration and billing. [Setup and limits](docs/mirofish.md). |
+
 **Browse tools** shows discovered tool names, descriptions and inputs. Connecting or browsing Meshy does not generate assets or verify account credits. Installers need an internet connection; Blender is a community integration, while Unity CLI and Meshy's MCP server are provided by their respective vendors. Blender server telemetry is disabled for Dock's managed connection. No other agent configuration is rewritten.
+
+REA helps agents investigate existing software and record evidence. MiroFish is an
+optional step after building and before launch, for exploring audience reactions
+and testing assumptions. Its simulated personas do not replace actual customer
+feedback. Both integrations share relevant guidance through `dock_context` while
+enabled; opening Tools starts no analysis or simulation.
+
+**Free creative tools** offers optional ArtCraft MCP presets when you have no
+preferred alternative. Preparing a preset saves and starts nothing. Dock keeps a
+readable inventory of managed tool downloads and asks to open it for manual cleanup
+at interactive uninstall; it never automatically deletes downloaded repositories.
+[Creative tools and download review](docs/tool-downloads.md).
 
 ### Web design
 

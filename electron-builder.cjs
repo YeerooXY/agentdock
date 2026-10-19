@@ -18,6 +18,7 @@ module.exports = {
   npmRebuild: false,
   win: { target: [{ target: 'nsis', arch: ['x64'] }], icon: 'assets/icon.ico', artifactName: 'Agent-Dock-${version}-Setup-${arch}.${ext}', requestedExecutionLevel: 'asInvoker' },
   nsis: {
+    include: 'assets/installer.nsh',
     oneClick: false, perMachine: false, allowElevation: false,
     allowToChangeInstallationDirectory: true, packElevateHelper: false,
     createDesktopShortcut: true, createStartMenuShortcut: true,

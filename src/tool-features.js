@@ -6,15 +6,19 @@ const logos = { blender: blenderLogo, unity: unityLogo, meshy: meshyLogo };
 export const toolLogo = id => Object.hasOwn(logos, id) ? `<span class="integration-mark integration-mark-${id}" aria-hidden="true"><img src="${logos[id]}" alt="" width="32" height="32"></span>` : '';
 
 export function integrationCards(state, e) {
-  return `<section class="integrations" aria-label="Built-in tools"><div class="section-label"><h2>3D tools</h2><button type="button" class="subtle" data-integration-refresh>Check installed apps</button></div><div class="integration-grid">${(state.integrations || []).map(item => {
-    const note = item.id === 'blender' ? 'Installs the MCP server and enables its Blender add-on. In Blender, open N → MCP for Blender and start the server.' : item.id === 'unity' ? 'Choose a project. Dock adds Unity Pipeline so the CLI can reach the editor.' : 'Uses your Meshy account. Generating assets spends Meshy credits.';
-    const status = item.job?.message || item.setupNote || (item.connected ? item.enabled ? 'Connected to Dock' : 'Disabled' : item.available ? 'Ready to set up' : item.id === 'blender' ? 'Install Blender, then check again.' : item.id === 'unity' ? 'Install Unity CLI, then check again.' : 'Meshy is missing from this build.');
-    return `<article class="integration-card" data-integration="${e(item.id)}"><div class="integration-heading">${toolLogo(item.id)}<h3>${e(item.name)}</h3><button type="button" class="subtle" data-docs="${e(item.id)}">Setup guide</button></div><p>${e(item.description)}</p><p class="field-hint">${e(note)}</p>${item.id === 'unity' ? `<label>Unity project<div class="folder-input"><input name="projectPath" value="${e(item.projectPath)}" placeholder="Choose a project folder"><button type="button" data-unity-folder aria-label="Choose Unity project">…</button></div></label>` : item.id === 'meshy' ? `<label>Saved Meshy key<select name="meshyKey"><option value="">Choose a key</option>${state.vault.entries.map(key => `<option value="${e(key.id)}" ${key.id === item.keyId ? 'selected' : ''}>${e(key.label)} · ${e(key.id)}</option>`).join('')}</select></label>` : ''}<p class="integration-status" data-integration-status role="status">${e(status)}</p><div class="button-row"><button type="button" class="secondary" data-integration-setup="${e(item.id)}" ${!item.available || item.job?.busy ? 'disabled' : ''}>${item.id === 'blender' ? item.ready ? 'Update tools' : 'Set up Blender' : item.connected ? 'Save connection' : 'Connect'}</button>${item.id === 'meshy' ? '<button type="button" class="subtle" data-meshy-key>Add key</button>' : ''}</div></article>`;
+  return `<section class="integrations" aria-label="Built-in tools"><div class="section-label"><h2>Built-in tools</h2><button type="button" class="subtle" data-integration-refresh>Check installed apps</button></div><div class="integration-grid">${(state.integrations || []).map(item => {
+    const note = item.id === 'mirofish' ? 'Connect your separately running backend. Simulations use its model and Zep services and can incur charges. Results are hypotheses to test with real users.' : item.id === 'rea' ? 'Installs REA locally. No service key needed. Native analysis needs an engine such as Ghidra; web observation needs a Chrome-family browser.' : item.id === 'blender' ? 'Installs the MCP server and enables its Blender add-on. In Blender, open N → MCP for Blender and start the server.' : item.id === 'unity' ? 'Choose a project. Dock adds Unity Pipeline so the CLI can reach the editor.' : 'Uses your Meshy account. Generating assets spends Meshy credits.';
+    const status = item.job?.message || item.setupNote || (item.connected ? item.enabled ? 'Connected to Dock' : 'Disabled' : item.available ? 'Ready to set up' : item.id === 'mirofish' ? 'The MiroFish adapter is missing from this build.' : item.id === 'rea' ? 'Dock’s Node/npm runtime is missing.' : item.id === 'blender' ? 'Install Blender, then check again.' : item.id === 'unity' ? 'Install Unity CLI, then check again.' : 'Meshy is missing from this build.');
+    return `<article class="integration-card" data-integration="${e(item.id)}"><div class="integration-heading">${toolLogo(item.id)}<h3>${e(item.name)}</h3><button type="button" class="subtle" data-docs="${e(item.id)}">Setup guide</button></div><p>${e(item.description)}</p><p class="field-hint">${e(note)}</p>${item.id === 'mirofish' ? `<label>Local backend URL<input name="backendUrl" value="${e(item.backendUrl)}" placeholder="http://127.0.0.1:5001"></label>` : item.id === 'unity' ? `<label>Unity project<div class="folder-input"><input name="projectPath" value="${e(item.projectPath)}" placeholder="Choose a project folder"><button type="button" data-unity-folder aria-label="Choose Unity project">…</button></div></label>` : item.id === 'meshy' ? `<label>Saved Meshy key<select name="meshyKey"><option value="">Choose a key</option>${state.vault.entries.map(key => `<option value="${e(key.id)}" ${key.id === item.keyId ? 'selected' : ''}>${e(key.label)} · ${e(key.id)}</option>`).join('')}</select></label>` : ''}<p class="integration-status" data-integration-status role="status">${e(status)}</p><div class="button-row"><button type="button" class="secondary" data-integration-setup="${e(item.id)}" ${!item.available || item.job?.busy ? 'disabled' : ''}>${item.id === 'mirofish' ? item.connected ? 'Check connection' : 'Connect MiroFish' : item.id === 'rea' ? item.connected ? 'Repair connection' : 'Set up REA' : item.id === 'blender' ? item.ready ? 'Update tools' : 'Set up Blender' : item.connected ? 'Save connection' : 'Connect'}</button>${item.id === 'meshy' ? '<button type="button" class="subtle" data-meshy-key>Add key</button>' : ''}</div></article>`;
   }).join('')}</div><details class="tool-brand-notices field-hint"><summary>Logo credits</summary><p>Blender and its logo belong to the Blender Foundation. Meshy and its logo belong to MESHY LLC.</p><p>Agent Dock is not sponsored by or affiliated with Unity Technologies or its affiliates. Unity and the Unity logo are trademarks or registered trademarks of Unity Technologies or its affiliates in the U.S. and elsewhere.</p></details></section>`;
 }
 
 export function workingGuides(state, e) {
   return `<section class="working-guides surface"><h2>Ways of working</h2>${(state.shared.guides || []).map(guide => `<div class="working-guide"><label class="check-row"><input type="checkbox" data-working-guide="${e(guide.id)}" ${guide.enabled ? 'checked' : ''}><span><strong>${e(guide.name)}</strong><small>${e(guide.description)}</small></span></label><details><summary>Read guide</summary><pre>${e(guide.content)}</pre></details></div>`).join('')}</section>`;
+}
+
+export function creativeToolCards(state, e) {
+  return `<section class="creative-tools surface"><h2>Free creative tools</h2><p class="field-hint">Keep your preferred tools. If you need an alternative, these independent ArtCraft apps offer MCP interfaces. Features and release maturity vary. Preparing settings installs and runs nothing.</p><details><summary>Browse optional alternatives</summary><div class="integration-grid">${(state.shared.creativeTools || []).map(item => `<article class="integration-card"><h3>${e(item.name)}</h3><p>${e(item.purpose)}</p><div class="button-row"><button type="button" class="secondary" data-creative-prepare="${e(item.id)}">Prepare MCP settings</button><button type="button" class="subtle" data-docs="${e(item.id)}">Official project</button></div></article>`).join('')}</div></details></section>`;
 }
 
 export function syncIntegrationJobs(state) {
@@ -33,6 +37,20 @@ export function toolFeatures({ call, getState, navigate, render, toast, escape: 
   document.addEventListener('click', async event => {
     const button = event.target.closest('button'); if (!button) return;
     try {
+      if (button.dataset.creativePrepare) {
+        const item = getState().shared.creativeTools?.find(x => x.id === button.dataset.creativePrepare);
+        if (!item) return;
+        if (getState().shared.connections.some(x => x.id === item.id)) { toast('This tool already has a connection. Review it in Shared tools.'); return; }
+        const form = document.querySelector('#tool-form');
+        if (form.elements.id.value || form.elements.name.value) { toast('Save or clear the current tool form first.'); return; }
+        form.reset(); form.elements.id.readOnly = false;
+        for (const [key, value] of Object.entries({ id: item.id, name: item.name, description: item.description, command: item.command, args: item.args.join('\n'), type: 'stdio', keyId: '' })) form.elements[key].value = value;
+        form.elements.enabled.checked = false;
+        form.elements.type.dispatchEvent(new Event('change', { bubbles: true }));
+        document.querySelector('#tool-form-title').textContent = 'Prepare ' + item.name;
+        form.scrollIntoView({ block: 'start' }); form.elements.command.focus();
+        toast('Choose the installed CLI path and project access roots before enabling. Nothing was saved or started.');
+      }
       if (button.hasAttribute('data-integration-refresh')) { await call('integrations.refresh'); render(); }
       if (button.hasAttribute('data-unity-folder')) {
         const field = button.closest('[data-integration]').querySelector('[name=projectPath]');
@@ -44,7 +62,7 @@ export function toolFeatures({ call, getState, navigate, render, toast, escape: 
       }
       if (button.dataset.integrationSetup) {
         const card = button.closest('[data-integration]');
-        const payload = { id: button.dataset.integrationSetup, projectPath: card.querySelector('[name=projectPath]')?.value, keyId: card.querySelector('[name=meshyKey]')?.value };
+        const payload = { id: button.dataset.integrationSetup, projectPath: card.querySelector('[name=projectPath]')?.value, keyId: card.querySelector('[name=meshyKey]')?.value, backendUrl: card.querySelector('[name=backendUrl]')?.value };
         button.disabled = true;
         try { await call('integrations.setup', payload); render(); toast('Tool connected.'); }
         catch (error) { card.querySelector('[data-integration-status]').textContent = error.message; }

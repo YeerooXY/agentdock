@@ -4,6 +4,7 @@ const { spawn } = require('node:child_process');
 const { catalog, byId } = require('./cli-catalog.cjs');
 const { findProgram, nativeCodex, findClaude } = require('./adapters.cjs');
 const { readJson, atomicJson } = require('./storage.cjs');
+const { ManagedDownloads } = require('./managed-downloads.cjs');
 const shell = () => path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
 function installEnvironment(runtime, directory) {
   const allow = new Set(['systemroot','windir','comspec','path','pathext','temp','tmp','userprofile','homedrive','homepath','localappdata','appdata','programfiles','programfiles(x86)','programdata','processor_architecture','number_of_processors']);
@@ -26,6 +27,7 @@ function runInstaller(command, args, options) {
 }
 class CliSetup {
   constructor(root, runtime, { onChange = () => {}, testMode = false, detect, run = runInstaller, download, platform = process.platform, build = Number(os.release().split('.')[2] || 0), home = os.homedir() } = {}) {
+    this.downloads = new ManagedDownloads(root);
     Object.assign(this, { root, runtime, onChange, testMode, run, platform, build, home });
     this.directory = path.join(root, 'agents'); this.file = path.join(root, 'agent-setup.json');
     this.detectOverride = detect;
@@ -82,6 +84,8 @@ class CliSetup {
         this.jobs[id] = { state: 'installing' }; this.changed();
         try {
           const directory = path.join(this.directory, id); fs.mkdirSync(directory, { recursive: true });
+          const downloadEntry = { name: agent.name + (agent.script ? ' installer workspace' : ''), kind: agent.script ? 'installer' : 'npm', source: agent.script ? agent.script.split('?')[0] : `https://www.npmjs.com/package/${agent.npm}`, directory };
+          this.downloads.record({ ...downloadEntry, state: 'installing' });
           fs.writeFileSync(path.join(directory, 'npmrc'), ''); fs.writeFileSync(path.join(directory, 'global-npmrc'), '');
           const env = installEnvironment(this.runtime, directory);
           if (agent.script) {
@@ -96,6 +100,7 @@ class CliSetup {
           const executable = this.locate(agent);
           if (!executable) throw new Error('The installer finished, but the command was not found. Check again or open the setup guide.');
           this.installed.set(id, executable); this.jobs[id] = { state: 'installed' };
+          this.downloads.record(downloadEntry);
         } catch (error) { this.jobs[id] = { state: 'error', error: error.message }; }
         this.changed();
       }

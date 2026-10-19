@@ -60,7 +60,7 @@ async function download(url) {
   const license = path.join(output, 'NODE-LICENSE.txt');
   if (!fs.existsSync(license)) fs.writeFileSync(license, await download(`https://raw.githubusercontent.com/nodejs/node/v${version}/LICENSE`));
   const result = await build({
-    absWorkingDir: root, entryPoints: { 'agent-event': 'electron/agent-event.cjs', 'agent-tools': 'electron/agent-tools.cjs', 'meshy-mcp': 'node_modules/@meshy-ai/meshy-mcp-server/dist/index.js' },
+    absWorkingDir: root, entryPoints: { 'mirofish-mcp': 'electron/mirofish-mcp.cjs', 'agent-event': 'electron/agent-event.cjs', 'agent-tools': 'electron/agent-tools.cjs', 'meshy-mcp': 'node_modules/@meshy-ai/meshy-mcp-server/dist/index.js' },
     alias: { dotenv: path.join(root, 'electron', 'no-dotenv.cjs') },
     outdir: output, outExtension: { '.js': '.cjs' }, bundle: true,
     platform: 'node', target: 'node24', format: 'cjs', legalComments: 'eof', metafile: true
