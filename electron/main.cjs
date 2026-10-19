@@ -279,6 +279,7 @@ app.whenReady().then(async () => {
           case 'mobile.cancel-pairing': mobile.cancelPairing(); break;
           case 'mobile.decide-pairing': mobile.decidePairing(payload); break;
           case 'mobile.revoke': mobile.revoke(payload); break;
+          case 'mobile.rename': value = mobile.rename(payload); break;
           case 'mobile.status': value = mobile.snapshot(); publish(); break;
           case 'mobile.inspect-network': value = await mobile.network.inspect(payload?.host); break;
           case 'mobile.firewall': if (!mobile.server && payload?.remove !== true) throw new Error('Enable the phone connection first.'); value = await mobile.network.firewall(mobile.config, payload?.remove === true); break;

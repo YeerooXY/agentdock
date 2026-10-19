@@ -65,7 +65,7 @@ class _ConnectionPageState extends State<ConnectionPage> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Text(
-                widget.client.pairing?['name'] as String? ?? 'Your PC',
+                widget.client.pcName,
                 style: const TextStyle(color: pink, fontSize: 22),
               ),
               const SizedBox(height: 12),
@@ -102,7 +102,7 @@ class _ConnectionPageState extends State<ConnectionPage> {
                 ),
               const SizedBox(height: 24),
               const Text(
-              'For a stable address, configure a dynamic DNS hostname in PC → Phone setup. Keep Dock running and your router forwarding rules active.',
+                'For a stable address, configure a dynamic DNS hostname in PC → Phone setup. Keep Dock running and your router forwarding rules active.',
                 style: TextStyle(height: 1.5, color: muted),
               ),
             ],

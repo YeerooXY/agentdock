@@ -12,6 +12,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:xterm/xterm.dart';
 
 import 'pairing_request.dart';
+import 'saved_devices.dart';
 
 class ConsoleScreen {
   final Terminal terminal = Terminal(maxLines: 1000);
@@ -19,9 +20,39 @@ class ConsoleScreen {
   bool receiving = false;
 }
 
+class _FrameBytes implements Sink<List<int>> {
+  final bytes = <int>[];
+  @override
+  void add(List<int> chunk) {
+    if (bytes.length + chunk.length > 5 * 1024 * 1024) {
+      throw const FormatException('Frame too large');
+    }
+    bytes.addAll(chunk);
+  }
+
+  @override
+  void close() {}
+}
+
 class DockClient extends ChangeNotifier {
   static const storage = FlutterSecureStorage();
   static const nativePush = MethodChannel('agentdock/push');
+  final SavedDevices devices;
+  DockClient({SavedDevices? savedDevices})
+    : devices =
+          savedDevices ??
+          SavedDevices(
+            read: (key) => storage.read(key: key),
+            write: (key, value) => storage.write(key: key, value: value),
+            delete: (key) => storage.delete(key: key),
+          );
+  String get activePC => pairing?['pin'] as String? ?? '';
+  String get pcName =>
+      pairing == null ? 'Computers' : SavedDevices.label(pairing!);
+  String get phoneName => devices.phoneName;
+  bool changingDevice = false;
+  String deviceStoreError = '';
+  final Map<String, String> _selections = {};
   Map<String, dynamic>? pairing;
   Map<String, dynamic> state = {'sessions': <dynamic>[], 'unreadResults': 0};
   final Map<String, ConsoleScreen> screens = {};
@@ -29,7 +60,6 @@ class DockClient extends ChangeNotifier {
   WebSocket? socket;
   HttpClient? transport;
   PairingRequest? _pairingRequest;
-  Future<void> _pairingWrite = Future<void>.value();
   String pairingCode = '';
   bool _disposed = false;
   Timer? retry;
@@ -50,12 +80,14 @@ class DockClient extends ChangeNotifier {
 
   Future<void> restore() async {
     try {
-      final raw = await storage.read(key: 'pc');
-      if (raw != null) pairing = jsonDecode(raw) as Map<String, dynamic>;
+      await devices.load();
+      deviceStoreError = '';
+      pairing = devices.find(devices.active);
       dataSaver = await storage.read(key: 'dataSaver') != 'false';
       if (pairing != null) await connect();
     } catch (_) {
-      status = 'Saved connection could not be opened. Pair this PC again.';
+      status = 'Saved devices could not be opened. Restart Dock to try again.';
+      deviceStoreError = status;
       notifyListeners();
     }
   }
@@ -171,12 +203,12 @@ class DockClient extends ChangeNotifier {
     }
     final previous = pairing;
     if (previous == null) throw StateError('Pair your PC first.');
-    final saved = {...previous, 'manualUrl': url};
+    final current = generation, pin = previous['pin'] as String;
     // Only the address changes. The original certificate pin and device token
     // stay in place, so an unrelated server cannot receive credentials.
-    await savePairing(saved);
-    if (!identical(pairing, previous) || _disposed) return;
-    pairing = saved;
+    await devices.patch(pin, {'manualUrl': url});
+    if (activePC != pin || generation != current || _disposed) return;
+    pairing = devices.find(pin);
     await reconnect();
   }
 
@@ -195,30 +227,97 @@ class DockClient extends ChangeNotifier {
             !validEndpoint(Uri.tryParse(localUrl) ?? Uri()))) {
       return;
     }
-    if (url == previous['url'] && localUrl == previous['localUrl']) return;
-    final saved = {...previous, 'url': url}..remove('localUrl');
-    if (localUrl != null) saved['localUrl'] = localUrl;
-    if (saved['manualUrl'] == url) saved.remove('manualUrl');
+    final name = routes['name'] is String ? routes['name'] : previous['name'];
+    if (url == previous['url'] &&
+        localUrl == previous['localUrl'] &&
+        name == previous['name']) {
+      return;
+    }
+    final current = generation, pin = previous['pin'] as String;
     // Called only for state received through the authenticated pinned socket.
-    pairing = saved;
     try {
-      await savePairing(saved);
+      await devices.patch(pin, {
+        'url': url,
+        'localUrl': localUrl,
+        'name': name,
+        if (previous['manualUrl'] == url) 'manualUrl': null,
+      });
+      if (current == generation && activePC == pin && !_disposed) {
+        pairing = devices.find(pin);
+        notifyListeners();
+      }
     } catch (_) {
-      if (identical(pairing, saved)) pairing = previous;
+      /* Keep the last saved routes if storage is unavailable. */
     }
   }
 
-  Future<void> savePairing(Map<String, dynamic>? value) {
-    final json = value == null ? null : jsonEncode(value);
-    final write = _pairingWrite
-        .catchError((_) {})
-        .then(
-          (_) => json == null
-              ? storage.delete(key: 'pc')
-              : storage.write(key: 'pc', value: json),
-        );
-    _pairingWrite = write;
-    return write;
+  void activate(Map<String, dynamic>? pc) {
+    _selections[activePC] = selected;
+    disconnectTransport();
+    pairing = pc;
+    screens.clear();
+    selected = _selections[activePC] ?? '';
+    state = {'sessions': <dynamic>[], 'unreadResults': 0};
+    received = sent = attempts = 0;
+    inputError = '';
+    alerts = pc?['alerts'] == true ? 'Enabled' : 'Not enabled';
+    status = pc == null ? 'Pair your PC to begin.' : 'Connecting…';
+    if (!_disposed) notifyListeners();
+  }
+
+  Future<void> switchPC(String pin) async {
+    if (changingDevice || _pairingRequest != null) {
+      throw StateError('Finish the current device change first.');
+    }
+    if (pin == activePC) return;
+    changingDevice = true;
+    try {
+      await devices.select(pin);
+      activate(devices.find(pin));
+      unawaited(connect());
+    } finally {
+      changingDevice = false;
+    }
+  }
+
+  Future<void> renamePC(String pin, String name) async {
+    final pc = devices.find(pin);
+    if (pc == null) throw StateError('This PC is no longer saved.');
+    await devices.patch(pin, {'alias': SavedDevices.name(name)});
+    if (activePC == pin) pairing = devices.find(pin);
+    notifyListeners();
+  }
+
+  Future<void> renamePhone(String value) async {
+    final name = SavedDevices.name(value);
+    await devices.change((data) {
+      data['phoneName'] = name;
+      for (final pc in data['pcs'] as List) {
+        pc['pendingPhoneName'] = name;
+      }
+    });
+    if (pairing != null) pairing = devices.find(activePC);
+    notifyListeners();
+    await syncPhoneName();
+  }
+
+  Future<void> syncPhoneName() async {
+    final pin = activePC, current = generation;
+    final name = pairing?['pendingPhoneName'];
+    if (!connected || name == null) return;
+    try {
+      await request('device.rename', {'name': name});
+      await devices.change((data) {
+        for (final pc in data['pcs'] as List) {
+          if (pc['pin'] == pin && pc['pendingPhoneName'] == name) {
+            pc.remove('pendingPhoneName');
+          }
+        }
+      });
+      if (generation == current) pairing = devices.find(pin);
+    } catch (_) {
+      /* Older hosts keep the pending name until they update. */
+    }
   }
 
   Future<void> reconnect() async {
@@ -248,6 +347,10 @@ class DockClient extends ChangeNotifier {
   }
 
   Future<void> pair(String code) async {
+    if (deviceStoreError.isNotEmpty) throw FormatException(deviceStoreError);
+    if (changingDevice) {
+      throw StateError('Finish the current device change first.');
+    }
     final invite = parseInvite(code);
     await cancelPairing();
     String? preferred;
@@ -297,7 +400,7 @@ class DockClient extends ChangeNotifier {
         }
       }
       throw failure ?? StateError('The PC could not be reached.');
-    });
+    }, name: phoneName);
     _pairingRequest = operation;
     try {
       final result = await operation.run((code) {
@@ -307,23 +410,24 @@ class DockClient extends ChangeNotifier {
       operation.checkCancelled();
       final saved = {
         'url': invite['url'],
-        if (invite['localUrl'] != null) 'localUrl': invite['localUrl'],
+        'localUrl': invite['localUrl'],
+        'manualUrl': null,
         'pin': invite['pin'],
         'token': result['token'],
         'id': result['id'],
         'name': result['name'],
       };
-      await savePairing(saved);
-      if (operation.cancelled || _disposed) {
-        await savePairing(null);
-        throw const FormatException('Pairing canceled.');
-      }
-      pairing = saved;
+      await devices.put(
+        saved,
+        activate: true,
+        valid: () => !operation.cancelled && !_disposed,
+      );
       _pairingRequest = null;
       pairingCode = '';
-      await connect();
+      activate(devices.find(saved['pin'] as String));
+      unawaited(connect());
     } catch (_) {
-      if (pairing == null) await operation.cancel();
+      await operation.cancel();
       rethrow;
     } finally {
       if (_pairingRequest == operation) _pairingRequest = null;
@@ -401,6 +505,7 @@ class DockClient extends ChangeNotifier {
       );
       if (selected.isNotEmpty && streaming) await subscribe();
       refreshAlerts().catchError((_) {});
+      unawaited(syncPhoneName());
       notifyListeners();
     } catch (error) {
       if (current == generation) {
@@ -441,17 +546,29 @@ class DockClient extends ChangeNotifier {
     notifyListeners();
   }
 
+  static String decodeFrame(dynamic raw) {
+    if (raw is String) {
+      if (raw.length > 5 * 1024 * 1024) {
+        throw const FormatException('Frame too large');
+      }
+      return raw;
+    }
+    if (raw is! List<int> || raw.length > 5 * 1024 * 1024) {
+      throw const FormatException('Frame too large');
+    }
+    final output = _FrameBytes();
+    final decoder = gzip.decoder.startChunkedConversion(output);
+    decoder.add(raw);
+    decoder.close();
+    return utf8.decode(output.bytes);
+  }
+
   void handleMessage(dynamic raw) {
     try {
       received += raw is String
           ? utf8.encode(raw).length
           : (raw as List<int>).length;
-      final String text = raw is String
-          ? raw
-          : utf8.decode(gzip.decode(raw as List<int>));
-      if (text.length > 5 * 1024 * 1024) {
-        throw const FormatException('Frame too large');
-      }
+      final text = decodeFrame(raw);
       final data = jsonDecode(text) as Map<String, dynamic>;
       if (data['type'] == 'reply') {
         final done = pending.remove(data['id']);
@@ -503,8 +620,9 @@ class DockClient extends ChangeNotifier {
 
   ConsoleScreen makeScreen(String id) {
     final view = ConsoleScreen();
+    final pin = activePC;
     view.terminal.onOutput = (text) {
-      if (!view.receiving) {
+      if (!view.receiving && pin == activePC && identical(screens[id], view)) {
         input(text, id: id).catchError((error) {
           inputError = error.toString().replaceFirst('Bad state: ', '');
           notifyListeners();
@@ -606,33 +724,58 @@ class DockClient extends ChangeNotifier {
       connect();
     } else {
       unawaited(cancelPairing());
-      generation++;
-      retry?.cancel();
-      socket?.close();
-      socket = null;
-      transport?.close(force: true);
-      connected = false;
-      connecting = false;
-      for (final c in pending.values) {
-        if (!c.isCompleted) {
-          c.completeError(
-            StateError(
-              'Connection paused. Check the console before sending again.',
-            ),
-          );
-        }
-      }
-      pending.clear();
+      disconnectTransport();
       status = 'Paused';
       notifyListeners();
     }
   }
 
+  void disconnectTransport() {
+    generation++;
+    retry?.cancel();
+    socket?.close();
+    socket = null;
+    transport?.close(force: true);
+    connected = false;
+    connecting = false;
+    for (final c in pending.values) {
+      if (!c.isCompleted) {
+        c.completeError(
+          StateError(
+            'Connection paused. Check the console before sending again.',
+          ),
+        );
+      }
+    }
+    pending.clear();
+    tokenRefresh?.cancel();
+    tokenRefresh = null;
+  }
+
   Future<void> enableAlerts() async {
+    final pin = activePC, current = generation;
     final options = await request('push.config');
     if (options == null) {
       throw StateError(
         'Import your Firebase files in PC setup → Alerts first.',
+      );
+    }
+    if (current != generation) throw StateError('The selected PC changed.');
+    // Android FCM uses one default Firebase application. Preserve registrations
+    // on other PCs instead of silently replacing their notification identity.
+    if (devices.pcs.any(
+          (pc) =>
+              pc['pin'] != pin &&
+              pc['alerts'] == true &&
+              pc['pushProject'] != null &&
+              pc['pushProject'] != options['projectId'],
+        ) ||
+        Firebase.apps.any(
+              (app) => app.options.projectId != options['projectId'],
+            ) &&
+            devices.pcs.any((pc) => pc['pin'] != pin && pc['alerts'] == true)) {
+      throw StateError(
+        'Use the same Firebase project on your PCs to keep alerts from all of them.',
       );
     }
     for (final app in Firebase.apps) {
@@ -655,59 +798,86 @@ class DockClient extends ChangeNotifier {
         'Google Play services could not register this phone. Try again.',
       );
     }
+    if (current != generation) {
+      throw StateError('The selected PC changed. Enable alerts there again.');
+    }
     await request('push.register', {'token': token});
-    await storage.write(key: 'alerts', value: 'true');
-    await tokenRefresh?.cancel();
-    // ignore: deprecated_member_use
-    tokenRefresh = FirebaseMessaging.instance.onTokenRefresh.listen((value) {
-      if (connected) {
-        request('push.register', {'token': value}).catchError((_) => null);
-      }
+    await devices.patch(pin, {
+      'alerts': true,
+      'pushProject': options['projectId'],
     });
+    if (current != generation) return;
+    pairing = devices.find(pin);
+    watchToken(current);
     alerts = 'Enabled';
     notifyListeners();
   }
 
   Future<void> refreshAlerts() async {
-    if (await storage.read(key: 'alerts') != 'true') return;
+    final pin = activePC, current = generation;
+    if (pairing?['alerts'] != true) return;
+    final options = await request('push.config');
     await Firebase.initializeApp();
+    if (options == null ||
+        Firebase.app().options.projectId != options['projectId']) {
+      if (generation == current) {
+        alerts = 'Setup changed on this PC';
+        notifyListeners();
+      }
+      return;
+    }
     // Refresh a token that changed while the private connection was asleep.
     // ignore: deprecated_member_use
     final token = await FirebaseMessaging.instance.getToken();
-    if (token != null && connected) {
+    if (token != null && connected && current == generation) {
       await request('push.register', {'token': token});
     }
+    if (generation != current) return;
+    if (pairing?['pushProject'] == null) {
+      await devices.patch(pin, {'pushProject': options['projectId']});
+      if (generation != current) return;
+      pairing = devices.find(pin);
+    }
+    watchToken(current);
     alerts = 'Enabled';
     notifyListeners();
   }
 
-  Future<void> forget() async {
-    if (connected) {
-      try {
-        await request('push.register', {'token': ''});
-      } catch (_) {}
-    }
-    await tokenRefresh?.cancel();
-    try {
-      if (Firebase.apps.isNotEmpty) {
-        // ignore: deprecated_member_use
-        await FirebaseMessaging.instance.deleteToken();
-        await FirebaseMessaging.instance.setAutoInitEnabled(false);
-        await Firebase.app().delete();
+  void watchToken(int current) {
+    tokenRefresh?.cancel();
+    // ignore: deprecated_member_use
+    tokenRefresh = FirebaseMessaging.instance.onTokenRefresh.listen((value) {
+      if (connected && generation == current) {
+        request('push.register', {'token': value}).catchError((_) => null);
       }
-      await nativePush.invokeMethod('clear');
-    } catch (_) {}
-    await storage.delete(key: 'alerts');
-    pairing = null;
-    setForeground(false);
-    foreground = true;
-    await savePairing(null);
-    screens.clear();
-    selected = '';
-    state = {'sessions': <dynamic>[], 'unreadResults': 0};
-    status = 'Pair your PC to begin.';
-    notifyListeners();
+    });
   }
+
+  Future<void> forgetPC(String pin) async {
+    if (changingDevice || _pairingRequest != null) {
+      throw StateError('Finish the current device change first.');
+    }
+    changingDevice = true;
+    try {
+      if (pin == activePC && connected) {
+        try {
+          await request('push.register', {'token': ''});
+        } catch (_) {}
+      }
+      await devices.remove(pin);
+      _selections.remove(pin);
+      if (pin == activePC) {
+        activate(devices.find(devices.active));
+        unawaited(connect());
+      }
+      // Keep FCM alive: another saved or temporarily unreachable PC may use it.
+      notifyListeners();
+    } finally {
+      changingDevice = false;
+    }
+  }
+
+  Future<void> forget() => forgetPC(activePC);
 
   @override
   void dispose() {

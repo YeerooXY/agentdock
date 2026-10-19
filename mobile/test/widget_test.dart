@@ -447,7 +447,11 @@ void main() {
       addTearDown(c.dispose);
       await tester.pumpWidget(DockApp(client: c));
       expect(find.text('Scan QR code'), findsOneWidget);
-      await tester.enterText(find.byType(TextField), 'not a code');
+      await tester.enterText(
+        find.widgetWithText(TextField, 'Or paste a pairing code'),
+        'not a code',
+      );
+      await tester.ensureVisible(find.text('Connect'));
       await tester.tap(find.text('Connect'));
       await tester.pumpAndSettle();
       expect(find.text('not a code'), findsOneWidget);

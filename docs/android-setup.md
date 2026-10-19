@@ -23,6 +23,21 @@ A paired phone can type commands using the console's existing permissions. This 
 
 The saved pairing token has no automatic expiry and survives normal restarts and compatible updates. The PC must stay awake, Dock's connection must be enabled, and a saved local or internet address must remain reachable. Router, address or port changes can require updating the connection and pairing again. Clearing app data, removing the phone or replacing the PC's certificate also requires pairing again. The current PC certificate lasts five years; certificate expiry eventually needs renewal and re-pairing. The short QR/request expiry applies only while adding a phone.
 
+## Multiple computers and phones
+
+- **Name this PC:** Windows → Settings → Connect a phone → Connection → This PC's name → Save name. Saving only a name keeps the connection open.
+- **Name this phone:** Android → Devices → the pencil beside This phone. You can also enter the name before pairing. Offline PCs learn a changed phone name the next time you connect.
+- **Add a PC:** Android → Devices → Add computer, then scan that PC's QR and approve its matching code. Existing computers stay saved. Each PC can approve up to nine phones.
+- **Switch:** tap the saved computer in Devices. Dock shows its name above the console, opens its connection and restores your last selected console during that app session. The other PC keeps working. Switching clears the old terminal display and command draft so they cannot be sent to a different computer.
+- **Rename only on this phone:** open the computer's three-dot menu. This is a local label; the PC name and other phones? labels stay as configured.
+- **Forget one computer:** its three-dot menu → Forget computer. Other saved PCs are kept. For revocation, remove the phone on the forgotten PC too; an offline PC may still send alerts until you remove it there.
+
+Existing single-PC pairings migrate automatically into encrypted device storage. Names and addresses are labels and routes; the saved certificate fingerprint still identifies the server. Renaming does not replace its certificate or token. Give a cloned VM a fresh Dock profile rather than copying an existing PC's pairing credentials.
+
+Cloud alerts on multiple PCs currently require the same Firebase project on those PCs. Dock preserves the shared phone registration when switching; it refuses a conflicting setup that would break another PC's alerts. If Google rotates the registration token, reconnect to each PC to refresh it. Alerts are generic and opening one does not yet select its originating PC automatically. Live multi-PC Firebase delivery is unverified.
+
+A Windows VM running Dock can be added once its network address is reachable. A Linux SSH connector and an integrated desktop remote-host selector are not included. New consoles on Android use the selected PC's configured defaults.
+
 ## Updates
 
 Android preview 6 puts account usage first, with separate pink-blue bars for each reported limit, reset times and pull-to-refresh. Unknown and stale readings remain labeled. API estimates stay separate from subscription limits. The console's Send button and borders also follow the pink-blue theme.
@@ -117,7 +132,7 @@ Neither alternative is implemented yet. Installing ntfy alone will not connect i
 - Google receives the Firebase installation/registration identifiers and generic alert metadata needed to deliver notifications. The public Firebase app configuration is stored on Android; the service-account private key stays on the PC. No Google Analytics SDK is enabled. Tailscale has its own account and network data practices. [Firebase privacy information](https://firebase.google.com/support/privacy).
 - QR scanning uses Google ML Kit locally. Google states that scan images/results stay on the device, while the SDK sends performance and usage metrics and may request updates. Paste a code instead if you prefer not to use scanning. [ML Kit privacy information](https://developers.google.com/ml-kit/terms).
 - Code, terminal output, selected Results, and account usage go directly from your PC to its paired phone. Terminal buffers and opened previews stay in app memory; reconnect credentials persist until forgotten. The phone app does not upload these to Agent Dock hosting.
-- **Forget this PC** clears the phone's pairing data. Also **Remove** the phone on the PC, especially if it was offline when forgotten. Remove Firebase setup on the PC to erase its saved key/tokens; revoke the service-account key in Google Cloud if you want to invalidate it everywhere. Clearing app data/uninstalling removes the phone's local data. Deleting Results permanently removes the saved copies from disk, not project originals or copies already exported elsewhere.
+- **Devices → computer menu → Forget computer** clears that computer's saved pairing. Other computers and their alert registrations remain saved. Also **Remove** the phone on the PC, especially if it was offline when forgotten. Remove Firebase setup on the PC to erase its saved key/tokens; revoke the service-account key in Google Cloud if you want to invalidate it everywhere. Clearing app data/uninstalling removes the phone's local data. Deleting Results permanently removes the saved copies from disk, not project originals or copies already exported elsewhere.
 
 The author does not hold your private connection or project data. There is no author-hosted account to delete. Manage Tailscale and Google accounts with those providers. For app problems, use the [repository's issue page](https://github.com/YeerooXY/agentdock/issues); do not post pairing codes, keys, or private reports.
 

@@ -4,11 +4,11 @@
 
 | Device | Download |
 | --- | --- |
-| Windows 10/11 — Intel or AMD 64-bit | **[Windows installer](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.10/Agent-Dock-0.6.0-preview.10-Setup-x64.exe)** |
-| Android — most phones (ARM64) | **[Android APK](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.10/Agent-Dock-0.6.0-preview.10-Android-arm64.apk)** |
-| Android — older 32-bit phones (ARMv7) | [Android ARMv7 APK](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.10/Agent-Dock-0.6.0-preview.10-Android-armv7.apk) |
+| Windows 10/11 — Intel or AMD 64-bit | **[Windows installer](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.11/Agent-Dock-0.6.0-preview.11-Setup-x64.exe)** |
+| Android — most phones (ARM64) | **[Android APK](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.11/Agent-Dock-0.6.0-preview.11-Android-arm64.apk)** |
+| Android — older 32-bit phones (ARMv7) | [Android ARMv7 APK](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.11/Agent-Dock-0.6.0-preview.11-Android-armv7.apk) |
 
-Current preview: **0.6.0-preview.10**. [Release notes](https://github.com/YeerooXY/agentdock/releases/tag/v0.6.0-preview.10) · [All releases](https://github.com/YeerooXY/agentdock/releases) · [Previous stable desktop-only release](https://github.com/YeerooXY/agentdock/releases/tag/v0.5.0).
+Current preview: **0.6.0-preview.11**. [Release notes](https://github.com/YeerooXY/agentdock/releases/tag/v0.6.0-preview.11) · [All releases](https://github.com/YeerooXY/agentdock/releases) · [Previous stable desktop-only release](https://github.com/YeerooXY/agentdock/releases/tag/v0.5.0).
 
 A Windows desktop app for agent consoles, projects, shared tools and usage tracking.
 
@@ -38,6 +38,8 @@ This release is unsigned, so Windows may show an unknown-publisher or SmartScree
 ## Android preview
 
 The native companion can control your PC consoles, view Results and receive optional completion alerts. Preview 6 adds pink-blue account usage bars, reset times and pull-to-refresh. Tap the message field to write a prompt, or the keyboard button beside the terminal controls to type directly. Touching the terminal returns to reading and keeps your message draft. Use the Windows and Android downloads above.
+
+Tap **Devices** above the console to name your phone, add computers, and switch between saved PCs. Each PC keeps its own pairing and address; switching leaves its consoles running. On Windows, **Settings → Connect a phone → Connection** names the PC, and **Pair phone** lets you rename or remove individual phones. [Multiple-device setup](docs/android-setup.md#multiple-computers-and-phones).
 
 Phone and PC connect directly on the same Wi-Fi. For access away from home, choose **Direct internet**: Dock checks your network, can forward a port on a compatible router, helps with Windows Firewall, and pairs your phone by QR code. This needs a reachable public IPv4 address. An upstream router or provider NAT may need a manual step; the wizard does not claim internet access works until a phone connects from outside. A private VPN you already use still works too.
 

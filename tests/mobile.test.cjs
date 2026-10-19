@@ -41,6 +41,72 @@ function client(f, auth) {
   const call = async (method, payload) => { const id = crypto.randomUUID(); ws.send(JSON.stringify({ id, method, payload })); const message = await wait(m => m.type === 'reply' && m.id === id); if (message.error) throw Error(message.error); return message.value; };
   return { ws, wait, messages, call };
 }
+
+test('saved phone names are independent; remote rename cannot target another phone', async t => {
+  const f = await fixture(t);
+  f.m.rename({ name: 'Studio PC' });
+  const a = (await f.pair()).data;
+  assert.equal(a.name, 'Studio PC');
+  const invite = JSON.parse(Buffer.from((await f.m.invite()).code.slice(10), 'base64url'));
+  const pending = await f.begin(invite.secret, undefined, 'Travel phone');
+  f.m.decidePairing({ id: pending.data.id, allow: true });
+  const b = (await f.request('/v1/pair/status', pending.key, { id: pending.data.id })).data;
+  const first = client(f, a.token), second = client(f, b.token);
+  await Promise.all([once(first.ws, 'open'), once(second.ws, 'open')]);
+  const identity = f.m.private.identity.cert;
+  f.m.rename({ name: 'Work PC' });
+  f.m.rename({ id: a.id, name: 'Personal phone' });
+  assert.equal(await first.call('ping'), true);
+  assert.equal((await second.call('state')).connection.name, 'Work PC');
+  assert.equal(f.m.private.identity.cert, identity);
+  assert.equal(f.m.private.devices.find(x => x.id === a.id).token, a.token);
+  await first.call('device.rename', { id: b.id, name: 'My Pixel' });
+  assert.equal(f.m.snapshot().devices.find(x => x.id === a.id).name, 'My Pixel');
+  assert.equal(f.m.snapshot().devices.find(x => x.id === b.id).name, 'Travel phone');
+  assert.throws(() => f.m.rename({ name: ' ' }), /1 to 64/);
+  await assert.rejects(first.call('device.rename', { name: 'x'.repeat(65) }), /1 to 64/);
+  await assert.rejects(first.call('device.rename', { name: { toString: 'bad' } }), /name/);
+  const persisted = JSON.parse(fs.readFileSync(f.m.file, 'utf8'));
+  assert.equal(persisted.name, 'Work PC');
+  assert.equal(JSON.parse(safe.decryptString(Buffer.from(persisted.encrypted, 'base64'))).devices.length, 2);
+  const close = once(first.ws, 'close'); f.m.revoke(a.id); await close;
+  assert.equal(await second.call('ping'), true);
+  assert.equal(f.m.snapshot().devices.length, 1);
+  second.ws.close();
+});
+
+test('revoking a phone blocks input already queued behind its close handshake', async t => {
+  const f = await fixture(t), paired = (await f.pair()).data;
+  const c = client(f, paired.token); await once(c.ws, 'open');
+  await c.call('subscribe', { id: 'console-1' });
+  const closed = once(c.ws, 'close');
+  c.ws.send(JSON.stringify({ id: 'queued-before-revoke', method: 'input', payload: { id: 'console-1', data: 'should-not-run\r' } }));
+  f.m.revoke(paired.id);
+  await closed;
+  assert.deepEqual(f.sessions.writes, [], 'revoked device must not execute buffered input');
+});
+
+test('hostile mobile requests cannot replay input, change defaults or reach desktop administration', async t => {
+  const f = await fixture(t), paired = (await f.pair()).data;
+  const browser = new WebSocket(`wss://127.0.0.1:${f.port}/v1/events`, { rejectUnauthorized: false, headers: { Authorization: 'Bearer ' + paired.token, Origin: 'https://attacker.invalid' } });
+  await assert.rejects(once(browser, 'open'), /401/);
+  const c = client(f, paired.token); await once(c.ws, 'open');
+  for (const method of ['mobile.rename', 'mobile.revoke', 'vault.get', 'settings', 'session.create', '__proto__', 'constructor']) {
+    await assert.rejects(c.call(method, { command: 'must not execute', provider: 'shell' }), /unavailable/);
+  }
+  for (const payload of [null, [], 'input']) await assert.rejects(c.call('input', payload), /Invalid mobile request/);
+  f.sessions.create = defaults => { assert.deepEqual(defaults, { name: 'Test' }); return { id: 'created' }; };
+  assert.equal((await c.call('console.create', { name: 'Test', provider: 'shell', command: 'must not execute', cwd: 'C:\\Windows' })).id, 'created');
+  await c.call('subscribe', { id: 'console-1' });
+  const packet = JSON.stringify({ id: 'same-request', method: 'input', payload: { id: 'console-1', data: 'once' } });
+  c.ws.send(packet); await c.wait(x => x.id === 'same-request' && !x.error);
+  c.ws.send(packet); await c.wait(x => x.id === 'same-request' && x.error);
+  assert.equal(f.sessions.writes.length, 1);
+  c.ws.send('{invalid'); await c.wait(x => x.type === 'reply' && x.id === '' && x.error);
+  assert.equal(await c.call('ping'), true);
+  const closed = once(c.ws, 'close'); c.ws.send(Buffer.from('binary request')); await closed;
+  assert.equal(f.sessions.writes.length, 1);
+});
 test('mobile pairing is private, single-use, encrypted at rest, and revocable', async t => {
   const f = await fixture(t);
   assert.equal((await f.request('/v1/pair', 'wrong')).status, 401);
@@ -54,10 +120,10 @@ test('mobile pairing is private, single-use, encrypted at rest, and revocable', 
   assert.equal(crypto.createHash('sha256').update(new crypto.X509Certificate(f.m.private.identity.cert).raw).digest('hex'), f.invite.pin);
   const c = client(f, paired.data.token); await once(c.ws, 'open');
   const firstState = await c.wait(x => x.type === 'state');
-  assert.deepEqual(firstState.state.connection, { url: `https://127.0.0.1:${f.port}` });
+  assert.deepEqual(firstState.state.connection, { url: `https://127.0.0.1:${f.port}`, name: f.m.name });
   Object.assign(f.m.config, { mode: 'internet', publicHost: 'dock-test.duckdns.org', externalPort: 47831 });
   const nextState = await c.call('state');
-  assert.deepEqual(nextState.connection, { url: 'https://dock-test.duckdns.org:47831', localUrl: `https://127.0.0.1:${f.port}` });
+  assert.deepEqual(nextState.connection, { url: 'https://dock-test.duckdns.org:47831', localUrl: `https://127.0.0.1:${f.port}`, name: f.m.name });
   assert.ok(!JSON.stringify(nextState).includes(paired.data.token));
   assert.ok(!JSON.stringify(nextState).includes('PRIVATE KEY'));
   await assert.rejects(c.call('vault.get', { id: 'openai' }), /unavailable/);

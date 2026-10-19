@@ -21,7 +21,7 @@ if (action === 'open') console.log(run('shell', 'am', 'start', '-n', 'com.yeeroo
 if (action === 'pair') {
   const connection = JSON.parse(fs.readFileSync(path.join(out, 'connection.json')));
   run('reverse', 'tcp:' + connection.port, 'tcp:' + connection.port);
-  tap(nodes().find(x => x.class === 'android.widget.EditText'));
+  tap(nodes().filter(x => x.class === 'android.widget.EditText').at(-1));
   run('shell', 'input', 'keyevent', '123'); // end
   run('shell', 'input', 'keyevent', '--longpress', '67');
   // Clear with Android select-all, preserving no text from the user's device.

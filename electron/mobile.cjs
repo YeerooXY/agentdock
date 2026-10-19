@@ -21,6 +21,12 @@ const match = (value, stored) => {
 function interfaces() {
   return Object.entries(os.networkInterfaces()).flatMap(([name, addresses]) => addresses.filter(a => a.family === 'IPv4' && isPrivate(a.address)).map(a => ({ name, address: a.address, tailscale: /^100\./.test(a.address), local: a.internal }))).sort((a, b) => Number(b.tailscale) - Number(a.tailscale));
 }
+function deviceName(value) {
+  if (typeof value !== 'string') throw new Error('Enter a device name.');
+  const name = value.replace(/[\x00-\x1f\x7f\u202a-\u202e\u2066-\u2069]/g, '').trim();
+  if (!name || [...name].length > 64) throw new Error('Use a name from 1 to 64 characters.');
+  return name;
+}
 class MobileCompanion extends EventEmitter {
   constructor(root, safeStorage, { sessions, results, inbox, getUsage, getDefaults, getKey, networkScript, program, network, testMode = false } = {}) {
     super(); this.file = path.join(root, 'mobile.json'); this.crypto = safeStorage;
@@ -53,17 +59,28 @@ class MobileCompanion extends EventEmitter {
     sessions.on('output', this.output); sessions.on('resize', this.resized); sessions.on('changed', this.changed); results.on('changed', this.changed); inbox.on('changed', this.alerts);
   }
   available() { return this.crypto.isEncryptionAvailable() && this.crypto.getSelectedStorageBackend?.() !== 'basic_text'; }
+  get name() { return this.config.name || os.hostname(); }
+  rename({ id, name } = {}) {
+    name = deviceName(name);
+    const target = id === undefined ? this.config : this.private.devices.find(x => x.id === id);
+    if (!target) throw new Error('This phone is no longer paired.');
+    const before = target.name;
+    target.name = name;
+    try { this.persist(); } catch (error) { target.name = before; throw error; }
+    this.scheduleState(); return true;
+  }
   persist() {
     if (!this.available()) throw new Error('Windows credential encryption is unavailable.');
     this.config.encrypted = this.crypto.encryptString(JSON.stringify(this.private)).toString('base64'); atomicJson(this.file, this.config); this.emit('changed');
   }
-  snapshot() { const p = this.pendingPairing; return { enabled: !!this.server, host: this.config.host, port: this.config.port, mode: this.config.mode || 'local', publicHost: this.config.publicHost || '', externalPort: this.config.externalPort || 47831, routerMode: this.config.routerMode || 'manual', duckKeyId: this.config.duckKeyId || '', network: this.network.snapshot(), interfaces: interfaces(), error: this.error, devices: this.private.devices.map(({ id, name, at, pushToken, lastInternetAt }) => ({ id, name, at, lastInternetAt, alerts: !!pushToken, connected: [...this.clients].some(x => x.device.id === id) })), push: { project: this.private.firebase?.public.projectId || '', configured: !!this.private.firebase?.credential, error: this.push.error, lastSent: this.push.lastSent }, pairingExpires: this.pairing?.expires || 0, pendingPairing: p && p.expires > Date.now() && ['pending', 'approved'].includes(p.state) ? { id: p.id, name: p.name, code: p.code, expires: p.expires, state: p.state } : null, bytes: this.counters }; }
-  async configure({ enabled, host, port = 47831, ...remote }) {
+  snapshot() { const p = this.pendingPairing; return { name: this.name, enabled: !!this.server, host: this.config.host, port: this.config.port, mode: this.config.mode || 'local', publicHost: this.config.publicHost || '', externalPort: this.config.externalPort || 47831, routerMode: this.config.routerMode || 'manual', duckKeyId: this.config.duckKeyId || '', network: this.network.snapshot(), interfaces: interfaces(), error: this.error, devices: this.private.devices.map(({ id, name, at, pushToken, lastInternetAt }) => ({ id, name, at, lastInternetAt, alerts: !!pushToken, connected: [...this.clients].some(x => x.device.id === id) })), push: { project: this.private.firebase?.public.projectId || '', configured: !!this.private.firebase?.credential, error: this.push.error, lastSent: this.push.lastSent }, pairingExpires: this.pairing?.expires || 0, pendingPairing: p && p.expires > Date.now() && ['pending', 'approved'].includes(p.state) ? { id: p.id, name: p.name, code: p.code, expires: p.expires, state: p.state } : null, bytes: this.counters }; }
+  async configure({ enabled, host, name, port = 47831, ...remote }) {
     if (!enabled) { await this.stop(); this.config.enabled = false; this.persist(); return; }
     if (!interfaces().some(x => x.address === host) || !isPrivate(host)) throw new Error('Choose this PC’s private network address.');
     if (!Number.isInteger(port) || port < 1024 || port > 65535) throw new Error('Use a port from 1024 to 65535.');
     if (!this.available()) throw new Error('Windows credential encryption is unavailable.');
     const options = internetOptions(remote);
+    if (name !== undefined) options.name = deviceName(name);
     if (options.mode === 'internet' && (host.startsWith('127.') || /^100\./.test(host))) throw new Error('Use your Wi-Fi or Ethernet address for direct internet.');
     const changed = host !== this.config.host || port !== this.config.port || ['mode', 'publicHost', 'externalPort'].some(key => options[key] !== this.config[key]);
     if (changed) { for (const device of this.private.devices) delete device.lastInternetAt; this.network.state.firewall = ''; }
@@ -175,7 +192,7 @@ class MobileCompanion extends EventEmitter {
         pending.device = device; pending.state = 'claimed'; this.emit('changed');
       }
       const device = pending.device;
-      res.end(JSON.stringify({ id: device.id, token: device.token, name: os.hostname(), v: 2 }));
+      res.end(JSON.stringify({ id: device.id, token: device.token, name: this.name, v: 2 }));
     } catch { res.writeHead(400); res.end('{}'); }
   }
   ensureStream(id) {
@@ -188,6 +205,7 @@ class MobileCompanion extends EventEmitter {
     const connection = this.config.mode === 'internet'
       ? { url: `https://${this.config.publicHost}:${this.config.externalPort}`, localUrl }
       : { url: localUrl };
+    connection.name = this.name;
     return { connection, capacity: (this.sessions.grid?.columns || 3) * (this.sessions.grid?.rows || 3), sessions: this.sessions.list().map(({ id, slot, name, provider, alive, state, cols, rows, consoleKey }) => ({ id, slot, name, provider, alive, state, cols, rows, consoleKey })), unreadResults: this.results.unreadGroups(), resultVersion: digest(this.results.items.map(x => x.id + ':' + x.seenAt).join(',')).slice(0, 16) };
   }
   scheduleState() {
@@ -222,8 +240,15 @@ class MobileCompanion extends EventEmitter {
     ws.on('error', () => {}); ws.on('close', () => { this.clients.delete(client); this.emit('changed'); });
   }
   async call(client, method, payload = {}) {
+    // Closing a WebSocket is a handshake, not an authorization boundary.
+    // Frames already buffered can still arrive after revoke/replacement.
+    if (client.ws.readyState !== WebSocket.OPEN || !this.clients.has(client) || !this.private.devices.includes(client.device)) {
+      throw new Error('This phone connection is no longer authorized.');
+    }
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) throw new Error('Invalid mobile request.');
     switch (method) {
       case 'state': return this.publicState();
+      case 'device.rename': return this.rename({ id: client.device.id, name: payload.name });
       case 'subscribe': {
         if (payload.id && !this.sessions.items.has(payload.id)) throw new Error('This console is no longer open.');
         client.selected = payload.id || ''; client.sequence = Number.isSafeInteger(payload.sequence) ? payload.sequence : -1; client.epoch = Number.isSafeInteger(payload.epoch) ? payload.epoch : 0; client.saver = payload.saver !== false; client.lastFlush = 0; return true;

@@ -10,21 +10,35 @@ import 'main.dart' show DockMark, pink;
 
 class PairPage extends StatefulWidget {
   final DockClient client;
-  const PairPage({super.key, required this.client});
+  final bool adding;
+  const PairPage({super.key, required this.client, this.adding = false});
   @override
   State<PairPage> createState() => _PairPageState();
 }
 
 class _PairPageState extends State<PairPage> {
   final code = TextEditingController();
+  late final phoneName = TextEditingController(text: widget.client.phoneName);
   bool busy = false, cancelling = false;
   String error = '';
   @override
+  void initState() {
+    super.initState();
+    widget.client.addListener(changed);
+  }
+
+  void changed() {
+    if (mounted) setState(() {});
+  }
+
+  @override
   void dispose() {
-    if (busy && widget.client.pairing == null) {
+    widget.client.removeListener(changed);
+    if (busy) {
       unawaited(widget.client.cancelPairing());
     }
     code.dispose();
+    phoneName.dispose();
     super.dispose();
   }
 
@@ -36,7 +50,11 @@ class _PairPageState extends State<PairPage> {
       error = '';
     });
     try {
+      if (phoneName.text != widget.client.phoneName) {
+        await widget.client.renamePhone(phoneName.text);
+      }
       await widget.client.pair(value);
+      if (mounted && widget.adding) Navigator.pop(context);
     } catch (e) {
       if (mounted) {
         setState(
@@ -97,6 +115,25 @@ class _PairPageState extends State<PairPage> {
                   style: TextStyle(height: 1.6, color: Color(0xffc8cbe0)),
                 ),
                 const SizedBox(height: 28),
+                if (widget.client.deviceStoreError.isNotEmpty) ...[
+                  Text(
+                    widget.client.deviceStoreError,
+                    style: const TextStyle(color: pink),
+                  ),
+                  TextButton(
+                    onPressed: () => widget.client.restore(),
+                    child: const Text('Retry saved devices'),
+                  ),
+                ],
+                TextField(
+                  controller: phoneName,
+                  enabled: !busy,
+                  maxLength: 64,
+                  decoration: const InputDecoration(
+                    labelText: 'This phone’s name',
+                  ),
+                ),
+                const SizedBox(height: 12),
                 FilledButton.icon(
                   onPressed: busy ? null : scan,
                   icon: const Icon(Icons.qr_code_scanner),

@@ -10,6 +10,7 @@ import 'results_page.dart';
 import 'settings_page.dart';
 import 'update_panel.dart';
 import 'connection_panel.dart';
+import 'devices_page.dart';
 
 export 'dock_style.dart' show blue, pink, ink;
 
@@ -73,7 +74,11 @@ class DockApp extends StatelessWidget {
         textColor: Colors.white,
       ),
     ),
-    home: DockHome(client: client),
+    home: AnimatedBuilder(
+      animation: client,
+      builder: (_, _) =>
+          DockHome(key: ValueKey(client.activePC), client: client),
+    ),
   );
 }
 
@@ -264,16 +269,38 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
             padding: EdgeInsets.all(14),
             child: DockMark(),
           ),
-          title: Text(
-            page == 0
-                ? (current?['name'] as String? ?? 'Consoles')
-                : page == 1
-                ? 'Results'
-                : 'Usage',
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(color: pink, fontWeight: FontWeight.w600),
+          title: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                page == 0
+                    ? (current?['name'] as String? ?? 'Consoles')
+                    : page == 1
+                    ? 'Results'
+                    : 'Usage',
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: pink,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              Text(
+                c.pcName,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 12, color: blue),
+              ),
+            ],
           ),
           actions: [
+            IconButton(
+              onPressed: () {
+                stopTerminalTyping();
+                composerFocus.unfocus();
+                openDevices(context, c);
+              },
+              icon: const Icon(Icons.devices, color: blue),
+              tooltip: 'Devices',
+            ),
             IconButton(
               onPressed: () => openUpdates(context),
               icon: const Icon(Icons.system_update_outlined, color: pink),

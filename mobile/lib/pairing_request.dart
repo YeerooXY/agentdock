@@ -21,6 +21,7 @@ class PairingRequest {
   final PairExchange exchange;
   final Duration interval;
   final String requestKey;
+  final String name;
   String id = '';
   bool cancelled = false, _cancelSent = false;
   final _wake = Completer<void>();
@@ -29,6 +30,7 @@ class PairingRequest {
     this.invite,
     this.exchange, {
     this.interval = const Duration(seconds: 3),
+    this.name = 'Android phone',
   }) : requestKey = base64Url
            .encode(List.generate(32, (_) => Random.secure().nextInt(256)))
            .replaceAll('=', '');
@@ -66,7 +68,7 @@ class PairingRequest {
       );
     }
     final started = await exchange('/v1/pair', invite['secret'] as String, {
-      'name': 'Android phone',
+      'name': name,
       'approval': true,
       'requestKey': requestKey,
     });

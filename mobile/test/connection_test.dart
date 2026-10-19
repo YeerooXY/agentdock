@@ -17,6 +17,21 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() => FlutterSecureStorage.setMockInitialValues({}));
 
+  test('compressed updates stop expanding at the frame limit', () {
+    expect(
+      DockClient.decodeFrame(gzip.encode(utf8.encode('{"type":"state"}'))),
+      '{"type":"state"}',
+    );
+    final oversized = gzip.encode(List.filled(6 * 1024 * 1024, 32));
+    expect(oversized.length, lessThan(10000));
+    expect(() => DockClient.decodeFrame(oversized), throwsFormatException);
+    expect(
+      () => DockClient.decodeFrame(' ' * (6 * 1024 * 1024)),
+      throwsFormatException,
+    );
+    expect(() => DockClient.decodeFrame([1, 2, 3]), throwsFormatException);
+  });
+
   test(
     'address recovery preserves identity and learns routes without repairing',
     () async {
@@ -29,6 +44,7 @@ void main() {
         'token': 'private-token',
         'id': 'phone',
       };
+      await phone.devices.put(phone.pairing!, activate: true);
       await phone.updateAddress('https://new-dock.duckdns.org:47831');
       expect(phone.reconnects, 1);
       expect(
@@ -40,12 +56,14 @@ void main() {
         'localUrl': 'https://192.168.1.5:47831',
         'pin': 'untrusted-replacement',
       });
-      final saved = jsonDecode((await DockClient.storage.read(key: 'pc'))!);
+      final saved = jsonDecode(
+        (await DockClient.storage.read(key: 'devices.v1'))!,
+      )['pcs'].first;
       expect(saved['pin'], 'original-pin');
       expect(saved['token'], 'private-token');
       expect(saved['id'], 'phone');
       expect(saved['localUrl'], 'https://192.168.1.5:47831');
-      expect(saved.containsKey('manualUrl'), isFalse);
+      expect(saved['manualUrl'], isNull);
       for (final bad in [
         'http://new-dock.duckdns.org:47831',
         'https://user:pass@example.com:47831',
@@ -75,6 +93,7 @@ void main() {
         'pin': 'pin',
         'token': 'token',
       };
+      await phone.devices.put(phone.pairing!, activate: true);
       await phone.updateAddress('https://1.1.1.1:47831');
       await phone.rememberRoutes({
         'url': 'https://8.8.8.8:47831',

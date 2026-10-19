@@ -6,6 +6,7 @@ import 'dock_style.dart';
 import 'help_link.dart';
 import 'update_panel.dart';
 import 'connection_panel.dart';
+import 'devices_page.dart';
 import 'main.dart' show formatBytes;
 
 class SettingsPage extends StatefulWidget {
@@ -285,7 +286,7 @@ class _SettingsPageState extends State<SettingsPage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  c.pairing?['name'] as String? ?? 'Your PC',
+                  c.pcName,
                   style: const TextStyle(color: blue, fontSize: 18),
                 ),
                 const SizedBox(height: 12),
@@ -295,13 +296,8 @@ class _SettingsPageState extends State<SettingsPage> {
                 ),
                 const SizedBox(height: 12),
                 OutlinedButton(
-                  onPressed: busy
-                      ? null
-                      : () => action(() async {
-                          await c.forget();
-                          return null;
-                        }),
-                  child: const Text('Forget this PC'),
+                  onPressed: () => openDevices(context, c),
+                  child: const Text('Manage devices'),
                 ),
                 const SizedBox(height: 12),
                 const Text(

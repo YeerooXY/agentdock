@@ -13,7 +13,7 @@ const reports = []; let browser;
   for (const [name, engine, options] of profiles) {
     browser = await engine.launch(); const context = await browser.newContext(options); const state = structuredClone(fixture);
     state.mode = 'dashboard'; state.settings.setupComplete = true; state.settings.sidebarCollapsed = false;
-    state.mobile = { enabled: true, mode: 'local', host: '192.168.1.5', port: 47831, routerMode: 'automatic', network: {}, interfaces: [{ address: '192.168.1.5', name: 'Wi-Fi', tailscale: false }], devices: [{ id: 'phone-demo', name: 'Android phone', connected: true, alerts: true }], push: { configured: true, project: 'agent-dock-demo' }, pairingExpires: Date.now() + 300000 };
+    state.mobile = { name: 'Studio PC', enabled: true, mode: 'local', host: '192.168.1.5', port: 47831, routerMode: 'automatic', network: {}, interfaces: [{ address: '192.168.1.5', name: 'Wi-Fi', tailscale: false }], devices: [{ id: 'phone-demo', name: 'Android phone', connected: true, alerts: true }], push: { configured: true, project: 'agent-dock-demo' }, pairingExpires: Date.now() + 300000 };
     state.workbench.results = [{ id: '01010101-0101-4101-8101-010101010101', title: '2 changed files', kind: 'code', status: 'needs-review', summary: 'Changes during this turn', ext: '.json', size: 700, at: Date.now(), project: 'C:/Projects/Trader', consoleKey: 'trader', consoleName: 'Trader', groupId: 'turn-demo', seenAt: null, image: false, source: 'Agent' }];
     let unsafeMarkdown = false;
     state.workbench.results.push({ ...state.workbench.results[0], id: '02020202-0202-4202-8202-020202020202', title: 'Verification notes', kind: 'test', ext: '.md' });
@@ -22,6 +22,7 @@ const reports = []; let browser;
       if (method === 'session.buffer') return { ok: true, value: { data: '', sequence: 0 } };
       if (method === 'session.models') return { ok: true, value: [] };
       if (method === 'mobile.invite') return { ok: true, value: { code: 'visual-fixture-only', qr, expires: state.mobile.pairingExpires } };
+      if (method === 'mobile.rename') { const target = payload.id ? state.mobile.devices.find(x => x.id === payload.id) : state.mobile; target.name = payload.name; return { ok: true }; }
       if (method === 'mobile.status') return { ok: true, value: state.mobile };
       if (method === 'mobile.inspect-network') { state.mobile.network = { checkedAt: Date.now(), relation: 'upstream', upnp: true, routerName: 'MiWiFi router', gateway: '192.168.1.1', wanAddress: '192.168.100.4', publicAddress: '8.8.8.8' }; return { ok: true, value: state.mobile.network }; }
       if (method === 'mobile.configure') {
@@ -45,7 +46,7 @@ const reports = []; let browser;
       assert.deepEqual(findings, [], `${name} ${view} accessibility checks`);
       const overflow = await page.evaluate(() => { const d = document.querySelector('dialog[open]'); return d ? d.scrollWidth > d.clientWidth + 1 || d.getBoundingClientRect().right > innerWidth + 1 : document.documentElement.scrollWidth > innerWidth + 1; }); assert.equal(overflow, false, `${name} ${view} overflow`); checks.push(view);
     }
-    await page.locator('[data-page=settings]').click(); await page.locator('[data-mobile=open]').click(); await capture('connection');
+    await page.locator('[data-page=settings]').click(); await page.locator('[data-mobile=open]').click(); await page.locator('[data-field=name]').fill('Workstation'); await page.locator('[data-mobile=rename-pc]').click(); assert.equal(state.mobile.name, 'Workstation'); await capture('connection');
     await page.locator('#mobile-mode').selectOption('internet');
     await page.locator('[data-field=publicHost]').fill(''); await page.locator('[data-mobile=enable]').click();
     assert.match(await page.locator('.mobile-setup .form-error').textContent(), /public IPv4/);
@@ -63,7 +64,9 @@ const reports = []; let browser;
     await page.keyboard.press('Enter'); assert.equal(await page.locator('.mobile-step details[open]').count(), 0);
     await page.locator('[data-mobile=enable]').click(); await page.getByRole('heading', { name: 'Router & Windows' }).waitFor();
     assert.match(await page.locator('.mobile-upstream-rule').textContent(), /192\.168\.100\.4:47831/); await capture('router');
-    await page.locator('[data-mobile=next]').click(); await page.locator('[data-mobile=pair]').click(); await capture('pair-phone');
+    await page.locator('[data-mobile=next]').click(); await page.locator('[data-mobile=pair]').click(); await page.locator('[data-phone-name]').fill('Travel phone'); await page.locator('[data-mobile=rename-phone]').click(); assert.equal(state.mobile.devices[0].name, 'Travel phone'); await capture('pair-phone');
+    await page.locator('[data-phone-name]').fill('<img src=x onerror=alert(1)>'); await page.locator('[data-mobile=rename-phone]').click(); assert.equal(await page.locator('.mobile-device img').count(), 0);
+    await page.locator('[data-phone-name]').fill('Travel phone'); await page.locator('[data-mobile=rename-phone]').click();
     state.mobile.pendingPairing = { id:'fixture-pending', name:'Test Android',code:'123456',expires:Date.now()+120000,state:'pending' };
     await page.evaluate(state=>window.fixtureState(state),state); await page.locator('.mobile-match-code').waitFor(); await capture('phone-approval');
     assert.equal(await page.locator('[data-mobile=approve]').count(),1);
