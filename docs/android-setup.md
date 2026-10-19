@@ -57,7 +57,15 @@ For reliable unattended access, configure dynamic DNS below, or use an existing 
 
 ### A hostname that follows your IP
 
-Under **Keep my address up to date**, create a free hostname at [Duck DNS](https://www.duckdns.org/about.jsp). Choose **Add token in Keys**, paste the token into Dock's existing encrypted vault, and save. Setup returns with your previous entries intact. Put your full `name.duckdns.org` hostname in the address field and select the saved token. Dock updates it every five minutes while direct internet is enabled. The token is read only by the PC main process for that fixed HTTPS endpoint. It is never sent to the phone or agents. [Duck DNS API](https://www.duckdns.org/spec.jsp).
+Duck DNS is the suggested free option for a home connection with a changing public IPv4 address. Each user creates their own hostname and keeps their own account token in Dock. A hostname points to the home connection; terminal traffic still travels directly between phone and PC. [Duck DNS overview](https://www.duckdns.org/about.jsp).
+
+1. Open [Duck DNS](https://www.duckdns.org/), sign in and create an available hostname, such as `your-name-dock.duckdns.org`. Choose a name you are comfortable making public.
+2. In Dock, open **Settings → Android → Connect a phone → Connection → Direct internet**. Under **Keep my address up to date**, choose **Add token in Keys**, paste the Duck DNS token into the encrypted vault, and save. If an agent has prepared a Duck DNS key entry, **Tools → Add key** opens the same vault form. Enter the token only in Keys.
+3. Put the full `your-name-dock.duckdns.org` hostname in **Public address or hostname**, select the saved **Duck DNS token**, and save the connection. Check for **Duck DNS updated** on the Router step. An update error means the hostname or token needs attention; creating the name alone does not connect it to Dock.
+4. With preview 10 or later on both devices, reconnect the phone on Wi-Fi once to learn the new hostname. Alternatively, enter `https://your-name-dock.duckdns.org:47831` in Android's **Connection settings**, using your configured outside port if different. Keep the existing pairing.
+5. Turn off phone Wi-Fi and test a console over mobile data. DNS does not replace router forwarding, Windows Firewall or an awake PC.
+
+Dock updates the hostname when direct internet starts and every five minutes while it remains enabled. No separate Duck DNS updater or scheduled task is needed. The token is read by the PC main process for the fixed HTTPS update endpoint; it is never sent to the phone or agents. Each household manages its own account, hostname and router rules. [Duck DNS API](https://www.duckdns.org/spec.jsp).
 
 You can use a hostname maintained by your router or another provider instead; leave the Duck DNS token unselected. A numeric address also works, but it must be refreshed when your ISP changes it. Updated phones can learn the new address over Wi-Fi or accept a manual recovery address without pairing again. This avoids a hosting bill when the home connection supports incoming traffic. Normal electricity, internet and mobile data costs still apply.
 
