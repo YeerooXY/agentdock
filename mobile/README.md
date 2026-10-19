@@ -4,9 +4,11 @@ A native Flutter companion for the Windows app. It connects to your own PC over 
 
 For installation, pairing and Firebase setup, see [the Android guide](../docs/android-setup.md).
 
-From preview 4, **Usage → Updates** checks GitHub and opens the APK download for the phone's architecture. Installation remains an Android action. Upgrades signed with the same key preserve pairing; no background update polling runs.
+**Updates** on the connection screen, **App updates** above the consoles, and **Usage → Updates** check GitHub directly. Pairing and a PC connection are not required. **All downloads** opens the release list if the check fails. Install the APK using Android; upgrades signed with the same key preserve pairing. No background update polling runs.
 
-New pairing needs preview 8 on both devices and matching-code approval on the PC. Existing paired devices keep working. Terminal scrolling, taps and long presses do not open the keyboard. Use the message field for a prompt, or the always-visible keyboard button for direct terminal input. Touching the terminal closes the keyboard and preserves the message draft.
+**Connection settings** can change a known PC address while retaining the saved certificate pin. Updated PCs also send their current addresses over the authenticated connection, so reconnecting on Wi-Fi can refresh an old internet address. Use dynamic DNS in PC Phone setup for unattended access when your home IP changes. Foreground WebSocket pings detect broken connections; commands are never automatically resent.
+
+Use the current preview on both devices for new pairing and compare the approval code on the PC. The approval protocol requires preview 8 or later; upgrades preserve existing pairing. Terminal scrolling, taps and long presses do not open the keyboard. Use the message field for a prompt, or the always-visible keyboard button for direct terminal input. Touching the terminal closes the keyboard and preserves the message draft.
 
 ## Build
 

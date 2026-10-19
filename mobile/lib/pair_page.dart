@@ -5,6 +5,7 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 
 import 'dock_client.dart';
 import 'help_link.dart';
+import 'update_panel.dart';
 import 'main.dart' show DockMark, pink;
 
 class PairPage extends StatefulWidget {
@@ -60,6 +61,16 @@ class _PairPageState extends State<PairPage> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(
+      title: const Text('Agent Dock'),
+      actions: [
+        TextButton.icon(
+          onPressed: () => openUpdates(context),
+          icon: const Icon(Icons.system_update_outlined),
+          label: const Text('Updates'),
+        ),
+      ],
+    ),
     body: SafeArea(
       child: Center(
         child: SingleChildScrollView(
@@ -72,7 +83,7 @@ class _PairPageState extends State<PairPage> {
                 const SizedBox(height: 44, child: DockMark()),
                 const SizedBox(height: 24),
                 const Text(
-                  'Your desk.\nIn your pocket.',
+                  'Connect your PC',
                   style: TextStyle(
                     fontSize: 35,
                     height: 1.15,
@@ -175,7 +186,7 @@ class _PairPageState extends State<PairPage> {
                   ),
                 const SizedBox(height: 24),
                 const Text(
-                  'Your PC stays in charge. Keys stay on your PC.\nCloud alerts use your own Firebase project.',
+                  'API keys stay on your PC. Optional background alerts use your own Firebase project.',
                   style: TextStyle(
                     color: Color(0xffafb7cd),
                     height: 1.6,

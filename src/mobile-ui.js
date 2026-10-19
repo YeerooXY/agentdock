@@ -4,7 +4,7 @@ export function mobileUI({ call, getState, escape: e, icon, toast }) {
   let invite = null, step = 0, busy = false, deviceStamp = '', draft = null, current = null, awaitingKey = false;
   const state = () => current || getState().mobile || { interfaces: [], devices: [], push: {}, network: {} };
   const button = (action, label, primary = false) => `<button type="button" data-mobile="${action}" class="${primary ? 'primary' : 'secondary'}">${label}</button>`;
-  const renderSettings = () => `<section class="surface"><div class="section-label"><h2>Android</h2>${button('open', 'Connect a phone', true)}</div><p class="field-hint">${state().enabled ? `${state().devices.length} paired · ${state().devices.filter(x => x.connected).length} connected` : 'Your consoles, wherever you are.'}</p>${state().error ? `<p role="alert">${e(state().error)}</p>` : ''}</section>`;
+  const renderSettings = () => `<section class="surface"><div class="section-label"><h2>Android</h2>${button('open', 'Connect a phone', true)}</div><p class="field-hint">${state().enabled ? `${state().devices.length} paired · ${state().devices.filter(x => x.connected).length} connected` : 'Phone connection is off.'}</p>${state().error ? `<p role="alert">${e(state().error)}</p>` : ''}</section>`;
   const options = (items, selected) => items.map(([value, label]) => `<option value="${e(value)}" ${value === selected ? 'selected' : ''}>${e(label)}</option>`).join('');
   function remember() { for (const input of dialog.querySelectorAll('[data-field]')) draft[input.dataset.field] = input.value; }
   function connectionChanged() {
@@ -15,7 +15,8 @@ export function mobileUI({ call, getState, escape: e, icon, toast }) {
     const n = s.network || {};
     if (!n.checkedAt || n.checkedHost && n.checkedHost !== draft.host) return '';
     const heading = n.relation === 'upstream' ? 'Another router is in the way' : n.relation === 'direct' ? 'Public address found' : 'Router check';
-    return `<div class="mobile-network-note" role="status"><strong>${heading}</strong>${n.routerName ? `<p>${e(n.routerName)}${n.upnp ? ' · automatic forwarding available' : ''}</p>` : ''}${n.relation === 'upstream' ? '<p>Forward the port on the upstream router too. If the shared address comes from your provider, ask for a public IPv4 address. A paid static address is not required.</p>' : n.relation === 'direct' ? '<p>Test with your phone on mobile data after setup.</p>' : '<p>We could not confirm internet access. You can still enter an address and use manual forwarding.</p>'}${n.error ? `<p>${e(n.error)}</p>` : ''}${n.gateway ? button('router', 'Open router settings ↗') : ''}</div>`;
+    const changedIp = /^\d+\.\d+\.\d+\.\d+$/.test(draft.publicHost) && n.publicAddress && draft.publicHost !== n.publicAddress;
+    return `<div class="mobile-network-note" role="status"><strong>${heading}</strong>${n.routerName ? `<p>${e(n.routerName)}${n.upnp ? ' · automatic forwarding available' : ''}</p>` : ''}${changedIp ? `<p role="alert">Your public IP has changed. The saved address ${e(draft.publicHost)} no longer matches ${e(n.publicAddress)}.</p>${button('use-address', 'Use current public IP')}<p>Save the connection, then reconnect your phone on Wi-Fi to refresh its address. A dynamic DNS hostname follows future IP changes.</p>` : ''}${n.relation === 'upstream' ? '<p>Forward the port on the upstream router too. If the shared address comes from your provider, ask for a public IPv4 address. A paid static address is not required.</p>' : n.relation === 'direct' ? '<p>Test with your phone on mobile data after setup.</p>' : '<p>We could not confirm internet access. You can still enter an address and use manual forwarding.</p>'}${n.error ? `<p>${e(n.error)}</p>` : ''}${n.gateway ? button('router', 'Open router settings ↗') : ''}</div>`;
   }
   function upstreamRule(s) {
     const n = s.network || {}, address = String(n.wanAddress || ''), parts = address.split('.').map(Number);
@@ -82,6 +83,7 @@ export function mobileUI({ call, getState, escape: e, icon, toast }) {
     dialog.querySelector('.mobile-progress').textContent = action === 'inspect' ? 'Checking your network…' : action.includes('firewall') ? 'Waiting for Windows…' : 'Saving…';
     try {
       if (action === 'inspect') { const checked = await call('mobile.inspect-network', { host: draft.host }); if (!draft.publicHost && checked.publicAddress) draft.publicHost = checked.publicAddress; }
+      if (action === 'use-address') { const n = state().network || {}; if ((!n.checkedHost || n.checkedHost === draft.host) && n.publicAddress) draft.publicHost = n.publicAddress; }
       if (action === 'enable') { await call('mobile.configure', { ...draft, externalPort: Number(draft.externalPort), enabled: true, port: 47831 }); invite = null; step = 1; }
       if (action === 'disable') { await call('mobile.configure', { enabled: false }); invite = null; }
       if (action === 'pair') invite = await call('mobile.invite');

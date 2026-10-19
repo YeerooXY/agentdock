@@ -53,7 +53,13 @@ test('mobile pairing is private, single-use, encrypted at rest, and revocable', 
   const saved = fs.readFileSync(f.m.file, 'utf8'); assert.ok(!saved.includes(paired.data.token)); assert.ok(!saved.includes('PRIVATE KEY'));
   assert.equal(crypto.createHash('sha256').update(new crypto.X509Certificate(f.m.private.identity.cert).raw).digest('hex'), f.invite.pin);
   const c = client(f, paired.data.token); await once(c.ws, 'open');
-  await c.wait(x => x.type === 'state');
+  const firstState = await c.wait(x => x.type === 'state');
+  assert.deepEqual(firstState.state.connection, { url: `https://127.0.0.1:${f.port}` });
+  Object.assign(f.m.config, { mode: 'internet', publicHost: 'dock-test.duckdns.org', externalPort: 47831 });
+  const nextState = await c.call('state');
+  assert.deepEqual(nextState.connection, { url: 'https://dock-test.duckdns.org:47831', localUrl: `https://127.0.0.1:${f.port}` });
+  assert.ok(!JSON.stringify(nextState).includes(paired.data.token));
+  assert.ok(!JSON.stringify(nextState).includes('PRIVATE KEY'));
   await assert.rejects(c.call('vault.get', { id: 'openai' }), /unavailable/);
   await assert.rejects(c.call('input', { id: 'console-1', data: 'pwd\r' }), /Select/);
   await c.call('subscribe', { id: 'console-1' });

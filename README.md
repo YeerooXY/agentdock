@@ -4,20 +4,20 @@
 
 | Device | Download |
 | --- | --- |
-| Windows 10/11 — Intel or AMD 64-bit | **[Windows installer](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.9/Agent-Dock-0.6.0-preview.9-Setup-x64.exe)** |
-| Android — most phones (ARM64) | **[Android APK](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.9/Agent-Dock-0.6.0-preview.9-Android-arm64.apk)** |
-| Android — older 32-bit phones (ARMv7) | [Android ARMv7 APK](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.9/Agent-Dock-0.6.0-preview.9-Android-armv7.apk) |
+| Windows 10/11 — Intel or AMD 64-bit | **[Windows installer](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.10/Agent-Dock-0.6.0-preview.10-Setup-x64.exe)** |
+| Android — most phones (ARM64) | **[Android APK](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.10/Agent-Dock-0.6.0-preview.10-Android-arm64.apk)** |
+| Android — older 32-bit phones (ARMv7) | [Android ARMv7 APK](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.10/Agent-Dock-0.6.0-preview.10-Android-armv7.apk) |
 
-Current preview: **0.6.0-preview.9**. [Release notes](https://github.com/YeerooXY/agentdock/releases/tag/v0.6.0-preview.9) · [All releases](https://github.com/YeerooXY/agentdock/releases) · [Previous stable desktop-only release](https://github.com/YeerooXY/agentdock/releases/tag/v0.5.0).
+Current preview: **0.6.0-preview.10**. [Release notes](https://github.com/YeerooXY/agentdock/releases/tag/v0.6.0-preview.10) · [All releases](https://github.com/YeerooXY/agentdock/releases) · [Previous stable desktop-only release](https://github.com/YeerooXY/agentdock/releases/tag/v0.5.0).
 
 A Windows desktop app for agent consoles, projects, shared tools and usage tracking.
 
 ## Updates
 
 - **Windows:** open **Settings → Updates → Check for updates**, then **Download update → Install update**. Dock verifies the download and asks before ending open consoles. Let active work finish before installing. Settings, keys and supported conversation IDs stay in your local profile.
-- **Android:** open **Usage → Updates → Check for updates → Download update**. Open the downloaded APK and confirm the update. Android may ask you to allow installs from that browser. Pairing stays saved when upgrading a build signed with the same key.
+- **Android:** tap **Updates** on the connection screen, the **App updates** icon above your consoles, or **Usage → Updates**. Check and download directly from GitHub, even without a paired or reachable PC. Open the APK and confirm the update. Android may ask you to allow installs from that browser. Pairing stays saved when upgrading a build signed with the same key. **All downloads** is available if the version check fails.
 
-**No update button in your version?** Use the downloads above and run the Windows installer or open the Android APK to update the existing app. You do not need to uninstall first. For new phone pairing, update both devices to preview 8: scan the QR, compare the six-digit code, then approve on the PC. Already-paired phones stay connected after an upgrade.
+**No update button in your version?** Use the downloads above and run the Windows installer or open the Android APK to update the existing app. You do not need to uninstall first. Use the current preview on both devices for new pairing: scan the QR, compare the six-digit code, then approve on the PC. Existing pairing is preserved during an upgrade.
 
 Updates are manual. Preview builds can see newer previews; stable builds only offer stable releases. To switch from stable to this preview, use the downloads above. These buttons update Agent Dock. See [projects, usage and updates](docs/projects-and-updates.md) for data storage and limits.
 
@@ -41,7 +41,7 @@ The native companion can control your PC consoles, view Results and receive opti
 
 Phone and PC connect directly on the same Wi-Fi. For access away from home, choose **Direct internet**: Dock checks your network, can forward a port on a compatible router, helps with Windows Firewall, and pairs your phone by QR code. This needs a reachable public IPv4 address. An upstream router or provider NAT may need a manual step; the wizard does not claim internet access works until a phone connects from outside. A private VPN you already use still works too.
 
-An optional free Duck DNS hostname follows a changing address; its token stays in Keys. Completion alerts use your own Firebase project. No terminal traffic goes through an Agent Dock account or hosted relay. See the [setup and privacy guide](docs/android-setup.md) and [direct-internet verification](docs/direct-internet-review.md). Physical-phone internet access and live Firebase delivery still need testing.
+An optional free Duck DNS hostname follows a changing address; its token stays in Keys. If mobile data stops working, follow the [connection recovery steps](docs/android-setup.md#if-mobile-data-stops-connecting). Completion alerts use your own Firebase project. No terminal traffic goes through an Agent Dock account or hosted relay. See the [setup and privacy guide](docs/android-setup.md) and [direct-internet verification](docs/direct-internet-review.md). Physical-phone internet access was verified on 18 October 2026; address changes still require a fresh test. Live Firebase delivery remains unverified.
 
 ## Run from source
 

@@ -5,6 +5,7 @@ import 'dock_client.dart';
 import 'dock_style.dart';
 import 'help_link.dart';
 import 'update_panel.dart';
+import 'connection_panel.dart';
 import 'main.dart' show formatBytes;
 
 class SettingsPage extends StatefulWidget {
@@ -286,6 +287,11 @@ class _SettingsPageState extends State<SettingsPage> {
                 Text(
                   c.pairing?['name'] as String? ?? 'Your PC',
                   style: const TextStyle(color: blue, fontSize: 18),
+                ),
+                const SizedBox(height: 12),
+                OutlinedButton(
+                  onPressed: () => openConnection(context, c),
+                  child: const Text('Connection settings'),
                 ),
                 const SizedBox(height: 12),
                 OutlinedButton(

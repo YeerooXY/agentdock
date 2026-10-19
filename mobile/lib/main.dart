@@ -8,6 +8,8 @@ import 'dock_style.dart';
 import 'pair_page.dart';
 import 'results_page.dart';
 import 'settings_page.dart';
+import 'update_panel.dart';
+import 'connection_panel.dart';
 
 export 'dock_style.dart' show blue, pink, ink;
 
@@ -272,6 +274,11 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
             style: const TextStyle(color: pink, fontWeight: FontWeight.w600),
           ),
           actions: [
+            IconButton(
+              onPressed: () => openUpdates(context),
+              icon: const Icon(Icons.system_update_outlined, color: pink),
+              tooltip: 'App updates',
+            ),
             if (page == 0)
               IconButton(
                 onPressed: c.connected ? switchConsole : null,
@@ -279,7 +286,7 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
                 tooltip: 'Switch console',
               ),
             IconButton(
-              onPressed: () => run(c.connect),
+              onPressed: () => run(c.reconnect),
               icon: Icon(
                 c.connected ? Icons.link : Icons.sync,
                 color: c.connected ? blue : pink,
@@ -300,7 +307,20 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
                     vertical: 10,
                   ),
                   color: const Color(0xff2b2035),
-                  child: Text(c.status, style: const TextStyle(fontSize: 12)),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          c.status,
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: () => openConnection(context, c),
+                        child: const Text('Connection'),
+                      ),
+                    ],
+                  ),
                 ),
               Expanded(
                 child: page == 0

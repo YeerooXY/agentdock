@@ -30,7 +30,8 @@ class UsageClient extends DockClient {
     return response?.future ?? usage;
   }
 
-  void reconnect() {
+  @override
+  Future<void> reconnect() async {
     connected = true;
     notifyListeners();
   }

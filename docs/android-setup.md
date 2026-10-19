@@ -6,7 +6,7 @@ This is an Android preview. iPhone support comes later. The owner verified a phy
 
 ## Install and pair
 
-1. Use the [Windows and Android downloads](../README.md#downloads). Use preview 8 on both devices for new pairing. Existing paired devices keep working after an upgrade. Most phones use the **arm64** APK. Android 7 or later is required. The APK uses a development signing key; a future store build may require uninstalling this preview first.
+1. Use the current [Windows and Android downloads](../README.md#downloads) on both devices for new pairing. Existing pairing is preserved during an upgrade. Most phones use the **arm64** APK. Android 7 or later is required. The APK uses a development signing key; a future store build may require uninstalling this preview first.
 2. Put the PC and phone on the same Wi-Fi or local network. **No VPN app, extra account or internet server is needed** for this connection.
 3. On the PC, open **Settings → Android → Connect a phone**. First-time setup also offers **Connect my Android phone next**.
 4. Select the PC's Wi-Fi or Ethernet address and enable the connection. Use **Refresh addresses** if you just changed networks. The **This PC only** address cannot be reached by your phone.
@@ -29,7 +29,7 @@ Android preview 6 puts account usage first, with separate pink-blue bars for eac
 
 The scrolling fix from preview 5 is included. Tap **Command or message** to write a prompt, or the keyboard button beside the terminal controls for direct input. Touching the terminal closes the keyboard without deleting your draft. The mobile UI update works with Windows preview 4 or later; the new **Automatically save results** setting needs Windows preview 6.
 
-In the phone app, open **Usage → Updates → Check for updates**. **Download update** opens the matching APK download in your browser. Open that file to install it. Android may ask you to allow installs from your browser. The existing pairing stays saved when upgrading with the same signing key; do not uninstall first.
+On the phone, tap **Updates** on the connection screen, the **App updates** icon above your consoles, or **Usage → Updates**. These controls work without a paired or reachable PC. **Check for updates** contacts GitHub directly; **Download update** opens the matching APK in your browser. **All downloads** also works if the version check fails. Open the APK to install it. Android may ask you to allow installs from your browser. Upgrades signed with the same key preserve pairing; do not uninstall first.
 
 On the PC, use **Settings → Updates** to check, download and install a newer Windows build. The PC verifies the download's size and SHA-256 before offering installation. Update both devices when a release asks for matching versions. Checks are manual and contact GitHub; no terminal content or keys are sent. Preview builds offer newer previews as well as stable releases.
 
@@ -44,13 +44,22 @@ The first-run wizard offers this under **Connect my Android phone next → Direc
 5. Use **Allow Dock in Windows Firewall**. The helper changes only a Dock rule; it does not disable the firewall or change the network's trust profile. After changing the PC address, port, network adapter or installed app location, run it again.
 6. Switch your phone to **mobile data**, then scan a fresh code on **Pair phone** and approve its matching code on the PC. A successful authenticated connection from a public peer records **Internet connection verified**, with the connection date retained on the PC. A router check or local Wi-Fi pairing alone is not proof of internet reachability.
 
-Your PC must stay awake with Dock running. The Android app tries the paired local route first, then the internet route, using the same pinned PC certificate. Only the selected terminal streams. Console input is never replayed automatically after reconnecting. Direct IPv6 and internet relays are not implemented in this preview.
+Your PC must stay awake with Dock running. The Android app tries the paired local route, then the internet route, using the same pinned PC certificate. A manually entered recovery address is tried first. Only the selected terminal streams. While the app is in the foreground, small WebSocket pings detect a lost Wi-Fi/mobile route and trigger reconnection. Console input is never replayed automatically. Direct IPv6 and internet relays are not implemented in this preview.
+
+### If mobile data stops connecting
+
+1. On the PC, open **Phone setup → Connection → Check my network**. If the saved numeric IP changed, choose **Use current public IP**, then **Save connection**. This check alone does not prove that the outside port is reachable.
+2. With an updated phone and PC app, reconnect on Wi-Fi once. The phone learns the current connection addresses from the authenticated PC without replacing its pairing or certificate pin. Older phones need a new pairing to learn changed settings.
+3. Away from home, the phone's **Connection** button or **Usage → Connection settings** lets you enter a known new address, such as `https://your-name.duckdns.org:47831`. This keeps your saved PC identity and token. It cannot discover an unknown new home IP by itself. A wrong certificate is refused, even if the address responds.
+4. Check that Dock is running, Windows Firewall allows its port, and each router still forwards to the correct reserved local address. Test again with Wi-Fi off. An old successful internet check is historical evidence only.
+
+For reliable unattended access, configure dynamic DNS below, or use an existing stable hostname. Keep the PC awake when you need remote access.
 
 ### A hostname that follows your IP
 
 Under **Keep my address up to date**, create a free hostname at [Duck DNS](https://www.duckdns.org/about.jsp). Choose **Add token in Keys**, paste the token into Dock's existing encrypted vault, and save. Setup returns with your previous entries intact. Put your full `name.duckdns.org` hostname in the address field and select the saved token. Dock updates it every five minutes while direct internet is enabled. The token is read only by the PC main process for that fixed HTTPS endpoint. It is never sent to the phone or agents. [Duck DNS API](https://www.duckdns.org/spec.jsp).
 
-You can use a hostname maintained by your router or another provider instead; leave the Duck DNS token unselected. A numeric address also works, but if it changes, update it and pair the phone again. This avoids a hosting bill when the home connection supports incoming traffic. Normal electricity, internet and mobile data costs still apply.
+You can use a hostname maintained by your router or another provider instead; leave the Duck DNS token unselected. A numeric address also works, but it must be refreshed when your ISP changes it. Updated phones can learn the new address over Wi-Fi or accept a manual recovery address without pairing again. This avoids a hosting bill when the home connection supports incoming traffic. Normal electricity, internet and mobile data costs still apply.
 
 ### Existing private VPN
 

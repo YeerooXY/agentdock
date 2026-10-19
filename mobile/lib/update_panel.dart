@@ -73,12 +73,47 @@ class UpdatePanel extends StatefulWidget {
   State<UpdatePanel> createState() => _UpdatePanelState();
 }
 
+class UpdatesPage extends StatelessWidget {
+  const UpdatesPage({super.key});
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('App updates')),
+    body: const SafeArea(
+      child: SingleChildScrollView(
+        padding: EdgeInsets.all(24),
+        child: UpdatePanel(),
+      ),
+    ),
+  );
+}
+
+void openUpdates(BuildContext context) =>
+    Navigator.of(context)
+        .push(MaterialPageRoute<void>(builder: (_) => const UpdatesPage()));
+
 class _UpdatePanelState extends State<UpdatePanel> {
   static const native = MethodChannel('agentdock/updates');
   String version = '', message = '';
   List<String> abis = [];
   Map<String, dynamic>? release;
   bool busy = false;
+
+  Future<void> openDownload(String url) async {
+    try {
+      if (!await launchUrl(
+        Uri.parse(url),
+        mode: LaunchMode.externalApplication,
+      )) {
+        throw StateError('No browser');
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() => message = 'Could not open your browser. Try again.');
+      }
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -172,6 +207,12 @@ class _UpdatePanelState extends State<UpdatePanel> {
         'Updates',
         style: TextStyle(fontSize: 18, color: Color(0xff9cbfff)),
       ),
+      const Padding(
+        padding: EdgeInsets.symmetric(vertical: 10),
+        child: Text(
+          'Download directly from GitHub. A PC connection is not required.',
+        ),
+      ),
       if (version.isNotEmpty)
         Padding(
           padding: const EdgeInsets.symmetric(vertical: 10),
@@ -189,23 +230,7 @@ class _UpdatePanelState extends State<UpdatePanel> {
       ),
       if (release != null) ...[
         FilledButton.icon(
-          onPressed: () async {
-            try {
-              if (!await launchUrl(
-                Uri.parse(release!['url']),
-                mode: LaunchMode.externalApplication,
-              )) {
-                throw StateError('No browser');
-              }
-            } catch (_) {
-              if (mounted) {
-                setState(
-                  () => message =
-                      'Open the release page in your browser to download.',
-                );
-              }
-            }
-          },
+          onPressed: () => openDownload(release!['url'] as String),
           icon: const Icon(Icons.download_outlined),
           label: const Text('Download update'),
         ),
@@ -214,6 +239,12 @@ class _UpdatePanelState extends State<UpdatePanel> {
           style: TextStyle(fontSize: 12, height: 1.5),
         ),
       ],
+      TextButton.icon(
+        onPressed: () =>
+            openDownload('https://github.com/YeerooXY/agentdock/releases'),
+        icon: const Icon(Icons.open_in_new),
+        label: const Text('All downloads'),
+      ),
     ],
   );
 }

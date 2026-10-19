@@ -29,9 +29,10 @@ class DockClient extends ChangeNotifier {
   WebSocket? socket;
   HttpClient? transport;
   PairingRequest? _pairingRequest;
+  Future<void> _pairingWrite = Future<void>.value();
   String pairingCode = '';
   bool _disposed = false;
-  Timer? retry, heartbeat;
+  Timer? retry;
   StreamSubscription<String>? tokenRefresh;
   bool connected = false,
       connecting = false,
@@ -139,9 +140,94 @@ class DockClient extends ChangeNotifier {
   }
 
   static List<String> endpoints(Map<String, dynamic> config) => {
+    if (config['manualUrl'] is String) config['manualUrl'] as String,
     if (config['localUrl'] is String) config['localUrl'] as String,
     config['url'] as String,
   }.toList();
+
+  static String connectionError(Object error, Map<String, dynamic> config) {
+    if (error is HandshakeException) {
+      return 'The server identity could not be verified. Check the address and phone clock. Pair again on your PC if its identity changed.';
+    }
+    if (error is WebSocketException && error.httpStatusCode == 401) {
+      return 'This phone was not accepted. Its access may have been removed. Pair it again on your PC.';
+    }
+    final url = config['manualUrl'] ?? config['url'];
+    final uri = url is String ? Uri.tryParse(url) : null;
+    if (uri != null && validEndpoint(uri, internet: true)) {
+      return 'PC unreachable. Check its internet address, router forwarding and that Dock is running. Home IP addresses can change.';
+    }
+    return 'PC unreachable. This pairing uses a private address. Use the same Wi-Fi or configure direct internet in PC Phone setup.';
+  }
+
+  Future<void> updateAddress(String value) async {
+    final url = value.trim();
+    final uri = Uri.tryParse(url);
+    if (uri == null ||
+        !(validEndpoint(uri) || validEndpoint(uri, internet: true))) {
+      throw const FormatException(
+        'Use an HTTPS address with a port from 1024 to 65535, without a path or password.',
+      );
+    }
+    final previous = pairing;
+    if (previous == null) throw StateError('Pair your PC first.');
+    final saved = {...previous, 'manualUrl': url};
+    // Only the address changes. The original certificate pin and device token
+    // stay in place, so an unrelated server cannot receive credentials.
+    await savePairing(saved);
+    if (!identical(pairing, previous) || _disposed) return;
+    pairing = saved;
+    await reconnect();
+  }
+
+  Future<void> rememberRoutes(dynamic routes) async {
+    final previous = pairing;
+    if (previous == null || routes is! Map) return;
+    final url = routes['url'], localUrl = routes['localUrl'];
+    if (url is! String) return;
+    final uri = Uri.tryParse(url);
+    if (uri == null ||
+        !(validEndpoint(uri) || validEndpoint(uri, internet: true))) {
+      return;
+    }
+    if (localUrl != null &&
+        (localUrl is! String ||
+            !validEndpoint(Uri.tryParse(localUrl) ?? Uri()))) {
+      return;
+    }
+    if (url == previous['url'] && localUrl == previous['localUrl']) return;
+    final saved = {...previous, 'url': url}..remove('localUrl');
+    if (localUrl != null) saved['localUrl'] = localUrl;
+    if (saved['manualUrl'] == url) saved.remove('manualUrl');
+    // Called only for state received through the authenticated pinned socket.
+    pairing = saved;
+    try {
+      await savePairing(saved);
+    } catch (_) {
+      if (identical(pairing, saved)) pairing = previous;
+    }
+  }
+
+  Future<void> savePairing(Map<String, dynamic>? value) {
+    final json = value == null ? null : jsonEncode(value);
+    final write = _pairingWrite
+        .catchError((_) {})
+        .then(
+          (_) => json == null
+              ? storage.delete(key: 'pc')
+              : storage.write(key: 'pc', value: json),
+        );
+    _pairingWrite = write;
+    return write;
+  }
+
+  Future<void> reconnect() async {
+    if (pairing == null || !foreground) return;
+    setForeground(false);
+    foreground = true;
+    attempts = 0;
+    await connect();
+  }
 
   static Duration routeTimeout(Map<String, dynamic> config, String url) =>
       Duration(seconds: config['localUrl'] == url ? 2 : 12);
@@ -227,9 +313,9 @@ class DockClient extends ChangeNotifier {
         'id': result['id'],
         'name': result['name'],
       };
-      await storage.write(key: 'pc', value: jsonEncode(saved));
+      await savePairing(saved);
       if (operation.cancelled || _disposed) {
-        await storage.delete(key: 'pc');
+        await savePairing(null);
         throw const FormatException('Pairing canceled.');
       }
       pairing = saved;
@@ -252,6 +338,7 @@ class DockClient extends ChangeNotifier {
 
   Future<WebSocket> openSocket(Map<String, dynamic> config, int current) async {
     Object? failure;
+    Object? manualFailure;
     for (final endpoint in endpoints(config)) {
       if (!foreground || current != generation) {
         throw StateError('Connection paused.');
@@ -259,7 +346,7 @@ class DockClient extends ChangeNotifier {
       final client = pinned({...config, 'url': endpoint});
       transport = client;
       try {
-        return await WebSocket.connect(
+        final ws = await WebSocket.connect(
           Uri.parse('$endpoint/v1/events').replace(scheme: 'wss').toString(),
           headers: {
             HttpHeaders.authorizationHeader: 'Bearer ${config['token']}',
@@ -267,12 +354,23 @@ class DockClient extends ChangeNotifier {
           customClient: client,
           compression: CompressionOptions.compressionOff,
         ).timeout(routeTimeout(config, endpoint));
+        if (current != generation || !foreground) {
+          await ws.close();
+          client.close(force: true);
+          throw StateError('Connection paused.');
+        }
+        // Detect a dead Wi-Fi/mobile route even when no terminal data is sent.
+        ws.pingInterval = const Duration(seconds: 15);
+        return ws;
       } catch (error) {
         failure = error;
+        if (endpoint == config['manualUrl']) manualFailure = error;
         client.close(force: true);
       }
     }
-    throw failure ?? StateError('The PC could not be reached.');
+    throw manualFailure ??
+        failure ??
+        StateError('The PC could not be reached.');
   }
 
   Future<void> connect() async {
@@ -294,32 +392,31 @@ class DockClient extends ChangeNotifier {
       attempts = 0;
       status = 'Connected';
       ws.listen(
-        handleMessage,
+        (raw) {
+          if (current == generation) handleMessage(raw);
+        },
         onDone: () => disconnected(current),
         onError: (_) => disconnected(current),
         cancelOnError: true,
       );
-      heartbeat?.cancel();
-      heartbeat = Timer.periodic(const Duration(seconds: 30), (_) {
-        if (connected) request('ping').catchError((_) => null);
-      });
       if (selected.isNotEmpty && streaming) await subscribe();
       refreshAlerts().catchError((_) {});
       notifyListeners();
-    } catch (_) {
+    } catch (error) {
       if (current == generation) {
         connecting = false;
-        disconnected(current);
+        disconnected(current, reason: connectionError(error, pairing!));
       }
     }
   }
 
-  void disconnected(int current) {
+  void disconnected(int current, {String? reason}) {
     if (current != generation) return;
+    ++generation; // Ignore late events from the socket that just failed.
     connected = false;
     connecting = false;
+    socket?.close();
     socket = null;
-    heartbeat?.cancel();
     transport?.close(force: true);
     for (final entry in pending.values) {
       if (!entry.isCompleted) {
@@ -332,7 +429,7 @@ class DockClient extends ChangeNotifier {
     }
     pending.clear();
     status = foreground
-        ? 'PC unavailable. Check your network and keep Dock open.'
+        ? reason ?? 'Connection lost. Reconnecting to your PC…'
         : 'Paused';
     if (foreground && pairing != null) {
       retry?.cancel();
@@ -367,6 +464,7 @@ class DockClient extends ChangeNotifier {
         }
       } else if (data['type'] == 'state') {
         state = data['state'] as Map<String, dynamic>;
+        unawaited(rememberRoutes(state['connection']));
         final ids = sessions.map((s) => s['id']).toSet();
         screens.removeWhere((id, _) => !ids.contains(id));
         if (!sessions.any((s) => s['id'] == selected)) {
@@ -510,7 +608,6 @@ class DockClient extends ChangeNotifier {
       unawaited(cancelPairing());
       generation++;
       retry?.cancel();
-      heartbeat?.cancel();
       socket?.close();
       socket = null;
       transport?.close(force: true);
@@ -604,7 +701,7 @@ class DockClient extends ChangeNotifier {
     pairing = null;
     setForeground(false);
     foreground = true;
-    await storage.delete(key: 'pc');
+    await savePairing(null);
     screens.clear();
     selected = '';
     state = {'sessions': <dynamic>[], 'unreadResults': 0};
@@ -619,7 +716,6 @@ class DockClient extends ChangeNotifier {
     foreground = false;
     generation++;
     retry?.cancel();
-    heartbeat?.cancel();
     socket?.close();
     transport?.close(force: true);
     tokenRefresh?.cancel();
