@@ -1,6 +1,6 @@
 # Mobile terminal controls
 
-Available in Android **0.6.0-preview.16**. Reading, copying, drafts, adjustable text size, remaining-allowance meters and command shortcuts work with older PC hosts. Project/folder selection, current Codex model choices, image attachments and SSH hosts require **Windows preview 15**. Agent selection, file suggestions and closing local consoles retain compatibility with preview 13. Install over your current app to preserve saved computers. Installing the phone update does not restart your PC.
+Available in Android **0.6.0-preview.17**. Reading, copying, drafts, adjustable text size, model and effort controls work with older PC hosts. Project/folder selection, current Codex model choices, image attachments and SSH hosts require **Windows preview 15**. Agent selection, file suggestions and closing local consoles retain compatibility with preview 13. Install over your current app to preserve saved computers. Installing the phone update does not restart your PC.
 
 ## Reading and copying
 

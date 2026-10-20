@@ -9,12 +9,14 @@ import 'dock_style.dart';
 class ConsoleSwitcher extends StatefulWidget {
   final DockClient client;
   final String name;
+  final bool showAgentMark;
   final VoidCallback onOpened;
   final ValueChanged<String> onSelected;
   const ConsoleSwitcher({
     super.key,
     required this.client,
     required this.name,
+    this.showAgentMark = true,
     required this.onOpened,
     required this.onSelected,
   });
@@ -120,22 +122,23 @@ class _ConsoleSwitcherState extends State<ConsoleSwitcher> {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (widget.client.sessions
-                  .where((s) => s['id'] == widget.client.selected)
-                  .firstOrNull
-              case final session?) ...[
-            AgentMark(session['provider'] as String, size: 20),
-            const SizedBox(width: 5),
-            Text(
-              AgentIdentity.of(session['provider'] as String).name,
-              maxLines: 1,
-              style: TextStyle(
-                fontSize: 11,
-                color: AgentIdentity.of(session['provider'] as String).color,
+          if (widget.showAgentMark)
+            if (widget.client.sessions
+                    .where((s) => s['id'] == widget.client.selected)
+                    .firstOrNull
+                case final session?) ...[
+              AgentMark(session['provider'] as String, size: 20),
+              const SizedBox(width: 5),
+              Text(
+                AgentIdentity.of(session['provider'] as String).name,
+                maxLines: 1,
+                style: TextStyle(
+                  fontSize: 11,
+                  color: AgentIdentity.of(session['provider'] as String).color,
+                ),
               ),
-            ),
-            const SizedBox(width: 7),
-          ],
+              const SizedBox(width: 7),
+            ],
           Flexible(
             child: Text(
               widget.name,

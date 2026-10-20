@@ -12,7 +12,6 @@ import 'results_page.dart';
 import 'settings_page.dart';
 import 'update_panel.dart';
 import 'connection_panel.dart';
-import 'devices_page.dart';
 import 'terminal_viewport.dart';
 import 'terminal_links.dart';
 import 'terminal_reading.dart';
@@ -618,7 +617,7 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
           .firstOrNull;
       return Scaffold(
         appBar: AppBar(
-          leadingWidth: 40,
+          leadingWidth: 34,
           titleSpacing: 8,
           toolbarHeight: max(
             kToolbarHeight,
@@ -626,28 +625,52 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
                 MediaQuery.textScalerOf(context).scale(12) * 1.2 +
                 32,
           ),
-          leading: const Padding(padding: EdgeInsets.all(8), child: DockMark()),
-          title: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (page == 0)
-                ConsoleSwitcher(
-                  client: c,
-                  name: current?['name'] as String? ?? 'Consoles',
-                  onOpened: () {
-                    stopTerminalTyping();
-                    composerFocus.unfocus();
-                  },
-                  onSelected: (id) {
-                    if (id == '+') {
-                      newConsole();
-                    } else if (c.sessions.any((s) => s['id'] == id)) {
-                      run(() => c.select(id));
-                    }
-                  },
+          leading: Padding(
+            padding: const EdgeInsets.all(6),
+            child: current == null
+                ? const DockMark()
+                : AgentMark(current['provider'] as String, size: 24),
+          ),
+          title: page == 0
+              ? Row(
+                  children: [
+                    Expanded(
+                      child: ConsoleSwitcher(
+                        client: c,
+                        name: current?['name'] as String? ?? 'Consoles',
+                        showAgentMark: false,
+                        onOpened: () {
+                          stopTerminalTyping();
+                          composerFocus.unfocus();
+                        },
+                        onSelected: (id) {
+                          if (id == '+') {
+                            newConsole();
+                          } else if (c.sessions.any((s) => s['id'] == id)) {
+                            run(() => c.select(id));
+                          }
+                        },
+                      ),
+                    ),
+                    StatusDot(
+                      state: !c.connected
+                          ? 'disconnected'
+                          : current?['state'] as String? ?? 'active',
+                    ),
+                    const SizedBox(width: 5),
+                    const Icon(Icons.desktop_windows, size: 14, color: blue),
+                    const SizedBox(width: 3),
+                    Flexible(
+                      child: Text(
+                        c.pcName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 11, color: blue),
+                      ),
+                    ),
+                  ],
                 )
-              else
-                Text(
+              : Text(
                   page == 1 ? 'Results' : 'Usage',
                   overflow: TextOverflow.ellipsis,
                   maxLines: 1,
@@ -657,24 +680,7 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
                     fontWeight: FontWeight.w600,
                   ),
                 ),
-              Text(
-                c.pcName,
-                overflow: TextOverflow.ellipsis,
-                maxLines: 1,
-                style: const TextStyle(fontSize: 12, color: blue),
-              ),
-            ],
-          ),
           actions: [
-            IconButton(
-              onPressed: () {
-                stopTerminalTyping();
-                composerFocus.unfocus();
-                openDevices(context, c);
-              },
-              icon: const Icon(Icons.devices, color: blue),
-              tooltip: 'Devices',
-            ),
             PopupMenuButton<String>(
               tooltip: 'More options',
               icon: const Icon(Icons.more_vert, color: pink),
@@ -1032,7 +1038,7 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
                   focusNode: composerFocus,
                   onChanged: (_) => stagedCommandTarget = null,
                   minLines: 1,
-                  maxLines: 3,
+                  maxLines: 8,
                   textInputAction: TextInputAction.newline,
                   autocorrect: false,
                   enableSuggestions: false,
@@ -1070,6 +1076,50 @@ class DockMark extends StatelessWidget {
         const LinearGradient(colors: [blue, pink]).createShader(rect),
     child: const Icon(Icons.auto_awesome, color: Colors.white),
   );
+}
+
+class StatusDot extends StatefulWidget {
+  final String state;
+  const StatusDot({super.key, required this.state});
+
+  @override
+  State<StatusDot> createState() => _StatusDotState();
+}
+
+class _StatusDotState extends State<StatusDot>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController pulse = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1100),
+  )..repeat(reverse: true);
+
+  @override
+  void dispose() {
+    pulse.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final reachable = widget.state == 'ready' || widget.state == 'open';
+    final working = widget.state == 'working' || widget.state == 'active';
+    final color = reachable
+        ? const Color(0xff8ee6aa)
+        : working
+        ? blue
+        : const Color(0xffef777f);
+    return AnimatedBuilder(
+      animation: pulse,
+      builder: (_, _) => Opacity(
+        opacity: reachable ? .62 + pulse.value * .38 : 1,
+        child: Container(
+          width: 9,
+          height: 9,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        ),
+      ),
+    );
+  }
 }
 
 String formatBytes(int bytes) => bytes < 1024
