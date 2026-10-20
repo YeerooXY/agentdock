@@ -75,6 +75,69 @@ test('saved phone names are independent; remote rename cannot target another pho
   second.ws.close();
 });
 
+test('mobile launch chooses an installed agent once without changing PC defaults', async t => {
+  const f = await fixture(t), paired = (await f.pair()).data;
+  const c = client(f, paired.token); await once(c.ws, 'open');
+  t.after(() => c.ws.close());
+  const defaults = { provider: 'codex', model: 'codex-only-model', cwd: f.root, permissions: 'default' };
+  f.m.getDefaults = () => defaults;
+  f.sessions.cliSetup = { snapshot: () => [{ id: 'claude', installed: true }] };
+  const created = [];
+  f.sessions.create = raw => { created.push(raw); return { id: 'new' }; };
+  assert.ok((await c.call('state')).capabilities.includes('console.agents'));
+  assert.equal((await c.call('console.agents')).agents.find(x => x.id === 'claude').installed, true);
+  await c.call('console.create', { name: 'Claude project', agent: 'claude', permissions: 'unrestricted', cwd: 'C:\\Windows', model: 'untrusted', command: 'must not execute' });
+  assert.deepEqual(created[0], { ...defaults, provider: 'claude', model: '', command: '', name: 'Claude project' });
+  assert.equal(defaults.provider, 'codex');
+  assert.equal(defaults.model, 'codex-only-model');
+  for (const agent of ['custom', 'shell', 'missing', '__proto__', { id: 'claude' }]) {
+    await assert.rejects(c.call('console.create', { agent }), /installed/);
+  }
+  assert.equal(created.length, 1);
+});
+
+test('closing a mobile console requires the selected target and confirmation', async t => {
+  const f = await fixture(t), paired = (await f.pair()).data;
+  const c = client(f, paired.token); await once(c.ws, 'open');
+  t.after(() => c.ws.close());
+  const ended = [];
+  f.sessions.end = id => { ended.push(id); f.sessions.items.get(id).dismissed = true; };
+  await c.call('subscribe', { id: 'console-1' });
+  await assert.rejects(c.call('console.close', { id: 'console-1' }), /Confirm/);
+  await assert.rejects(c.call('console.close', { id: 'console-2', confirm: true }), /Confirm/);
+  assert.deepEqual(ended, []);
+  await c.call('console.close', { id: 'console-1', confirm: true });
+  assert.deepEqual(ended, ['console-1']);
+  assert.equal((await c.call('state')).sessions.some(x => x.id === 'console-1'), false);
+  assert.equal((await c.call('state')).sessions.length, 8);
+  await assert.rejects(c.call('console.close', { id: 'console-1', confirm: true }), /Confirm/);
+});
+
+test('mobile file suggestions are bounded to the selected console folder', async t => {
+  const f = await fixture(t), paired = (await f.pair()).data;
+  const c = client(f, paired.token); await once(c.ws, 'open');
+  t.after(() => c.ws.close());
+  const work = path.join(f.root, 'work');
+  fs.mkdirSync(path.join(work, 'src'), { recursive: true });
+  for (const file of ['index.js', 'other.ts', '.env', '.env.local']) fs.writeFileSync(path.join(work, file), 'private content must never be returned');
+  fs.writeFileSync(path.join(work, 'src', 'app.js'), 'private content');
+  fs.mkdirSync(path.join(work, '.git'));
+  fs.symlinkSync(f.root, path.join(work, 'outside'), 'junction');
+  f.sessions.items.get('console-1').cwd = work;
+  await assert.rejects(c.call('console.files', { id: 'console-1' }), /Select/);
+  await c.call('subscribe', { id: 'console-1' });
+  const listing = await c.call('console.files', { id: 'console-1' });
+  assert.deepEqual(listing.entries.map(x => x.name), ['src', 'index.js', 'other.ts']);
+  assert.ok(!JSON.stringify(listing).includes('private content'));
+  assert.ok(!JSON.stringify(listing).includes(f.root));
+  assert.equal((await c.call('console.files', { id: 'console-1', query: 'index' })).entries.length, 1);
+  assert.deepEqual((await c.call('console.files', { id: 'console-1', directory: 'src' })).entries.map(x => x.path), ['src/app.js']);
+  for (const directory of ['..', 'src/../..', '/etc', 'C:/Windows', '..\\', '.git', '.env', 'outside']) {
+    await assert.rejects(c.call('console.files', { id: 'console-1', directory }), /folder/i);
+  }
+  await assert.rejects(c.call('console.files', { id: 'console-2' }), /Select/);
+});
+
 test('revoking a phone blocks input already queued behind its close handshake', async t => {
   const f = await fixture(t), paired = (await f.pair()).data;
   const c = client(f, paired.token); await once(c.ws, 'open');

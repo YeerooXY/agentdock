@@ -22,6 +22,7 @@ function tap(node) {
 }
 const [action, value] = process.argv.slice(2);
 if (action === 'install') run('install', '-r', '-d', path.join(root, 'mobile/build/app/outputs/flutter-apk/app-debug.apk'));
+if (action === 'open') run('shell', 'am', 'start', '-n', 'com.yeeroo.agentdock.mobile/.MainActivity');
 if (action === 'reset') {
   run('shell', 'pm', 'clear', 'com.yeeroo.agentdock.mobile');
   run('shell', 'am', 'start', '-n', 'com.yeeroo.agentdock.mobile/.MainActivity');
@@ -48,6 +49,6 @@ if (action === 'pair') {
 if (action === 'capture') {
   assert.match(value, /^[a-z0-9-]+$/);
   nodes(); // Wait for route/keyboard animations before taking the screenshot.
-  fs.writeFileSync(path.join(out, value + '.png'), execFileSync(adb, ['-s', 'emulator-5554', 'exec-out', 'screencap', '-p'], { windowsHide: true }));
+  fs.writeFileSync(path.join(out, value + '.png'), execFileSync(adb, ['-s', 'emulator-5554', 'exec-out', 'screencap', '-p'], { windowsHide: true, maxBuffer: 8 * 1024 * 1024 }));
   console.log('Saved ' + value);
 }

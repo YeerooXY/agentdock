@@ -13,6 +13,7 @@ import 'package:xterm/xterm.dart';
 
 import 'pairing_request.dart';
 import 'saved_devices.dart';
+import 'console_drafts.dart';
 
 class ConsoleScreen {
   final Terminal terminal = Terminal(maxLines: 1000);
@@ -38,14 +39,24 @@ class DockClient extends ChangeNotifier {
   static const storage = FlutterSecureStorage();
   static const nativePush = MethodChannel('agentdock/push');
   final SavedDevices devices;
-  DockClient({SavedDevices? savedDevices})
+  final ConsoleDrafts drafts;
+  DockClient({SavedDevices? savedDevices, ConsoleDrafts? consoleDrafts})
     : devices =
           savedDevices ??
           SavedDevices(
             read: (key) => storage.read(key: key),
             write: (key, value) => storage.write(key: key, value: value),
             delete: (key) => storage.delete(key: key),
-          );
+          ),
+      drafts =
+          consoleDrafts ??
+          ConsoleDrafts(
+            read: () => storage.read(key: 'consoleDrafts.v1'),
+            write: (value) =>
+                storage.write(key: 'consoleDrafts.v1', value: value),
+          ) {
+    drafts.addListener(notifyListeners);
+  }
   String get activePC => pairing?['pin'] as String? ?? '';
   String get pcName =>
       pairing == null ? 'Computers' : SavedDevices.label(pairing!);
@@ -80,6 +91,7 @@ class DockClient extends ChangeNotifier {
 
   Future<void> restore() async {
     try {
+      await drafts.load();
       await devices.load();
       deviceStoreError = '';
       pairing = devices.find(devices.active);
@@ -666,8 +678,8 @@ class DockClient extends ChangeNotifier {
   Future<void> select(String id) async {
     selected = id;
     inputError = '';
-    await subscribe();
     notifyListeners();
+    await subscribe();
   }
 
   Future<void> setStreaming(bool value) async {
@@ -864,6 +876,7 @@ class DockClient extends ChangeNotifier {
           await request('push.register', {'token': ''});
         } catch (_) {}
       }
+      await drafts.forgetPC(pin);
       await devices.remove(pin);
       _selections.remove(pin);
       if (pin == activePC) {
@@ -889,6 +902,8 @@ class DockClient extends ChangeNotifier {
     socket?.close();
     transport?.close(force: true);
     tokenRefresh?.cancel();
+    drafts.removeListener(notifyListeners);
+    drafts.dispose();
     super.dispose();
   }
 }

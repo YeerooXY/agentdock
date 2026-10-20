@@ -11,6 +11,7 @@ const { TerminalStream } = require('./mobile-stream.cjs');
 const { MobilePush, publicConfig, serviceAccount } = require('./mobile-push.cjs');
 const { isPrivate, isPublic, internetOptions } = require('./mobile-address.cjs');
 const { MobileNetwork } = require('./mobile-network.cjs');
+const { consoleChoices, mobileLaunch, consoleFiles } = require('./mobile-console.cjs');
 const token = () => crypto.randomBytes(32).toString('base64url');
 const digest = text => crypto.createHash('sha256').update(text).digest('hex');
 const match = (value, stored) => {
@@ -206,7 +207,7 @@ class MobileCompanion extends EventEmitter {
       ? { url: `https://${this.config.publicHost}:${this.config.externalPort}`, localUrl }
       : { url: localUrl };
     connection.name = this.name;
-    return { connection, capacity: (this.sessions.grid?.columns || 3) * (this.sessions.grid?.rows || 3), sessions: this.sessions.list().map(({ id, slot, name, provider, alive, state, cols, rows, consoleKey }) => ({ id, slot, name, provider, alive, state, cols, rows, consoleKey })), unreadResults: this.results.unreadGroups(), resultVersion: digest(this.results.items.map(x => x.id + ':' + x.seenAt).join(',')).slice(0, 16) };
+    return { connection, capabilities: ['console.agents', 'console.files', 'console.close'], capacity: (this.sessions.grid?.columns || 3) * (this.sessions.grid?.rows || 3), sessions: this.sessions.list().filter(x => !x.dismissed).map(({ id, slot, name, provider, alive, state, cols, rows, consoleKey }) => ({ id, slot, name, provider, alive, state, cols, rows, consoleKey })), unreadResults: this.results.unreadGroups(), resultVersion: digest(this.results.items.map(x => x.id + ':' + x.seenAt).join(',')).slice(0, 16) };
   }
   scheduleState() {
     if (!this.server || this.stateTimer) return;
@@ -260,7 +261,28 @@ class MobileCompanion extends EventEmitter {
       }
       case 'acknowledge': this.sessions.acknowledge(payload.id); this.inbox.acknowledgeSession(payload.id); return true;
       case 'console.create': {
-        const defaults = this.getDefaults(); return this.sessions.create({ ...defaults, name: typeof payload.name === 'string' ? payload.name.slice(0, 64) : defaults.name });
+        return this.sessions.create(mobileLaunch(this.sessions, this.getDefaults(), payload));
+      }
+      case 'console.agents': return consoleChoices(this.sessions, this.getDefaults());
+      case 'console.files': {
+        const session = this.sessions.items.get(payload.id);
+        if (client.selected !== payload.id || !session || session.dismissed) throw new Error('Select an open console first.');
+        if (client.fileRequest) throw new Error('Wait for the file list.');
+        client.fileRequest = true;
+        try {
+          const value = await consoleFiles(session, payload);
+          if (client.ws.readyState !== WebSocket.OPEN || !this.clients.has(client) ||
+              !this.private.devices.includes(client.device) || client.selected !== payload.id ||
+              this.sessions.items.get(payload.id) !== session || session.dismissed) throw new Error('Console or connection changed. Reopen Files.');
+          return value;
+        } finally { client.fileRequest = false; }
+      }
+      case 'console.close': {
+        const session = this.sessions.items.get(payload.id);
+        if (payload.confirm !== true || client.selected !== payload.id || !session || session.dismissed) throw new Error('Confirm closing the selected console.');
+        this.sessions.end(payload.id);
+        client.selected = '';
+        return true;
       }
       case 'results.list': return this.results.list().map(({ id, title, kind, status, summary, at, size, image, ext, groupId, sessionId, consoleKey, consoleName, seenAt, project, projectId, changeCount, git, gitEnd }) => ({ id, title, kind, status, summary, at, size, image, ext, groupId, sessionId, consoleKey, consoleName, seenAt, project, projectId, changeCount, git, gitEnd }));
       case 'results.preview': { const value = await this.results.preview(payload.id, payload.thumbnail !== false, payload.entry); if (JSON.stringify(value).length > 3 * 1024 * 1024) throw new Error('This preview is too large. Open it on your PC.'); return value; }

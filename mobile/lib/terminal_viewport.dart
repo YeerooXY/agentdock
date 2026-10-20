@@ -3,6 +3,8 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:xterm/xterm.dart';
 
+import 'terminal_reading.dart';
+
 /// Changes only the phone's rendering. The PC owns the terminal's cell grid.
 class TerminalViewport extends StatefulWidget {
   final Terminal terminal;
@@ -106,47 +108,54 @@ class _TerminalViewportState extends State<TerminalViewport> {
   }
 
   @override
-  Widget build(BuildContext context) => LayoutBuilder(
-    builder: (context, constraints) {
-      final cols = max(1, widget.columns);
-      final available = max(
-        1.0,
-        constraints.maxWidth - _padding.horizontal - 1,
-      );
-      final scaler = widget.fitWidth
-          ? TextScaler.linear(
-              min(1.0, available / (cols * _cellWidth(TextScaler.noScaling))),
-            )
-          : MediaQuery.textScalerOf(context);
-      final width = widget.fitWidth
-          ? constraints.maxWidth
-          : max(
-              constraints.maxWidth,
-              cols * _cellWidth(scaler) + _padding.horizontal + 1,
+  Widget build(BuildContext context) => !widget.fitWidth
+      ? TerminalReadingView(terminal: widget.terminal)
+      : LayoutBuilder(
+          builder: (context, constraints) {
+            final cols = max(1, widget.columns);
+            final available = max(
+              1.0,
+              constraints.maxWidth - _padding.horizontal - 1,
             );
-      _keepPlace(width, constraints.maxHeight, scaler);
-      return SingleChildScrollView(
-        key: const ValueKey('terminal-horizontal-scroll'),
-        scrollDirection: Axis.horizontal,
-        physics: widget.fitWidth ? const NeverScrollableScrollPhysics() : null,
-        child: SizedBox(
-          width: width,
-          height: constraints.maxHeight,
-          child: TerminalView(
-            widget.terminal,
-            key: _view,
-            scrollController: _scroll,
-            autoResize: false,
-            readOnly: widget.readOnly,
-            focusNode: widget.focusNode,
-            deleteDetection: true,
-            textStyle: _style,
-            textScaler: scaler,
-            padding: _padding,
-            theme: widget.theme,
-          ),
-        ),
-      );
-    },
-  );
+            final scaler = widget.fitWidth
+                ? TextScaler.linear(
+                    min(
+                      1.0,
+                      available / (cols * _cellWidth(TextScaler.noScaling)),
+                    ),
+                  )
+                : MediaQuery.textScalerOf(context);
+            final width = widget.fitWidth
+                ? constraints.maxWidth
+                : max(
+                    constraints.maxWidth,
+                    cols * _cellWidth(scaler) + _padding.horizontal + 1,
+                  );
+            _keepPlace(width, constraints.maxHeight, scaler);
+            return SingleChildScrollView(
+              key: const ValueKey('terminal-horizontal-scroll'),
+              scrollDirection: Axis.horizontal,
+              physics: widget.fitWidth
+                  ? const NeverScrollableScrollPhysics()
+                  : null,
+              child: SizedBox(
+                width: width,
+                height: constraints.maxHeight,
+                child: TerminalView(
+                  widget.terminal,
+                  key: _view,
+                  scrollController: _scroll,
+                  autoResize: false,
+                  readOnly: widget.readOnly,
+                  focusNode: widget.focusNode,
+                  deleteDetection: true,
+                  textStyle: _style,
+                  textScaler: scaler,
+                  padding: _padding,
+                  theme: widget.theme,
+                ),
+              ),
+            );
+          },
+        );
 }

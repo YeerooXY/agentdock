@@ -169,6 +169,36 @@ class _SettingsPageState extends State<SettingsPage> {
               padding: const EdgeInsets.only(top: 14),
               child: AccountUsageCard(account: limit),
             ),
+          if (!loading &&
+              usage != null &&
+              widget.client.sessions.any(
+                (s) => '${s['provider']}'.toLowerCase() == 'claude',
+              ) &&
+              !limits.any(
+                (limit) => '${limit['provider']}'.toLowerCase() == 'claude',
+              ))
+            Padding(
+              padding: const EdgeInsets.only(top: 14),
+              child: panel(
+                const Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Claude',
+                      style: TextStyle(
+                        color: Color(0xffe6a187),
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    SizedBox(height: 8),
+                    Text(
+                      'Waiting for subscription usage. Claude reports its limits after an AI response. Then refresh here.',
+                      style: TextStyle(color: muted, height: 1.5),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           if (summary is Map)
             Padding(
               padding: const EdgeInsets.only(top: 14),

@@ -32,6 +32,8 @@ void main() {
         await tester.pumpWidget(DockApp(client: c));
         await tester.pumpAndSettle();
 
+        await tester.tap(find.byTooltip('Show the original terminal grid'));
+        await tester.pumpAndSettle();
         final view = find.byType(TerminalView);
         final render = tester.state<TerminalViewState>(view).renderTerminal;
         // Check the renderer's actual font metrics, not the sizing calculation.
@@ -53,65 +55,6 @@ void main() {
       });
     }
   }
-
-  testWidgets(
-    'larger text pans and toggles back without changing the PC grid',
-    (tester) async {
-      tester.view.physicalSize = const Size(360, 800);
-      tester.view.devicePixelRatio = 1;
-      addTearDown(tester.view.resetPhysicalSize);
-      addTearDown(tester.view.resetDevicePixelRatio);
-      final c = FakeDock();
-      addTearDown(c.dispose);
-      c.screen!.cols = 180;
-      c.screen!.terminal.resize(180, 30);
-      await tester.pumpWidget(DockApp(client: c));
-      final view = find.byType(TerminalView);
-      final small = tester
-          .state<TerminalViewState>(view)
-          .renderTerminal
-          .cellSize;
-      await tester.tap(find.text('Fit width'));
-      await tester.pumpAndSettle();
-      final large = tester
-          .state<TerminalViewState>(view)
-          .renderTerminal
-          .cellSize;
-      expect(large.width, greaterThan(small.width));
-      final scroll = tester
-          .state<ScrollableState>(
-            find
-                .descendant(
-                  of: find.byKey(const ValueKey('terminal-horizontal-scroll')),
-                  matching: find.byType(Scrollable),
-                )
-                .first,
-          )
-          .position;
-      expect(scroll.maxScrollExtent, greaterThan(0));
-      await tester.dragFrom(const Offset(200, 220), const Offset(-100, 0));
-      await tester.pumpAndSettle();
-      expect(scroll.pixels, greaterThan(0));
-      expect(tester.testTextInput.isVisible, isFalse);
-      await tester.tap(find.text('Larger text'));
-      await tester.pumpAndSettle();
-      final fitted = tester
-          .state<ScrollableState>(
-            find
-                .descendant(
-                  of: find.byKey(const ValueKey('terminal-horizontal-scroll')),
-                  matching: find.byType(Scrollable),
-                )
-                .first,
-          )
-          .position;
-      expect(fitted.maxScrollExtent, 0);
-      expect(fitted.pixels, 0);
-      expect(c.screen!.terminal.viewWidth, 180);
-      expect(c.inputs, isEmpty);
-      expect(tester.takeException(), isNull);
-    },
-  );
 
   testWidgets(
     'narrow phone keeps input and Send inside the keyboard viewport',
@@ -151,6 +94,8 @@ void main() {
     c.screen!.terminal.write('\r\n${'Output\r\n' * 20}> ');
     await tester.pumpWidget(DockApp(client: c));
     await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Show the original terminal grid'));
+    await tester.pumpAndSettle();
     tester.view.physicalSize = const Size(852, 393);
     await tester.pumpAndSettle();
     final render = tester
@@ -181,12 +126,14 @@ void main() {
     c.screen!.terminal.write('Older output\r\n' * 300);
     await tester.pumpWidget(DockApp(client: c));
     await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Show the original terminal grid'));
+    await tester.pumpAndSettle();
     final view = find.byType(TerminalView);
     final controller = tester.widget<TerminalView>(view).scrollController!;
     final render = tester.state<TerminalViewState>(view).renderTerminal;
     controller.jumpTo(render.cellSize.height * 25);
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Fit width'));
+    tester.view.physicalSize = const Size(411, 852);
     await tester.pumpAndSettle();
     final resized = tester.state<TerminalViewState>(view).renderTerminal;
     expect(controller.offset / resized.cellSize.height, closeTo(25, 0.01));

@@ -24,16 +24,18 @@ const storage = {
   }
 };
 const sessions = new EventEmitter(), results = new EventEmitter(), inbox = new EventEmitter();
-const session = { id: 'fixture', slot: 1, name: 'Mobile controls', provider: 'codex', state: 'ready', alive: true, cols: 80, rows: 32, buffer: '', sequence: 0 };
+const session = { id: 'fixture', slot: 1, name: 'Mobile controls', provider: 'codex', state: 'ready', alive: true, cols: 180, rows: 32, buffer: '', sequence: 0, cwd: root };
+fs.mkdirSync(path.join(root, 'src'));
+fs.writeFileSync(path.join(root, 'src', 'mobile.dart'), '// Synthetic file, no project data.');
+fs.writeFileSync(path.join(root, 'README.md'), '# Fixture');
 let menu = false, chosen = 0, pending = '', stopped = false, timer, showLinks = false, connections = 0;
 function picture() {
   const lines = menu
     ? ['MODEL PICKER - TEST FIXTURE', '', `${chosen === 0 ? '>' : ' '} Fixture model A`, `${chosen === 1 ? '>' : ' '} Fixture model B`, '', 'Arrows: choose    Enter: confirm    Esc: close']
-    : ['MOBILE CONTROLS - TEST FIXTURE', '', 'This terminal does not run an AI agent.', '', 'Changes prepared:', '  + Fit width on the phone', '  + Model and command shortcuts', '  + A compact toolbar', '', `The terminal grid stays ${session.cols} columns on the PC.`, 'Use Larger text to read at full font size.', '', 'src/mobile/controls.dart', '  final fitWidth = true;', '  final command = "/model";', '', 'Verification: temporary, isolated data only.'];
-  const border = '+'.padEnd(session.cols - 1, '-') + '+';
-  return '\x1b[3J\x1b[2J\x1b[H\x1b[38;2;156;191;255m' + border + '\r\n\x1b[0m' +
-    lines.map(x => '| ' + x.slice(0, session.cols - 4).padEnd(session.cols - 4) + ' |').join('\r\n') +
-    '\r\n\x1b[38;2;238;159;215m' + border + '\x1b[0m\r\n\r\n' +
+    : ['Mobile verification', '', 'This paragraph is intentionally wider than a phone. The app should wrap it into readable lines without making the letters smaller or changing the terminal on your computer.', '',
+       'Ready to review:', '  • Read and copy console text', '  • Choose commands and project files', '  • Open a Claude console', '',
+       `The PC terminal still has ${session.cols} columns.`, '', 'src/mobile.dart', '  final mode = "wrap";', '', 'Synthetic output. No AI requests.'];
+  return '\x1b[3J\x1b[2J\x1b[H' + lines.join('\r\n') + '\r\n\r\n' +
     (showLinks ? 'https://example.com/login?fixture=true&redirect_uri=https%3A%2F%2Fexample.com%2Fdone&scope=profile+terminal&state=fixture-only\r\n\r\n' : '') + '> ';
 }
 function draw() {
@@ -63,12 +65,19 @@ sessions.write = (id, data) => {
   }
 };
 sessions.acknowledge = () => {};
+sessions.cliSetup = { snapshot: () => ['codex', 'claude', 'gemini'].map(id => ({ id, installed: true })) };
+sessions.create = options => {
+  const created = { ...session, id: crypto.randomUUID(), slot: sessions.items.size + 1,
+    name: options.name || 'New console', provider: options.provider, buffer: 'Synthetic console ready.\r\n> ', sequence: 0 };
+  sessions.items.set(created.id, created); sessions.emit('changed'); return created;
+};
+sessions.end = id => { sessions.items.delete(id); sessions.emit('changed'); };
 inbox.acknowledgeSession = () => {};
 results.items = []; results.unreadGroups = () => 0; results.list = () => [];
 inbox.items = [];
 const mobile = new MobileCompanion(root, storage, {
   sessions, results, inbox, testMode: true,
-  getDefaults: () => ({}), getUsage: () => ({ limits: [], summary: {} })
+  getDefaults: () => ({ provider: 'codex', cwd: root }), getUsage: () => ({ limits: [], summary: {} })
 });
 (async () => {
   const reserve = net.createServer();

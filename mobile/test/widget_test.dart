@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:agent_dock_mobile/main.dart';
 import 'package:agent_dock_mobile/dock_client.dart';
 import 'package:agent_dock_mobile/results_page.dart';
+import 'package:agent_dock_mobile/console_drafts.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:xterm/xterm.dart';
 
@@ -14,7 +15,12 @@ class FakeDock extends DockClient {
   final calls = <String>[];
   final inputs = <Map<String, dynamic>>[];
   Future<void> Function(Map<String, dynamic>)? onInput;
-  FakeDock({bool paired = true}) {
+  FakeDock({bool paired = true, ConsoleDrafts? drafts})
+    : super(
+        consoleDrafts:
+            drafts ??
+            ConsoleDrafts(read: () async => null, write: (_) async {}),
+      ) {
     if (!paired) return;
     pairing = {'name': 'Test PC'};
     connected = true;
@@ -97,6 +103,8 @@ void main() {
       List.generate(150, (i) => 'History line $i\r\n').join(),
     );
     await tester.pumpWidget(DockApp(client: c));
+    await tester.tap(find.byTooltip('Show the original terminal grid'));
+    await tester.pumpAndSettle();
     final terminal = find.byType(TerminalView);
     final scroll = tester
         .state<ScrollableState>(
@@ -142,6 +150,8 @@ void main() {
     final c = FakeDock();
     addTearDown(c.dispose);
     await tester.pumpWidget(DockApp(client: c));
+    await tester.tap(find.byTooltip('Show the original terminal grid'));
+    await tester.pumpAndSettle();
     final terminal = find.byType(TerminalView);
     await tester.tap(terminal);
     await tester.pumpAndSettle();
@@ -197,7 +207,10 @@ void main() {
       addTearDown(c.dispose);
       await tester.pumpWidget(DockApp(client: c));
       await tester.enterText(find.byType(TextField).last, 'keep this draft');
-      await tester.drag(find.byType(TerminalView), const Offset(0, 100));
+      await tester.drag(
+        find.byKey(const ValueKey('terminal-reading-scroll')),
+        const Offset(0, 100),
+      );
       await tester.pumpAndSettle();
       expect(tester.testTextInput.isVisible, isFalse);
       expect(

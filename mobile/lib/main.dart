@@ -1,4 +1,5 @@
 import 'dart:math';
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:xterm/xterm.dart';
@@ -14,6 +15,11 @@ import 'devices_page.dart';
 import 'agent_commands.dart';
 import 'terminal_viewport.dart';
 import 'terminal_links.dart';
+import 'terminal_reading.dart';
+import 'agent_identity.dart';
+import 'console_actions.dart';
+import 'console_switcher.dart';
+import 'console_drafts.dart';
 
 export 'dock_style.dart' show blue, pink, ink;
 
@@ -108,18 +114,25 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
   final terminalFocus = FocusNode(canRequestFocus: false, skipTraversal: true);
   bool keyboardWasVisible = false;
   bool sending = false;
-  bool fitWidth = true;
+  bool fitWidth = false;
   _CommandTarget? stagedCommandTarget;
+  String? draftKey;
+  bool restoringDraft = false;
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     terminalFocus.addListener(terminalFocusChanged);
+    composer.addListener(draftChanged);
+    c.addListener(syncDraft);
+    syncDraft();
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    c.removeListener(syncDraft);
+    unawaited(c.drafts.flush());
     composer.dispose();
     composerFocus.dispose();
     terminalFocus.removeListener(terminalFocusChanged);
@@ -131,11 +144,45 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
     if (!terminalFocus.hasFocus) stopTerminalTyping();
   }
 
+  void draftChanged() {
+    if (restoringDraft) return;
+    if (draftKey != null) c.drafts.set(draftKey!, composer.text);
+    if (mounted) setState(() {});
+  }
+
+  void syncDraft() {
+    final session = c.sessions.where((s) => s['id'] == c.selected).firstOrNull;
+    final key = session == null
+        ? null
+        : ConsoleDrafts.key(
+            c.activePC,
+            (session['consoleKey'] ?? session['id']) as String,
+          );
+    if (key == draftKey) return;
+    draftKey = key;
+    restoringDraft = true;
+    final value = key == null ? '' : c.drafts.get(key);
+    composer.value = TextEditingValue(
+      text: value,
+      selection: TextSelection.collapsed(offset: value.length),
+    );
+    restoringDraft = false;
+    stagedCommandTarget = null;
+    stopTerminalTyping();
+  }
+
   void stopTerminalTyping() {
     terminalFocus.canRequestFocus = false;
   }
 
   void startTerminalTyping() {
+    if (!fitWidth) {
+      setState(() => fitWidth = true);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) startTerminalTyping();
+      });
+      return;
+    }
     terminalFocus.canRequestFocus = true;
     terminalFocus.requestFocus();
   }
@@ -157,6 +204,7 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
       AppLifecycleState.detached,
     ].contains(state)) {
       stopTerminalTyping();
+      unawaited(c.drafts.flush());
       c.setForeground(false);
     }
   }
@@ -184,10 +232,14 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
       }
     }
     final text = composer.text;
+    final sentKey = draftKey;
     setState(() => sending = true);
     await run(() async {
       await c.submit(text);
-      if (mounted && composer.text == text) {
+      if (sentKey != null && c.drafts.get(sentKey) == text) {
+        c.drafts.set(sentKey, '');
+      }
+      if (mounted && draftKey == sentKey && composer.text == text) {
         composer.clear();
         stagedCommandTarget = null;
       }
@@ -260,35 +312,144 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
   }
 
   Future<void> newConsole() async {
-    final name = TextEditingController();
-    final value = await showDialog<String>(
+    final pc = c.activePC, generation = c.generation;
+    stopTerminalTyping();
+    composerFocus.unfocus();
+    final value = await showModalBottomSheet<Map<String, dynamic>>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (_) => NewConsoleSheet(client: c),
+    );
+    if (value == null ||
+        !mounted ||
+        !c.connected ||
+        c.activePC != pc ||
+        c.generation != generation) {
+      return;
+    }
+    await run(() async {
+      final session = await c.request('console.create', value);
+      if (mounted &&
+          c.connected &&
+          c.activePC == pc &&
+          c.generation == generation) {
+        await c.select(session['id'] as String);
+      }
+    });
+  }
+
+  bool supports(String capability) =>
+      (c.state['capabilities'] as List? ?? []).contains(capability);
+
+  Future<void> pickFile(Map<String, dynamic> session) async {
+    if (!supports('console.files')) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Update Dock on your PC to choose files here.'),
+        ),
+      );
+      return;
+    }
+    final target = (
+      pc: c.activePC,
+      session: c.selected,
+      provider: session['provider'] as String,
+      generation: c.generation,
+    );
+    final draft = composer.value;
+    stopTerminalTyping();
+    composerFocus.unfocus();
+    final path = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.sizeOf(context).height * .85,
+      ),
+      builder: (_) => ConsoleFilesSheet(client: c, sessionId: target.session),
+    );
+    if (path == null ||
+        !commandTargetIsCurrent(target) ||
+        composer.value != draft) {
+      return;
+    }
+    // Insert a relative path as draft text. No command or file content is sent.
+    final start = draft.selection.isValid
+        ? draft.selection.start
+        : draft.text.length;
+    final end = draft.selection.isValid
+        ? draft.selection.end
+        : draft.text.length;
+    final value = path.contains(RegExp(r'\s')) ? '"$path"' : path;
+    final inserted =
+        '${start > 0 && !RegExp(r'[\s@/]$').hasMatch(draft.text.substring(0, start)) ? ' ' : ''}$value ';
+    composer.value = TextEditingValue(
+      text: draft.text.replaceRange(start, end, inserted),
+      selection: TextSelection.collapsed(offset: start + inserted.length),
+    );
+    stagedCommandTarget = target;
+  }
+
+  Future<void> closeConsole(Map<String, dynamic> session) async {
+    if (!supports('console.close')) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Update Dock on your PC to close consoles here.'),
+        ),
+      );
+      return;
+    }
+    final target = (
+      pc: c.activePC,
+      session: c.selected,
+      provider: session['provider'] as String,
+      generation: c.generation,
+    );
+    stopTerminalTyping();
+    composerFocus.unfocus();
+    final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('New console'),
-        content: TextField(
-          controller: name,
-          maxLength: 64,
-          autofocus: true,
-          decoration: const InputDecoration(labelText: 'Name (optional)'),
+        title: Text('Close ${session['name']}?'),
+        content: const Text(
+          'This ends the console on your PC, including any running task.',
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Keep open'),
           ),
           FilledButton(
-            onPressed: () => Navigator.pop(ctx, name.text),
-            child: const Text('Open'),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Close console'),
           ),
         ],
       ),
     );
-    name.dispose();
-    if (value == null) return;
-    await run(() async {
-      final session = await c.request('console.create', {'name': value});
-      await c.select(session['id'] as String);
-    });
+    if (confirmed == true && commandTargetIsCurrent(target)) {
+      await run(
+        () =>
+            c.request('console.close', {'id': target.session, 'confirm': true}),
+      );
+    }
+  }
+
+  Future<void> copyConsole() async {
+    final terminal = c.screen?.terminal;
+    if (terminal == null) return;
+    final text = terminalReadingText(terminal);
+    stopTerminalTyping();
+    composerFocus.unfocus();
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.sizeOf(context).height * .85,
+      ),
+      builder: (_) => ConsoleCopySheet(text: text),
+    );
   }
 
   Future<void> showConsoleLinks(Map<String, dynamic> session) async {
@@ -319,57 +480,6 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
     );
   }
 
-  Future<void> switchConsole() async {
-    stopTerminalTyping();
-    composerFocus.unfocus();
-    final id = await showModalBottomSheet<String>(
-      context: context,
-      showDragHandle: true,
-      isScrollControlled: true,
-      builder: (ctx) => SafeArea(
-        child: ListView(
-          shrinkWrap: true,
-          children: [
-            const Padding(
-              padding: EdgeInsets.all(20),
-              child: Text(
-                'Consoles',
-                style: TextStyle(fontSize: 22, color: pink),
-              ),
-            ),
-            ...c.sessions.map(
-              (s) => ListTile(
-                leading: Badge(
-                  isLabelVisible: ['ready', 'attention'].contains(s['state']),
-                  child: const Icon(Icons.terminal, color: blue),
-                ),
-                title: Text(
-                  s['name'] as String,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                subtitle: Text('${s['provider']} · ${s['state']}'),
-                trailing: s['id'] == c.selected
-                    ? const Icon(Icons.check, color: pink)
-                    : null,
-                onTap: () => Navigator.pop(ctx, s['id']),
-              ),
-            ),
-            ListTile(
-              leading: const Icon(Icons.add, color: pink),
-              title: const Text('New console'),
-              onTap: () => Navigator.pop(ctx, '+'),
-            ),
-          ],
-        ),
-      ),
-    );
-    if (id == '+') {
-      await newConsole();
-    } else if (id != null) {
-      await run(() => c.select(id));
-    }
-  }
-
   @override
   Widget build(BuildContext context) => AnimatedBuilder(
     animation: c,
@@ -386,26 +496,39 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
             kToolbarHeight,
             MediaQuery.textScalerOf(context).scale(20) * 1.2 +
                 MediaQuery.textScalerOf(context).scale(12) * 1.2 +
-                16,
+                32,
           ),
           leading: const Padding(padding: EdgeInsets.all(8), child: DockMark()),
           title: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                page == 0
-                    ? (current?['name'] as String? ?? 'Consoles')
-                    : page == 1
-                    ? 'Results'
-                    : 'Usage',
-                overflow: TextOverflow.ellipsis,
-                maxLines: 1,
-                style: const TextStyle(
-                  fontSize: 20,
-                  color: pink,
-                  fontWeight: FontWeight.w600,
+              if (page == 0)
+                ConsoleSwitcher(
+                  client: c,
+                  name: current?['name'] as String? ?? 'Consoles',
+                  onOpened: () {
+                    stopTerminalTyping();
+                    composerFocus.unfocus();
+                  },
+                  onSelected: (id) {
+                    if (id == '+') {
+                      newConsole();
+                    } else if (c.sessions.any((s) => s['id'] == id)) {
+                      run(() => c.select(id));
+                    }
+                  },
+                )
+              else
+                Text(
+                  page == 1 ? 'Results' : 'Usage',
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
+                  style: const TextStyle(
+                    fontSize: 20,
+                    color: pink,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
-              ),
               Text(
                 c.pcName,
                 overflow: TextOverflow.ellipsis,
@@ -424,12 +547,6 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
               icon: const Icon(Icons.devices, color: blue),
               tooltip: 'Devices',
             ),
-            if (page == 0)
-              IconButton(
-                onPressed: c.connected ? switchConsole : null,
-                icon: const Icon(Icons.grid_view_rounded, color: blue),
-                tooltip: 'Switch console',
-              ),
             PopupMenuButton<String>(
               tooltip: 'More options',
               icon: const Icon(Icons.more_vert, color: pink),
@@ -488,6 +605,9 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
         bottomNavigationBar: MediaQuery.viewInsetsOf(context).bottom > 0
             ? null
             : NavigationBar(
+                labelBehavior: MediaQuery.textScalerOf(context).scale(14) > 22
+                    ? NavigationDestinationLabelBehavior.onlyShowSelected
+                    : NavigationDestinationLabelBehavior.alwaysShow,
                 selectedIndex: page,
                 onDestinationSelected: (value) {
                   stopTerminalTyping();
@@ -550,6 +670,23 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
   }
 
   Widget terminalContents(Map<String, dynamic> session, ConsoleScreen? view) {
+    final compactControls =
+        MediaQuery.sizeOf(context).width < 420 &&
+        MediaQuery.textScalerOf(context).scale(14) > 20;
+    void toggleDisplay() {
+      stopTerminalTyping();
+      composerFocus.unfocus();
+      setState(() => fitWidth = !fitWidth);
+    }
+
+    final provider = session['provider'] as String;
+    final catalog = AgentCommands.forProvider(provider);
+    final prefix = composer.text.trimLeft();
+    final suggestions =
+        prefix.startsWith('/') && !prefix.contains(RegExp(r'\s'))
+        ? catalog?.commands.where((x) => x.text.startsWith(prefix)).toList() ??
+              <AgentCommand>[]
+        : <AgentCommand>[];
     return Column(
       children: [
         Padding(
@@ -567,39 +704,55 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
               ),
               const SizedBox(width: 8),
               Expanded(
-                child: Text(
-                  '${session['provider']} · ${session['state']}',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Color(0xffb5bbd0),
-                    fontSize: 12,
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Tooltip(
+                    message: '${session['state']}',
+                    child: AgentBadge(provider),
                   ),
                 ),
               ),
-              Tooltip(
-                message: fitWidth ? 'Use larger text' : 'Fit terminal width',
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 160),
-                  child: TextButton.icon(
-                    onPressed: () => setState(() => fitWidth = !fitWidth),
-                    icon: Icon(fitWidth ? Icons.fit_screen : Icons.text_fields),
-                    label: Text(
-                      fitWidth ? 'Fit width' : 'Larger text',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+              if (compactControls)
+                IconButton(
+                  tooltip: fitWidth
+                      ? 'Wrap text at reading size'
+                      : 'Show the original terminal grid',
+                  onPressed: toggleDisplay,
+                  icon: Icon(
+                    fitWidth ? Icons.fit_screen : Icons.wrap_text,
+                    color: blue,
+                  ),
+                )
+              else
+                Tooltip(
+                  message: fitWidth
+                      ? 'Wrap text at reading size'
+                      : 'Show the original terminal grid',
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 160),
+                    child: TextButton.icon(
+                      onPressed: toggleDisplay,
+                      icon: Icon(
+                        fitWidth ? Icons.fit_screen : Icons.text_fields,
+                      ),
+                      label: Text(
+                        fitWidth ? 'Grid' : 'Wrap text',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
                   ),
                 ),
-              ),
-              if (AgentCommands.forProvider(session['provider'] as String) !=
-                  null)
+              if (catalog != null)
                 IconButton(
                   tooltip: 'Agent commands',
                   onPressed: c.connected && !sending
                       ? () => agentCommands(session)
                       : null,
-                  icon: const Icon(Icons.tune, color: pink),
+                  icon: Icon(
+                    Icons.tune,
+                    color: AgentIdentity.of(provider).color,
+                  ),
                 ),
             ],
           ),
@@ -671,13 +824,76 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
               onPressed: c.connected ? startTerminalTyping : null,
               icon: const Icon(Icons.keyboard_alt_outlined, color: pink),
             ),
+            PopupMenuButton<String>(
+              tooltip: 'Console actions',
+              icon: const Icon(Icons.more_vert, color: blue),
+              onOpened: () {
+                stopTerminalTyping();
+                composerFocus.unfocus();
+              },
+              onSelected: (action) {
+                if (action == 'copy') copyConsole();
+                if (action == 'files') pickFile(session);
+                if (action == 'close') closeConsole(session);
+              },
+              itemBuilder: (_) => [
+                PopupMenuItem(
+                  value: 'copy',
+                  enabled: view != null,
+                  child: const Text('Copy text'),
+                ),
+                PopupMenuItem(
+                  value: 'files',
+                  enabled: c.connected && !sending,
+                  child: const Text('Files'),
+                ),
+                PopupMenuItem(
+                  value: 'close',
+                  enabled: c.connected && !sending,
+                  child: const Text('Close console'),
+                ),
+              ],
+            ),
           ],
         ),
-        if (c.inputError.isNotEmpty)
+        if (suggestions.isNotEmpty)
+          SizedBox(
+            height: max(48, MediaQuery.textScalerOf(context).scale(20) + 24),
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              children: [
+                for (final command in suggestions)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: ActionChip(
+                      label: Text(command.text),
+                      onPressed: c.connected && !sending
+                          ? () {
+                              composer.value = TextEditingValue(
+                                text: command.text,
+                                selection: TextSelection.collapsed(
+                                  offset: command.text.length,
+                                ),
+                              );
+                              stagedCommandTarget = (
+                                pc: c.activePC,
+                                session: c.selected,
+                                provider: provider,
+                                generation: c.generation,
+                              );
+                            }
+                          : null,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        if (c.inputError.isNotEmpty || c.drafts.error.isNotEmpty)
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Text(
-              c.inputError,
+              c.inputError.isNotEmpty ? c.inputError : c.drafts.error,
               style: const TextStyle(color: pink, fontSize: 12),
             ),
           ),
@@ -696,9 +912,16 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
                   textInputAction: TextInputAction.newline,
                   autocorrect: false,
                   enableSuggestions: false,
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     labelText: 'Command or message',
                     isDense: true,
+                    suffixIcon: IconButton(
+                      tooltip: 'Choose a file',
+                      onPressed: c.connected && !sending
+                          ? () => pickFile(session)
+                          : null,
+                      icon: const Icon(Icons.attach_file, color: blue),
+                    ),
                   ),
                 ),
               ),

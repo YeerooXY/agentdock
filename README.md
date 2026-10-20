@@ -4,11 +4,11 @@
 
 | Device | Download |
 | --- | --- |
-| Windows 10/11 — Intel or AMD 64-bit | **[Windows installer](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.11/Agent-Dock-0.6.0-preview.11-Setup-x64.exe)** |
-| Android — most phones (ARM64) | **[Android APK](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.12/Agent-Dock-0.6.0-preview.12-Android-arm64.apk)** |
-| Android — older 32-bit phones (ARMv7) | [Android ARMv7 APK](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.12/Agent-Dock-0.6.0-preview.12-Android-armv7.apk) |
+| Windows 10/11 — Intel or AMD 64-bit | **[Windows installer](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.13/Agent-Dock-0.6.0-preview.13-Setup-x64.exe)** |
+| Android — most phones (ARM64) | **[Android APK](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.13/Agent-Dock-0.6.0-preview.13-Android-arm64.apk)** |
+| Android — older 32-bit phones (ARMv7) | [Android ARMv7 APK](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.13/Agent-Dock-0.6.0-preview.13-Android-armv7.apk) |
 
-Current previews: **Android 0.6.0-preview.12**, **Windows 0.6.0-preview.11**. This Android update works with the existing PC app. [Android release notes](https://github.com/YeerooXY/agentdock/releases/tag/v0.6.0-preview.12) · [Windows release notes](https://github.com/YeerooXY/agentdock/releases/tag/v0.6.0-preview.11) · [All releases](https://github.com/YeerooXY/agentdock/releases) · [Previous stable desktop-only release](https://github.com/YeerooXY/agentdock/releases/tag/v0.5.0).
+Current previews: **Android 0.6.0-preview.13**, **Windows 0.6.0-preview.13**. Reading, copying and saved drafts work with older PC hosts. Choosing an agent, browsing files and closing consoles from the phone require Windows preview 13. [Android release notes](https://github.com/YeerooXY/agentdock/releases/tag/v0.6.0-preview.13) · [Windows release notes](https://github.com/YeerooXY/agentdock/releases/tag/v0.6.0-preview.13) · [All releases](https://github.com/YeerooXY/agentdock/releases) · [Previous stable desktop-only release](https://github.com/YeerooXY/agentdock/releases/tag/v0.5.0).
 
 A Windows desktop app for agent consoles, projects, shared tools and usage tracking.
 
@@ -41,7 +41,7 @@ The native companion can control your PC consoles, view Results and receive opti
 
 Tap **Devices** above the console to name your phone, add computers, and switch between saved PCs. Each PC keeps its own pairing and address; switching leaves its consoles running. On Windows, **Settings → Connect a phone → Connection** names the PC, and **Pair phone** lets you rename or remove individual phones. [Multiple-device setup](docs/android-setup.md#multiple-computers-and-phones).
 
-**Unreleased mobile changes:** Fit width scales the terminal to your phone; tap it for larger text and sideways scrolling. The pink sliders button offers model and command shortcuts for Codex, Claude Code, OpenCode and Gemini. Choose a command, then Send. [Mobile controls](docs/mobile-controls.md).
+**Preview 13:** terminal text wraps at a readable size, with long-press selection and Copy. Tap the chat name to switch consoles; each console keeps its own encrypted draft. The sliders offer model and command shortcuts. With Windows preview 13, you can also choose an installed agent for a new console, pick file paths and close consoles after confirmation. [Mobile controls](docs/mobile-controls.md).
 
 Phone and PC connect directly on the same Wi-Fi. For access away from home, choose **Direct internet**: Dock checks your network, can forward a port on a compatible router, helps with Windows Firewall, and pairs your phone by QR code. This needs a reachable public IPv4 address. An upstream router or provider NAT may need a manual step; the wizard does not claim internet access works until a phone connects from outside. A private VPN you already use still works too.
 
