@@ -914,21 +914,20 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
                 scrollDirection: Axis.horizontal,
                 child: Row(
                   children: [
-                    for (final key in [
-                      ('Enter', '\r'),
-                      ('Esc', '\x1b'),
-                      ('↑', '\x1b[A'),
-                      ('↓', '\x1b[B'),
-                      ('←', '\x1b[D'),
-                      ('→', '\x1b[C'),
-                      ('Tab', '\t'),
-                      ('Ctrl C', '\x03'),
-                    ])
-                      TextButton(
+                    TextButton.icon(
+                      onPressed: c.connected && !sending
+                          ? () => liveControls('Model')
+                          : null,
+                      icon: const Icon(Icons.model_training_outlined),
+                      label: const Text('Model'),
+                    ),
+                    if (['claude', 'codex'].contains(provider))
+                      TextButton.icon(
                         onPressed: c.connected && !sending
-                            ? () => run(() => c.input(key.$2))
+                            ? () => liveControls('Effort')
                             : null,
-                        child: Text(key.$1),
+                        icon: const Icon(Icons.speed),
+                        label: const Text('Effort'),
                       ),
                   ],
                 ),
