@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:xterm/xterm.dart';
 
 import 'terminal_reading.dart';
+import 'console_drafts.dart';
 
 /// Changes only the phone's rendering. The PC owns the terminal's cell grid.
 class TerminalViewport extends StatefulWidget {
@@ -12,6 +13,8 @@ class TerminalViewport extends StatefulWidget {
   final bool fitWidth, readOnly;
   final FocusNode focusNode;
   final TerminalTheme theme;
+  final ConsoleDrafts? positions;
+  final String positionKey;
 
   const TerminalViewport({
     super.key,
@@ -21,6 +24,8 @@ class TerminalViewport extends StatefulWidget {
     required this.readOnly,
     required this.focusNode,
     required this.theme,
+    this.positions,
+    this.positionKey = '',
   });
 
   @override
@@ -41,6 +46,19 @@ class _TerminalViewportState extends State<TerminalViewport> {
   })?
   _layout;
   int _layoutRevision = 0;
+  @override
+  void initState() {
+    super.initState();
+    _scroll.addListener(() {
+      if (_scroll.hasClients) {
+        widget.positions?.remember(
+          widget.positionKey,
+          'grid',
+          _scroll.position.extentAfter < 24 ? -1 : _scroll.offset,
+        );
+      }
+    });
+  }
 
   @override
   void didUpdateWidget(TerminalViewport oldWidget) {
@@ -66,7 +84,9 @@ class _TerminalViewportState extends State<TerminalViewport> {
     );
     if (_layout == layout) return;
     final old = _view.currentState?.renderTerminal;
-    final changedTerminal = _layout?.terminal != widget.terminal;
+    final saved = widget.positions?.position(widget.positionKey, 'grid');
+    final changedTerminal =
+        _layout?.terminal != widget.terminal && (saved == null || saved < 0);
     final line = old != null && _scroll.hasClients
         ? _scroll.offset / old.cellSize.height
         : 0.0;
@@ -86,7 +106,9 @@ class _TerminalViewportState extends State<TerminalViewport> {
       if (render == null) return;
       // A short landscape viewport must not settle on blank cells below the
       // prompt. A reader in scrollback keeps the same first visible line.
-      final offset = followCursor
+      final offset = old == null && saved != null && saved >= 0
+          ? saved.toDouble()
+          : followCursor
           ? (widget.terminal.buffer.absoluteCursorY + 1) *
                     render.cellSize.height -
                 render.size.height
@@ -109,7 +131,12 @@ class _TerminalViewportState extends State<TerminalViewport> {
 
   @override
   Widget build(BuildContext context) => !widget.fitWidth
-      ? TerminalReadingView(terminal: widget.terminal)
+      ? TerminalReadingView(
+          terminal: widget.terminal,
+          theme: widget.theme,
+          positions: widget.positions,
+          positionKey: widget.positionKey,
+        )
       : LayoutBuilder(
           builder: (context, constraints) {
             final cols = max(1, widget.columns);

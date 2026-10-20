@@ -19,6 +19,7 @@ class AgentCommands {
       switch (provider.toLowerCase()) {
         'codex' => const AgentCommands('Codex', [
           AgentCommand('Model', '/model'),
+          AgentCommand('Effort', '/model'),
           AgentCommand('Status', '/status'),
           AgentCommand('Code changes', '/diff'),
           AgentCommand('MCP tools', '/mcp'),
@@ -29,6 +30,7 @@ class AgentCommands {
             '/model',
             note: 'In current Claude versions, press s in the picker to change only this session.',
           ),
+          AgentCommand('Effort', '/effort'),
           AgentCommand('Status', '/status'),
           AgentCommand('Context', '/context'),
           AgentCommand('MCP tools', '/mcp'),
@@ -101,6 +103,15 @@ class AgentCommandSheet extends StatelessWidget {
             ),
             onTap: enabled ? () => Navigator.pop(context, command) : null,
           ),
+        ListTile(
+          enabled: enabled,
+          leading: const Icon(Icons.keyboard_tab, color: blue),
+          title: const Text('Live commands and completion'),
+          onTap: enabled
+              ? () =>
+                    Navigator.pop(context, const AgentCommand('Commands', '/'))
+              : null,
+        ),
       ],
     ),
   );

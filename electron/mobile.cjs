@@ -12,6 +12,7 @@ const { MobilePush, publicConfig, serviceAccount } = require('./mobile-push.cjs'
 const { isPrivate, isPublic, internetOptions } = require('./mobile-address.cjs');
 const { MobileNetwork } = require('./mobile-network.cjs');
 const { consoleChoices, mobileLaunch, consoleFiles } = require('./mobile-console.cjs');
+const { MobileAttachments } = require('./mobile-attachments.cjs');
 const token = () => crypto.randomBytes(32).toString('base64url');
 const digest = text => crypto.createHash('sha256').update(text).digest('hex');
 const match = (value, stored) => {
@@ -29,9 +30,11 @@ function deviceName(value) {
   return name;
 }
 class MobileCompanion extends EventEmitter {
-  constructor(root, safeStorage, { sessions, results, inbox, getUsage, getDefaults, getKey, networkScript, program, network, testMode = false } = {}) {
+  constructor(root, safeStorage, { sessions, results, inbox, getUsage, getDefaults, getModels, getKey, networkScript, program, network, testMode = false } = {}) {
     super(); this.file = path.join(root, 'mobile.json'); this.crypto = safeStorage;
     this.sessions = sessions; this.results = results; this.inbox = inbox; this.getUsage = getUsage; this.getDefaults = getDefaults; this.testMode = testMode;
+    this.getModels = getModels;
+    this.attachments = new MobileAttachments();
     this.config = readJson(this.file, { enabled: false, host: '', port: 47831 });
     this.config.mappingId ||= crypto.randomUUID();
     this.network = network || new MobileNetwork({ getKey, script: networkScript, program, testMode, changed: () => this.emit('changed') });
@@ -50,6 +53,7 @@ class MobileCompanion extends EventEmitter {
       this.scheduleState();
     };
     this.alerts = () => {
+      this.scheduleState();
       for (const item of inbox.items.filter(x => !x.read && ['ready', 'question', 'error'].includes(x.kind))) {
         if (this.sent.has(item.id)) continue; this.sent.add(item.id);
         if (this.config.enabled && !testMode) this.sendPush(item.id).catch(() => {});
@@ -207,7 +211,7 @@ class MobileCompanion extends EventEmitter {
       ? { url: `https://${this.config.publicHost}:${this.config.externalPort}`, localUrl }
       : { url: localUrl };
     connection.name = this.name;
-    return { connection, capabilities: ['console.agents', 'console.files', 'console.close'], capacity: (this.sessions.grid?.columns || 3) * (this.sessions.grid?.rows || 3), sessions: this.sessions.list().filter(x => !x.dismissed).map(({ id, slot, name, provider, alive, state, cols, rows, consoleKey }) => ({ id, slot, name, provider, alive, state, cols, rows, consoleKey })), unreadResults: this.results.unreadGroups(), resultVersion: digest(this.results.items.map(x => x.id + ':' + x.seenAt).join(',')).slice(0, 16) };
+    return { connection, capabilities: ['console.agents', 'console.files', 'console.close', 'console.projects', 'console.models', 'console.ssh', 'alerts.direct', 'console.attachments'], capacity: (this.sessions.grid?.columns || 3) * (this.sessions.grid?.rows || 3), sessions: this.sessions.list().filter(x => !x.dismissed).map(({ id, slot, name, provider, alive, state, cols, rows, consoleKey, projectId, remote, updatedAt }) => ({ id, slot, name, provider, alive, state, cols, rows, consoleKey, projectId, remote, updatedAt })), alerts: this.inbox.items.filter(x => !x.read).slice(0, 50).map(({ id, title, at }) => ({ id, title, at })), unreadResults: this.results.unreadGroups(), resultVersion: digest(this.results.items.map(x => x.id + ':' + x.seenAt).join(',')).slice(0, 16) };
   }
   scheduleState() {
     if (!this.server || this.stateTimer) return;
@@ -264,8 +268,17 @@ class MobileCompanion extends EventEmitter {
         return this.sessions.create(mobileLaunch(this.sessions, this.getDefaults(), payload));
       }
       case 'console.agents': return consoleChoices(this.sessions, this.getDefaults());
+      case 'console.models': {
+        if (payload.provider !== 'codex' || !this.getModels) return { models: [], livePicker: true };
+        const models = await this.getModels(payload.provider);
+        if (client.ws.readyState !== WebSocket.OPEN || !this.clients.has(client) || !this.private.devices.includes(client.device)) throw new Error('Connection changed.');
+        this.sessions.mobileModels ||= new Map();
+        this.sessions.mobileModels.set(payload.provider, new Set(models.map(x => x.id)));
+        return { models, livePicker: true };
+      }
       case 'console.files': {
         const session = this.sessions.items.get(payload.id);
+        if (session?.remote) throw new Error('Remote files are available through the SSH terminal.');
         if (client.selected !== payload.id || !session || session.dismissed) throw new Error('Select an open console first.');
         if (client.fileRequest) throw new Error('Wait for the file list.');
         client.fileRequest = true;
@@ -280,15 +293,25 @@ class MobileCompanion extends EventEmitter {
       case 'console.close': {
         const session = this.sessions.items.get(payload.id);
         if (payload.confirm !== true || client.selected !== payload.id || !session || session.dismissed) throw new Error('Confirm closing the selected console.');
-        this.sessions.end(payload.id);
+        await this.sessions.end(payload.id);
         client.selected = '';
         return true;
       }
+      case 'attachment.begin': {
+        if (client.selected !== payload.id) throw new Error('Select a console first.');
+        return this.attachments.begin(client, this.sessions.items.get(payload.id), payload.size);
+      }
+      case 'attachment.chunk': return this.attachments.chunk(client, payload);
+      case 'attachment.finish': return this.attachments.finish(client, payload, () =>
+        client.ws.readyState === WebSocket.OPEN && this.clients.has(client) && this.private.devices.includes(client.device));
       case 'results.list': return this.results.list().map(({ id, title, kind, status, summary, at, size, image, ext, groupId, sessionId, consoleKey, consoleName, seenAt, project, projectId, changeCount, git, gitEnd }) => ({ id, title, kind, status, summary, at, size, image, ext, groupId, sessionId, consoleKey, consoleName, seenAt, project, projectId, changeCount, git, gitEnd }));
       case 'results.preview': { const value = await this.results.preview(payload.id, payload.thumbnail !== false, payload.entry); if (JSON.stringify(value).length > 3 * 1024 * 1024) throw new Error('This preview is too large. Open it on your PC.'); return value; }
       case 'results.seen': return this.results.markSeen(payload.ids);
       case 'results.delete': return this.results.remove(payload.ids);
       case 'usage': return this.getUsage();
+      case 'alerts.mode':
+        if (typeof payload.direct !== 'boolean') throw new Error('Choose a notification mode.');
+        client.device.directAlerts = payload.direct; this.persist(); return true;
       case 'push.config': return this.private.firebase?.public || null;
       case 'push.register': {
         if (typeof payload.token !== 'string' || payload.token.length > 4096 || /[\s\x00]/.test(payload.token)) throw new Error('Invalid notification registration.');
@@ -316,7 +339,7 @@ class MobileCompanion extends EventEmitter {
   }
   removeFirebase() { delete this.private.firebase; for (const d of this.private.devices) d.pushToken = ''; this.push.cached = null; this.persist(); }
   async sendPush(id = 'test', deviceId) {
-    const devices = this.private.devices.filter(x => x.pushToken && (!deviceId || x.id === deviceId));
+    const devices = this.private.devices.filter(x => !x.directAlerts && x.pushToken && (!deviceId || x.id === deviceId));
     if (!devices.length || !this.private.firebase) { if (id === 'test') throw new Error('Enable alerts on your paired phone first.'); return; }
     const results = await Promise.allSettled(devices.map(x => this.push.send(x.pushToken, id)));
     this.emit('changed'); if (results.some(x => x.status === 'rejected')) throw new Error(this.push.error);

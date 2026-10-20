@@ -1,8 +1,8 @@
 # Agent Dock for Android
 
-A native Flutter companion for the Windows app. It connects to your own PC over pinned TLS, shows one live terminal at a time, and loads Results on demand. Optional Firebase alerts use your own project.
+A native Flutter companion for the Windows app. It connects to your own PC over pinned TLS, shows one live terminal at a time, and loads Results on demand. Optional direct alerts keep a status connection open without a cloud account. Firebase alerts remain available with your own project.
 
-For installation, pairing and Firebase setup, see [the Android guide](../docs/android-setup.md).
+For installation, pairing and notification setup, see [the Android guide](../docs/android-setup.md).
 
 **Updates** on the connection screen, **App updates** above the consoles, and **Usage → Updates** check GitHub directly. Pairing and a PC connection are not required. **All downloads** opens the release list if the check fails. Install the APK using Android; upgrades signed with the same key preserve pairing. No background update polling runs.
 

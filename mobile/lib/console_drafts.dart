@@ -9,6 +9,7 @@ class ConsoleDrafts extends ChangeNotifier {
   final Future<String?> Function() read;
   final Future<void> Function(String) write;
   final Map<String, String> _values = {};
+  final Map<String, Map<String, num>> _views = {};
   Timer? _timer;
   Future<void>? _saving;
   bool _dirty = false, _blocked = false, _disposed = false;
@@ -17,12 +18,39 @@ class ConsoleDrafts extends ChangeNotifier {
 
   static String key(String pc, String console) => jsonEncode([pc, console]);
   String get(String key) => _values[key] ?? '';
+  num? position(String key, String part) => _views[key]?[part];
+  void remember(String key, String part, num value) {
+    if (!value.isFinite || position(key, part) == value) return;
+    final view = _views.remove(key) ?? <String, num>{};
+    view[part] = value;
+    _views[key] = view;
+    while (_views.length > 128) {
+      _views.remove(_views.keys.first);
+    }
+    _dirty = true;
+    _timer?.cancel();
+    _timer = Timer(const Duration(milliseconds: 300), flush);
+  }
 
   Future<void> load() async {
     try {
       final raw = await read();
       if (raw != null) {
         final data = jsonDecode(raw) as Map<String, dynamic>;
+        final views = data['@views'];
+        if (views is Map) {
+          for (final entry in views.entries.take(128)) {
+            if (entry.key is String && entry.value is Map) {
+              _views[entry.key as String] = {
+                for (final p in (entry.value as Map).entries)
+                  if (p.key is String &&
+                      p.value is num &&
+                      (p.value as num).isFinite)
+                    p.key as String: p.value as num,
+              };
+            }
+          }
+        }
         for (final entry in data.entries) {
           if (entry.value is String) {
             _values.putIfAbsent(entry.key, () => entry.value as String);
@@ -54,6 +82,7 @@ class ConsoleDrafts extends ChangeNotifier {
 
   Future<void> forgetPC(String pc) async {
     _values.removeWhere((key, _) => (jsonDecode(key) as List).first == pc);
+    _views.removeWhere((key, _) => (jsonDecode(key) as List).first == pc);
     _dirty = true;
     await flush();
   }
@@ -66,7 +95,10 @@ class ConsoleDrafts extends ChangeNotifier {
 
   Future<void> _drain() async {
     while (_dirty) {
-      final snapshot = jsonEncode(_values);
+      final snapshot = jsonEncode({
+        ..._values,
+        if (_views.isNotEmpty) '@views': _views,
+      });
       _dirty = false;
       try {
         await write(snapshot);

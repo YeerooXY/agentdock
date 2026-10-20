@@ -11,13 +11,33 @@ function consoleChoices(sessions, defaults) {
     defaultProvider: defaults.provider || '',
     defaultFolder: defaults.cwd || '',
     agents: catalog.map(({ id, name }) => ({ id, name, installed: installed.has(id) })),
+    projects: (sessions.projects?.list() || []).filter(x => x.status !== 'archived')
+      .map(({ id, name, folders }) => ({ id, name, folders: folders.map(({ label, path }) => ({ label, path })) })),
+    hosts: sessions.ssh?.listMobile() || [],
   };
 }
 
 function mobileLaunch(sessions, defaults, payload) {
   const options = { ...defaults, name: typeof payload.name === 'string' ? payload.name.slice(0, 64) : defaults.name };
-  // Older clients send only a name. No client-supplied paths, commands, model
-  // IDs or permission overrides are accepted.
+  // Paths come from saved project/host records, never from phone input.
+  if (payload.projectId !== undefined && payload.projectId !== '') {
+    const project = sessions.projects?.get(payload.projectId);
+    const index = payload.folderIndex ?? 0;
+    if (!project || !Number.isSafeInteger(index) || !project.folders[index]) throw new Error('Choose an existing project folder.');
+    options.projectId = project.id;
+    options.cwd = project.folders[index].path;
+    if (!options.name?.trim()) { options.name = project.name; options.nameMode = 'project'; }
+  }
+  if (payload.hostId) {
+    const host = sessions.ssh?.get(payload.hostId);
+    if (!host) throw new Error('Choose a host approved on the PC.');
+    options.remoteHostId = host.id;
+    options.remoteFolder = host.folder;
+    options.provider = payload.agent || 'shell';
+    if (options.provider !== 'shell' && !host.agents?.includes(options.provider)) throw new Error('Check the installed agents for this host on the PC first.');
+    options.model = ''; options.command = ''; options.permissions = 'default';
+    return options;
+  }
   if (payload.agent !== undefined) {
     const choice = consoleChoices(sessions, defaults).agents.find(x => x.id === payload.agent && x.installed);
     if (!choice) throw new Error('Choose an agent installed on this PC.');
@@ -26,6 +46,11 @@ function mobileLaunch(sessions, defaults, payload) {
       options.model = '';
       options.command = '';
     }
+  }
+  if (payload.model !== undefined && payload.model !== '') {
+    // The caller supplies the freshly fetched allow-list, not arbitrary flags.
+    if (!sessions.mobileModels?.get(options.provider)?.has(payload.model)) throw new Error('Refresh the model choices first.');
+    options.model = payload.model;
   }
   return options;
 }

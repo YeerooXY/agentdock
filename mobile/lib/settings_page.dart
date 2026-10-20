@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'account_usage.dart';
 import 'dock_client.dart';
@@ -85,7 +86,11 @@ class _SettingsPageState extends State<SettingsPage> {
       if (mounted) setState(() => message = next ?? '');
     } catch (e) {
       if (mounted) {
-        setState(() => message = e.toString().replaceFirst('Bad state: ', ''));
+        setState(
+          () => message = e is PlatformException
+              ? e.message ?? 'This action is unavailable.'
+              : e.toString().replaceFirst('Bad state: ', ''),
+        );
       }
     } finally {
       if (mounted) setState(() => busy = false);
@@ -247,9 +252,28 @@ class _SettingsPageState extends State<SettingsPage> {
                   style: TextStyle(fontSize: 18, color: blue),
                 ),
                 const SizedBox(height: 10),
-                const Text(
-                  'Console badges work while Dock is open. Background alerts currently use optional Firebase setup on your PC.',
-                  style: TextStyle(color: muted, height: 1.5),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Stay connected'),
+                  subtitle: const Text(
+                    'Direct alerts from the selected PC. No Firebase setup. Uses extra battery and data; Android may delay alerts in power-saving mode.',
+                  ),
+                  value: c.stayConnected,
+                  onChanged: busy
+                      ? null
+                      : (value) => action(() async {
+                          await c.setStayConnected(value);
+                          return value
+                              ? 'Direct alerts enabled. Keep the PC running.'
+                              : 'Direct alerts disabled.';
+                        }),
+                ),
+                TextButton(
+                  onPressed: () => action(() async {
+                    await DockClient.background.invokeMethod('settings');
+                    return null;
+                  }),
+                  child: const Text('Android notification & battery settings'),
                 ),
                 const SizedBox(height: 12),
                 ExpansionTile(

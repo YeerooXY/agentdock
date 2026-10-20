@@ -4,11 +4,11 @@
 
 | Device | Download |
 | --- | --- |
-| Windows 10/11 — Intel or AMD 64-bit | **[Windows installer](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.14/Agent-Dock-0.6.0-preview.14-Setup-x64.exe)** |
-| Android — most phones (ARM64) | **[Android APK](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.14/Agent-Dock-0.6.0-preview.14-Android-arm64.apk)** |
-| Android — older 32-bit phones (ARMv7) | [Android ARMv7 APK](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.14/Agent-Dock-0.6.0-preview.14-Android-armv7.apk) |
+| Windows 10/11 — Intel or AMD 64-bit | **[Windows installer](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.15/Agent-Dock-0.6.0-preview.15-Setup-x64.exe)** |
+| Android — most phones (ARM64) | **[Android APK](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.15/Agent-Dock-0.6.0-preview.15-Android-arm64.apk)** |
+| Android — older 32-bit phones (ARMv7) | [Android ARMv7 APK](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.15/Agent-Dock-0.6.0-preview.15-Android-armv7.apk) |
 
-Current previews: **Android 0.6.0-preview.14**, **Windows 0.6.0-preview.14**. Reading, copying and saved drafts work with older PC hosts. Choosing an agent, browsing files and closing consoles from the phone require Windows preview 13. [Android release notes](https://github.com/YeerooXY/agentdock/releases/tag/v0.6.0-preview.14) · [Windows release notes](https://github.com/YeerooXY/agentdock/releases/tag/v0.6.0-preview.14) · [All releases](https://github.com/YeerooXY/agentdock/releases) · [Previous stable desktop-only release](https://github.com/YeerooXY/agentdock/releases/tag/v0.5.0).
+Current previews: **Android 0.6.0-preview.15**, **Windows 0.6.0-preview.15**. Reading, copying and saved drafts work with older PC hosts. Project/folder selection, current Codex model choices, image attachments and SSH hosts require Windows preview 15. Older hosts retain basic terminal controls. [Android release notes](https://github.com/YeerooXY/agentdock/releases/tag/v0.6.0-preview.15) · [Windows release notes](https://github.com/YeerooXY/agentdock/releases/tag/v0.6.0-preview.15) · [All releases](https://github.com/YeerooXY/agentdock/releases) · [Previous stable desktop-only release](https://github.com/YeerooXY/agentdock/releases/tag/v0.5.0).
 
 A Windows desktop app for agent consoles, projects, shared tools and usage tracking.
 
@@ -41,13 +41,13 @@ The native companion can control your PC consoles, view Results and receive opti
 
 Tap **Devices** above the console to name your phone, add computers, and switch between saved PCs. Each PC keeps its own pairing and address; switching leaves its consoles running. On Windows, **Settings → Connect a phone → Connection** names the PC, and **Pair phone** lets you rename or remove individual phones. [Multiple-device setup](docs/android-setup.md#multiple-computers-and-phones).
 
-**Preview 14:** subscription meters show **percent left** on phone and PC. Provider names have distinct colors, with official icons where reviewed assets are available. Unknown and stale values stay explicit. API costs still show estimated spending. [Provider assets](docs/provider-brand-assets.md) · [Verification](docs/usage-remaining-verification.md).
+**Preview 15:** wrapped text keeps terminal colors. Each console retains its draft, caret and reading position. The agent badge sits beside the chat name. New consoles can use a saved project/folder, an installed agent and current model choices. Live model, effort and completion controls show the installed CLI's menu. Selected screenshots can be attached to a draft. **Usage → Notifications → Stay connected** enables direct background alerts without Firebase. [Mobile controls](docs/mobile-controls.md).
 
-**Preview 13 controls, included:** terminal text wraps at a readable size, with long-press selection and Copy. Tap the chat name to switch consoles; each console keeps its own encrypted draft. The sliders offer model and command shortcuts. With Windows preview 13, you can also choose an installed agent for a new console, pick file paths and close consoles after confirmation. [Mobile controls](docs/mobile-controls.md).
+**Linux VM through SSH:** add a host in **Settings → Linux hosts**, verify its fingerprint on the VM, then check the connection. Choose it when opening a console. tmux keeps the remote session available after Dock disconnects. A paired phone controls that same console through the PC. [SSH setup](docs/ssh-hosts.md).
 
 Phone and PC connect directly on the same Wi-Fi. For access away from home, choose **Direct internet**: Dock checks your network, can forward a port on a compatible router, helps with Windows Firewall, and pairs your phone by QR code. This needs a reachable public IPv4 address. An upstream router or provider NAT may need a manual step; the wizard does not claim internet access works until a phone connects from outside. A private VPN you already use still works too.
 
-An optional free Duck DNS hostname follows a changing address; its token stays in Keys. If mobile data stops working, follow the [connection recovery steps](docs/android-setup.md#if-mobile-data-stops-connecting). Completion alerts use your own Firebase project. No terminal traffic goes through an Agent Dock account or hosted relay. See the [setup and privacy guide](docs/android-setup.md) and [direct-internet verification](docs/direct-internet-review.md). Physical-phone internet access was verified on 18 October 2026; address changes still require a fresh test. Live Firebase delivery remains unverified.
+An optional free Duck DNS hostname follows a changing address; its token stays in Keys. If mobile data stops working, follow the [connection recovery steps](docs/android-setup.md#if-mobile-data-stops-connecting). Completion alerts can use the optional direct connection or your own Firebase project. No terminal traffic goes through an Agent Dock account or hosted relay. See the [setup and privacy guide](docs/android-setup.md) and [direct-internet verification](docs/direct-internet-review.md). Physical-phone internet access was verified on 18 October 2026; address changes still require a fresh test. Live Firebase delivery remains unverified.
 
 ## Run from source
 
@@ -137,7 +137,7 @@ Turn on **Settings → Keyboard → Vim controls**. It is off by default and rem
 | gc / gu / ga | Consoles / Usage / API |
 | gv / gt / gi / gs | Keys / Tools / Instructions / Settings |
 | b / f / d | Toggle sidebar / fullscreen / collapse to HUD |
-| ? | Show the shortcut list |
+| → | Show the shortcut list |
 
 On other pages, j/k scroll and Ctrl+d/u scroll half a page. Press the two keys in a `g` shortcut within a second. No Vim shortcut ends a running console. This controls Dock's interface; your editor or agent keeps its own editing mode.
 

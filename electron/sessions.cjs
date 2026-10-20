@@ -27,6 +27,7 @@ class Sessions extends EventEmitter {
     this.nativeCodex = dependencies.nativeCodex || nativeCodex;
     this.hub = dependencies.hub;
     this.projects = dependencies.projects;
+    this.ssh = dependencies.ssh;
     this.claude = dependencies.claude;
     this.runtime = dependencies.runtime;
     this.cliSetup = dependencies.cliSetup;
@@ -42,7 +43,8 @@ class Sessions extends EventEmitter {
   savedConsoles() {
     return [...this.items.values()].filter(x => (x.alive || x.restoreError) && !x.dismissed).map(x => ({
       slot: x.slot, width: x.width || 1, height: x.height || 1, consoleKey: x.consoleKey || x.id, projectId: x.projectId || null, name: x.name, nameMode: x.nameMode, cwd: x.cwd, provider: x.provider, permissions: x.permissions,
-      command: x.command || '', model: x.launchModel || '', providerSessionId: ['codex', 'claude'].includes(x.provider) ? x.providerSessionId : null, claudeTarget: x.claudeTarget
+      command: x.command || '', model: x.launchModel || '', providerSessionId: ['codex', 'claude'].includes(x.provider) ? x.providerSessionId : null, claudeTarget: x.claudeTarget,
+      ...(x.remote ? { remoteHostId: x.remote.hostId, remoteFolder: x.remote.folder } : {})
     })).sort((a, b) => a.slot - b.slot);
   }
   async restore(entry) {
@@ -78,6 +80,7 @@ class Sessions extends EventEmitter {
   }
   async createOne(raw, { resumeId = null, claudeTarget = null } = {}) {
     if (this.stopping) throw new Error('Agent Dock is closing.');
+    if (raw?.remoteHostId) return this.createRemote(raw);
     raw = this.projects?.launch(raw) || raw;
     if (raw.nameMode != null && !['project', 'folder', 'custom'].includes(raw.nameMode)) throw new Error('Choose project naming or a custom chat title.');
     const opening = planOpening([...this.items.values(), ...this.starting.values()], raw, this.grid);
@@ -202,13 +205,43 @@ class Sessions extends EventEmitter {
     this.emit('changed');
     return this.list().find(x => x.id === id);
   }
+  createRemote(raw) {
+    if (!this.ssh) throw new Error('SSH connections are unavailable.');
+    raw = this.projects?.launch(raw) || raw;
+    const opening = planOpening([...this.items.values(), ...this.starting.values()], raw, this.grid);
+    if (this.starting.size && (JSON.stringify(opening.grid) !== JSON.stringify(this.grid) || opening.plan.some(x => { const before = this.items.get(x.id) || this.starting.get(x.id); return before && ['slot','width','height'].some(k => x[k] !== before[k]); }))) throw new Error('Wait for the console to open before changing the layout.');
+    const id = crypto.randomUUID(), consoleKey = /^[a-f0-9-]{36}$/i.test(raw.consoleKey || '') ? raw.consoleKey : id;
+    const launch = this.ssh.launch(raw.remoteHostId, { consoleKey, provider: raw.provider, folder: raw.remoteFolder, model: raw.model });
+    const cwd = raw.cwd && path.isAbsolute(raw.cwd) && fs.existsSync(raw.cwd) ? raw.cwd : this.root;
+    const name = String(raw.name?.trim() || this.projects?.get(raw.projectId)?.name || launch.remote.name).slice(0, 64);
+    const env = { ...process.env, TERM: 'xterm-256color', COLORTERM: 'truecolor' };
+    for (const key of Object.keys(env)) if (/^(AGENT_DOCK_|ELECTRON_RUN_AS_NODE$|OPENAI_API_KEY$|ANTHROPIC_API_KEY$|GOOGLE_API_KEY$|GEMINI_API_KEY$)/.test(key)) delete env[key];
+    const terminal = this.pty.spawn(launch.executable, launch.args, { name: 'xterm-256color', cwd, cols: 110, rows: 30, env, useConpty: true });
+    try { this.commitLayout(opening.plan.filter(x => this.items.has(x.id)), opening.grid); }
+    catch (error) { terminal.kill(); throw error; }
+    for (const [oldId, old] of this.items) if (old.slot === opening.slot && !old.alive) this.items.delete(oldId);
+    const session = { id, consoleKey, projectId: raw.projectId || null, slot: opening.slot, width: opening.width, height: opening.height,
+      name, nameMode: raw.nameMode || 'custom', cwd, provider: raw.provider, permissions: 'default', launchModel: raw.model || '',
+      remote: launch.remote, state: 'open', alive: true, cols: 110, rows: 30, createdAt: Date.now(), updatedAt: Date.now(),
+      terminal, buffer: '', sequence: 0, usage: null };
+    this.items.set(id, session);
+    terminal.onData(data => { session.buffer = (session.buffer + data).slice(-250000); this.emit('output', { id, data, sequence: ++session.sequence }); });
+    terminal.onExit(({ exitCode }) => {
+      session.alive = false; session.state = 'ended'; session.exitCode = exitCode;
+      if (!session.dismissed) { session.state = 'error'; session.restoreError = 'SSH disconnected. Reconnect to reattach the remote session.'; }
+      session.updatedAt = Date.now(); this.emit('changed');
+    });
+    this.projects?.touch(session.projectId);
+    this.emit('changed');
+    return this.list().find(x => x.id === id);
+  }
   write(id, data, { draft = false } = {}) {
     const item = this.items.get(id);
     if (!item?.alive) return;
     if (typeof data !== 'string' || data.length > 65536) throw new Error('Terminal input is too large.');
     item.terminal.write(data);
     if (!draft && /[\r\n]/.test(data)) this.projects?.touch(item.projectId);
-    if (!draft && /[\r\n]/.test(data) && cliAgents.has(item.provider)) { item.state = 'active'; item.updatedAt = Date.now(); this.emit('changed'); }
+    if (!draft && /[\r\n]/.test(data) && cliAgents.has(item.provider) && !item.remote) { item.state = 'active'; item.updatedAt = Date.now(); this.emit('changed'); }
   }
   signal(id, kind) {
     const item = this.items.get(id); if (!item?.alive || !['ready', 'question', 'error'].includes(kind)) return;
@@ -224,7 +257,7 @@ class Sessions extends EventEmitter {
   }
   buffer(id) { const item = this.items.get(id); return { data: item?.buffer || '', sequence: item?.sequence || 0 }; }
   refreshContextFile(item) {
-    if (!this.hub) return;
+    if (!this.hub || item.remote) return;
     const file = path.join(this.root, 'sessions', item.id, 'AGENT_DOCK.md'), temp = file + '.tmp';
     try {
       const summary = this.hub.summary() + (this.projects?.chatSummary(item) || '');
@@ -286,6 +319,11 @@ class Sessions extends EventEmitter {
   acknowledge(id) { const item = this.items.get(id); if (item && ['ready', 'attention'].includes(item.state)) { item.state = 'open'; this.emit('changed'); } }
   end(id) {
     const item = this.items.get(id); if (!item) return;
+    if (item.remote) return this.ssh.end(item.remote).then(() => {
+      item.dismissed = true;
+      if (item.alive) item.terminal.kill(); else this.items.delete(id);
+      this.emit('changed');
+    }).catch(() => { throw new Error('Could not end the remote job. It may still be running. Reconnect and exit it in the terminal.'); });
     item.dismissed = true; delete item.restoreError;
     if (item.alive) item.terminal.kill();
     else this.items.delete(id);

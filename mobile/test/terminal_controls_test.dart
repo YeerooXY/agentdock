@@ -201,31 +201,39 @@ void main() {
     'opencode': '/models',
     'gemini': '/model manage',
   }.entries) {
-    testWidgets('${provider.key} model command waits for Send', (tester) async {
-      final c = FakeDock();
-      addTearDown(c.dispose);
-      c.sessions.first['provider'] = provider.key;
-      await tester.pumpWidget(DockApp(client: c));
-      await tester.tap(find.byTooltip('Agent commands'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Model'));
-      await tester.pumpAndSettle();
-      expect(
-        tester.widget<TextField>(find.byType(TextField).last).controller!.text,
-        provider.value,
-      );
-      expect(c.inputs, isEmpty);
-      expect(tester.testTextInput.isVisible, isFalse);
-      await tester.tap(find.byTooltip('Send to console'));
-      await tester.pumpAndSettle();
-      expect(c.inputs, [
-        {'id': 'one', 'data': provider.value},
-        {'id': 'one', 'data': '\r'},
-      ]);
-    });
+    testWidgets(
+      '${provider.key} live model menu preserves drafts and waits for Open',
+      (tester) async {
+        final c = FakeDock();
+        addTearDown(c.dispose);
+        c.sessions.first['provider'] = provider.key;
+        await tester.pumpWidget(DockApp(client: c));
+        await tester.enterText(find.byType(TextField).last, 'keep my draft');
+        await tester.tap(find.byTooltip('Agent commands'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Model'));
+        await tester.pumpAndSettle();
+        expect(c.inputs, isEmpty);
+        await tester.tap(find.text('Open model'));
+        await tester.pumpAndSettle();
+        expect(c.inputs, [
+          {'id': 'one', 'data': provider.value},
+          {'id': 'one', 'data': '\r'},
+        ]);
+        await tester.tap(find.byTooltip('Close controls'));
+        await tester.pumpAndSettle();
+        expect(
+          tester
+              .widget<TextField>(find.byType(TextField).last)
+              .controller!
+              .text,
+          'keep my draft',
+        );
+      },
+    );
   }
 
-  testWidgets('choosing a command preserves a draft unless replaced', (
+  testWidgets('choosing a status command preserves a draft unless replaced', (
     tester,
   ) async {
     final c = FakeDock();
@@ -235,7 +243,7 @@ void main() {
     await tester.enterText(field, 'keep my unfinished request');
     await tester.tap(find.byTooltip('Agent commands'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Model'));
+    await tester.tap(find.text('Status'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Keep draft'));
     await tester.pumpAndSettle();
@@ -245,11 +253,11 @@ void main() {
     );
     await tester.tap(find.byTooltip('Agent commands'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Model'));
+    await tester.tap(find.text('Status'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Replace'));
     await tester.pumpAndSettle();
-    expect(tester.widget<TextField>(field).controller!.text, '/model');
+    expect(tester.widget<TextField>(field).controller!.text, '/status');
     expect(c.inputs, isEmpty);
   });
 
@@ -283,7 +291,7 @@ void main() {
     await tester.pumpWidget(DockApp(client: c));
     await tester.tap(find.byTooltip('Agent commands'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Model'));
+    await tester.tap(find.text('Status'));
     await tester.pumpAndSettle();
     c.generation++;
     await tester.tap(find.byTooltip('Send to console'));

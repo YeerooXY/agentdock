@@ -223,7 +223,7 @@ class _PairPageState extends State<PairPage> {
                   ),
                 const SizedBox(height: 24),
                 const Text(
-                  'API keys stay on your PC. Optional background alerts use your own Firebase project.',
+                  'API keys stay on your PC. Direct background alerts need no cloud account; Firebase is optional.',
                   style: TextStyle(
                     color: Color(0xffafb7cd),
                     height: 1.6,

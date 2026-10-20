@@ -91,7 +91,7 @@ class Turns extends EventEmitter {
   }
   begin(owner) { return this.serial(owner, async () => {
     if (this.active.has(owner)) return this.active.get(owner).id;
-    const session = this.session(owner); if (!session?.alive) return null;
+    const session = this.session(owner); if (!session?.alive || session.remote) return null;
     const turn = { id: randomUUID(), startedAt: Date.now(), consoleName: session.name, overlap: false, baseline: null, error: '', capture: this.enabled };
     turn.context = { project: session.cwd, projectId: session.projectId || null, sessionId: session.id, consoleKey: session.consoleKey || session.id, consoleName: session.name };
     this.active.set(owner, turn);

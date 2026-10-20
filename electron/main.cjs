@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const { pathToFileURL } = require('node:url');
 const { Vault, readJson, atomicJson, validateKeyId } = require('./storage.cjs');
+const { SshHosts } = require('./ssh-hosts.cjs');
 const { CodexAccount, RecentCodex, findProgram, nativeCodex, findClaude, consoleModels } = require('./adapters.cjs');
 const { runtimeFiles } = require('./runtime.cjs');
 const { initialSettings } = require('./settings.cjs');
@@ -33,7 +34,7 @@ const testMode = process.argv.includes('--smoke-test');
 const testDir = process.argv.find(x => x.startsWith('--data-dir='))?.slice(11);
 if (testMode && testDir) app.setPath('userData', testDir);
 if (!app.requestSingleInstanceLock() && !testMode) app.quit();
-let window, tray, vault, sessions, workspace, projects, messageUsage, updates, account, root, settings, ledger, notifications, hub, integrations, workbench, cliSetup, turns, mobile, workPower;
+let window, tray, vault, sessions, workspace, projects, messageUsage, updates, account, root, settings, ledger, notifications, hub, integrations, workbench, cliSetup, turns, mobile, workPower, ssh;
 let mode = 'dashboard', quitting = false, refreshing = false, lastRefresh = 0, apiBusy = false;
 let modeTarget = null, modeTask, modeSequence = 0, transitioning = false;
 let trayHidden = false, windowDrag = null;
@@ -45,7 +46,7 @@ const projectsFolder = path.join(os.homedir(), 'Projects');
 const defaultFolder = fs.existsSync(projectsFolder) && fs.statSync(projectsFolder).isDirectory() ? projectsFolder : os.homedir();
 function snapshot() {
   return { mode, transitioning, trayHidden, sessions: sessions?.list() || [], limits, recent, accountError, refreshing, lastRefresh, agents: cliSetup?.snapshot() || [], agentSetupBusy: !!cliSetup?.running,
-    capabilities, projects: projects?.list() || [], messages: [...(messageUsage?.items || []), ...apiMessages(ledger || [])].sort((a,b) => b.at - a.at).slice(0, 200), mobile: mobile?.snapshot(), workbench: workbench?.snapshot(), vault: { available: vault?.available() || false, entries: vault?.list() || [] },
+    sshHosts: ssh?.list() || [], capabilities, projects: projects?.list() || [], messages: [...(messageUsage?.items || []), ...apiMessages(ledger || [])].sort((a,b) => b.at - a.at).slice(0, 200), mobile: mobile?.snapshot(), workbench: workbench?.snapshot(), vault: { available: vault?.available() || false, entries: vault?.list() || [] },
     ledger: ledger || [], summary: ledgerSummary(ledger || []), shared: hub?.snapshot(), updates: updates?.snapshot(), grid: sessions?.grid || settings?.grid, settings, storageError, workspaceError, shortcutAvailable,
     integrations: integrations?.snapshot(hub?.config.connections || [], vault?.list() || []), defaultFolder, version: app.getVersion() };
 }
@@ -174,7 +175,8 @@ app.whenReady().then(async () => {
   projects = new Projects(root); projects.on('changed', publish); workbench.projects = projects;
   projects.on('tracking-error', message => { storageError = message; publish(); });
   hub = new SharedHub(root, vault, { integrations, workbench }); await hub.start();
-  sessions = new Sessions(root, { hub, claude, runtime, cliSetup, projects, grid: settings.grid, onLayout: ({ grid, plan }) => {
+  ssh = new SshHosts(root);
+  sessions = new Sessions(root, { ssh, hub, claude, runtime, cliSetup, projects, grid: settings.grid, onLayout: ({ grid, plan }) => {
     const slotNames = { ...settings.slotNames };
     for (const item of plan) delete slotNames[sessions.items.get(item.id)?.slot];
     for (const item of plan) slotNames[item.slot] = sessions.items.get(item.id)?.name || '';
@@ -191,7 +193,7 @@ app.whenReady().then(async () => {
   turns = new Turns(workbench.results, { enabled: settings.autoSaveResults !== false, getSession: id => sessions.items.get(id), getSecrets: () => vault.list().flatMap(x => { try { return [vault.get(x.id)]; } catch { return []; } }) });
   workbench.turns = turns;
   turns.on('tracking-error', ({ owner, message }) => workbench.inbox.add({ title: 'Code capture needs attention', message, sessionId: owner, kind: 'error' }));
-  mobile = new MobileCompanion(root, safeStorage, { sessions, results: workbench.results, inbox: workbench.inbox, getUsage: () => ({ limits, summary: ledgerSummary(ledger || []) }), getDefaults: () => ({ ...settings.consoleDefaults, permissions: settings.agentPermissions }), getKey: id => vault.get(id), networkScript: app.isPackaged ? path.join(process.resourcesPath, 'mobile-network.ps1') : path.join(__dirname, 'mobile-network.ps1'), program: process.execPath, testMode });
+  mobile = new MobileCompanion(root, safeStorage, { sessions, results: workbench.results, inbox: workbench.inbox, getUsage: () => ({ limits, summary: ledgerSummary(ledger || []) }), getDefaults: () => ({ ...settings.consoleDefaults, permissions: settings.agentPermissions }), getModels: () => account.models(), getKey: id => vault.get(id), networkScript: app.isPackaged ? path.join(process.resourcesPath, 'mobile-network.ps1') : path.join(__dirname, 'mobile-network.ps1'), program: process.execPath, testMode });
   mobile.on('changed', publish);
   mobile.on('pairing-requested', () => { if (settings.notifications && !testMode) notifications?.show({ title: 'Approve a phone?', message: 'Compare the codes on your PC and phone before allowing access.', destination: 'phone-pairing' }); });
   if (!testMode) mobile.start().catch(() => publish());
@@ -335,6 +337,18 @@ app.whenReady().then(async () => {
           capabilities = { ...capabilities, codex: !!nativeCodex(), claude: !!sessions.claude, claudeLocation: sessions.claude?.label };
           publish(); return { ok: true, value: result };
         }
+        case 'ssh.scan': return { ok: true, value: await ssh.scan(payload) };
+        case 'ssh.approve': { const value = ssh.approve(payload); publish(); return { ok: true, value }; }
+        case 'ssh.check': { const value = await ssh.check(payload); publish(); return { ok: true, value }; }
+        case 'ssh.rename': { const value = ssh.rename(payload.id, payload.name); publish(); return { ok: true, value }; }
+        case 'ssh.remove': {
+          if (sessions.list().some(x => x.remote?.hostId === payload && (x.alive || x.restoreError))) throw new Error('End this host’s consoles before removing it.');
+          ssh.remove(payload); publish(); break;
+        }
+        case 'ssh.keyFile': {
+          const picked = await dialog.showOpenDialog(window, { properties: ['openFile'], title: 'Choose an SSH private key (stays on this PC)' });
+          return { ok: true, value: picked.filePaths[0] || '' };
+        }
         case 'setup.validate': return { ok: true, value: validateConsoleDefaults(payload) };
         case 'setup.complete': {
           const consoleDefaults = validateConsoleDefaults(payload);
@@ -411,7 +425,7 @@ app.whenReady().then(async () => {
           const item = sessions.list().find(x => x.id === payload);
           if (!item) throw new Error('Console not found.');
           const result = testMode ? { response: 1 } : await dialog.showMessageBox(window, { type: 'question', buttons: ['Keep running', 'End console'], defaultId: 0, cancelId: 0, message: `End “${item.name}”?`, detail: 'This stops the console and any agent running inside it.' });
-          if (result.response === 1) { persistSettings({ ...settings, slotNames: { ...settings.slotNames, [item.slot]: item.name } }); sessions.end(payload); } break;
+          if (result.response === 1) { persistSettings({ ...settings, slotNames: { ...settings.slotNames, [item.slot]: item.name } }); await sessions.end(payload); } break;
         }
         case 'vault.save': vault.set(payload?.provider, payload?.key, payload?.label); hub.writeSummary(); await Promise.allSettled([...hub.clients.keys()].map(id => hub.disconnect(id))); publish(); break;
         case 'vault.remove': {

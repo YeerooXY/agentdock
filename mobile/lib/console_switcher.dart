@@ -120,6 +120,22 @@ class _ConsoleSwitcherState extends State<ConsoleSwitcher> {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
+          if (widget.client.sessions
+                  .where((s) => s['id'] == widget.client.selected)
+                  .firstOrNull
+              case final session?) ...[
+            AgentMark(session['provider'] as String, size: 20),
+            const SizedBox(width: 5),
+            Text(
+              AgentIdentity.of(session['provider'] as String).name,
+              maxLines: 1,
+              style: TextStyle(
+                fontSize: 11,
+                color: AgentIdentity.of(session['provider'] as String).color,
+              ),
+            ),
+            const SizedBox(width: 7),
+          ],
           Flexible(
             child: Text(
               widget.name,

@@ -20,6 +20,8 @@ import './setup.css';
 import { projectsUI } from './projects-ui.js';
 import { consoleProjects } from './console-projects.js';
 import { imageGenerationUI } from './image-generation-ui.js';
+import { sshUI } from './ssh-ui.js';
+import './ssh.css';
 import { updatesUI } from './updates-ui.js';
 import { accountIdentity, accountMark, remainingPercent } from './account-identity.js';
 import './account-usage.css';
@@ -125,7 +127,7 @@ $('#app').innerHTML = `
 <dialog id="console-chooser" aria-labelledby="console-chooser-title" aria-describedby="console-chooser-hint">
   <form id="one-off-console-form">
     <div class="dialog-heading"><div><h2 id="console-chooser-title">Open console</h2><p id="console-chooser-hint">Just for this console.</p></div><button type="button" class="icon-button" data-action="cancel-console" aria-label="Close chooser">${icon('close')}</button></div>
-    <div class="chooser-project"><label>Project<div class="folder-input"><select name="projectId"><option value="">No project</option></select><button type="button" class="secondary" id="chooser-new-project">New project</button></div></label><label id="chooser-project-folders" hidden>Start in<select name="projectFolder"></select></label></div>
+    <label>Computer<select name="remoteHostId"><option value="">This PC</option></select></label><label id="chooser-remote-folder" hidden>Linux folder<input name="remoteFolder" value="."></label><div class="chooser-project"><label>Project<div class="folder-input"><select name="projectId"><option value="">No project</option></select><button type="button" class="secondary" id="chooser-new-project">New project</button></div></label><label id="chooser-project-folders" hidden>Start in<select name="projectFolder"></select></label></div>
     <label>Name <span class="optional">optional</span><input name="name" maxlength="64" placeholder="Uses the folder name" autocomplete="off"></label>
     <div class="form-pair"><label>Agent or shell<select name="provider">${consoleProviders().map(provider => `<option value="${provider}">${providerName(provider)}</option>`).join('')}</select></label><label id="one-off-model">Model<select name="model"><option value="">Agent default</option><option value="__custom__">Enter a model…</option></select></label></div>
     <label id="one-off-custom-model" hidden>Model name<input name="customModel" maxlength="200" spellcheck="false" autocomplete="off" placeholder="Model name or alias"></label>
@@ -319,7 +321,7 @@ function renderPage() {
   if (page === 'settings') $('.settings-layout').insertAdjacentHTML('afterbegin', updates?.render() || '');
   if (page === 'usage') $('#content').insertAdjacentHTML('beforeend', messageUsageTable());
   if (page === 'usage') $('#content').insertAdjacentHTML('beforeend', imageGenerator.usage());
-  if (page === 'settings') { $('.settings-layout').insertAdjacentHTML('afterbegin', (phone?.renderSettings() || '') + renderGridSettings() + renderAppearanceSettings() + renderKeyboardSettings() + renderProjectSettings() + renderResultsSettings() + renderStartupSettings() + renderLaunchDefaults()); launchDefaultsFields(); }
+  if (page === 'settings') { $('.settings-layout').insertAdjacentHTML('afterbegin', (remoteHosts?.html() || '') + (phone?.renderSettings() || '') + renderGridSettings() + renderAppearanceSettings() + renderKeyboardSettings() + renderProjectSettings() + renderResultsSettings() + renderStartupSettings() + renderLaunchDefaults()); launchDefaultsFields(); }
   if (page === 'api') {
     const form = $('#api-form');
     for (const key of ['model', 'prompt', 'maxOutput', 'projectId']) form.elements[key].value = apiDraft[key];
@@ -571,6 +573,7 @@ function toolPayload(form, data) {
   if (data.keyId) { const target = data.keyTarget.trim() || (data.type === 'stdio' ? 'API_KEY' : 'Authorization'); bindings[target] = { key: data.keyId, prefix: data.type === 'stdio' ? '' : data.keyPrefix }; }
   return { id: data.id, name: data.name, description: data.description, type: data.type, enabled: form.elements.enabled.checked, command: data.command, args: data.args.split(/\r?\n/).filter(x => x !== ''), cwd: data.cwd, url: data.url, method: data.method, ...(data.type === 'stdio' ? { envKeys: bindings } : { headerKeys: bindings, queryKeys: parse(data.queryKeys, 'Query bindings') }), ...(data.type === 'rest' ? { inputSchema: parse(data.inputSchema, 'Input schema') } : {}) };
 }
+let remoteHosts;
 let chooserModelRequest = 0;
 function chooserFields() {
   const form = $('#one-off-console-form'), provider = form.elements.provider.value;
@@ -586,7 +589,7 @@ async function chooserModels() {
   const select = form.elements.model;
   select.innerHTML = '<option value="">Agent default</option><option value="__custom__">Enter a model…</option>';
   form.elements.customModel.value = ''; chooserFields();
-  if (!['codex', 'claude'].includes(provider)) return;
+  if (form.elements.remoteHostId.value || !['codex', 'claude'].includes(provider)) return;
   try {
     const models = await call('session.models', provider);
     if (request !== chooserModelRequest || !$('#console-chooser').open) return;
@@ -600,6 +603,10 @@ function chooseConsole(button) {
   const slot = Number(button.dataset.slot) || Array.from({ length: gridCapacity() }, (_, i) => i + 1).find(x => !occupied.has(x));
   if (slot && occupied.has(slot)) return;
   const form = $('#one-off-console-form'); form.reset(); form.dataset.slot = slot || '';
+  form.elements.remoteHostId.innerHTML = '<option value="">This PC</option>' + (state.sshHosts || []).map(h => `<option value="${escape(h.id)}">${escape(h.name)} (SSH)</option>`).join('');
+  $('#chooser-remote-folder').hidden = true;
+  form.elements.cwd.closest('label').hidden = false;
+  form.elements.provider.innerHTML = consoleProviders().map(p => `<option value="${p}">${providerName(p)}</option>`).join('');
   form.elements.projectId.innerHTML = '<option value="">No project</option>' + (state.projects || []).filter(x => x.status !== 'archived').map(x => `<option value="${escape(x.id)}">${escape(x.name)}${x.category ? ' · ' + escape(x.category) : ''}</option>`).join('');
   $('#chooser-project-folders').hidden = true;
   for (const key of ['provider', 'cwd', 'name', 'command']) form.elements[key].value = state.settings.consoleDefaults[key] || '';
@@ -783,7 +790,14 @@ document.addEventListener('change', async event => {
   const input = event.target;
   if (input.form?.getAttribute('id') === 'console-defaults-form' && input.name === 'provider') launchDefaultsFields();
   if (input.form?.getAttribute('id') === 'one-off-console-form') {
-    if (input.name === 'provider') chooserModels();
+    if (input.name === 'remoteHostId') {
+      const form = input.form, host = state.sshHosts?.find(h => h.id === input.value);
+      $('#chooser-remote-folder').hidden = !host;
+      form.elements.cwd.closest('label').hidden = !!host;
+      form.elements.remoteFolder.value = host?.folder || '.';
+      form.elements.provider.innerHTML = (host ? ['shell', ...(host.agents || [])] : consoleProviders()).map(p => `<option value="${p}">${providerName(p)}</option>`).join('');
+      form.elements.permissions.value = 'default'; chooserModels();
+    } else if (input.name === 'provider') chooserModels();
     else if (input.name === 'model') chooserFields();
     else if (input.name === 'projectId') selectProject(input.value);
     else if (input.name === 'projectFolder') input.form.elements.cwd.value = input.value;
@@ -896,6 +910,7 @@ phone = mobileUI({ call, escape, icon, getState: () => state, toast });
 projects = projectsUI({ call, getState: () => state, escape, icon, toast, renderPage, openNew });
 projectChats = consoleProjects({ call, getState: () => state, getView: () => ({ page, selectedId }), projects, navigate: next => { page = next; renderPage(); }, escape, icon, toast });
 imageGenerator = imageGenerationUI({ call, getState: () => state, escape, toast });
+remoteHosts = sshUI({ call, escape, getState: () => state, toast, render: renderPage });
 updates = updatesUI({ call, getState: () => state, escape, icon, toast });
 setup = firstRun({ call, escape, icon, getState: () => state });
 windowDragging(call, () => state);

@@ -102,6 +102,12 @@ class CodexAccount {
     });
   }
   async refresh() { await this.start(); const result = await this.request('account/rateLimits/read'); const limits = codexLimits(result); this.onUpdate(limits); return limits; }
+  async models() {
+    await this.start();
+    const result = await this.request('model/list', { limit: 100, includeHidden: false });
+    return (result.data || []).filter(x => !x.hidden && /^[a-zA-Z0-9][a-zA-Z0-9._:/\[\]@+-]{0,199}$/.test(x.model || x.id || ''))
+      .map(x => ({ id: x.model || x.id, name: String(x.displayName || x.model || x.id).slice(0, 100) }));
+  }
   stop() { const child = this.child; this.child = null; this.ready = null; if (child) child.kill(); }
 }
 function readChunk(file, start, length) {

@@ -38,6 +38,7 @@ class _FrameBytes implements Sink<List<int>> {
 class DockClient extends ChangeNotifier {
   static const storage = FlutterSecureStorage();
   static const nativePush = MethodChannel('agentdock/push');
+  static const background = MethodChannel('agentdock/background');
   final SavedDevices devices;
   final ConsoleDrafts drafts;
   DockClient({SavedDevices? savedDevices, ConsoleDrafts? consoleDrafts})
@@ -56,12 +57,23 @@ class DockClient extends ChangeNotifier {
                 storage.write(key: 'consoleDrafts.v1', value: value),
           ) {
     drafts.addListener(notifyListeners);
+    background.setMethodCallHandler((call) async {
+      if (_disposed) return;
+      if (call.method == 'stopped') {
+        await setStayConnected(false, stopNative: false);
+      }
+    });
   }
   String get activePC => pairing?['pin'] as String? ?? '';
   String get pcName =>
       pairing == null ? 'Computers' : SavedDevices.label(pairing!);
   String get phoneName => devices.phoneName;
   bool changingDevice = false;
+  bool stayConnected = false;
+  bool _alertBaselinePending = false;
+  final Set<String> _seenAlerts = {};
+  int _alertModeGeneration = -1;
+  bool get connectionAllowed => foreground || stayConnected;
   String deviceStoreError = '';
   final Map<String, String> _selections = {};
   Map<String, dynamic>? pairing;
@@ -96,6 +108,13 @@ class DockClient extends ChangeNotifier {
       deviceStoreError = '';
       pairing = devices.find(devices.active);
       dataSaver = await storage.read(key: 'dataSaver') != 'false';
+      if (await storage.read(key: 'stayConnected') == 'true') {
+        try {
+          await setStayConnected(true);
+        } catch (_) {
+          stayConnected = false;
+        }
+      }
       if (pairing != null) await connect();
     } catch (_) {
       status = 'Saved devices could not be opened. Restart Dock to try again.';
@@ -274,6 +293,9 @@ class DockClient extends ChangeNotifier {
     inputError = '';
     alerts = pc?['alerts'] == true ? 'Enabled' : 'Not enabled';
     status = pc == null ? 'Pair your PC to begin.' : 'Connecting…';
+    if (pc == null && stayConnected) {
+      unawaited(setStayConnected(false).catchError((_) {}));
+    }
     if (!_disposed) notifyListeners();
   }
 
@@ -334,7 +356,7 @@ class DockClient extends ChangeNotifier {
 
   Future<void> reconnect() async {
     if (pairing == null || !foreground) return;
-    setForeground(false);
+    disconnectTransport();
     foreground = true;
     attempts = 0;
     await connect();
@@ -456,7 +478,7 @@ class DockClient extends ChangeNotifier {
     Object? failure;
     Object? manualFailure;
     for (final endpoint in endpoints(config)) {
-      if (!foreground || current != generation) {
+      if (!connectionAllowed || current != generation) {
         throw StateError('Connection paused.');
       }
       final client = pinned({...config, 'url': endpoint});
@@ -470,13 +492,13 @@ class DockClient extends ChangeNotifier {
           customClient: client,
           compression: CompressionOptions.compressionOff,
         ).timeout(routeTimeout(config, endpoint));
-        if (current != generation || !foreground) {
+        if (current != generation || !connectionAllowed) {
           await ws.close();
           client.close(force: true);
           throw StateError('Connection paused.');
         }
         // Detect a dead Wi-Fi/mobile route even when no terminal data is sent.
-        ws.pingInterval = const Duration(seconds: 15);
+        ws.pingInterval = Duration(seconds: foreground ? 15 : 60);
         return ws;
       } catch (error) {
         failure = error;
@@ -490,7 +512,9 @@ class DockClient extends ChangeNotifier {
   }
 
   Future<void> connect() async {
-    if (pairing == null || !foreground || connecting || connected) return;
+    if (pairing == null || !connectionAllowed || connecting || connected) {
+      return;
+    }
     connecting = true;
     final current = ++generation;
     status = 'Connecting…';
@@ -498,7 +522,7 @@ class DockClient extends ChangeNotifier {
     retry?.cancel();
     try {
       final ws = await openSocket(pairing!, current);
-      if (current != generation || !foreground) {
+      if (current != generation || !connectionAllowed) {
         await ws.close();
         return;
       }
@@ -518,6 +542,7 @@ class DockClient extends ChangeNotifier {
       if (selected.isNotEmpty && streaming) await subscribe();
       refreshAlerts().catchError((_) {});
       unawaited(syncPhoneName());
+      unawaited(syncAlertMode().catchError((_) {}));
       notifyListeners();
     } catch (error) {
       if (current == generation) {
@@ -545,10 +570,17 @@ class DockClient extends ChangeNotifier {
       }
     }
     pending.clear();
-    status = foreground
+    status = connectionAllowed
         ? reason ?? 'Connection lost. Reconnecting to your PC…'
         : 'Paused';
-    if (foreground && pairing != null) {
+    if (stayConnected) {
+      unawaited(
+        background
+            .invokeMethod('status', {'name': '$pcName \u00b7 Reconnecting'})
+            .catchError((_) => null),
+      );
+    }
+    if (connectionAllowed && pairing != null) {
       retry?.cancel();
       retry = Timer(
         Duration(seconds: min(30, 2 << min(attempts++, 4))),
@@ -592,7 +624,53 @@ class DockClient extends ChangeNotifier {
           }
         }
       } else if (data['type'] == 'state') {
+        final previous = {for (final s in sessions) s['id']: s['state']};
         state = data['state'] as Map<String, dynamic>;
+        if (_alertModeGeneration != generation &&
+            (state['capabilities'] as List? ?? []).contains('alerts.direct')) {
+          _alertModeGeneration = generation;
+          unawaited(syncAlertMode().catchError((_) {}));
+        }
+        if (stayConnected) {
+          final events = state['alerts'] as List?;
+          if (events != null) {
+            for (final event in events.whereType<Map>()) {
+              final key = '$activePC:${event['id']}';
+              if (_seenAlerts.add(key) &&
+                  !_alertBaselinePending &&
+                  !foreground) {
+                unawaited(
+                  background
+                      .invokeMethod('notify', {
+                        'key': key,
+                        'title': event['title'],
+                      })
+                      .catchError((_) {}),
+                );
+              }
+            }
+            _alertBaselinePending = false;
+          } else {
+            for (final s in sessions) {
+              if (previous.containsKey(s['id']) &&
+                  previous[s['id']] != s['state'] &&
+                  ['ready', 'attention', 'error'].contains(s['state']) &&
+                  !foreground) {
+                unawaited(
+                  background
+                      .invokeMethod('notify', {
+                        'key': '$activePC:${s['id']}',
+                        'title': '${s['name']} is ${s['state']}',
+                      })
+                      .catchError((_) {}),
+                );
+              }
+            }
+          }
+          while (_seenAlerts.length > 500) {
+            _seenAlerts.remove(_seenAlerts.first);
+          }
+        }
         unawaited(rememberRoutes(state['connection']));
         final ids = sessions.map((s) => s['id']).toSet();
         screens.removeWhere((id, _) => !ids.contains(id));
@@ -668,7 +746,7 @@ class DockClient extends ChangeNotifier {
     if (!connected) return;
     final view = screens.putIfAbsent(selected, () => makeScreen(selected));
     await request('subscribe', {
-      'id': streaming ? selected : '',
+      'id': streaming && foreground ? selected : '',
       'sequence': view.sequence,
       'epoch': view.epoch,
       'saver': dataSaver,
@@ -692,13 +770,16 @@ class DockClient extends ChangeNotifier {
     inputError = '';
   }
 
-  Future<void> submit(String text) async {
+  Future<void> submit(String text, {bool command = false}) async {
     final id = selected, connection = socket, current = generation;
     if (id.isEmpty || !connected || !foreground) {
       throw StateError('Select a connected console first.');
     }
     if (text.trim().isEmpty) return;
-    final paste = screens[id]?.terminal.bracketedPasteMode == true;
+    if (command && !RegExp(r'^/[a-z][a-z0-9 /_-]*$').hasMatch(text)) {
+      throw StateError('Choose a supported agent command.');
+    }
+    final paste = !command && screens[id]?.terminal.bracketedPasteMode == true;
     final value = paste ? '\x1b[200~$text\x1b[201~' : text;
     if (value.length > 65536) throw StateError('This message is too long.');
     await input(value, id: id);
@@ -732,14 +813,93 @@ class DockClient extends ChangeNotifier {
 
   void setForeground(bool value) {
     foreground = value;
+    socket?.pingInterval = Duration(seconds: value ? 15 : 60);
     if (value) {
       connect();
+      if (connected) unawaited(subscribe().catchError((_) {}));
     } else {
       unawaited(cancelPairing());
-      disconnectTransport();
-      status = 'Paused';
+      if (stayConnected) {
+        if (connected) unawaited(subscribe().catchError((_) {}));
+      } else {
+        disconnectTransport();
+        status = 'Paused';
+      }
       notifyListeners();
     }
+  }
+
+  Future<String> attachImage(Uint8List bytes) async {
+    final id = selected, current = generation, pc = activePC;
+    bool valid() =>
+        connected &&
+        foreground &&
+        selected == id &&
+        generation == current &&
+        activePC == pc;
+    if (!valid() || bytes.length > 4 * 1024 * 1024 || bytes.isEmpty) {
+      throw StateError('Choose an image up to 4 MB.');
+    }
+    final start = await request('attachment.begin', {
+      'id': id,
+      'size': bytes.length,
+    });
+    for (var offset = 0; offset < bytes.length; offset += 32768) {
+      if (!valid()) {
+        throw StateError('Console changed. Choose the image again.');
+      }
+      await request('attachment.chunk', {
+        'uploadId': start['uploadId'],
+        'offset': offset,
+        'data': base64Encode(
+          bytes.sublist(offset, min(offset + 32768, bytes.length)),
+        ),
+      });
+    }
+    if (!valid()) throw StateError('Console changed. Choose the image again.');
+    final result = await request('attachment.finish', {
+      'uploadId': start['uploadId'],
+    });
+    if (!valid()) {
+      throw StateError('Console changed. Check the original attachment.');
+    }
+    return result['path'] as String;
+  }
+
+  Future<void> syncAlertMode() async {
+    if ((state['capabilities'] as List? ?? []).contains('alerts.direct')) {
+      await request('alerts.mode', {'direct': stayConnected});
+    }
+    if (stayConnected) {
+      await background.invokeMethod('status', {
+        'name': '$pcName \u00b7 $status',
+      });
+    }
+  }
+
+  Future<void> setStayConnected(bool value, {bool stopNative = true}) async {
+    if (value) {
+      final allowed = await const MethodChannel('agentdock/permissions')
+          .invokeMethod<bool>('notifications');
+      if (allowed != true) {
+        throw StateError(
+          'Allow notifications in Android settings to use direct alerts.',
+        );
+      }
+      await background.invokeMethod('start', {'name': pcName});
+      // Baseline unread IDs instead of comparing clocks on different devices.
+      // Reconnects within this run still deliver unseen events.
+      _alertBaselinePending = !connected;
+      for (final event in (state['alerts'] as List? ?? []).whereType<Map>()) {
+        _seenAlerts.add('$activePC:${event['id']}');
+      }
+    }
+    stayConnected = value;
+    await storage.write(key: 'stayConnected', value: '$value');
+    if (!value && stopNative) await background.invokeMethod('stop');
+    if (connected) await syncAlertMode();
+    if (!value && !foreground) disconnectTransport();
+    notifyListeners();
   }
 
   void disconnectTransport() {
@@ -765,6 +925,7 @@ class DockClient extends ChangeNotifier {
   }
 
   Future<void> enableAlerts() async {
+    if (stayConnected) await setStayConnected(false);
     final pin = activePC, current = generation;
     final options = await request('push.config');
     if (options == null) {

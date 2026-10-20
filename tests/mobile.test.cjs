@@ -86,7 +86,7 @@ test('mobile launch chooses an installed agent once without changing PC defaults
   f.sessions.create = raw => { created.push(raw); return { id: 'new' }; };
   assert.ok((await c.call('state')).capabilities.includes('console.agents'));
   assert.equal((await c.call('console.agents')).agents.find(x => x.id === 'claude').installed, true);
-  await c.call('console.create', { name: 'Claude project', agent: 'claude', permissions: 'unrestricted', cwd: 'C:\\Windows', model: 'untrusted', command: 'must not execute' });
+  await c.call('console.create', { name: 'Claude project', agent: 'claude', permissions: 'unrestricted', cwd: 'C:\\Windows', command: 'must not execute' });
   assert.deepEqual(created[0], { ...defaults, provider: 'claude', model: '', command: '', name: 'Claude project' });
   assert.equal(defaults.provider, 'codex');
   assert.equal(defaults.model, 'codex-only-model');
@@ -111,6 +111,58 @@ test('closing a mobile console requires the selected target and confirmation', a
   assert.equal((await c.call('state')).sessions.some(x => x.id === 'console-1'), false);
   assert.equal((await c.call('state')).sessions.length, 8);
   await assert.rejects(c.call('console.close', { id: 'console-1', confirm: true }), /Confirm/);
+});
+
+test('mobile projects, current models and trusted SSH hosts use saved settings only', async t => {
+  const f = await fixture(t), paired = (await f.pair()).data;
+  const c = client(f, paired.token); await once(c.ws, 'open'); t.after(() => c.ws.close());
+  const project = { id: 'project', name: 'Game', status: 'active', folders: [{ label: 'Source', path: f.root }] };
+  const host = { id: 'vm', name: 'Linux', folder: '/home/dev/work', agents: ['claude'] };
+  f.sessions.projects = { list: () => [project], get: id => id === project.id ? project : null };
+  f.sessions.ssh = { get: id => id === host.id ? host : null, listMobile: () => [host] };
+  f.sessions.cliSetup = { snapshot: () => [{ id: 'codex', installed: true }] };
+  f.m.getDefaults = () => ({ provider: 'codex', cwd: f.root });
+  f.m.getModels = async () => [{ id: 'current-model', name: 'Current model' }];
+  const created = []; f.sessions.create = raw => { created.push(raw); return { id: 'new' }; };
+  const choices = await c.call('console.agents');
+  assert.equal(choices.projects[0].name, 'Game');
+  assert.equal(choices.hosts[0].id, 'vm');
+  await assert.rejects(c.call('console.create', { projectId: 'unknown' }), /project/);
+  await assert.rejects(c.call('console.create', { projectId: 'project', folderIndex: -1 }), /project/);
+  await assert.rejects(c.call('console.create', { model: 'arbitrary' }), /Refresh/);
+  assert.equal((await c.call('console.models', { provider: 'codex' })).models[0].id, 'current-model');
+  await c.call('console.create', { projectId: 'project', model: 'current-model', cwd: '/not-saved' });
+  assert.equal(created[0].cwd, f.root); assert.equal(created[0].name, 'Game'); assert.equal(created[0].model, 'current-model');
+  await assert.rejects(c.call('console.create', { hostId: 'untrusted' }), /approved/);
+  await assert.rejects(c.call('console.create', { hostId: 'vm', agent: 'codex' }), /installed/);
+  await c.call('console.create', { hostId: 'vm', agent: 'claude', remoteFolder: '/unapproved', permissions: 'unrestricted' });
+  assert.equal(created[1].remoteFolder, host.folder); assert.equal(created[1].permissions, 'default');
+  assert.equal(created.length, 2);
+});
+
+test('direct alerts and chunked images stay bound to the authenticated phone and console', async t => {
+  const f = await fixture(t), paired = (await f.pair()).data;
+  const c = client(f, paired.token); await once(c.ws, 'open'); t.after(() => c.ws.close());
+  const device = f.m.private.devices.find(x => x.id === paired.id);
+  await c.call('alerts.mode', { direct: true, id: 'another-device' });
+  assert.equal(device.directAlerts, true);
+  await assert.rejects(c.call('alerts.mode', { direct: 'true' }), /mode/);
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=', 'base64');
+  f.sessions.items.get('console-1').cwd = f.root;
+  await assert.rejects(c.call('attachment.begin', { id: 'console-1', size: png.length }), /Select/);
+  await c.call('subscribe', { id: 'console-1' });
+  const upload = await c.call('attachment.begin', { id: 'console-1', size: png.length });
+  await c.call('attachment.chunk', { ...upload, offset: 0, data: png.toString('base64') });
+  const saved = await c.call('attachment.finish', upload);
+  assert.deepEqual(fs.readFileSync(saved.path), png); assert.deepEqual(f.sessions.writes, []);
+  const second = await c.call('attachment.begin', { id: 'console-1', size: png.length });
+  await c.call('attachment.chunk', { ...second, offset: 0, data: png.toString('base64') });
+  await c.call('subscribe', { id: 'console-2' });
+  await assert.rejects(c.call('attachment.finish', second), /changed/);
+  assert.equal(fs.readdirSync(path.dirname(saved.path)).length, 1);
+  await c.call('subscribe', { id: '' });
+  assert.equal([...f.m.clients][0].selected, '');
+  assert.equal(await c.call('ping'), true);
 });
 
 test('mobile file suggestions are bounded to the selected console folder', async t => {

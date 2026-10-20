@@ -94,10 +94,8 @@ class AgentBadge extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (AgentIdentity.logo(provider) != null) ...[
-            AgentMark(provider, size: 20),
-            const SizedBox(width: 6),
-          ],
+          AgentMark(provider, size: 20),
+          const SizedBox(width: 6),
           Flexible(
             child: Text(
               identity.name,

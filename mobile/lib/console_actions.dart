@@ -17,6 +17,10 @@ class NewConsoleSheet extends StatefulWidget {
 class _NewConsoleSheetState extends State<NewConsoleSheet> {
   final name = TextEditingController();
   String? agent;
+  String project = '', host = '', model = '';
+  int folderIndex = 0, modelRevision = 0;
+  bool modelLoading = false, chooseModel = false;
+  List<Map<String, dynamic>> projects = [], hosts = [], models = [];
   String error = '';
   String folder = '';
   List<Map<String, dynamic>> agents = [];
@@ -47,9 +51,17 @@ class _NewConsoleSheetState extends State<NewConsoleSheet> {
       if (!mounted || !current) return;
       setState(() {
         agents = (result['agents'] as List).cast<Map<String, dynamic>>();
+        projects = (result['projects'] as List? ?? [])
+            .cast<Map<String, dynamic>>();
+        hosts = (result['hosts'] as List? ?? []).cast<Map<String, dynamic>>();
+        final preferred = result['defaultProvider'] as String? ?? '';
+        if (agents.any((a) => a['id'] == preferred && a['installed'] == true)) {
+          agent = preferred;
+        }
         folder = result['defaultFolder'] as String? ?? '';
         loading = false;
       });
+      await loadModels();
     } catch (_) {
       if (mounted) {
         setState(() {
@@ -58,6 +70,46 @@ class _NewConsoleSheetState extends State<NewConsoleSheet> {
         });
       }
     }
+  }
+
+  Future<void> loadModels() async {
+    final revision = ++modelRevision;
+    setState(() {
+      models = [];
+      model = '';
+      modelLoading = agent == 'codex' && host.isEmpty;
+    });
+    if (!modelLoading) return;
+    try {
+      final result = await widget.client.request('console.models', {
+        'provider': agent,
+      });
+      if (mounted && current && revision == modelRevision) {
+        setState(
+          () => models = (result['models'] as List? ?? [])
+              .cast<Map<String, dynamic>>(),
+        );
+      }
+    } catch (_) {
+      // Older PCs and CLIs can still use the live picker after opening.
+    } finally {
+      if (mounted && revision == modelRevision) {
+        setState(() => modelLoading = false);
+      }
+    }
+  }
+
+  List<Map<String, dynamic>> get availableAgents {
+    if (host.isEmpty) {
+      return agents.where((a) => a['installed'] == true).toList();
+    }
+    final saved = hosts.where((h) => h['id'] == host).firstOrNull;
+    return [
+      {'id': 'shell', 'name': 'Linux shell', 'installed': true},
+      for (final a in agents)
+        if ((saved?['agents'] as List? ?? []).contains(a['id']))
+          {...a, 'installed': true},
+    ];
   }
 
   @override
@@ -86,6 +138,88 @@ class _NewConsoleSheetState extends State<NewConsoleSheet> {
               style: TextStyle(color: pink, fontSize: 22),
             ),
             const SizedBox(height: 16),
+            if (hosts.isNotEmpty) ...[
+              DropdownButtonFormField<String>(
+                initialValue: host,
+                isExpanded: true,
+                decoration: const InputDecoration(labelText: 'Computer'),
+                items: [
+                  const DropdownMenuItem(value: '', child: Text('This PC')),
+                  for (final h in hosts)
+                    DropdownMenuItem(
+                      value: h['id'] as String,
+                      child: Text('${h['name']} \u00b7 SSH'),
+                    ),
+                ],
+                onChanged: current
+                    ? (value) {
+                        setState(() {
+                          host = value!;
+                          agent = host.isEmpty ? null : 'shell';
+                          chooseModel = false;
+                        });
+                        loadModels();
+                      }
+                    : null,
+              ),
+              const SizedBox(height: 12),
+            ],
+            if (projects.isNotEmpty) ...[
+              DropdownButtonFormField<String>(
+                initialValue: project,
+                isExpanded: true,
+                decoration: const InputDecoration(labelText: 'Project'),
+                items: [
+                  const DropdownMenuItem(
+                    value: '',
+                    child: Text('No project \u00b7 default folder'),
+                  ),
+                  for (final p in projects)
+                    DropdownMenuItem(
+                      value: p['id'] as String,
+                      child: Text(
+                        p['name'] as String,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                ],
+                onChanged: current
+                    ? (value) => setState(() {
+                        project = value!;
+                        folderIndex = 0;
+                      })
+                    : null,
+              ),
+              const SizedBox(height: 12),
+              if (host.isEmpty && project.isNotEmpty)
+                DropdownButtonFormField<int>(
+                  key: ValueKey(project),
+                  initialValue: folderIndex,
+                  isExpanded: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Project folder',
+                  ),
+                  items: [
+                    for (final entry
+                        in (projects.firstWhere(
+                                  (p) => p['id'] == project,
+                                )['folders']
+                                as List)
+                            .indexed)
+                      DropdownMenuItem(
+                        value: entry.$1,
+                        child: Text(
+                          '${entry.$2['label'] == '' ? entry.$2['path'] : entry.$2['label']}',
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                  ],
+                  onChanged: current
+                      ? (value) => setState(() => folderIndex = value!)
+                      : null,
+                ),
+              const SizedBox(height: 12),
+            ],
             TextField(
               controller: name,
               maxLength: 64,
@@ -99,14 +233,17 @@ class _NewConsoleSheetState extends State<NewConsoleSheet> {
               ),
             if (supported && !loading)
               DropdownButtonFormField<String>(
-                initialValue: '',
+                key: ValueKey('$host:$agent'),
+                initialValue: agent ?? '',
                 isExpanded: true,
                 decoration: const InputDecoration(labelText: 'Agent'),
                 items: [
-                  const DropdownMenuItem(value: '', child: Text('PC default')),
-                  for (final entry in agents.where(
-                    (entry) => entry['installed'] == true,
-                  ))
+                  if (host.isEmpty)
+                    const DropdownMenuItem(
+                      value: '',
+                      child: Text('PC default'),
+                    ),
+                  for (final entry in availableAgents)
                     DropdownMenuItem(
                       value: entry['id'] as String,
                       enabled: entry['installed'] == true,
@@ -122,7 +259,49 @@ class _NewConsoleSheetState extends State<NewConsoleSheet> {
                     ),
                 ],
                 onChanged: current
-                    ? (value) => setState(() => agent = value)
+                    ? (value) {
+                        setState(() {
+                          agent = value;
+                          chooseModel = false;
+                        });
+                        loadModels();
+                      }
+                    : null,
+              ),
+            if (modelLoading) const LinearProgressIndicator(),
+            if (models.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                key: ValueKey('models:$agent:$modelRevision'),
+                initialValue: '',
+                isExpanded: true,
+                decoration: const InputDecoration(labelText: 'Model'),
+                items: [
+                  const DropdownMenuItem(
+                    value: '',
+                    child: Text('Agent default'),
+                  ),
+                  for (final m in models)
+                    DropdownMenuItem(
+                      value: m['id'] as String,
+                      child: Text(
+                        m['name'] as String,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                ],
+                onChanged: current
+                    ? (value) => setState(() => model = value!)
+                    : null,
+              ),
+            ],
+            if (['codex', 'claude', 'opencode', 'gemini'].contains(agent))
+              CheckboxListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Choose model in the live menu'),
+                value: chooseModel,
+                onChanged: current
+                    ? (value) => setState(() => chooseModel = value!)
                     : null,
               ),
             if (error.isNotEmpty || !current)
@@ -134,7 +313,7 @@ class _NewConsoleSheetState extends State<NewConsoleSheet> {
                 ),
               ),
             const SizedBox(height: 16),
-            if (folder.isNotEmpty)
+            if (folder.isNotEmpty && project.isEmpty && host.isEmpty)
               Padding(
                 padding: const EdgeInsets.only(bottom: 16),
                 child: Text(
@@ -147,6 +326,13 @@ class _NewConsoleSheetState extends State<NewConsoleSheet> {
                   ? () => Navigator.pop(context, {
                       'name': name.text.trim(),
                       if (agent?.isNotEmpty == true) 'agent': agent,
+                      if (project.isNotEmpty) ...{
+                        'projectId': project,
+                        'folderIndex': folderIndex,
+                      },
+                      if (host.isNotEmpty) 'hostId': host,
+                      if (model.isNotEmpty) 'model': model,
+                      'chooseModel': chooseModel,
                     })
                   : null,
               child: const Text('Open'),

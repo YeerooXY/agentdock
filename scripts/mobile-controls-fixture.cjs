@@ -32,7 +32,7 @@ let menu = false, chosen = 0, pending = '', stopped = false, timer, showLinks = 
 function picture() {
   const lines = menu
     ? ['MODEL PICKER - TEST FIXTURE', '', `${chosen === 0 ? '>' : ' '} Fixture model A`, `${chosen === 1 ? '>' : ' '} Fixture model B`, '', 'Arrows: choose    Enter: confirm    Esc: close']
-    : ['Mobile verification', '', 'This paragraph is intentionally wider than a phone. The app should wrap it into readable lines without making the letters smaller or changing the terminal on your computer.', '',
+    : ['\x1b[36;1mMobile verification\x1b[0m', '', 'This paragraph is intentionally wider than a phone. The app should wrap it into readable lines without making the letters smaller or changing the terminal on your computer.', '',
        'Ready to review:', '  • Read and copy console text', '  • Choose commands and project files', '  • Open a Claude console', '',
        `The PC terminal still has ${session.cols} columns.`, '', 'src/mobile.dart', '  final mode = "wrap";', '', 'Synthetic output. No AI requests.'];
   return '\x1b[3J\x1b[2J\x1b[H' + lines.join('\r\n') + '\r\n\r\n' +
@@ -44,6 +44,8 @@ function draw() {
   sessions.emit('output', { id: session.id, data, sequence: ++session.sequence });
 }
 session.buffer = picture();
+sessions.projects = { list: () => [{ id: 'fixture-project', name: 'Test project', status: 'active', folders: [{ label: 'Source', path: root }] }], get: id => id === 'fixture-project' ? sessions.projects.list()[0] : null };
+sessions.ssh = { listMobile: () => [{ id: 'fixture-vm', name: 'Test Linux VM', folder: '/work', agents: ['claude'] }] };
 sessions.items = new Map([[session.id, session]]);
 sessions.list = () => [...sessions.items.values()];
 sessions.writes = [];
@@ -77,6 +79,7 @@ results.items = []; results.unreadGroups = () => 0; results.list = () => [];
 inbox.items = [];
 const mobile = new MobileCompanion(root, storage, {
   sessions, results, inbox, testMode: true,
+  getModels: async () => [{ id: 'fixture-model', name: 'Fixture model (test)' }],
   getDefaults: () => ({ provider: 'codex', cwd: root }),
   getUsage: () => ({
     limits: process.env.DOCK_USAGE_FIXTURE === '1' ? [
@@ -114,12 +117,14 @@ const mobile = new MobileCompanion(root, storage, {
       }
       if (['codex', 'claude', 'opencode', 'gemini', 'shell'].includes(action.provider)) session.provider = action.provider;
       if (typeof action.links === 'boolean') showLinks = action.links;
+      if (action.alert === true) { inbox.items.unshift({ id: crypto.randomUUID(), at: Date.now(), title: 'Fixture console is ready', kind: 'ready', read: false }); inbox.emit('changed'); }
       menu = false; draw(); sessions.emit('changed');
     }
-    fs.writeFileSync(path.join(out, 'observed.json'), JSON.stringify({ cols: session.cols, rows: session.rows, writes: sessions.writes, connections, pairedDevices: mobile.private.devices.length, connectedDevices: mobile.clients.size }));
+    const attachments = path.join(root, '.agentdock', 'mobile-attachments');
+    fs.writeFileSync(path.join(out, 'observed.json'), JSON.stringify({ cols: session.cols, rows: session.rows, writes: sessions.writes, connections, pairedDevices: mobile.private.devices.length, connectedDevices: mobile.clients.size, selected: [...mobile.clients].map(x => x.selected), directAlerts: mobile.private.devices.map(x => x.directAlerts === true), attachments: fs.existsSync(attachments) ? fs.readdirSync(attachments).length : 0 }));
     if (fs.existsSync(path.join(out, 'stop'))) void shutdown();
   }, 250);
-  setTimeout(shutdown, 20 * 60000).unref();
+  setTimeout(shutdown, 45 * 60000).unref();
 })().catch(async e => { console.error(e.message); await shutdown(); process.exitCode = 1; });
 async function shutdown() {
   if (stopped) return;

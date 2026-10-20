@@ -2,6 +2,7 @@ import 'dart:math';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:xterm/xterm.dart';
 
 import 'dock_client.dart';
@@ -20,6 +21,7 @@ import 'agent_identity.dart';
 import 'console_actions.dart';
 import 'console_switcher.dart';
 import 'console_drafts.dart';
+import 'live_agent_controls.dart';
 
 export 'dock_style.dart' show blue, pink, ink;
 
@@ -109,13 +111,17 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
   DockClient get c => widget.client;
   int page = 0;
   final composer = TextEditingController(), composerFocus = FocusNode();
+  final composerScroll = ScrollController();
   // xterm requests focus on touch-down, before it can recognize a scroll.
   // Only the keyboard button may enable terminal focus.
   final terminalFocus = FocusNode(canRequestFocus: false, skipTraversal: true);
   bool keyboardWasVisible = false;
   bool sending = false;
+  bool attaching = false;
+  static const media = MethodChannel('agentdock/media');
   bool fitWidth = false;
   _CommandTarget? stagedCommandTarget;
+  bool stagedSlashCommand = false;
   String? draftKey;
   bool restoringDraft = false;
   @override
@@ -124,8 +130,26 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     terminalFocus.addListener(terminalFocusChanged);
     composer.addListener(draftChanged);
+    composerScroll.addListener(() {
+      if (!restoringDraft && draftKey != null && composerScroll.hasClients) {
+        c.drafts.remember(draftKey!, 'composer', composerScroll.offset);
+      }
+    });
     c.addListener(syncDraft);
     syncDraft();
+    media.setMethodCallHandler((call) async {
+      if (call.method == 'screenshot' &&
+          mounted &&
+          page == 0 &&
+          c.selected.isNotEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Attach this screenshot?'),
+            action: SnackBarAction(label: 'Choose image', onPressed: pickImage),
+          ),
+        );
+      }
+    });
   }
 
   @override
@@ -134,6 +158,7 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
     c.removeListener(syncDraft);
     unawaited(c.drafts.flush());
     composer.dispose();
+    composerScroll.dispose();
     composerFocus.dispose();
     terminalFocus.removeListener(terminalFocusChanged);
     terminalFocus.dispose();
@@ -146,7 +171,14 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
 
   void draftChanged() {
     if (restoringDraft) return;
-    if (draftKey != null) c.drafts.set(draftKey!, composer.text);
+    if (draftKey != null) {
+      c.drafts.set(draftKey!, composer.text);
+      c.drafts.remember(
+        draftKey!,
+        'selection',
+        composer.selection.extentOffset,
+      );
+    }
     if (mounted) setState(() {});
   }
 
@@ -162,11 +194,31 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
     draftKey = key;
     restoringDraft = true;
     final value = key == null ? '' : c.drafts.get(key);
+    final savedOffset = key == null
+        ? 0.0
+        : c.drafts.position(key, 'composer')?.toDouble();
     composer.value = TextEditingValue(
       text: value,
-      selection: TextSelection.collapsed(offset: value.length),
+      selection: TextSelection.collapsed(
+        offset:
+            (key == null
+                    ? value.length
+                    : c.drafts.position(key, 'selection')?.toInt() ??
+                          value.length)
+                .clamp(0, value.length),
+      ),
     );
-    restoringDraft = false;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && draftKey == key && composerScroll.hasClients) {
+        composerScroll.jumpTo(
+          (savedOffset ?? composerScroll.position.maxScrollExtent).clamp(
+            0.0,
+            composerScroll.position.maxScrollExtent,
+          ),
+        );
+      }
+      if (draftKey == key) restoringDraft = false;
+    });
     stagedCommandTarget = null;
     stopTerminalTyping();
   }
@@ -215,7 +267,13 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.toString().replaceFirst('Bad state: ', ''))),
+          SnackBar(
+            content: Text(
+              e is PlatformException
+                  ? e.message ?? 'This action is unavailable.'
+                  : e.toString().replaceFirst('Bad state: ', ''),
+            ),
+          ),
         );
       }
     }
@@ -235,7 +293,10 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
     final sentKey = draftKey;
     setState(() => sending = true);
     await run(() async {
-      await c.submit(text);
+      await c.submit(
+        text,
+        command: stagedCommandTarget != null && stagedSlashCommand,
+      );
       if (sentKey != null && c.drafts.get(sentKey) == text) {
         c.drafts.set(sentKey, '');
       }
@@ -284,6 +345,10 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
       ),
     );
     if (!mounted || command == null || !commandTargetIsCurrent(target)) return;
+    if (['Model', 'Effort', 'Commands'].contains(command.label)) {
+      await liveControls(command.label);
+      return;
+    }
     if (composer.text.isNotEmpty && composer.text != command.text) {
       final replace = await showDialog<bool>(
         context: context,
@@ -309,6 +374,31 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
       selection: TextSelection.collapsed(offset: command.text.length),
     );
     stagedCommandTarget = target;
+    stagedSlashCommand = true;
+  }
+
+  Future<void> liveControls(String action, {String? completion}) async {
+    final key = draftKey;
+    stopTerminalTyping();
+    composerFocus.unfocus();
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (_) => LiveAgentControls(
+        client: c,
+        theme: terminalTheme,
+        action: action,
+        completion: completion,
+        onTyped: completion == null
+            ? null
+            : () {
+                if (mounted && draftKey == key && composer.text == completion) {
+                  composer.clear();
+                }
+              },
+      ),
+    );
   }
 
   Future<void> newConsole() async {
@@ -335,8 +425,50 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
           c.activePC == pc &&
           c.generation == generation) {
         await c.select(session['id'] as String);
+        if (value['chooseModel'] == true && mounted) {
+          await liveControls('Model');
+        }
       }
     });
+  }
+
+  Future<void> pickImage() async {
+    if (attaching || sending) return;
+    if (!supports('console.attachments')) {
+      await run(() async {
+        throw StateError('Update Dock on the PC to attach images.');
+      });
+      return;
+    }
+    final key = draftKey, pc = c.activePC, id = c.selected;
+    setState(() => attaching = true);
+    await run(() async {
+      final bytes = await media.invokeMethod<Uint8List>('pick');
+      // The Android picker backgrounds the activity. It can reconnect, but a
+      // changed PC/console must never receive the selected image.
+      if (bytes == null) return;
+      if (!mounted || draftKey != key || c.activePC != pc || c.selected != id) {
+        throw StateError('Console changed. Choose the image again.');
+      }
+      for (var i = 0; i < 40 && (!c.foreground || !c.connected); i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 250));
+      }
+      if (!mounted || draftKey != key || c.activePC != pc || c.selected != id) {
+        throw StateError('Console changed. Choose the image again.');
+      }
+      final file = await c.attachImage(bytes);
+      if (!mounted || draftKey != key) return;
+      final suffix =
+          '\nInspect the attached image file: ${file.replaceAll('\n', '')}\n';
+      composer.value = TextEditingValue(
+        text: composer.text + suffix,
+        selection: TextSelection.collapsed(
+          offset: composer.text.length + suffix.length,
+        ),
+      );
+      stagedSlashCommand = false;
+    });
+    if (mounted) setState(() => attaching = false);
   }
 
   bool supports(String capability) =>
@@ -389,6 +521,7 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
       selection: TextSelection.collapsed(offset: start + inserted.length),
     );
     stagedCommandTarget = target;
+    stagedSlashCommand = false;
   }
 
   Future<void> closeConsole(Map<String, dynamic> session) async {
@@ -412,8 +545,10 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text('Close ${session['name']}?'),
-        content: const Text(
-          'This ends the console on your PC, including any running task.',
+        content: Text(
+          session['remote'] != null
+              ? 'This ends the remote tmux session, including its running task. SSH-key login is required.'
+              : 'This ends the console on your PC, including any running task.',
         ),
         actions: [
           TextButton(
@@ -681,10 +816,16 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
 
     final provider = session['provider'] as String;
     final catalog = AgentCommands.forProvider(provider);
-    final prefix = composer.text.trimLeft();
+    final prefix = composer.text.trimLeft().toLowerCase();
     final suggestions =
         prefix.startsWith('/') && !prefix.contains(RegExp(r'\s'))
-        ? catalog?.commands.where((x) => x.text.startsWith(prefix)).toList() ??
+        ? catalog?.commands
+                  .where(
+                    (x) =>
+                        x.label != 'Effort' &&
+                        x.text.toLowerCase().startsWith(prefix),
+                  )
+                  .toList() ??
               <AgentCommand>[]
         : <AgentCommand>[];
     return Column(
@@ -704,12 +845,13 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
               ),
               const SizedBox(width: 8),
               Expanded(
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: Tooltip(
-                    message: '${session['state']}',
-                    child: AgentBadge(provider),
-                  ),
+                child: Text(
+                  session['remote'] is Map
+                      ? '${session['remote']['name']} \u00b7 SSH'
+                      : '${session['state']}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: muted, fontSize: 12),
                 ),
               ),
               if (compactControls)
@@ -775,7 +917,9 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
                         }
                       },
                       child: TerminalViewport(
-                        key: ValueKey(c.selected),
+                        key: ValueKey(draftKey),
+                        positions: c.drafts,
+                        positionKey: draftKey ?? '',
                         terminal: view.terminal,
                         columns: view.cols,
                         fitWidth: fitWidth,
@@ -834,9 +978,47 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
               onSelected: (action) {
                 if (action == 'copy') copyConsole();
                 if (action == 'files') pickFile(session);
+                if (action == 'image') pickImage();
                 if (action == 'close') closeConsole(session);
+                if (action == 'model') liveControls('Model');
+                if (action == 'effort') liveControls('Effort');
+                if (action == 'complete') {
+                  liveControls(
+                    'Commands',
+                    completion: composer.text.isEmpty ? null : composer.text,
+                  );
+                }
               },
               itemBuilder: (_) => [
+                PopupMenuItem(
+                  value: 'image',
+                  enabled:
+                      c.connected &&
+                      !sending &&
+                      !attaching &&
+                      session['remote'] == null,
+                  child: Text(
+                    attaching ? 'Attaching image\u2026' : 'Attach image',
+                  ),
+                ),
+                if (catalog != null) ...[
+                  PopupMenuItem(
+                    value: 'model',
+                    enabled: c.connected && !sending,
+                    child: const Text('Choose model'),
+                  ),
+                  if (['claude', 'codex'].contains(provider))
+                    PopupMenuItem(
+                      value: 'effort',
+                      enabled: c.connected && !sending,
+                      child: const Text('Choose effort'),
+                    ),
+                  PopupMenuItem(
+                    value: 'complete',
+                    enabled: c.connected && !sending,
+                    child: const Text('Live completion'),
+                  ),
+                ],
                 PopupMenuItem(
                   value: 'copy',
                   enabled: view != null,
@@ -882,6 +1064,7 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
                                 provider: provider,
                                 generation: c.generation,
                               );
+                              stagedSlashCommand = true;
                             }
                           : null,
                     ),
@@ -905,6 +1088,7 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
               Expanded(
                 child: TextField(
                   controller: composer,
+                  scrollController: composerScroll,
                   focusNode: composerFocus,
                   onChanged: (_) => stagedCommandTarget = null,
                   minLines: 1,

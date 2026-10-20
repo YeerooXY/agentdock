@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:xterm/xterm.dart';
 
 import 'dock_style.dart';
+import 'terminal_styles.dart';
+import 'console_drafts.dart';
 
 /// Render parsed text, never raw ANSI bytes or a second resized terminal.
 /// Keep hard newlines/indentation and join only terminal soft wraps.
@@ -12,7 +14,16 @@ String terminalReadingText(Terminal terminal) =>
 
 class TerminalReadingView extends StatefulWidget {
   final Terminal terminal;
-  const TerminalReadingView({super.key, required this.terminal});
+  final TerminalTheme theme;
+  final ConsoleDrafts? positions;
+  final String positionKey;
+  const TerminalReadingView({
+    super.key,
+    required this.terminal,
+    this.theme = TerminalThemes.defaultTheme,
+    this.positions,
+    this.positionKey = '',
+  });
 
   @override
   State<TerminalReadingView> createState() => _TerminalReadingViewState();
@@ -21,6 +32,7 @@ class TerminalReadingView extends StatefulWidget {
 class _TerminalReadingViewState extends State<TerminalReadingView> {
   final _scroll = ScrollController();
   String _text = '';
+  TextSpan _span = const TextSpan();
   Timer? _timer;
   bool _selecting = false;
   bool _pending = false;
@@ -29,8 +41,10 @@ class _TerminalReadingViewState extends State<TerminalReadingView> {
   void initState() {
     super.initState();
     _text = terminalReadingText(widget.terminal);
+    _span = terminalReadingSpan(widget.terminal, widget.theme);
+    _scroll.addListener(_savePlace);
     widget.terminal.addListener(_changed);
-    _followEnd();
+    _restorePlace();
   }
 
   @override
@@ -42,8 +56,31 @@ class _TerminalReadingViewState extends State<TerminalReadingView> {
       _timer?.cancel();
       _selecting = _pending = false;
       _text = terminalReadingText(widget.terminal);
-      _followEnd();
+      _span = terminalReadingSpan(widget.terminal, widget.theme);
+      _restorePlace();
     }
+  }
+
+  void _savePlace() {
+    if (_scroll.hasClients) {
+      widget.positions?.remember(
+        widget.positionKey,
+        'reading',
+        _scroll.position.extentAfter < 24 ? -1 : _scroll.offset,
+      );
+    }
+  }
+
+  void _restorePlace() {
+    final saved = widget.positions?.position(widget.positionKey, 'reading');
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_scroll.hasClients) return;
+      _scroll.jumpTo(
+        saved == null || saved < 0
+            ? _scroll.position.maxScrollExtent
+            : saved.toDouble().clamp(0.0, _scroll.position.maxScrollExtent),
+      );
+    });
   }
 
   void _followEnd() => WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -61,10 +98,17 @@ class _TerminalReadingViewState extends State<TerminalReadingView> {
         return;
       }
       final next = terminalReadingText(widget.terminal);
-      if (_text == next) return;
+      final span = terminalReadingSpan(widget.terminal, widget.theme);
+      if (_text == next &&
+          _span.compareTo(span) == RenderComparison.identical) {
+        return;
+      }
       final following =
           !_scroll.hasClients || _scroll.position.extentAfter < 24;
-      setState(() => _text = next);
+      setState(() {
+        _text = next;
+        _span = span;
+      });
       if (following) _followEnd();
     });
   }
@@ -90,6 +134,7 @@ class _TerminalReadingViewState extends State<TerminalReadingView> {
               setState(() {
                 _selecting = _pending = false;
                 _text = terminalReadingText(widget.terminal);
+                _span = terminalReadingSpan(widget.terminal, widget.theme);
               });
               _followEnd();
             },
@@ -102,9 +147,9 @@ class _TerminalReadingViewState extends State<TerminalReadingView> {
           padding: const EdgeInsets.all(12),
           child: SizedBox(
             width: double.infinity,
-            child: SelectableText(
-              _text.isEmpty ? ' ' : _text,
-              key: ValueKey(widget.terminal),
+            child: SelectableText.rich(
+              _span,
+              key: ValueKey(widget.positionKey),
               // Native selection handles and Copy; selection never requests
               // terminal input or sends anything to the PC.
               style: const TextStyle(

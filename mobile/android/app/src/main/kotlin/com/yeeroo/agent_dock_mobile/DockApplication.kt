@@ -7,8 +7,17 @@ import android.content.Context
 import android.os.Build
 import com.google.firebase.FirebaseApp
 import com.google.firebase.FirebaseOptions
+import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.embedding.engine.dart.DartExecutor
 
 class DockApplication : Application() {
+    // Activity replacement/rotation must not replace the connection's engine.
+    val dockEngine: FlutterEngine by lazy {
+        FlutterEngine(this).also {
+            BackgroundConnection.configure(this, it)
+            it.dartExecutor.executeDartEntrypoint(DartExecutor.DartEntrypoint.createDefault())
+        }
+    }
     override fun onCreate() {
         super.onCreate()
         if (Build.VERSION.SDK_INT >= 26) {

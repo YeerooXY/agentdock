@@ -229,16 +229,19 @@ class _UpdatePanelState extends State<UpdatePanel> {
         label: Text(busy ? 'Checking…' : 'Check for updates'),
       ),
       if (release != null) ...[
+        const SizedBox(height: 16),
         FilledButton.icon(
           onPressed: () => openDownload(release!['url'] as String),
           icon: const Icon(Icons.download_outlined),
           label: const Text('Download update'),
         ),
+        const SizedBox(height: 8),
         const Text(
           'Open the downloaded APK to install. Your pairing stays saved.',
           style: TextStyle(fontSize: 12, height: 1.5),
         ),
       ],
+      const SizedBox(height: 10),
       TextButton.icon(
         onPressed: () =>
             openDownload('https://github.com/YeerooXY/agentdock/releases'),

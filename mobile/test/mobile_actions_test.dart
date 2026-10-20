@@ -160,11 +160,17 @@ void main() {
     );
     c.screen!.terminal.write(' more output');
     await tester.pump(const Duration(milliseconds: 200));
-    expect(tester.widget<SelectableText>(selected).data, 'Ready');
+    expect(
+      tester.widget<SelectableText>(selected).textSpan!.toPlainText(),
+      'Ready',
+    );
     expect(find.text('Show new output'), findsOneWidget);
     await tester.tap(find.text('Show new output'));
     await tester.pumpAndSettle();
-    expect(tester.widget<SelectableText>(selected).data, 'Ready more output');
+    expect(
+      tester.widget<SelectableText>(selected).textSpan!.toPlainText(),
+      'Ready more output',
+    );
   });
 
   testWidgets('chat name opens a dropdown with colored agents', (tester) async {
@@ -200,7 +206,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('New console'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('PC default'));
+      await tester.tap(find.byType(DropdownButtonFormField<String>).first);
       await tester.pumpAndSettle();
       await tester.tap(find.text('Claude Code').last);
       await tester.pumpAndSettle();
@@ -210,6 +216,7 @@ void main() {
         'method': 'console.create',
         'name': '',
         'agent': 'claude',
+        'chooseModel': false,
       });
       expect(
         c.actions.where((x) => '${x['method']}'.contains('settings')),
@@ -242,6 +249,14 @@ void main() {
       'Review "hello world.dart" ',
     );
     expect(c.inputs, isEmpty);
+    c.screen!.terminal.write('\x1b[?2004h');
+    await tester.tap(find.byTooltip('Send to console'));
+    await tester.pump(const Duration(milliseconds: 200));
+    await tester.pumpAndSettle();
+    expect(c.inputs.map((x) => x['data']).toList(), [
+      '\x1b[200~Review "hello world.dart" \x1b[201~',
+      '\r',
+    ]);
   });
 
   testWidgets(
