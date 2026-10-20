@@ -41,8 +41,12 @@ void main() {
       if (paired) client.pairing = {'name': 'Offline PC'};
       addTearDown(client.dispose);
       await tester.pumpWidget(DockApp(client: client));
+      if (paired) {
+        await tester.tap(find.byTooltip('More options'));
+        await tester.pumpAndSettle();
+      }
       await tester.tap(
-        paired ? find.byTooltip('App updates') : find.text('Updates'),
+        paired ? find.text('App updates') : find.text('Updates'),
       );
       await tester.pumpAndSettle();
       expect(find.byType(UpdatesPage), findsOneWidget);

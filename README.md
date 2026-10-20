@@ -5,17 +5,17 @@
 | Device | Download |
 | --- | --- |
 | Windows 10/11 — Intel or AMD 64-bit | **[Windows installer](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.11/Agent-Dock-0.6.0-preview.11-Setup-x64.exe)** |
-| Android — most phones (ARM64) | **[Android APK](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.11/Agent-Dock-0.6.0-preview.11-Android-arm64.apk)** |
-| Android — older 32-bit phones (ARMv7) | [Android ARMv7 APK](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.11/Agent-Dock-0.6.0-preview.11-Android-armv7.apk) |
+| Android — most phones (ARM64) | **[Android APK](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.12/Agent-Dock-0.6.0-preview.12-Android-arm64.apk)** |
+| Android — older 32-bit phones (ARMv7) | [Android ARMv7 APK](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.12/Agent-Dock-0.6.0-preview.12-Android-armv7.apk) |
 
-Current preview: **0.6.0-preview.11**. [Release notes](https://github.com/YeerooXY/agentdock/releases/tag/v0.6.0-preview.11) · [All releases](https://github.com/YeerooXY/agentdock/releases) · [Previous stable desktop-only release](https://github.com/YeerooXY/agentdock/releases/tag/v0.5.0).
+Current previews: **Android 0.6.0-preview.12**, **Windows 0.6.0-preview.11**. This Android update works with the existing PC app. [Android release notes](https://github.com/YeerooXY/agentdock/releases/tag/v0.6.0-preview.12) · [Windows release notes](https://github.com/YeerooXY/agentdock/releases/tag/v0.6.0-preview.11) · [All releases](https://github.com/YeerooXY/agentdock/releases) · [Previous stable desktop-only release](https://github.com/YeerooXY/agentdock/releases/tag/v0.5.0).
 
 A Windows desktop app for agent consoles, projects, shared tools and usage tracking.
 
 ## Updates
 
 - **Windows:** open **Settings → Updates → Check for updates**, then **Download update → Install update**. Dock verifies the download and asks before ending open consoles. Let active work finish before installing. Settings, keys and supported conversation IDs stay in your local profile.
-- **Android:** tap **Updates** on the connection screen, the **App updates** icon above your consoles, or **Usage → Updates**. Check and download directly from GitHub, even without a paired or reachable PC. Open the APK and confirm the update. Android may ask you to allow installs from that browser. Pairing stays saved when upgrading a build signed with the same key. **All downloads** is available if the version check fails.
+- **Android:** tap **Updates** on the connection screen, **App updates** above your consoles, or **Usage → Updates**. From preview 12, **App updates** is under the **⋮** menu. Check and download directly from GitHub, even without a paired or reachable PC. Open the APK and confirm the update over your installed app; do not uninstall or clear app data first. Android may ask you to allow installs from that browser. Pairing stays saved when upgrading a build signed with the same key. Reopen Dock to reconnect; PC consoles keep running. **All downloads** is available if the version check fails.
 
 **No update button in your version?** Use the downloads above and run the Windows installer or open the Android APK to update the existing app. You do not need to uninstall first. Use the current preview on both devices for new pairing: scan the QR, compare the six-digit code, then approve on the PC. Existing pairing is preserved during an upgrade.
 
@@ -40,6 +40,8 @@ This release is unsigned, so Windows may show an unknown-publisher or SmartScree
 The native companion can control your PC consoles, view Results and receive optional completion alerts. Preview 6 adds pink-blue account usage bars, reset times and pull-to-refresh. Tap the message field to write a prompt, or the keyboard button beside the terminal controls to type directly. Touching the terminal returns to reading and keeps your message draft. Use the Windows and Android downloads above.
 
 Tap **Devices** above the console to name your phone, add computers, and switch between saved PCs. Each PC keeps its own pairing and address; switching leaves its consoles running. On Windows, **Settings → Connect a phone → Connection** names the PC, and **Pair phone** lets you rename or remove individual phones. [Multiple-device setup](docs/android-setup.md#multiple-computers-and-phones).
+
+**Unreleased mobile changes:** Fit width scales the terminal to your phone; tap it for larger text and sideways scrolling. The pink sliders button offers model and command shortcuts for Codex, Claude Code, OpenCode and Gemini. Choose a command, then Send. [Mobile controls](docs/mobile-controls.md).
 
 Phone and PC connect directly on the same Wi-Fi. For access away from home, choose **Direct internet**: Dock checks your network, can forward a port on a compatible router, helps with Windows Firewall, and pairs your phone by QR code. This needs a reachable public IPv4 address. An upstream router or provider NAT may need a manual step; the wizard does not claim internet access works until a phone connects from outside. A private VPN you already use still works too.
 

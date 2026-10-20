@@ -11,6 +11,9 @@ import 'settings_page.dart';
 import 'update_panel.dart';
 import 'connection_panel.dart';
 import 'devices_page.dart';
+import 'agent_commands.dart';
+import 'terminal_viewport.dart';
+import 'terminal_links.dart';
 
 export 'dock_style.dart' show blue, pink, ink;
 
@@ -89,6 +92,13 @@ class DockHome extends StatefulWidget {
   State<DockHome> createState() => _DockHomeState();
 }
 
+typedef _CommandTarget = ({
+  String pc,
+  String session,
+  String provider,
+  int generation,
+});
+
 class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
   DockClient get c => widget.client;
   int page = 0;
@@ -98,6 +108,8 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
   final terminalFocus = FocusNode(canRequestFocus: false, skipTraversal: true);
   bool keyboardWasVisible = false;
   bool sending = false;
+  bool fitWidth = true;
+  _CommandTarget? stagedCommandTarget;
   @override
   void initState() {
     super.initState();
@@ -163,13 +175,88 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
 
   Future<void> send() async {
     if (sending || composer.text.trim().isEmpty) return;
+    if (stagedCommandTarget case final target?) {
+      if (!commandTargetIsCurrent(target)) {
+        await run(() async {
+          throw StateError('Console changed. Choose the command again.');
+        });
+        return;
+      }
+    }
     final text = composer.text;
     setState(() => sending = true);
     await run(() async {
       await c.submit(text);
-      if (mounted && composer.text == text) composer.clear();
+      if (mounted && composer.text == text) {
+        composer.clear();
+        stagedCommandTarget = null;
+      }
     });
     if (mounted) setState(() => sending = false);
+  }
+
+  bool commandTargetIsCurrent(_CommandTarget target) =>
+      mounted &&
+      page == 0 &&
+      c.connected &&
+      c.foreground &&
+      c.activePC == target.pc &&
+      c.selected == target.session &&
+      c.generation == target.generation &&
+      c.sessions.any(
+        (s) => s['id'] == target.session && s['provider'] == target.provider,
+      );
+
+  Future<void> agentCommands(Map<String, dynamic> session) async {
+    final catalog = AgentCommands.forProvider(session['provider'] as String);
+    if (catalog == null || sending) return;
+    final target = (
+      pc: c.activePC,
+      session: c.selected,
+      provider: session['provider'] as String,
+      generation: c.generation,
+    );
+    stopTerminalTyping();
+    composerFocus.unfocus();
+    final command = await showModalBottomSheet<AgentCommand>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (_) => AnimatedBuilder(
+        animation: c,
+        builder: (_, _) => AgentCommandSheet(
+          catalog: catalog,
+          consoleName: session['name'] as String? ?? catalog.name,
+          enabled: commandTargetIsCurrent(target),
+        ),
+      ),
+    );
+    if (!mounted || command == null || !commandTargetIsCurrent(target)) return;
+    if (composer.text.isNotEmpty && composer.text != command.text) {
+      final replace = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Replace draft?'),
+          content: Text('Replace your unsent message with ${command.text}?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Keep draft'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Replace'),
+            ),
+          ],
+        ),
+      );
+      if (replace != true || !commandTargetIsCurrent(target)) return;
+    }
+    composer.value = TextEditingValue(
+      text: command.text,
+      selection: TextSelection.collapsed(offset: command.text.length),
+    );
+    stagedCommandTarget = target;
   }
 
   Future<void> newConsole() async {
@@ -202,6 +289,34 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
       final session = await c.request('console.create', {'name': value});
       await c.select(session['id'] as String);
     });
+  }
+
+  Future<void> showConsoleLinks(Map<String, dynamic> session) async {
+    final screen = c.screen;
+    if (screen == null) return;
+    final pc = c.activePC, id = c.selected;
+    final links = terminalLinks(screen.terminal);
+    stopTerminalTyping();
+    composerFocus.unfocus();
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.sizeOf(context).height * .85,
+      ),
+      builder: (_) => AnimatedBuilder(
+        animation: c,
+        builder: (_, _) => TerminalLinksSheet(
+          links: links,
+          consoleName: session['name'] as String? ?? 'Console',
+          enabled:
+              c.activePC == pc &&
+              c.selected == id &&
+              c.screen?.terminal == screen.terminal,
+        ),
+      ),
+    );
   }
 
   Future<void> switchConsole() async {
@@ -265,10 +380,15 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
           .firstOrNull;
       return Scaffold(
         appBar: AppBar(
-          leading: const Padding(
-            padding: EdgeInsets.all(14),
-            child: DockMark(),
+          leadingWidth: 40,
+          titleSpacing: 8,
+          toolbarHeight: max(
+            kToolbarHeight,
+            MediaQuery.textScalerOf(context).scale(20) * 1.2 +
+                MediaQuery.textScalerOf(context).scale(12) * 1.2 +
+                16,
           ),
+          leading: const Padding(padding: EdgeInsets.all(8), child: DockMark()),
           title: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -279,7 +399,9 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
                     ? 'Results'
                     : 'Usage',
                 overflow: TextOverflow.ellipsis,
+                maxLines: 1,
                 style: const TextStyle(
+                  fontSize: 20,
                   color: pink,
                   fontWeight: FontWeight.w600,
                 ),
@@ -287,6 +409,7 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
               Text(
                 c.pcName,
                 overflow: TextOverflow.ellipsis,
+                maxLines: 1,
                 style: const TextStyle(fontSize: 12, color: blue),
               ),
             ],
@@ -301,24 +424,27 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
               icon: const Icon(Icons.devices, color: blue),
               tooltip: 'Devices',
             ),
-            IconButton(
-              onPressed: () => openUpdates(context),
-              icon: const Icon(Icons.system_update_outlined, color: pink),
-              tooltip: 'App updates',
-            ),
             if (page == 0)
               IconButton(
                 onPressed: c.connected ? switchConsole : null,
                 icon: const Icon(Icons.grid_view_rounded, color: blue),
                 tooltip: 'Switch console',
               ),
-            IconButton(
-              onPressed: () => run(c.reconnect),
-              icon: Icon(
-                c.connected ? Icons.link : Icons.sync,
-                color: c.connected ? blue : pink,
-              ),
-              tooltip: c.connected ? 'Connected' : 'Reconnect',
+            PopupMenuButton<String>(
+              tooltip: 'More options',
+              icon: const Icon(Icons.more_vert, color: pink),
+              onOpened: () {
+                stopTerminalTyping();
+                composerFocus.unfocus();
+              },
+              onSelected: (action) {
+                if (action == 'updates') openUpdates(context);
+                if (action == 'reconnect') run(c.reconnect);
+              },
+              itemBuilder: (_) => const [
+                PopupMenuItem(value: 'updates', child: Text('App updates')),
+                PopupMenuItem(value: 'reconnect', child: Text('Reconnect')),
+              ],
             ),
           ],
         ),
@@ -359,33 +485,39 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
             ],
           ),
         ),
-        bottomNavigationBar: NavigationBar(
-          selectedIndex: page,
-          onDestinationSelected: (value) {
-            stopTerminalTyping();
-            composerFocus.unfocus();
-            setState(() => page = value);
-            run(() => c.setStreaming(value == 0));
-          },
-          destinations: [
-            const NavigationDestination(
-              icon: Icon(Icons.terminal, color: blue),
-              label: 'Console',
-            ),
-            NavigationDestination(
-              icon: Badge(
-                isLabelVisible: (c.state['unreadResults'] as num? ?? 0) > 0,
-                label: Text('${c.state['unreadResults'] ?? 0}'),
-                child: const Icon(Icons.photo_library_outlined, color: pink),
+        bottomNavigationBar: MediaQuery.viewInsetsOf(context).bottom > 0
+            ? null
+            : NavigationBar(
+                selectedIndex: page,
+                onDestinationSelected: (value) {
+                  stopTerminalTyping();
+                  composerFocus.unfocus();
+                  setState(() => page = value);
+                  run(() => c.setStreaming(value == 0));
+                },
+                destinations: [
+                  const NavigationDestination(
+                    icon: Icon(Icons.terminal, color: blue),
+                    label: 'Console',
+                  ),
+                  NavigationDestination(
+                    icon: Badge(
+                      isLabelVisible:
+                          (c.state['unreadResults'] as num? ?? 0) > 0,
+                      label: Text('${c.state['unreadResults'] ?? 0}'),
+                      child: const Icon(
+                        Icons.photo_library_outlined,
+                        color: pink,
+                      ),
+                    ),
+                    label: 'Results',
+                  ),
+                  const NavigationDestination(
+                    icon: Icon(Icons.bar_chart_rounded, color: blue),
+                    label: 'Usage',
+                  ),
+                ],
               ),
-              label: 'Results',
-            ),
-            const NavigationDestination(
-              icon: Icon(Icons.bar_chart_rounded, color: blue),
-              label: 'Usage',
-            ),
-          ],
-        ),
       );
     },
   );
@@ -400,10 +532,28 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
         ),
       );
     }
+    return LayoutBuilder(
+      builder: (context, constraints) => SingleChildScrollView(
+        // A landscape keyboard can leave less room than the controls need.
+        // Keep them reachable by scrolling instead of clipping the composer.
+        child: SizedBox(
+          height: max(
+            constraints.maxHeight,
+            MediaQuery.viewInsetsOf(context).bottom > 0
+                ? 200 + MediaQuery.textScalerOf(context).scale(64)
+                : 160 + MediaQuery.textScalerOf(context).scale(32),
+          ),
+          child: terminalContents(session, view),
+        ),
+      ),
+    );
+  }
+
+  Widget terminalContents(Map<String, dynamic> session, ConsoleScreen? view) {
     return Column(
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+          padding: const EdgeInsets.fromLTRB(16, 0, 8, 0),
           child: Row(
             children: [
               Icon(
@@ -419,16 +569,38 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
               Expanded(
                 child: Text(
                   '${session['provider']} · ${session['state']}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     color: Color(0xffb5bbd0),
                     fontSize: 12,
                   ),
                 ),
               ),
-              Text(
-                '${session['slot']} / ${c.state['capacity'] ?? 9}',
-                style: const TextStyle(color: blue, fontSize: 12),
+              Tooltip(
+                message: fitWidth ? 'Use larger text' : 'Fit terminal width',
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 160),
+                  child: TextButton.icon(
+                    onPressed: () => setState(() => fitWidth = !fitWidth),
+                    icon: Icon(fitWidth ? Icons.fit_screen : Icons.text_fields),
+                    label: Text(
+                      fitWidth ? 'Fit width' : 'Larger text',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ),
               ),
+              if (AgentCommands.forProvider(session['provider'] as String) !=
+                  null)
+                IconButton(
+                  tooltip: 'Agent commands',
+                  onPressed: c.connected && !sending
+                      ? () => agentCommands(session)
+                      : null,
+                  icon: const Icon(Icons.tune, color: pink),
+                ),
             ],
           ),
         ),
@@ -441,40 +613,22 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
               ready: session['state'] == 'ready',
               child: view == null
                   ? const Center(child: CircularProgressIndicator())
-                  : LayoutBuilder(
-                      builder: (ctx, size) => Listener(
-                        onPointerDown: (_) {
-                          stopTerminalTyping();
-                          composerFocus.unfocus();
-                          if ([
-                            'ready',
-                            'attention',
-                          ].contains(session['state'])) {
-                            run(c.acknowledge);
-                          }
-                        },
-                        child: SingleChildScrollView(
-                          key: ValueKey((c.selected, view.cols)),
-                          scrollDirection: Axis.horizontal,
-                          child: SizedBox(
-                            width: max(size.maxWidth, view.cols * 7.3 + 16),
-                            height: size.maxHeight,
-                            child: TerminalView(
-                              view.terminal,
-                              key: ValueKey((c.selected, view.terminal)),
-                              autoResize: false,
-                              readOnly: !c.connected,
-                              focusNode: terminalFocus,
-                              deleteDetection: true,
-                              textStyle: const TerminalStyle(
-                                fontSize: 12,
-                                height: 1.3,
-                              ),
-                              padding: const EdgeInsets.all(8),
-                              theme: terminalTheme,
-                            ),
-                          ),
-                        ),
+                  : Listener(
+                      onPointerDown: (_) {
+                        stopTerminalTyping();
+                        composerFocus.unfocus();
+                        if (['ready', 'attention'].contains(session['state'])) {
+                          run(c.acknowledge);
+                        }
+                      },
+                      child: TerminalViewport(
+                        key: ValueKey(c.selected),
+                        terminal: view.terminal,
+                        columns: view.cols,
+                        fitWidth: fitWidth,
+                        readOnly: !c.connected,
+                        focusNode: terminalFocus,
+                        theme: terminalTheme,
                       ),
                     ),
             ),
@@ -490,12 +644,12 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
                     for (final key in [
                       ('Enter', '\r'),
                       ('Esc', '\x1b'),
-                      ('Tab', '\t'),
-                      ('Ctrl C', '\x03'),
                       ('↑', '\x1b[A'),
                       ('↓', '\x1b[B'),
                       ('←', '\x1b[D'),
                       ('→', '\x1b[C'),
+                      ('Tab', '\t'),
+                      ('Ctrl C', '\x03'),
                     ])
                       TextButton(
                         onPressed: c.connected && !sending
@@ -506,6 +660,11 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
                   ],
                 ),
               ),
+            ),
+            IconButton(
+              tooltip: 'Console links',
+              onPressed: view == null ? null : () => showConsoleLinks(session),
+              icon: const Icon(Icons.link, color: blue),
             ),
             IconButton(
               tooltip: 'Type directly in terminal',
@@ -531,6 +690,7 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
                 child: TextField(
                   controller: composer,
                   focusNode: composerFocus,
+                  onChanged: (_) => stagedCommandTarget = null,
                   minLines: 1,
                   maxLines: 3,
                   textInputAction: TextInputAction.newline,
