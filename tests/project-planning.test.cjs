@@ -34,7 +34,7 @@ test('new guided projects retain initial milestones and require all human review
 test('agent proposals cannot approve, replace pending proposals, overwrite user edits or change another project', async t => {
   const f = fixture(t), original = f.store.plan(f.p.id);
   const sessions = new Map([['agent', { id: 'agent', name: 'Planner', alive: true, cwd: f.folder, projectId: f.p.id }]]);
-  const bridge = Object.create(Workbench.prototype); Object.assign(bridge, { projects: f.store, getSessions: () => ({ items: sessions }), getProject: () => f.folder, inbox: { add() {} } });
+  const bridge = Object.create(Workbench.prototype); Object.assign(bridge, { projects: f.store, getSessions: () => ({ items: sessions }), getProject: () => f.folder, alerts: { send() {} } });
   await bridge.invoke('dock/propose_project_plan', { revision: original.revision, section: 'brief', changes: { goals: 'Reviewed goal' } }, 'agent');
   assert.equal(f.store.get(f.p.id).goals, 'Practice class notes'); assert.deepEqual(f.store.get(f.p.id).plan.approvals, {});
   assert.throws(() => f.store.propose(f.p.id, { revision: f.store.get(f.p.id).plan.revision, section: 'brief', changes: { goals: 'Overwrite' } }, 'Second agent'), /waiting for the user/);

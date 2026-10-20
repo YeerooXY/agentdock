@@ -37,7 +37,8 @@ async function until(fn) { const end = Date.now() + 15000; while (Date.now() < e
   await bridge('dock_call', { tool: 'dock/notify', arguments: { title: 'Fixture ready', kind: 'ready' } });
   let state = await call('state');
   assert.equal(state.workbench.results.length, 1); assert.equal(state.workbench.results[0].title, 'Requested report');
-  assert.ok(state.workbench.inbox.some(x => x.title === 'Fixture ready'));
+  assert.equal(state.sessions.find(x => x.id === session.id).state, 'ready');
+  assert.equal('inbox' in state.workbench, false);
   await toggle.check(); await until(async () => (await call('state')).settings.autoSaveResults === true);
   await bridge('dock_context'); fs.writeFileSync(path.join(project, 'app.js'), 'const value = 2;');
   await bridge('dock_call', { tool: 'dock/finish_turn', arguments: {} });

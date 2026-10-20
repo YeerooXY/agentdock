@@ -1,4 +1,5 @@
 'use strict';
+const { AlertEvents } = require('../electron/alerts.cjs');
 // Loopback-only synthetic terminal for the Android emulator. No CLI processes,
 // model calls, production credentials, router changes or real Dock sessions.
 const fs = require('node:fs'), path = require('node:path'), os = require('node:os');
@@ -23,7 +24,7 @@ const storage = {
     return Buffer.concat([c.update(value.subarray(28)), c.final()]).toString();
   }
 };
-const sessions = new EventEmitter(), results = new EventEmitter(), inbox = new EventEmitter();
+const sessions = new EventEmitter(), results = new EventEmitter(), alerts = new AlertEvents();
 const session = { id: 'fixture', slot: 1, name: 'Mobile controls', provider: 'codex', state: 'ready', alive: true, cols: 180, rows: 32, buffer: '', sequence: 0, cwd: root };
 fs.mkdirSync(path.join(root, 'src'));
 fs.writeFileSync(path.join(root, 'src', 'mobile.dart'), '// Synthetic file, no project data.');
@@ -82,11 +83,9 @@ sessions.create = options => {
   sessions.items.set(created.id, created); sessions.emit('changed'); return created;
 };
 sessions.end = id => { sessions.items.delete(id); sessions.emit('changed'); };
-inbox.acknowledgeSession = () => {};
 results.items = []; results.unreadGroups = () => 0; results.list = () => [];
-inbox.items = [];
 const mobile = new MobileCompanion(root, storage, {
-  sessions, results, inbox, testMode: true,
+  sessions, results, alerts, testMode: true,
   getModels: async () => [{ id: 'fixture-model', name: 'Fixture model (test)' }],
   getDefaults: () => ({ provider: 'codex', cwd: root }),
   getUsage: () => ({
@@ -125,7 +124,7 @@ const mobile = new MobileCompanion(root, storage, {
       }
       if (['codex', 'claude', 'opencode', 'gemini', 'shell'].includes(action.provider)) session.provider = action.provider;
       if (typeof action.links === 'boolean') showLinks = action.links;
-      if (action.alert === true) { inbox.items.unshift({ id: crypto.randomUUID(), at: Date.now(), title: 'Fixture console is ready', kind: 'ready', read: false }); inbox.emit('changed'); }
+      if (action.alert === true) { alerts.send({ title: 'Fixture console is ready', kind: 'ready' }); }
       menu = false; draw(); sessions.emit('changed');
     }
     const attachments = path.join(root, '.agentdock', 'mobile-attachments');

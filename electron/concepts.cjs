@@ -8,7 +8,7 @@ const { atomicJson, readJson } = require('./storage.cjs');
 const { inside } = require('./results.cjs');
 const { defaults: imageDefaults, imageSettings, imageInstructions, imageType, generateImage } = require('./image-generation.cjs');
 class Concepts extends EventEmitter {
-  constructor(root, runtime, results, reviews, inbox, { run, testMode = false, getSettings = () => imageDefaults, getKey = () => '', imageRequest = generateImage } = {}) {
+  constructor(root, runtime, results, reviews, alerts, { run, testMode = false, getSettings = () => imageDefaults, getKey = () => '', imageRequest = generateImage } = {}) {
     super(); this.dir = path.join(root, 'concept-jobs'); fs.mkdirSync(this.dir, { recursive: true }); this.file = path.join(this.dir, 'index.json');
     this.items = readJson(this.file, []).map(x => ['submitting', 'waiting', 'downloading'].includes(x.state) ? { ...x, state: 'interrupted' } : x);
     this.usageFile = path.join(root, 'concept-usage.json');
@@ -16,7 +16,7 @@ class Concepts extends EventEmitter {
     this.usage = readJson(this.usageFile, []).map(x => states.has(x.id) ? { ...x, state: states.get(x.id) } : x);
     this.auth = { state: 'unchecked' };
     Object.assign(this, { getSettings, getKey, imageRequest });
-    this.runtime = runtime; this.results = results; this.reviews = reviews; this.inbox = inbox; this.children = new Set(); this.testMode = testMode; this.busy = false; this.stopping = false;
+    this.runtime = runtime; this.results = results; this.reviews = reviews; this.alerts = alerts; this.children = new Set(); this.testMode = testMode; this.busy = false; this.stopping = false;
     this.run = run || ((args, timeout = 45000) => new Promise((resolve, reject) => {
       const env = { ...process.env }; delete env.ELECTRON_RUN_AS_NODE; delete env.NODE_OPTIONS;
       for (const key of Object.keys(env)) if (/API_KEY|SECRET|TOKEN|AGENT_DOCK_BRIDGE/i.test(key)) delete env[key];
@@ -97,7 +97,7 @@ class Concepts extends EventEmitter {
   }
   launch(job, submit) {
     this.busy = true;
-    this.perform(job, submit).catch(error => { job.state = this.stopping ? 'interrupted' : 'failed'; job.error = error.message; this.save(); if (!this.stopping) this.inbox.add({ title: 'Concept needs attention', message: error.message, reviewId: job.reviewId, kind: 'error' }); }).finally(() => { this.busy = false; });
+    this.perform(job, submit).catch(error => { job.state = this.stopping ? 'interrupted' : 'failed'; job.error = error.message; this.save(); if (!this.stopping) this.alerts.send({ title: 'Concept needs attention', message: error.message, reviewId: job.reviewId, sessionId: job.sessionId, kind: 'error' }); }).finally(() => { this.busy = false; });
   }
   async perform(job, submit) {
     if (job.provider && job.provider !== 'meshy') return this.performImage(job);
@@ -132,7 +132,7 @@ class Concepts extends EventEmitter {
     if (!file || !inside(fs.realpathSync(dir), fs.realpathSync(file))) throw new Error('Meshy did not save an image inside the job folder.');
     const saved = this.results.add({ file, title: 'Page concept · Meshy', kind: 'concept', source: 'Meshy', groupId: job.groupId || job.reviewId, reviewId: job.reviewId, summary: job.prompt }, { project: job.project, sessionId: job.sessionId, consoleKey: job.consoleKey, consoleName: job.consoleName, turnId: job.turnId, trusted: true });
     job.resultId = saved.id; job.state = 'complete'; this.save();
-    this.inbox.add({ title: 'Page concept ready', resultId: saved.id, reviewId: job.reviewId });
+    this.alerts.send({ title: 'Page concept ready', resultId: saved.id, reviewId: job.reviewId, sessionId: job.sessionId });
     // Keep task/credit metadata; discard duplicate working files only within this proven job folder.
     try { await this.cleanFiles(job.id); } catch { job.cleanupWarning = 'Temporary files remain. Use Remove job to clean them up.'; this.save(); }
   }
@@ -148,7 +148,7 @@ class Concepts extends EventEmitter {
       job.usage = result.usage; this.save();
       const saved = this.results.add({ buffer: result.buffer, ext: result.ext, title: 'Screen preview · ' + job.provider, kind: 'concept', source: job.provider, groupId: job.groupId, reviewId: job.reviewId, summary: 'Generated design proposal · ' + job.config.model }, { project: job.project, sessionId: job.sessionId, consoleKey: job.consoleKey, consoleName: job.consoleName, turnId: job.turnId, trusted: true });
       job.resultId = saved.id; job.state = 'complete'; this.save();
-      this.inbox.add({ title: 'Screen preview ready', resultId: saved.id, reviewId: job.reviewId, sessionId: job.sessionId });
+      this.alerts.send({ title: 'Screen preview ready', resultId: saved.id, reviewId: job.reviewId, sessionId: job.sessionId });
     } finally { clearTimeout(timeout); this.abort = null; }
   }
   async cleanFiles(id) {

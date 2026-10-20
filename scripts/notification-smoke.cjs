@@ -1,13 +1,13 @@
 'use strict';
 const { _electron: electron } = require('playwright');
 const fs = require('node:fs'), path = require('node:path'), assert = require('node:assert/strict');
-const { Results, Inbox } = require('../electron/results.cjs');
+const { Results } = require('../electron/results.cjs');
 const root = path.resolve(__dirname, '..'), parent = path.join(root, 'test-data'); fs.mkdirSync(parent, { recursive: true });
 const profile = fs.mkdtempSync(path.join(parent, 'notifications-'));
 fs.writeFileSync(path.join(profile, 'settings.json'), JSON.stringify({ setupComplete: true, restoreConsoles: false, notifications: false }));
-const results = new Results(profile), inbox = new Inbox(profile);
-const result = results.add({ text: fs.readFileSync(path.join(__dirname, 'fixtures/result-preview.md'), 'utf8'), title: 'Notification report', kind: 'test' });
-const entry = inbox.add({ title: 'Review ready', resultId: result.id });
+const results = new Results(profile);
+const result = results.add({ text: fs.readFileSync(path.join(__dirname, 'fixtures/result-preview.md'), 'utf8'), title: 'Notification report', kind: 'test', reviewId: 'fixture-review' }, { trusted: true });
+const entry = { id: 'review-ready', title: 'Review ready', resultId: result.id };
 let app;
 async function until(check) { const end = Date.now() + 15000; while (Date.now() < end) { if (await check()) return; await new Promise(r => setTimeout(r, 50)); } throw Error('Notification activation timed out'); }
 (async () => {
@@ -44,9 +44,13 @@ async function until(check) { const end = Date.now() + 15000; while (Date.now() 
   await call('mode', 'hud'); await activate(entry);
   await page.locator('.result-markdown h1').waitFor();
   assert.equal(await page.locator('.result-markdown h1').textContent(), 'Ready for review');
-  assert.equal((await call('state')).mode, 'dashboard'); assert.ok((await call('state')).workbench.inbox.find(x => x.id === entry.id).read);
+  await page.locator('.wb-dialog [data-wb=close]').click();
+  await activate({ title: 'Earlier review ready', reviewId: 'fixture-review' });
+  await page.locator('.result-markdown h1').waitFor();
+  assert.equal(await page.locator('[data-page=reviews]').count(), 0);
+  assert.equal((await call('state')).mode, 'dashboard'); assert.equal('inbox' in (await call('state')).workbench, false);
   fs.mkdirSync(path.join(root, 'artifacts', 'notifications'), { recursive: true });
   await page.screenshot({ path: path.join(root, 'artifacts', 'notifications', 'windows-result-activation.png') });
-  console.log('PASS native-click handler restores tray/minimized windows, expands the HUD, selects the console, opens Markdown Results and clears the alert');
+  console.log('PASS native-click handler restores tray/minimized windows, expands the HUD, selects the console, opens Markdown Results');
   await call('quit');
 })().catch(error => { console.error(error); process.exitCode = 1; }).finally(async () => { await app?.close().catch(() => {}); assert.equal(path.dirname(fs.realpathSync(profile)), fs.realpathSync(parent)); fs.rmSync(profile, { recursive: true, force: true }); });

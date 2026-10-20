@@ -22,11 +22,10 @@ async function signal(session, state = 'ready') {
 async function acknowledged(session, other) {
   await until(async () => {
     const state = await call('state');
-    return state.sessions.find(x => x.id === session.id).state === 'open' && state.workbench.inbox.filter(x => x.sessionId === session.id).every(x => x.read);
+    return state.sessions.find(x => x.id === session.id).state === 'open';
   });
   const state = await call('state');
   assert.equal(state.sessions.find(x => x.id === other.id).state, 'ready');
-  assert.ok(state.workbench.inbox.some(x => x.sessionId === other.id && !x.read));
   assert.equal(state.workbench.unreadResults, 2, 'Console interaction leaves Results unread');
   await page.waitForFunction(() => document.querySelector('#ready-count').textContent === '1');
 }
@@ -173,8 +172,7 @@ async function resize(id, edge, dx, dy, cancel = false, snapshot) {
   await page.locator('nav [data-page=results]').click(); await page.locator('.result-console-heading h2').waitFor();
   assert.equal(await page.locator('.result-console-heading h2').innerText(), path.basename(root)); assert.equal(await page.locator('.result-batch').count(), 2);
   await capture('results');
-  await page.locator('nav [data-page=inbox]').click(); await page.locator('[data-wb=clear-all]').click();
-  await until(async () => (await call('state')).workbench.inbox.length === 0);
+  assert.equal('inbox' in (await call('state')).workbench, false);
   assert.equal((await call('state')).workbench.results.length, 8);
   await page.locator('nav [data-page=results]').click();
   await page.locator('[data-wb=seen-batch]').first().click(); await until(async () => (await call('state')).workbench.unreadResults === 1);

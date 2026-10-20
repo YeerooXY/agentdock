@@ -108,9 +108,7 @@ $('#app').innerHTML = `
 
       <button data-page="consoles"><span class="notification-icon">${icon('terminal')}<span id="ready-count" class="notification-badge" hidden></span></span>Consoles <span id="nav-count">0</span></button>
       <button data-page="projects">${icon('folder')}Projects</button>
-      <button data-page="inbox">${icon('check')}Inbox <span id="inbox-count" hidden></span></button>
       <button data-page="results"><span class="notification-icon">${icon('grid')}<span id="results-count" class="notification-badge" hidden></span></span>Results</button>
-      <button data-page="reviews">${icon('star')}Website review</button>
       <button data-page="usage">${icon('chart')}Usage</button>
       <button data-page="api">${icon('api')}API</button>
       <button data-page="vault">${icon('lock')}Keys</button>
@@ -325,7 +323,7 @@ function renderPage() {
   document.querySelectorAll('[data-page]').forEach(button => button.classList.toggle('selected', button.dataset.page === page));
   if (terminalView) { renderTerminal(); return; }
   if (consoleView) { renderConsoles(); return; }
-  const renderer = { projects: () => projects.render(), results: () => workbench.render('results'), inbox: () => workbench.render('inbox'), reviews: () => workbench.render('reviews'), usage: renderUsage, api: renderApi, vault: renderVault, tools: renderTools, instructions: renderInstructions, settings: renderSettings }[page] || renderSettings;
+  const renderer = { projects: () => projects.render(), results: () => workbench.render('results'), usage: renderUsage, api: renderApi, vault: renderVault, tools: renderTools, instructions: renderInstructions, settings: renderSettings }[page] || renderSettings;
   $('#content').innerHTML = (state.storageError ? `<div class="error-banner" role="alert">${escape(state.storageError)}</div>` : '') + renderer();
   workbench?.mount();
   if (page === 'tools') { $('.page-heading').insertAdjacentHTML('afterend', imageGenerator.render()); imageGenerator.mount(); }
@@ -394,6 +392,7 @@ function receive(next) {
     fullscreenButton.setAttribute('aria-label', fullscreenButton.title);
   }
   workbench?.sync();
+  imageGenerator?.sync();
   setup?.receive();
   phone?.receive();
   updates?.sync();
@@ -449,8 +448,7 @@ function applySidebar() {
 const acknowledgments = new Set();
 async function acknowledgeSession(id) {
   const needsAttention = state.sessions.some(session => session.id === id && isReady(session));
-  const unread = state.workbench?.inbox.some(item => item.sessionId === id && !item.read && ['ready', 'question'].includes(item.kind));
-  if (acknowledgments.has(id) || (!needsAttention && !unread)) return;
+  if (acknowledgments.has(id) || !needsAttention) return;
   acknowledgments.add(id);
   try { await call('session.acknowledge', id); }
   finally { acknowledgments.delete(id); }

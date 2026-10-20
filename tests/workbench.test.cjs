@@ -3,7 +3,8 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { Results, Inbox } = require('../electron/results.cjs');
+const { Results } = require('../electron/results.cjs');
+const { AlertEvents } = require('../electron/alerts.cjs');
 const { Concepts } = require('../electron/concepts.cjs');
 const { pageUrl } = require('../electron/reviews.cjs');
 const { Workbench } = require('../electron/workbench.cjs');
@@ -14,7 +15,7 @@ function fixture(t) {
   const root = path.join(work,'profile'), project = path.join(work,'project'); fs.mkdirSync(root); fs.mkdirSync(project);
   t.after(()=>{ assert.equal(path.dirname(fs.realpathSync(work)),fs.realpathSync(parent)); fs.rmSync(work,{recursive:true,force:true}); });
   const trash = async file => { assert.ok(file.startsWith(root + path.sep)); fs.rmSync(file,{recursive:true}); };
-  return { root, project, results:new Results(root,{trash}), inbox:new Inbox(root), trash };
+  return { root, project, results:new Results(root,{trash}), alerts:new AlertEvents(), trash };
 }
 test('gallery copies project artifacts, rejects private/outside files, and deletes only owned copies', async t => {
   const { root,project,results } = fixture(t), source=path.join(project,'test.md'); fs.writeFileSync(source,'Verified: keyboard works');
@@ -64,30 +65,26 @@ test('bulk deletion keeps failed items and a redirected result directory cannot 
   assert.throws(()=>results.path(two.id),/redirected/); assert.deepEqual((await results.remove([two.id])).failed,[two.id]);
   assert.ok(fs.existsSync(project)); fs.unlinkSync(dir);
 });
-test('inbox persists read state, deduplicates completion events and clears only read items', t=>{
-  const { root,inbox }=fixture(t); const one=inbox.add({key:'one',title:'Done',sessionId:'a'});
-  inbox.add({key:'one',title:'Duplicate'}); inbox.add({key:'two',title:'Question',kind:'question'});
-  inbox.update({id:one.id,action:'read'}); const loaded=new Inbox(root); assert.equal(loaded.items.length,2);
-  loaded.update({action:'clear-read'}); assert.equal(loaded.items.length,1); assert.equal(loaded.items[0].kind,'question');
-  loaded.update({action:'clear-all'}); assert.equal(new Inbox(root).items.length,0);
+test('live alerts deduplicate delivery without keeping a stored notification history', t => {
+  const { root, alerts } = fixture(t), events = [];
+  alerts.on('notification', item => events.push(item));
+  const one = alerts.send({ key: 'turn-one', title: 'Done', sessionId: 'a' });
+  alerts.send({ key: 'turn-one', title: 'Duplicate' });
+  alerts.send({ title: 'Question', kind: 'question', destination: 'projects' });
+  assert.equal(events.length, 2); assert.equal(events[0].id, one.id);
+  assert.equal(events[1].destination, 'projects');
+  assert.equal(alerts.items, undefined); assert.equal(alerts.update, undefined);
+  assert.equal(fs.existsSync(path.join(root, 'inbox.json')), false);
+  const fresh = new AlertEvents(); assert.equal(fresh.keys.size, 0);
 });
-test('console acknowledgment persists only its ready/question alerts and preserves later notifications', t => {
-  const { root, inbox } = fixture(t);
-  const ready = inbox.add({ title: 'Ready', sessionId: 'one' });
-  const question = inbox.add({ title: 'Question', sessionId: 'one', kind: 'question' });
-  const other = inbox.add({ title: 'Other console', sessionId: 'two' });
-  const error = inbox.add({ title: 'Error', sessionId: 'one', kind: 'error' });
-  const general = inbox.add({ title: 'Review ready' });
-  let saves = 0; inbox.on('changed', () => saves++);
-  inbox.acknowledgeSession('one');
-  assert.equal(saves, 1);
-  const loaded = new Inbox(root);
-  assert.deepEqual(loaded.items.filter(x => x.read).map(x => x.id).sort(), [ready.id, question.id].sort());
-  assert.deepEqual(loaded.items.filter(x => !x.read).map(x => x.id).sort(), [other.id, error.id, general.id].sort());
-  inbox.acknowledgeSession('one'); inbox.acknowledgeSession(null); inbox.acknowledgeSession('missing');
-  assert.equal(saves, 1, 'Repeated interaction does not rewrite the inbox');
-  const next = inbox.add({ title: 'Next task ready', sessionId: 'one' });
-  assert.equal(new Inbox(root).items.find(x => x.id === next.id).read, false);
+
+test('retired inbox and review UI actions are absent; agent review tools remain discoverable', async t => {
+  const { root, project } = fixture(t);
+  const wb = new Workbench(root, {}, { nativeImage: {} }, { testMode: true, onChange() {}, getSessions: () => ({ items: new Map() }), getProject: () => project });
+  assert.equal('inbox' in wb.snapshot(), false); assert.equal('reviews' in wb.snapshot(), false);
+  assert.equal(wb.inbox, undefined);
+  for (const method of ['inbox.update', 'review.start', 'review.get', 'review.check', 'review.delete', 'review.brief', 'review.draft']) await assert.rejects(wb.call(method, {}), /Unknown workbench/);
+  for (const name of ['review_page', 'review_details', 'list_reviews', 'review_check', 'delete_review']) assert.ok(wb.tools().some(x => x.name === 'dock/' + name));
 });
 
 test('website reviews reject local files, credentials and active schemes',()=>{
@@ -109,20 +106,20 @@ test('Dock bridge validates native tool schemas and scopes file access to the ca
   hub.revoke('live'); const response=await fetch(grant.AGENT_DOCK_BRIDGE_URL,{method:'POST',headers:{Authorization:'Bearer '+grant.AGENT_DOCK_BRIDGE_TOKEN},body:'{}'});assert.equal(response.status,403);
 });
 test('Meshy device sign-in exposes only the user code and verification URL', async t=>{
-  const {root,results,inbox}=fixture(t); let finish; const calls=[];
+  const {root,results,alerts}=fixture(t); let finish; const calls=[];
   const run=async args=>{
     calls.push(args);
     if(args.includes('--no-wait'))return {status:'device_flow_started',flow_id:'local-flow',user_code:'TEST-CODE',verification_url:'https://www.meshy.ai/authorize',device_code:'PRIVATE_DEVICE_SECRET',expires_in:300};
     return new Promise(resolve=>{finish=resolve;});
   };
-  const concepts=new Concepts(root,{},results,{},inbox,{run}); await concepts.connect();
+  const concepts=new Concepts(root,{},results,{},alerts,{run}); await concepts.connect();
   assert.deepEqual(concepts.auth,{state:'waiting',code:'TEST-CODE',url:'https://www.meshy.ai/authorize'});
   assert.ok(calls[1].includes('local-flow'));assert.ok(!JSON.stringify(calls).includes('PRIVATE_DEVICE_SECRET'));
   finish({status:'logged_in',credential:'PRIVATE_TOKEN'}); await new Promise(r=>setImmediate(r));
   assert.deepEqual(concepts.auth,{state:'connected'});
 });
 test('Meshy fallback requires an agent attempt, preserves accepted IDs and resumes without resubmitting', async t=>{
-  const {root,project,results,inbox}=fixture(t); const ref=results.add({buffer:Buffer.from('mock image'),ext:'.png',kind:'screenshot',groupId:'review'}, {project,trusted:true});
+  const {root,project,results,alerts}=fixture(t); const notices=[]; alerts.on('notification', item=>notices.push(item)); const ref=results.add({buffer:Buffer.from('mock image'),ext:'.png',kind:'screenshot',groupId:'review'}, {project,trusted:true});
   const calls=[]; let waitingFails=true;
   const run=async args=>{
     calls.push(args);
@@ -132,18 +129,18 @@ test('Meshy fallback requires an agent attempt, preserves accepted IDs and resum
     const dir=args[args.indexOf('--output-dir')+1]; fs.mkdirSync(dir,{recursive:true}); const file=path.join(dir,'idea.png'); fs.writeFileSync(file,'mock image'); return {result:{downloads:{files:[{status:'written',path:file}]}}};
   };
   const reviews={get:()=>({id:'review',state:'complete',project,brief:'Sharper navigation'})};
-  const concepts=new Concepts(root,{},results,reviews,inbox,{run});
+  const concepts=new Concepts(root,{},results,reviews,alerts,{run});
   await assert.rejects(concepts.start({reviewId:'review'}),/first/);
   const id=await concepts.start({reviewId:'review',nativeStatus:'unavailable'});
   while(concepts.busy) await new Promise(r=>setTimeout(r,5));
   assert.equal(concepts.items[0].taskId,'accepted-task'); assert.equal(concepts.items[0].credits,null);
   waitingFails=false;
-  const restored=new Concepts(root,{},results,reviews,inbox,{run}); restored.resume(id);
+  const restored=new Concepts(root,{},results,reviews,alerts,{run}); restored.resume(id);
   while(restored.busy) await new Promise(r=>setTimeout(r,5));
   assert.equal(restored.items[0].state,'complete'); assert.equal(restored.items[0].credits,9);
   assert.equal(calls.filter(x=>x[1]==='create').length,1); assert.ok(results.items.some(x=>x.kind==='concept'));
-  assert.ok(fs.existsSync(results.path(ref.id))); assert.equal(inbox.items[0].title,'Page concept ready');
+  assert.ok(fs.existsSync(results.path(ref.id))); assert.equal(notices.at(-1).title,'Page concept ready');
   await restored.remove(id); assert.equal(restored.items.length,0);
-  assert.equal(new Concepts(root,{},results,reviews,inbox,{run}).usage[0].credits,9,'Deleting a job keeps the usage ledger');
-  const disabled=new Concepts(root,{},results,reviews,inbox,{run,testMode:true}); await assert.rejects(disabled.start({reviewId:'review',nativeStatus:'failed'}),/disabled/);
+  assert.equal(new Concepts(root,{},results,reviews,alerts,{run}).usage[0].credits,9,'Deleting a job keeps the usage ledger');
+  const disabled=new Concepts(root,{},results,reviews,alerts,{run,testMode:true}); await assert.rejects(disabled.start({reviewId:'review',nativeStatus:'failed'}),/disabled/);
 });

@@ -37,7 +37,7 @@ async function stop() { await call('quit'); await app.close(); app = null; }
   const grant = JSON.parse(fs.readFileSync(bridgeFile, 'utf8').replace(/^\uFEFF/, ''));
   async function bridge(name, args = {}) {
     const r = await fetch(grant.url, { method: 'POST', headers: { Authorization: 'Bearer ' + grant.token, 'Content-Type': 'application/json' }, body: JSON.stringify({ name, arguments: args }) });
-    assert.equal(r.status, 200); const value = await r.json(); assert.notEqual(value.isError, true); assert.ok(!JSON.stringify(value).includes(secret)); return value;
+    assert.equal(r.status, 200); const value = await r.json(); if (value.isError) throw Error(value.content[0].text); assert.ok(!JSON.stringify(value).includes(secret)); return value;
   }
   const tools = JSON.stringify(await bridge('dock_tools', { connection: 'dock' })); assert.match(tools, /dock\/generate_preview/);
   const context = JSON.stringify(await bridge('dock_context')); assert.match(context, /user selected compatible/); assert.doesNotMatch(context, /try to generate one flat/);
@@ -50,17 +50,18 @@ async function stop() { await call('quit'); await app.close(); app = null; }
   checks.push('existing agent bridge sees saved preference and preview tool; agent prepares settings, user applies in Tools');
   server = http.createServer((req, res) => { res.setHeader('Content-Type', 'text/html'); res.end('<!doctype html><html lang="en"><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Preview test</title></head><body style="background:#080811;color:#e8dded;font:20px sans-serif;padding:30px"><main><h1>Preview test fixture</h1><p>A local screen for image-routing checks.</p></main></body></html>'); });
   await new Promise(r => server.listen(0, '127.0.0.1', r));
-  await page.locator('[data-page=reviews]').click(); await page.locator('#website-review-form [name=url]').fill('http://127.0.0.1:' + server.address().port); await page.locator('#website-review-form [name=brief]').fill('Improve this screen'); await page.locator('#website-review-form [type=submit]').click();
-  await until(async () => { const r = (await call('state')).workbench.reviews[0]; if (r?.state === 'failed') throw Error(r.error); return r?.state === 'complete'; });
-  const review = (await call('state')).workbench.reviews[0];
-  await page.locator('[data-wb=review-open]').first().click(); await page.locator('[data-wb=generate-preview]').waitFor();
-  assert.match(await page.locator('.preview-routing').textContent(), /Gemini/);
-  await page.locator('[data-wb=copy-brief]').click(); const brief = await app.evaluate(({ clipboard }) => clipboard.readText()); assert.match(brief, /user selected gemini/); assert.match(brief, /dock\/generate_preview/);
-  await page.locator('[data-wb=generate-preview]').click(); await until(async () => (await page.locator('[role=status]').allTextContents()).join(' ').includes('disabled during tests'));
+  const tool = async (name, args = {}) => JSON.parse((await bridge('dock_call', { tool: name, arguments: args })).content[0].text);
+  assert.equal(await page.locator('[data-page=reviews], [data-page=inbox]').count(), 0);
+  const review = await tool('dock/review_page', { url: 'http://127.0.0.1:' + server.address().port, brief: 'Improve this screen' });
+  await until(async () => { const r = await tool('dock/review_details', { id: review.id }); if (r.state === 'failed') throw Error(r.error); return r.state === 'complete'; });
+  const reviewed = await tool('dock/review_details', { id: review.id }); assert.equal(reviewed.screenshots.length, 2);
+  await assert.rejects(tool('dock/generate_preview', { reviewId: review.id, requestId: 'smoke-review-preview' }), /Shared tool request failed/);
   assert.equal((await call('state')).workbench.concepts.length, 0);
-  await page.locator('[data-wb=image-settings]').click(); await page.locator('#image-generation-form').waitFor(); assert.equal(await page.locator('#image-generation-form [name=provider]').inputValue(), 'gemini');
-  checks.push('real review screenshot; selected provider in brief and review; direct generation blocked in tests; Change generator opens settings');
-  const fixture = await call('state'); fixture.fixtureReview = await call('workbench.review.get', review.id); fixture.fixtureImages = {};
+  await page.locator('[data-page=tools]').click(); await page.locator('#image-generation-form').waitFor();
+  await page.locator('.image-auth summary').click(); assert.equal(await page.locator('[data-image-auth=connect]').isVisible(), true);
+  assert.equal(await page.locator('#image-generation-form [name=provider]').inputValue(), 'gemini');
+  checks.push('agent-only website review; screenshot evidence; selected provider retained; paid generation blocked; Meshy sign-in available in Tools');
+  const fixture = await call('state'); fixture.fixtureReview = await tool('dock/review_details', { id: review.id }); fixture.fixtureImages = {};
   for (const item of fixture.workbench.results.filter(x => x.image)) fixture.fixtureImages[item.id] = await call('workbench.results.preview', item.id);
   // Avoid keeping the shell buffer containing the isolated bridge grant in visual fixtures.
   fixture.sessions = []; fs.writeFileSync(path.join(out, 'fixture.json'), JSON.stringify(fixture));
@@ -68,6 +69,6 @@ async function stop() { await call('quit'); await app.close(); app = null; }
   fs.writeFileSync(path.join(out, 'native-checks.json'), JSON.stringify({ passed: true, checks, paidRequests: 0 }, null, 2));
   console.log('PASS saved image preferences, secure key binding, live MCP context, prepared setup, review route and paid-call guard');
 })().catch(error => { console.error(error); process.exitCode = 1; }).finally(async () => {
-  await app?.close().catch(() => {}); server?.closeAllConnections?.(); if (server) await new Promise(r => server.close(r));
+  if (app) { await page.evaluate(() => window.dock.call('quit')).catch(() => {}); await app.close().catch(() => {}); } server?.closeAllConnections?.(); if (server) await new Promise(r => server.close(r));
   assert.equal(path.dirname(fs.realpathSync(profile)), fs.realpathSync(parent)); fs.rmSync(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
 });

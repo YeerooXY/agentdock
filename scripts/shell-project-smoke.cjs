@@ -70,6 +70,8 @@ async function screenshot(page, name) {
       },{state});
       const page=await context.newPage();page.setDefaultTimeout(10000);page.on('pageerror',e=>errors.push(name+': '+e.message));
       await page.goto(origin);
+      await page.locator(".session-grid").waitFor();
+      assert.equal(await page.locator("[data-page=inbox], [data-page=reviews]").count(),0);
       await page.waitForSelector('.console-grip [data-shell=claude] img');
       assert.ok(await page.locator('.console-grip [data-shell=claude] img').evaluate(img=>img.complete&&img.naturalWidth>0));
       assert.equal(await page.getByRole('button',{name:'Close console 1',exact:true}).count(),1);
@@ -81,8 +83,10 @@ async function screenshot(page, name) {
       assert.equal(await chooser.locator('.shell-picker-options img').evaluateAll(images=>images.every(img=>img.complete&&img.naturalWidth>0)),true);
       const b=await chooser.boundingBox();assert.ok(b.x>=-1&&b.x+b.width<=page.viewportSize().width+1,'Chooser overflows '+name);
       await screenshot(page,name+'-chooser');
+      await page.evaluate(() => { window.pickerEvents=[]; const picker=document.querySelector('#console-chooser .shell-picker'); for(const kind of ['pointerdown','pointerup','click','focusin','focusout','toggle']) picker.addEventListener(kind,e=>window.pickerEvents.push({kind:e.type,tag:e.target.tagName,text:e.target.textContent.slice(0,60),open:picker.open,active:document.activeElement.tagName}),true); });
       await chooser.locator('.shell-picker-options button').filter({hasText:'Claude Code'}).click();
-      assert.equal(await chooser.locator('[name=provider]').inputValue(),'claude');
+      assert.equal(await chooser.locator('[name=provider]').inputValue(),'claude',name+': '+JSON.stringify(await page.evaluate(()=>window.pickerEvents)));
+
       await chooser.locator('.shell-picker>summary').press('ArrowDown');await page.keyboard.press('Escape');
       assert.equal(await chooser.isVisible(),true);assert.equal(await chooser.locator('.shell-picker').getAttribute('open'),null);
       await chooser.locator('.shell-picker>summary').press('ArrowDown');await page.keyboard.press('Home');await page.keyboard.press('Enter');
@@ -102,6 +106,14 @@ async function screenshot(page, name) {
       assert.ok((await page.locator('.message-usage').innerText()).includes('No reported change'));
       assert.equal(await page.locator('[data-usage-group] .project-color-dot').evaluate(el=>getComputedStyle(el).backgroundColor),'rgb(68, 187, 204)');
       await screenshot(page,name+'-usage');
+      await page.locator('.sidebar [data-page=tools]').click();
+      const auth=page.locator('.image-auth summary'); await auth.focus(); await auth.press('Enter');
+      assert.equal(await page.locator('[data-image-auth=connect]').isVisible(),true);
+      await page.keyboard.press('Tab'); assert.equal(await page.locator('[data-image-auth=auth-status]').evaluate(el=>el===document.activeElement),true);
+      await page.keyboard.press('Tab'); assert.equal(await page.locator('[data-image-auth=connect]').evaluate(el=>el===document.activeElement),true);
+      await page.evaluate(()=>document.querySelector('#content').scrollTop=0);
+      assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),true,'Tools overflows '+name);
+      await screenshot(page,name+'-tools');
       checks.push(name+': local logos in headers and chooser; keyboard select/Escape; color edit; project/turn grouping; separate 5h/weekly readings; rounded zero labelled.');
       await context.close();
     }finally{await browser.close();}

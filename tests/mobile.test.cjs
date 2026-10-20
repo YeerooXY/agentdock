@@ -11,7 +11,8 @@ const { EventEmitter, once } = require('node:events');
 const { gunzipSync } = require('node:zlib');
 const { WebSocket } = require('ws');
 const { MobileCompanion } = require('../electron/mobile.cjs');
-const { Results, Inbox } = require('../electron/results.cjs');
+const { Results } = require('../electron/results.cjs');
+const { AlertEvents } = require('../electron/alerts.cjs');
 const { TerminalStream } = require('../electron/mobile-stream.cjs');
 const { MobilePush, publicConfig, serviceAccount } = require('../electron/mobile-push.cjs');
 const safe = (() => { const key = crypto.randomBytes(32); return { isEncryptionAvailable: () => true, encryptString(value) { const iv = crypto.randomBytes(12), cipher = crypto.createCipheriv('aes-256-gcm', key, iv); const encrypted = Buffer.concat([cipher.update(value), cipher.final()]); return Buffer.concat([iv, cipher.getAuthTag(), encrypted]); }, decryptString(buffer) { const d = crypto.createDecipheriv('aes-256-gcm', key, buffer.subarray(0, 12)); d.setAuthTag(buffer.subarray(12, 28)); return Buffer.concat([d.update(buffer.subarray(28)), d.final()]).toString(); } }; })();
@@ -19,8 +20,8 @@ async function fixture(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dock-mobile-'));
   const sessions = new EventEmitter(); sessions.items = new Map(); sessions.list = () => [...sessions.items.values()]; sessions.writes = []; sessions.write = (id, data) => sessions.writes.push({ id, data }); sessions.acknowledge = id => { sessions.items.get(id).state = 'open'; sessions.emit('changed'); };
   for (let i = 1; i <= 9; i++) sessions.items.set('console-' + i, { id: 'console-' + i, name: 'Console ' + i, alive: true, state: 'ready', cols: 80, rows: 24, slot: i, sequence: 0, buffer: 'Hello ' + i, provider: 'shell' });
-  const results = new Results(root, { trash: file => fs.promises.rm(file, { recursive: true, force: true }) }), inbox = new Inbox(root);
-  const m = new MobileCompanion(root, safe, { sessions, results, inbox, getDefaults: () => ({}), getUsage: () => ({ limits: [], summary: {} }), testMode: true });
+  const results = new Results(root, { trash: file => fs.promises.rm(file, { recursive: true, force: true }) }), alerts = new AlertEvents();
+  const m = new MobileCompanion(root, safe, { sessions, results, alerts, getDefaults: () => ({}), getUsage: () => ({ limits: [], summary: {} }), testMode: true });
   const reserve = net.createServer(); await new Promise(r => reserve.listen(0, '127.0.0.1', r)); const port = reserve.address().port; await new Promise(r => reserve.close(r));
   await m.configure({ enabled: true, host: '127.0.0.1', port });
   t.after(async () => { await m.stop(); fs.rmSync(root, { recursive: true, force: true }); });
@@ -28,7 +29,7 @@ async function fixture(t) {
   const code = (await m.invite()).code, invite = JSON.parse(Buffer.from(code.slice(10), 'base64url'));
   const begin = (secret = invite.secret, key = crypto.randomBytes(32).toString('base64url'), name = 'Test phone') => request('/v1/pair', secret, { name, approval: true, requestKey: key }).then(r => ({ ...r, key }));
   const pair = async () => { const pending = await begin(); assert.equal(pending.status, 202); m.decidePairing({ id: pending.data.id, allow: true }); return request('/v1/pair/status', pending.key, { id: pending.data.id }); };
-  return { m, sessions, results, inbox, root, port, invite, request, begin, pair };
+  return { m, sessions, results, alerts, root, port, invite, request, begin, pair };
 }
 function client(f, auth) {
   const ws = new WebSocket(`wss://127.0.0.1:${f.port}/v1/events`, { rejectUnauthorized: false, headers: { Authorization: 'Bearer ' + auth } });
@@ -41,6 +42,23 @@ function client(f, auth) {
   const call = async (method, payload) => { const id = crypto.randomUUID(); ws.send(JSON.stringify({ id, method, payload })); const message = await wait(m => m.type === 'reply' && m.id === id); if (message.error) throw Error(message.error); return message.value; };
   return { ws, wait, messages, call };
 }
+
+test('live completion alerts reach paired phones without a stored inbox', async t => {
+  const f = await fixture(t), paired = await f.pair(), c = client(f, paired.data.token);
+  t.after(() => c.ws.terminate());
+  await once(c.ws, 'open');
+  await c.wait(x => x.type === 'state');
+  const alert = f.alerts.send({ title: 'Review ready', kind: 'ready', sessionId: 'console-1', key: 'completed-turn' });
+  f.alerts.send({ title: 'Duplicate', key: 'completed-turn' });
+  const delivered = await c.wait(x => x.type === 'state' && x.state.alerts.some(a => a.id === alert.id));
+  assert.deepEqual(delivered.state.alerts, [{ id: alert.id, title: 'Review ready', at: alert.at }]);
+  assert.equal(fs.existsSync(path.join(f.root, 'inbox.json')), false);
+  await c.call('acknowledge', { id: 'console-1' });
+  assert.equal(f.sessions.items.get('console-1').state, 'open');
+  for (let i = 0; i < 60; i++) f.alerts.send({ title: 'Completion ' + i });
+  assert.equal(f.m.publicState().alerts.length, 50);
+  assert.equal(f.m.publicState().alerts.at(-1).title, 'Completion 59');
+});
 
 test('saved phone names are independent; remote rename cannot target another phone', async t => {
   const f = await fixture(t);

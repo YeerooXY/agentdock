@@ -30,16 +30,16 @@ function deviceName(value) {
   return name;
 }
 class MobileCompanion extends EventEmitter {
-  constructor(root, safeStorage, { sessions, results, inbox, getUsage, getDefaults, getModels, getKey, networkScript, program, network, testMode = false } = {}) {
+  constructor(root, safeStorage, { sessions, results, alerts, getUsage, getDefaults, getModels, getKey, networkScript, program, network, testMode = false } = {}) {
     super(); this.file = path.join(root, 'mobile.json'); this.crypto = safeStorage;
-    this.sessions = sessions; this.results = results; this.inbox = inbox; this.getUsage = getUsage; this.getDefaults = getDefaults; this.testMode = testMode;
+    this.sessions = sessions; this.results = results; this.getUsage = getUsage; this.getDefaults = getDefaults; this.testMode = testMode;
     this.getModels = getModels;
     this.attachments = new MobileAttachments();
     this.config = readJson(this.file, { enabled: false, host: '', port: 47831 });
     this.config.mappingId ||= crypto.randomUUID();
     this.network = network || new MobileNetwork({ getKey, script: networkScript, program, testMode, changed: () => this.emit('changed') });
     this.attempts = new Map(); this.attemptPeriod = Date.now(); this.attemptTotal = 0;
-    this.private = { devices: [] }; this.clients = new Set(); this.streams = new Map(); this.sent = new Set(); this.counters = { sent: 0, received: 0 }; this.error = ''; this.pairing = null; this.pendingPairing = null;
+    this.private = { devices: [] }; this.clients = new Set(); this.streams = new Map(); this.liveAlerts = []; this.counters = { sent: 0, received: 0 }; this.error = ''; this.pairing = null; this.pendingPairing = null;
     if (this.config.encrypted) { try { this.private = JSON.parse(safeStorage.decryptString(Buffer.from(this.config.encrypted, 'base64'))); } catch { this.error = 'Mobile credentials could not be unlocked. Set up this PC again.'; this.config.enabled = false; } }
     this.push = new MobilePush({ credential: () => this.private.firebase?.credential });
     this.output = packet => {
@@ -52,16 +52,14 @@ class MobileCompanion extends EventEmitter {
       for (const [id, stream] of this.streams) if (!sessions.items.has(id) || sessions.items.get(id).dismissed) { stream.dispose(); this.streams.delete(id); }
       this.scheduleState();
     };
-    this.alerts = () => {
+    this.notification = item => {
+      // A bounded, volatile delivery window supports already-paired phone builds.
+      // It has no read state, persistence or notification-management API.
+      this.liveAlerts = [...this.liveAlerts.slice(-49), { id: item.id, title: item.title, at: item.at }];
       this.scheduleState();
-      for (const item of inbox.items.filter(x => !x.read && ['ready', 'question', 'error'].includes(x.kind))) {
-        if (this.sent.has(item.id)) continue; this.sent.add(item.id);
-        if (this.config.enabled && !testMode) this.sendPush(item.id).catch(() => {});
-      }
-      if (this.sent.size > 500) this.sent = new Set(inbox.items.map(x => x.id));
+      if (this.config.enabled && !testMode) this.sendPush(item.id).catch(() => {});
     };
-    for (const item of inbox.items) this.sent.add(item.id);
-    sessions.on('output', this.output); sessions.on('resize', this.resized); sessions.on('changed', this.changed); results.on('changed', this.changed); inbox.on('changed', this.alerts);
+    sessions.on('output', this.output); sessions.on('resize', this.resized); sessions.on('changed', this.changed); results.on('changed', this.changed); alerts?.on('notification', this.notification);
   }
   available() { return this.crypto.isEncryptionAvailable() && this.crypto.getSelectedStorageBackend?.() !== 'basic_text'; }
   get name() { return this.config.name || os.hostname(); }
@@ -211,7 +209,7 @@ class MobileCompanion extends EventEmitter {
       ? { url: `https://${this.config.publicHost}:${this.config.externalPort}`, localUrl }
       : { url: localUrl };
     connection.name = this.name;
-    return { connection, capabilities: ['console.agents', 'console.files', 'console.close', 'console.projects', 'console.models', 'console.ssh', 'alerts.direct', 'console.attachments'], capacity: (this.sessions.grid?.columns || 3) * (this.sessions.grid?.rows || 3), sessions: this.sessions.list().filter(x => !x.dismissed).map(({ id, slot, name, provider, alive, state, cols, rows, consoleKey, projectId, remote, updatedAt }) => ({ id, slot, name, provider, alive, state, cols, rows, consoleKey, projectId, remote, updatedAt })), alerts: this.inbox.items.filter(x => !x.read).slice(0, 50).map(({ id, title, at }) => ({ id, title, at })), unreadResults: this.results.unreadGroups(), resultVersion: digest(this.results.items.map(x => x.id + ':' + x.seenAt).join(',')).slice(0, 16) };
+    return { connection, capabilities: ['console.agents', 'console.files', 'console.close', 'console.projects', 'console.models', 'console.ssh', 'alerts.direct', 'console.attachments'], capacity: (this.sessions.grid?.columns || 3) * (this.sessions.grid?.rows || 3), sessions: this.sessions.list().filter(x => !x.dismissed).map(({ id, slot, name, provider, alive, state, cols, rows, consoleKey, projectId, remote, updatedAt }) => ({ id, slot, name, provider, alive, state, cols, rows, consoleKey, projectId, remote, updatedAt })), alerts: this.liveAlerts, unreadResults: this.results.unreadGroups(), resultVersion: digest(this.results.items.map(x => x.id + ':' + x.seenAt).join(',')).slice(0, 16) };
   }
   scheduleState() {
     if (!this.server || this.stateTimer) return;
@@ -261,9 +259,9 @@ class MobileCompanion extends EventEmitter {
       case 'input': {
         if (client.selected !== payload.id || !this.sessions.items.get(payload.id)?.alive) throw new Error('Select an open console first.');
         if (typeof payload.data !== 'string' || payload.data.length > 65536) throw new Error('Input is too large.');
-        this.sessions.acknowledge(payload.id); this.inbox.acknowledgeSession(payload.id); this.sessions.write(payload.id, payload.data); return true;
+        this.sessions.acknowledge(payload.id); this.sessions.write(payload.id, payload.data); return true;
       }
-      case 'acknowledge': this.sessions.acknowledge(payload.id); this.inbox.acknowledgeSession(payload.id); return true;
+      case 'acknowledge': this.sessions.acknowledge(payload.id); return true;
       case 'console.create': {
         return this.sessions.create(mobileLaunch(this.sessions, this.getDefaults(), payload));
       }

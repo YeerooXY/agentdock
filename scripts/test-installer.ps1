@@ -47,7 +47,7 @@ try {
   & node (Join-Path $PSScriptRoot 'packaged-smoke.cjs') "--app=$exe"
   if ($LASTEXITCODE -ne 0) { throw 'The installed application failed its smoke test.' }
   & node (Join-Path $PSScriptRoot 'workbench-smoke.cjs') "--app=$exe"
-  if ($LASTEXITCODE -ne 0) { throw 'The installed gallery, inbox, website review or console move checks failed.' }
+  if ($LASTEXITCODE -ne 0) { throw 'The installed gallery, agent website review or console move checks failed.' }
   & node (Join-Path $PSScriptRoot 'setup-smoke.cjs') "--app=$exe"
   if ($LASTEXITCODE -ne 0) { throw 'The installed first-run phone setup failed.' }
 } finally {

@@ -22,24 +22,23 @@ let browser; const reports = [];
     await context.exposeFunction('fixtureCall', async (method, payload) => {
       let value;
       if (method === 'state') return { ok: true, value: state };
-      if (method === 'workbench.review.get') return { ok: true, value: review };
       if (method === 'workbench.results.preview') return { ok: true, value: images[typeof payload === 'string' ? payload : payload.id] };
       if (method === 'images.settings') { try { state.shared.imageGeneration = imageSettings(payload); } catch (error) { return { ok: false, error: error.message }; } }
       else if (method === 'settings') Object.assign(state.settings, payload);
-      else if (method === 'workbench.preview.generate') {
-        calls++; assert.equal(state.shared.imageGeneration.provider, 'openai'); assert.ok(payload.requestId); assert.equal(payload.reviewId, review.id);
-        const source = state.workbench.results.find(x => x.image), id = 'mock-image';
-        state.workbench.results.unshift({ ...source, id, title: 'Mocked image response', kind: 'concept', status: 'needs-review', summary: 'Test fixture only; no AI generation was performed.', at: Date.now() }); images[id] = images[source.id];
-        state.workbench.concepts.unshift({ id: 'mock-job', provider: 'openai', state: 'complete', reviewId: review.id, resultId: id });
-        state.workbench.conceptUsage.unshift({ id: 'mock-job', resultId: id, provider: 'openai', model: state.shared.imageGeneration.model, at: Date.now(), state: 'complete', usage: { input: 42, output: 0 }, credits: null });
-        value = { id: 'mock-job' };
-      } else if (method === 'workbench.results.seen') { /* metadata-only fixture */ }
-      else if (method === 'workbench.review.brief') value = 'Fixture design brief';
+      else if (method === 'workbench.results.seen') { /* metadata-only fixture */ }
       else if (method === 'workbench.concept.delete') state.workbench.concepts = state.workbench.concepts.filter(x => x.id !== payload);
       else throw Error('Unexpected fixture call ' + method);
       return { ok: true, value, state };
     });
-    await context.addInitScript(() => { let changed; window.dock = { call: async (m, p) => { const r = await window.fixtureCall(m, p); if (r.state) changed?.(r.state); return r; }, onState: f => { changed = f; }, onOutput: () => {}, onSelect: () => {} }; });
+    await context.exposeFunction('fixtureCompletePreview', async () => {
+        calls++;
+        const source = state.workbench.results.find(x => x.image), id = 'mock-image';
+        state.workbench.results.unshift({ ...source, id, title: 'Mocked image response', kind: 'concept', status: 'needs-review', summary: 'Test fixture only; no AI generation was performed.', at: Date.now() }); images[id] = images[source.id];
+        state.workbench.concepts.unshift({ id: 'mock-job', provider: 'openai', state: 'complete', reviewId: review.id, resultId: id });
+        state.workbench.conceptUsage.unshift({ id: 'mock-job', resultId: id, provider: 'openai', model: state.shared.imageGeneration.model, at: Date.now(), state: 'complete', usage: { input: 42, output: 0 }, credits: null });
+      return state;
+    });
+    await context.addInitScript(() => { let changed; window.dock = { call: async (m, p) => { const r = await window.fixtureCall(m, p); if (r.state) changed?.(r.state); return r; }, onState: f => { changed = f; }, onNotice: () => {}, completeAgentPreview: async () => changed?.(await window.fixtureCompletePreview()), onOutput: () => {}, onSelect: () => {} }; });
     const page = await context.newPage(); page.setDefaultTimeout(12000); page.on('pageerror', e => errors.push(e.message));
     await page.goto('http://127.0.0.1:' + server.address().port); await page.locator('.session-grid').waitFor(); await page.addScriptTag({ url: '/_axe.js' });
     async function nav(view) {
@@ -63,19 +62,21 @@ let browser; const reports = [];
     assert.equal(state.shared.imageGeneration.provider, 'openai');
     await form.locator('[name=provider]').selectOption('gemini'); assert.match(await form.locator('[name=model]').inputValue(), /nano-banana/); assert.equal(await form.locator('[name=url]').isVisible(), false);
     await form.locator('[name=provider]').selectOption('meshy'); assert.equal(await form.locator('[data-image-api]').isVisible(), false);
-    await nav('reviews'); await page.locator('[data-wb=review-open]').first().click(); await page.locator('.review-concepts').waitFor();
-    await page.locator('.review-concepts').evaluate(x => x.scrollIntoView({ block: 'start' })); await capture('review-route', '.review-concepts');
-    await page.locator('[data-wb=generate-preview]').click(); await page.locator('[data-preview-jobs] [data-wb=preview]').waitFor(); assert.equal(calls, 1);
-    await page.locator('[data-preview-jobs] [data-wb=preview]').click(); await page.locator('#result-preview img').waitFor();
+    assert.equal(await page.locator('[data-page=reviews], [data-page=inbox]').count(), 0);
+    const auth = page.locator('.image-auth summary'); await auth.focus(); await auth.press('Enter');
+    assert.equal(await page.locator('[data-image-auth=connect]').isVisible(), true);
+    await capture('meshy-sign-in', '.image-generation-settings');
+    // The agent's returned image is a fixture event, never an app generation API.
+    await nav('results'); await page.evaluate(() => window.dock.completeAgentPreview()); assert.equal(calls, 1);
+    await page.locator('[data-wb=preview][data-id=mock-image]').first().click(); await page.locator('#result-preview img').waitFor();
     assert.match(await page.locator('.wb-dialog').textContent(), /Mocked image response/); assert.equal(await page.locator('.wb-dialog').evaluate(x => x.scrollTop), 0); await capture('returned-image', '.wb-dialog');
     await page.keyboard.press('Escape'); await page.locator('.wb-dialog').waitFor({ state: 'hidden' });
-    await page.locator('[data-wb=review-open]').first().click(); await page.locator('[data-wb=image-settings]').click(); await form.waitFor(); assert.equal(await form.locator('[name=provider]').inputValue(), 'openai');
     await nav('usage'); const usage = page.locator('.image-usage'); await usage.waitFor(); await usage.evaluate(x => x.scrollIntoView({ block: 'start' }));
     assert.match(await usage.textContent(), /Unavailable/); assert.equal(await usage.locator('tbody td').nth(4).textContent(), '0'); await capture('image-usage', '.image-usage');
     await usage.locator('[data-wb=concept-delete]').click(); await page.waitForFunction(async () => (await window.dock.call('state')).value.workbench.concepts.length === 0);
     assert.equal(state.workbench.conceptUsage.length, 1); assert.ok(state.workbench.results.some(x => x.id === 'mock-image'));
     assert.deepEqual(errors, []);
-    reports.push({ profile: name, engine: browser.version(), emulated: name !== 'pc', captures, checks: ['generator choices and field states', 'keyboard preview toggle', 'save and invalid endpoint recovery', 'selected review provider', 'single mocked generation and preview opening', 'change generator navigation', 'unknown versus zero usage', 'selected axe checks', 'no horizontal overflow', 'no page errors'], paidRequests: 0 });
+    reports.push({ profile: name, engine: browser.version(), emulated: name !== 'pc', captures, checks: ['generator choices and field states', 'keyboard preview toggle', 'save and invalid endpoint recovery', 'Meshy sign-in in Tools', 'agent-returned fixture image in Results', 'removed review/Inbox navigation', 'unknown versus zero usage', 'selected axe checks', 'no horizontal overflow', 'no page errors'], paidRequests: 0 });
     await browser.close(); browser = null; console.log('PASS ' + name + ' screen preview settings, routing and Results');
   }
   fs.writeFileSync(path.join(out, 'visual-checks.json'), JSON.stringify(reports, null, 2));

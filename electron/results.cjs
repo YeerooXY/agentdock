@@ -119,29 +119,4 @@ class Results extends EventEmitter {
     } finally { this.deleting = false; }
   }
 }
-class Inbox extends EventEmitter {
-  constructor(root) { super(); this.file = path.join(root, 'inbox.json'); this.items = readJson(this.file, []).slice(0, 200); }
-  save() { atomicJson(this.file, this.items); this.emit('changed'); }
-  add(raw) {
-    if (raw.key && this.items.some(x => x.key === raw.key)) return;
-    const item = { id: crypto.randomUUID(), at: Date.now(), read: false, title: short(raw.title), message: short(raw.message, 1200), sessionId: raw.sessionId || null, resultId: raw.resultId || null, reviewId: raw.reviewId || null, kind: raw.kind || 'ready', key: raw.key || null };
-    if (['usage', 'tools'].includes(raw.destination)) item.destination = raw.destination;
-    this.items = [item, ...this.items].slice(0, 200); this.save(); this.emit('added', item); return item;
-  }
-  update({ id, action }) {
-    if (action === 'clear-all') this.items = [];
-    else if (action === 'clear-read') this.items = this.items.filter(x => !x.read);
-    else if (action === 'dismiss') this.items = this.items.filter(x => x.id !== id);
-    else if (action === 'read') { const item = this.items.find(x => x.id === id); if (item) item.read = true; }
-    else throw new Error('Unknown inbox action.');
-    this.save();
-  }
-  acknowledgeSession(sessionId) {
-    if (typeof sessionId !== 'string' || !sessionId) return;
-    const unread = this.items.filter(item => item.sessionId === sessionId && !item.read && ['ready', 'question'].includes(item.kind));
-    if (!unread.length) return;
-    for (const item of unread) item.read = true;
-    this.save();
-  }
-}
-module.exports = { Results, Inbox, inside };
+module.exports = { Results, inside };

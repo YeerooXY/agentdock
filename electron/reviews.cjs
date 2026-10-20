@@ -20,8 +20,8 @@ function inspectPage() {
     links: [...document.querySelectorAll('a[href]')].slice(0, 200).map(x => ({ text: x.textContent.trim().slice(0, 100), url: x.href })) };
 }
 class Reviews extends EventEmitter {
-  constructor(root, results, inbox, { BrowserWindow, session, axeSource } = {}) {
-    super(); this.file = path.join(root, 'reviews.json'); this.results = results; this.inbox = inbox;
+  constructor(root, results, alerts, { BrowserWindow, session, axeSource } = {}) {
+    super(); this.file = path.join(root, 'reviews.json'); this.results = results; this.alerts = alerts;
     this.BrowserWindow = BrowserWindow; this.session = session; this.axeSource = axeSource || fs.readFileSync(require.resolve('axe-core/axe.min.js'), 'utf8');
     this.items = readJson(this.file, []).slice(0, 100).map(x => x.state === 'running' ? { ...x, state: 'interrupted', error: 'Review stopped when Dock closed. Run it again.' } : x);
     this.active = null; this.window = null; this.stopping = false;
@@ -37,7 +37,7 @@ class Reviews extends EventEmitter {
     this.run(item).catch(error => {
       if (!this.items.includes(item)) return;
       item.state = this.stopping ? 'interrupted' : 'failed'; item.error = String(error.message || 'Review failed.').slice(0, 500); this.save();
-      if (!this.stopping) this.inbox.add({ title: 'Website review needs attention', message: item.error, reviewId: item.id, kind: 'error' });
+      if (!this.stopping) this.alerts.send({ title: 'Website review needs attention', message: item.error, reviewId: item.id, sessionId: item.sessionId, kind: 'error' });
     }).finally(() => { if (this.window && !this.window.isDestroyed()) this.window.destroy(); this.window = null; this.active = null; });
     return item.id;
   }
@@ -80,7 +80,7 @@ class Reviews extends EventEmitter {
       item.issues = issues;
       const saved = this.results.add({ title: 'Review · ' + new URL(item.url).hostname, kind: 'review', ext: '.json', text: JSON.stringify({ ...report, checklist: item.checks }, null, 2), source: 'Website review', groupId: item.id, reviewId: item.id, summary: `${issues} automated findings. Manual checklist still needs review.`, status: 'needs-review' }, { project: item.project, sessionId: item.sessionId, consoleKey: item.consoleKey, consoleName: item.consoleName, turnId: item.turnId, trusted: true });
       item.resultIds.push(saved.id); this.save();
-      this.inbox.add({ title: 'Website review ready', message: `${new URL(item.url).hostname} · ${issues} automated findings`, reviewId: item.id, resultId: saved.id });
+      this.alerts.send({ title: 'Website review ready', message: `${new URL(item.url).hostname} · ${issues} automated findings`, reviewId: item.id, resultId: saved.id, sessionId: item.sessionId });
     } finally { clearTimeout(timeout); if (!browser.isDestroyed()) browser.destroy(); await partition.clearStorageData(); await partition.closeAllConnections(); }
   }
   check(raw) {
@@ -96,11 +96,6 @@ class Reviews extends EventEmitter {
     const deleted = await this.results.remove(this.results.items.filter(x => (x.reviewId === id || x.groupId === id)).map(x => x.id));
     if (deleted.failed.length) throw new Error('Some review files could not be deleted. Try again.');
     this.items = this.items.filter(x => x.id !== id); this.save();
-  }
-  brief(id, imageGuidance = 'Use your own image generation capability first. Use Meshy only if your image generator is unavailable or fails.') {
-    const item = this.get(id);
-    const shots = this.results.items.filter(x => (x.reviewId === id || x.groupId === id) && x.kind === 'screenshot');
-    return `Review this page and generate a visual redesign concept: ${item.url}\n${item.brief}\nReference screenshots (read these first):\n${shots.map(x => this.results.path(x.id)).join('\n')}\n${imageGuidance}\nShow the preview in Results for the user to review before implementing a substantial redesign. Do not generate a 3D model for a web page.\nCall dock_tools with connection "dock". Save your generated concept and verification report with dock/save_result, groupId "${item.id}". Use dock/notify when ready. Keep the project’s voice and the shared web design checklist.\nAutomated findings: ${item.issues ?? 'Review still running'}. Call dock/review_details with id "${item.id}" for the full report.`;
   }
   stop() { this.stopping = true; if (this.window && !this.window.isDestroyed()) this.window.destroy(); }
 }

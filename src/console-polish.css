@@ -124,7 +124,7 @@ input.console-name { color:var(--accent-pink); font-weight:550 }
 .result-pagination { justify-content:center; margin-top:auto; padding:24px 0 4px; width:100% }
 .result-filters :is(input,select,button) { min-height:40px; margin:0; align-self:center }
 .result-filters button { white-space:nowrap; display:inline-flex; align-items:center; justify-content:center }
-.surface,.quota-card,.ledger-panel,.integration-card,.review-row,.inbox-item { background:radial-gradient(ellipse at 0 0,#89b4ff0a,transparent 55%),radial-gradient(ellipse at 100% 0,#f19cda0a,transparent 60%),#090a11; border-color:#3a334b }
+.surface,.quota-card,.ledger-panel,.integration-card { background:radial-gradient(ellipse at 0 0,#89b4ff0a,transparent 55%),radial-gradient(ellipse at 100% 0,#f19cda0a,transparent 60%),#090a11; border-color:#3a334b }
 .settings-layout .surface,.tool-card,.response-panel { background:radial-gradient(ellipse at 0 0,#89b4ff0a,transparent 55%),radial-gradient(ellipse at 100% 0,#f19cda0a,transparent 60%),#090a11; border-color:#3a334b }
 .page-heading h1 { color:#eadff2 }
 .page-heading h1::after { content:""; display:block; width:44px; height:2px; margin-top:12px; border-radius:2px; background:linear-gradient(90deg,var(--accent-blue),var(--accent-pink)) }
@@ -138,9 +138,9 @@ input.console-name { color:var(--accent-pink); font-weight:550 }
 .secondary.danger { color:#ffb9cb; border-color:#7e4155 }
 .toggle-row input:checked { background:linear-gradient(115deg,var(--accent-blue),var(--accent-pink)); border-color:#b7a0d1 }
 .meter>span { background:linear-gradient(90deg,var(--accent-blue),var(--accent-pink)) }
-.wb-dialog summary,.review-row h2 { color:#dbc1ed }
+.wb-dialog summary { color:#dbc1ed }
 input:not([type=checkbox]):focus-visible,textarea:focus-visible,select:focus-visible { border-color:var(--accent-pink)!important; box-shadow:0 0 0 2px #a68fd63b }
-.result-card:hover,.review-row:hover { border-color:#9d88ba }
+.result-card:hover { border-color:#9d88ba }
 .result-console-group { margin-bottom:32px }
 .result-console-heading { display:flex; align-items:baseline; flex-wrap:wrap; gap:12px; margin-bottom:12px }
 .result-console-heading h2 { font-size:19px; color:var(--accent-pink); margin:0; overflow-wrap:anywhere }
@@ -182,9 +182,6 @@ button:focus-visible { outline:2px solid var(--accent-pink); outline-offset:2px 
   .page-heading { flex-wrap:wrap }
   .form-pair { grid-template-columns:minmax(0,1fr) }
   .console-chooser .form-pair { gap:12px }
-  .inbox-item { display:grid; grid-template-columns:8px minmax(0,1fr); align-items:start }
-  .inbox-item .inbox-dot { margin-top:6px }
-  .inbox-actions { grid-column:2; margin-left:0 }
 }
 #one-off-console-form>.form-pair { margin-top:18px }
 @media(prefers-reduced-motion:reduce) {

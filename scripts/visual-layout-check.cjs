@@ -50,14 +50,12 @@ const reports = [], browsers = new Set(), overflowProblems = [];
       else if (method === 'session.acknowledge') {
         const session = state.sessions.find(x => x.id === payload);
         if (session && ['ready', 'attention'].includes(session.state)) session.state = 'open';
-        for (const item of state.workbench.inbox) if (item.sessionId === payload && ['ready', 'question'].includes(item.kind)) item.read = true;
       }
       else if (method === 'session.models') value = [];
       else if (method === 'workbench.results.preview') value = { image: preview };
       else if (method === 'workbench.results.seen') { state.workbench.results.forEach(x => { if (payload.includes(x.id)) x.seenAt = 1; }); state.workbench.unreadResults = new Set(state.workbench.results.filter(x => !x.seenAt).map(x => x.groupId || x.id)).size; }
-      else if (method === 'workbench.inbox.update') { if (payload.action === 'clear-all') state.workbench.inbox = []; }
       else if (!['session.resize', 'session.input'].includes(method)) throw Error('Unexpected fixture call: ' + method);
-      reads++; return { ok: true, value, state: ['session.layout', 'session.acknowledge', 'settings', 'mode', 'agents.install', 'setup.complete', 'workbench.results.seen', 'workbench.inbox.update'].includes(method) ? state : null };
+      reads++; return { ok: true, value, state: ['session.layout', 'session.acknowledge', 'settings', 'mode', 'agents.install', 'setup.complete', 'workbench.results.seen'].includes(method) ? state : null };
     });
     await context.addInitScript(() => {
       let changed;
@@ -113,9 +111,8 @@ const reports = [], browsers = new Set(), overflowProblems = [];
     const plus = page.locator('#consoles-page .session-card:not([hidden]) [data-action=new]').first();
     await plus.click({ button: 'right' }); await capture('chooser');
     assert.equal(await page.locator('#one-off-console-form [name=name]').isVisible(), true); await page.keyboard.press('Escape');
-    for (const view of ['results', 'inbox', 'reviews', 'usage', 'api', 'vault', 'tools', 'instructions', 'settings']) {
+    for (const view of ['results', 'usage', 'api', 'vault', 'tools', 'instructions', 'settings']) {
       await page.locator(`.sidebar [data-page=${view}]`).click(); await capture(view);
-      if (view === 'inbox') { await page.locator('[data-wb=clear-all]').click(); assert.equal(await page.locator('.inbox-item').count(), 0); }
       if (view === 'results') {
         assert.equal(await page.locator('#results-count').innerText(), '2');
         const pager = await page.locator('.result-pagination').evaluate(el => { const r = el.getBoundingClientRect(), c = document.querySelector('#content').getBoundingClientRect(); return Math.abs((r.left + r.right) / 2 - (c.left + c.right) / 2); });
@@ -169,14 +166,11 @@ const reports = [], browsers = new Set(), overflowProblems = [];
     const [first, second] = state.sessions;
     async function readyFor(session) {
       session.state = 'ready';
-      state.workbench.inbox.unshift({ id: 'completion-' + state.workbench.inbox.length, sessionId: session.id, title: session.name + ' is ready', kind: 'ready', at: Date.now(), read: false });
       await page.evaluate(next => window.fixtureState(next), state);
     }
     async function checkAcknowledged(session, other) {
       await page.waitForFunction(() => document.querySelector('#ready-count').textContent === '1');
       assert.equal(session.state, 'open'); assert.equal(other.state, 'ready');
-      assert.ok(state.workbench.inbox.filter(x => x.sessionId === session.id).every(x => x.read));
-      assert.ok(state.workbench.inbox.some(x => x.sessionId === other.id && !x.read));
       assert.equal(await page.locator('#results-count').innerText(), '2');
     }
     await readyFor(first); await readyFor(second);
@@ -194,7 +188,7 @@ const reports = [], browsers = new Set(), overflowProblems = [];
     assert.equal(await page.locator(`#terminal-tabs [data-session="${first.id}"] .console-ready-badge`).isVisible(), false);
     await capture('notification-fullscreen-cleared');
     assert.deepEqual(errors, []); reports.push({ profile: name, browser: browser.version(), viewport: options.viewport, emulated: name !== 'pc', captures, accessibility, calls: reads });
-    console.log('PASS ' + name + ' view layouts, dialogs, grouped results, inbox clearing, fullscreen, reduced motion and console notification acknowledgment');
+    console.log('PASS ' + name + ' view layouts, dialogs, grouped results, fullscreen, reduced motion and console notification acknowledgment');
     await browser.close();
     browsers.delete(browser);
   }

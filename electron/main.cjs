@@ -192,8 +192,8 @@ app.whenReady().then(async () => {
   sessions.on('message-usage', ({ session, messages }) => { try { messageUsage.record({ ...session, projectName: projects.get(session.projectId)?.name || '' }, messages); } catch { storageError = 'Message usage could not be saved.'; } });
   turns = new Turns(workbench.results, { enabled: settings.autoSaveResults !== false, getSession: id => sessions.items.get(id), getSecrets: () => vault.list().flatMap(x => { try { return [vault.get(x.id)]; } catch { return []; } }) });
   workbench.turns = turns;
-  turns.on('tracking-error', ({ owner, message }) => workbench.inbox.add({ title: 'Code capture needs attention', message, sessionId: owner, kind: 'error' }));
-  mobile = new MobileCompanion(root, safeStorage, { sessions, results: workbench.results, inbox: workbench.inbox, getUsage: () => ({ limits, summary: ledgerSummary(ledger || []) }), getDefaults: () => ({ ...settings.consoleDefaults, permissions: settings.agentPermissions }), getModels: () => account.models(), getKey: id => vault.get(id), networkScript: app.isPackaged ? path.join(process.resourcesPath, 'mobile-network.ps1') : path.join(__dirname, 'mobile-network.ps1'), program: process.execPath, testMode });
+  turns.on('tracking-error', ({ owner, message }) => workbench.alerts.send({ title: 'Code capture needs attention', message, sessionId: owner, kind: 'error' }));
+  mobile = new MobileCompanion(root, safeStorage, { sessions, results: workbench.results, alerts: workbench.alerts, getUsage: () => ({ limits, summary: ledgerSummary(ledger || []) }), getDefaults: () => ({ ...settings.consoleDefaults, permissions: settings.agentPermissions }), getModels: () => account.models(), getKey: id => vault.get(id), networkScript: app.isPackaged ? path.join(process.resourcesPath, 'mobile-network.ps1') : path.join(__dirname, 'mobile-network.ps1'), program: process.execPath, testMode });
   mobile.on('changed', publish);
   mobile.on('pairing-requested', () => { if (settings.notifications && !testMode) notifications?.show({ title: 'Approve a phone?', message: 'Compare the codes on your PC and phone before allowing access.', destination: 'phone-pairing' }); });
   if (!testMode) mobile.start().catch(() => publish());
@@ -216,12 +216,12 @@ app.whenReady().then(async () => {
     publish();
   });
   sessions.on('attention', session => {
-    workbench.inbox.add({ key: `${session.id}:${session.updatedAt}:${session.state}`, title: session.name + (session.state === 'ready' ? ' is ready' : ' needs you'), sessionId: session.id, kind: session.state === 'ready' ? 'ready' : 'question' });
+    workbench.alerts.send({ key: `${session.id}:${session.updatedAt}:${session.state}`, title: session.name + (session.state === 'ready' ? ' is ready' : ' needs you'), sessionId: session.id, kind: session.state === 'ready' ? 'ready' : 'question' });
   });
   const seenExits = new Set();
   sessions.on('changed', () => {
     for (const item of sessions.list()) if (!item.alive && !item.dismissed && (item.restoreError || item.exitCode) && !seenExits.has(item.id)) {
-      seenExits.add(item.id); workbench.inbox.add({ key: 'exit:' + item.id, title: item.name + ' stopped', message: item.restoreError || `Exit code ${item.exitCode}`, sessionId: item.id, kind: 'error' });
+      seenExits.add(item.id); workbench.alerts.send({ key: 'exit:' + item.id, title: item.name + ' stopped', message: item.restoreError || `Exit code ${item.exitCode}`, sessionId: item.id, kind: 'error' });
     }
   });
   workspace = new Workspace(root, sessions, safeStorage, { enabled: settings.restoreConsoles, onError: message => { workspaceError = message; publish(); } });
@@ -258,7 +258,7 @@ app.whenReady().then(async () => {
   }
   notifications = new DockNotifications({ Notification, getTray: () => tray, getWindow: () => window, getMode: () => modeTarget || mode,
     setMode, reveal: revealWindow, publish, getSessions: () => sessions.list(), icon: iconFile });
-  workbench.inbox.on('added', item => { if (settings.notifications && !testMode) notifications.show(item); });
+  workbench.alerts.on('notification', item => { if (settings.notifications && !testMode) notifications.show(item); });
   shortcutAvailable = !testMode && globalShortcut.register('CommandOrControl+Alt+Space', () => trayHidden ? revealWindow() : setMode((modeTarget || mode) === 'hud' ? 'dashboard' : 'hud'));
   for (let i = 1; !testMode && i <= 9; i++) globalShortcut.register(`CommandOrControl+Alt+${i}`, () => {
     const item = sessions.list().find(x => (x.alive || x.restoreError) && consoleCells(x, sessions.grid).includes(i)); if (!item) return;
@@ -420,7 +420,7 @@ app.whenReady().then(async () => {
         case 'session.input': sessions.write(payload?.id, payload?.data); break;
         case 'session.resize': sessions.resize(payload?.id, payload?.cols, payload?.rows); break;
         case 'session.buffer': return { ok: true, value: sessions.buffer(payload) };
-        case 'session.acknowledge': sessions.acknowledge(payload); workbench.inbox.acknowledgeSession(payload); break;
+        case 'session.acknowledge': sessions.acknowledge(payload); break;
         case 'session.end': {
           const item = sessions.list().find(x => x.id === payload);
           if (!item) throw new Error('Console not found.');
@@ -507,7 +507,7 @@ app.whenReady().then(async () => {
             publish();
           } }); }
           finally { try { await turns.finish(apiOwner); } finally { turns.virtual.delete(apiOwner); apiBusy = false; updatePower(); } }
-          workbench.inbox.add({ title: result.error || result.entry?.status !== 'completed' ? 'API request needs attention' : 'API response ready', message: `${profile.name} · ${payload.model}`, kind: result.error || result.entry?.status !== 'completed' ? 'error' : 'ready', destination: 'usage' });
+          workbench.alerts.send({ title: result.error || result.entry?.status !== 'completed' ? 'API request needs attention' : 'API response ready', message: `${profile.name} · ${payload.model}`, kind: result.error || result.entry?.status !== 'completed' ? 'error' : 'ready', destination: 'usage' });
           publish(); return { ok: true, value: result };
         }
         case 'ledger.export': {

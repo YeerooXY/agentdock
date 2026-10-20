@@ -9,7 +9,7 @@ Choose **Tools → Screen previews** on the PC. **Preview vague design requests*
 | Agent's own generator first | No new Dock key | The agent uses its image tool and saves the image individually in Results. Meshy is the fallback if the tool is unavailable or fails. |
 | OpenAI | Saved API key and image model | Direct Images edit request using the reference screenshot. Default model: `gpt-image-2.5-flare`. API billing is separate from CLI subscriptions. |
 | Gemini / Nano Banana | Saved Gemini API key and image model | Direct Interactions request with the screenshot; `store:false`. Default model: `gemini-nano-banana-2.1`. |
-| Meshy | Meshy CLI sign-in from Website review | Uses the existing image-to-image job flow and Meshy credits. Its CLI sign-in is separate from the Meshy MCP API key. |
+| Meshy | Tools → Screen previews → Meshy CLI sign-in | Uses the existing image-to-image job flow and Meshy credits. Its CLI sign-in is separate from the Meshy MCP API key. |
 | Compatible image API | Model, endpoint, optional saved key | Requires the OpenAI Images **JSON edit** request shape and a base64 image response. HTTPS is required, except loopback HTTP for local services. Multipart-only or URL-only APIs need an adapter. |
 
 Add credentials directly in **Keys**, then select their names here. The model field is editable because availability depends on the provider and account. Saving preferences makes no provider call. An agent can prepare an `image` setup request; **Apply settings** in Tools commits your choice.
@@ -18,7 +18,7 @@ Provider contracts checked on 18 October 2026: [OpenAI image edits](https://deve
 
 ## Generate and review
 
-For a website, run **Website review**, open the completed review and choose **Generate preview**. It sends the saved screen and brief to your selected API or Meshy. The finished image is saved as its own Results item, with an Inbox link. **Change generator** returns to settings. **Draft in console** pastes a brief for you to review and send through an idle Codex or Claude console.
+Ask your agent to review a website and generate a preview. It starts `dock/review_page`, reads `dock/review_details`, and sends a saved screenshot and brief to the selected generator through `dock/generate_preview`. Completed screenshots, findings and previews appear in Results. There is no separate website-review page or notification inbox. Agents can use `dock/list_reviews` to find earlier work, `dock/review_check` to record checklist evidence, and `dock/delete_review` to remove a review and its saved files.
 
 Agents can use any saved PNG, JPEG or WebP screenshot from their project, including an application screen:
 
@@ -40,6 +40,6 @@ API references are limited to 8 MB, response bodies to 30 MB and returned images
 
 **Usage → Image generation** lists provider-reported input/output tokens or Meshy credits. Missing values say **Unavailable**; zero stays zero. Image spending is separate from text API cost estimates and is not converted into invented dollar amounts. Native agent image-tool usage is only visible when that agent exposes it independently.
 
-Delete an image from **Results** to recycle its saved copy. **Remove job** in Usage or Website review removes that job's prompt and temporary files; the saved image and usage/request-ID records remain. Those records prevent a repeated tool call from creating another charge. They contain identifiers, timestamps, status, provider/model, project path and reported counters, not image bytes or prompts. To erase that metadata too, quit Dock and remove `concept-usage.json` from its profile; doing so also removes repeat-request protection for deleted jobs. Removing local copies does not delete provider-side records.
+Delete an image from **Results** to recycle its saved copy. **Remove job** in Usage removes that job's prompt and temporary files; the saved image and usage/request-ID records remain. Those records prevent a repeated tool call from creating another charge. They contain identifiers, timestamps, status, provider/model, project path and reported counters, not image bytes or prompts. To erase that metadata too, quit Dock and remove `concept-usage.json` from its profile; doing so also removes repeat-request protection for deleted jobs. Removing local copies does not delete provider-side records.
 
 These controls are in the desktop app. Existing Android Results can display the saved images; Android does not yet include generator settings or a project-management page.

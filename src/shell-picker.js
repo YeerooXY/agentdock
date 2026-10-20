@@ -38,6 +38,11 @@ export function shellPicker(select, mark) {
     if (select.disabled) details.open = false;
   }
   summary.addEventListener('click', event => { if (select.disabled) event.preventDefault(); });
+  // WebKit can move focus to the dialog on mouse-down, closing this list
+  // before the option receives its click. Preserve focus until selection.
+  options.addEventListener('mousedown', event => {
+    if (event.button === 0 && event.target.closest('button[data-shell-index]')) event.preventDefault();
+  });
   options.addEventListener('click', event => {
     const button = event.target.closest('button[data-shell-index]');
     if (!button || button.disabled || select.disabled) return;
