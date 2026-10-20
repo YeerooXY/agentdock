@@ -125,6 +125,7 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
   bool keyboardWasVisible = false;
   bool sending = false;
   bool attaching = false;
+  bool chatMode = false;
   static const media = MethodChannel('agentdock/media');
   bool fitWidth = false;
   _CommandTarget? stagedCommandTarget;
@@ -176,6 +177,11 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
     if (!terminalFocus.hasFocus) stopTerminalTyping();
   }
 
+  void enterChatMode() {
+    if (!chatMode) setState(() => chatMode = true);
+    composerFocus.requestFocus();
+  }
+
   void draftChanged() {
     if (restoringDraft) return;
     if (draftKey != null) {
@@ -215,6 +221,7 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
                 .clamp(0, value.length),
       ),
     );
+    chatMode = value.isNotEmpty;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted && draftKey == key && composerScroll.hasClients) {
         composerScroll.jumpTo(
@@ -804,6 +811,7 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
   }
 
   Widget terminalContents(Map<String, dynamic> session, ConsoleScreen? view) {
+    final inChat = chatMode || composer.text.isNotEmpty;
     final compactControls =
         MediaQuery.sizeOf(context).width < 420 &&
         MediaQuery.textScalerOf(context).scale(14) > 20;
@@ -913,156 +921,179 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
             ),
           ),
         ),
-        Row(
-          children: [
-            Expanded(
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  children: [
-                    TextButton.icon(
-                      onPressed: c.connected && !sending
-                          ? () => liveControls('Model')
-                          : null,
-                      icon: const Icon(Icons.model_training_outlined),
-                      label: const Text('Model'),
-                    ),
-                    if (['claude', 'codex'].contains(provider))
-                      TextButton.icon(
-                        onPressed: c.connected && !sending
-                            ? () => liveControls('Effort')
-                            : null,
-                        icon: const Icon(Icons.speed),
-                        label: const Text('Effort'),
-                      ),
-                  ],
-                ),
-              ),
-            ),
-            IconButton(
-              tooltip: 'Console links',
-              onPressed: view == null ? null : () => showConsoleLinks(session),
-              icon: const Icon(Icons.link, color: blue),
-            ),
-            IconButton(
-              tooltip: 'Type directly in terminal',
-              onPressed: c.connected ? startTerminalTyping : null,
-              icon: const Icon(Icons.keyboard_alt_outlined, color: pink),
-            ),
-            PopupMenuButton<String>(
-              tooltip: 'Console actions',
-              icon: const Icon(Icons.more_vert, color: blue),
-              onOpened: () {
-                stopTerminalTyping();
-                composerFocus.unfocus();
-              },
-              onSelected: (action) {
-                if (action == 'copy') copyConsole();
-                if (action == 'clear-view') {
-                  c.clearSelectedView();
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Mobile view cleared')),
-                  );
-                }
-                if (action == 'files') pickFile(session);
-                if (action == 'image') pickImage();
-                if (action == 'close') closeConsole(session);
-                if (action == 'model') liveControls('Model');
-                if (action == 'effort') liveControls('Effort');
-              },
-              itemBuilder: (_) => [
-                PopupMenuItem(
-                  value: 'image',
-                  enabled:
-                      c.connected &&
-                      !sending &&
-                      !attaching &&
-                      session['remote'] == null,
-                  child: Text(
-                    attaching ? 'Attaching image\u2026' : 'Attach image',
-                  ),
-                ),
-                if (['claude', 'codex'].contains(provider)) ...[
-                  PopupMenuItem(
-                    value: 'model',
-                    enabled: c.connected && !sending,
-                    child: const Text('Choose model'),
-                  ),
-                  PopupMenuItem(
-                    value: 'effort',
-                    enabled: c.connected && !sending,
-                    child: const Text('Choose effort'),
-                  ),
-                ],
-                PopupMenuItem(
-                  value: 'copy',
-                  enabled: view != null,
-                  child: const Text('Copy text'),
-                ),
-                PopupMenuItem(
-                  value: 'clear-view',
-                  enabled: view != null,
-                  child: const Text('Clear mobile view'),
-                ),
-                PopupMenuItem(
-                  value: 'files',
-                  enabled: c.connected && !sending,
-                  child: const Text('Files'),
-                ),
-                PopupMenuItem(
-                  value: 'close',
-                  enabled: c.connected && !sending,
-                  child: const Text('Close console'),
-                ),
-              ],
-            ),
-          ],
-        ),
-        if (c.inputError.isNotEmpty || c.drafts.error.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Text(
-              c.inputError.isNotEmpty ? c.inputError : c.drafts.error,
-              style: const TextStyle(color: pink, fontSize: 12),
-            ),
-          ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(10, 0, 10, 12),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
+        if (inChat) ...[
+          Row(
             children: [
               Expanded(
-                child: TextField(
-                  controller: composer,
-                  scrollController: composerScroll,
-                  focusNode: composerFocus,
-                  onChanged: (_) => stagedCommandTarget = null,
-                  minLines: 1,
-                  maxLines: 8,
-                  textInputAction: TextInputAction.newline,
-                  autocorrect: false,
-                  enableSuggestions: false,
-                  decoration: InputDecoration(
-                    labelText: 'Command or message',
-                    isDense: true,
-                    suffixIcon: IconButton(
-                      tooltip: 'Choose a file',
-                      onPressed: c.connected && !sending
-                          ? () => pickFile(session)
-                          : null,
-                      icon: const Icon(Icons.attach_file, color: blue),
-                    ),
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      TextButton.icon(
+                        onPressed: c.connected && !sending
+                            ? () => liveControls('Model')
+                            : null,
+                        icon: const Icon(Icons.model_training_outlined),
+                        label: const Text('Model'),
+                      ),
+                      if (['claude', 'codex'].contains(provider))
+                        TextButton.icon(
+                          onPressed: c.connected && !sending
+                              ? () => liveControls('Effort')
+                              : null,
+                          icon: const Icon(Icons.speed),
+                          label: const Text('Effort'),
+                        ),
+                    ],
                   ),
                 ),
               ),
-              const SizedBox(width: 8),
-              DockSendButton(
-                onPressed: c.connected && !sending ? send : null,
-                sending: sending,
+              IconButton(
+                tooltip: 'Console links',
+                onPressed: view == null
+                    ? null
+                    : () => showConsoleLinks(session),
+                icon: const Icon(Icons.link, color: blue),
+              ),
+              IconButton(
+                tooltip: 'Type directly in terminal',
+                onPressed: c.connected ? startTerminalTyping : null,
+                icon: const Icon(Icons.keyboard_alt_outlined, color: pink),
+              ),
+              PopupMenuButton<String>(
+                tooltip: 'Console actions',
+                icon: const Icon(Icons.more_vert, color: blue),
+                onOpened: () {
+                  stopTerminalTyping();
+                  composerFocus.unfocus();
+                },
+                onSelected: (action) {
+                  if (action == 'copy') copyConsole();
+                  if (action == 'clear-view') {
+                    c.clearSelectedView();
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Mobile view cleared')),
+                    );
+                  }
+                  if (action == 'files') pickFile(session);
+                  if (action == 'image') pickImage();
+                  if (action == 'close') closeConsole(session);
+                  if (action == 'model') liveControls('Model');
+                  if (action == 'effort') liveControls('Effort');
+                },
+                itemBuilder: (_) => [
+                  PopupMenuItem(
+                    value: 'image',
+                    enabled:
+                        c.connected &&
+                        !sending &&
+                        !attaching &&
+                        session['remote'] == null,
+                    child: Text(
+                      attaching ? 'Attaching image\u2026' : 'Attach image',
+                    ),
+                  ),
+                  if (['claude', 'codex'].contains(provider)) ...[
+                    PopupMenuItem(
+                      value: 'model',
+                      enabled: c.connected && !sending,
+                      child: const Text('Choose model'),
+                    ),
+                    PopupMenuItem(
+                      value: 'effort',
+                      enabled: c.connected && !sending,
+                      child: const Text('Choose effort'),
+                    ),
+                  ],
+                  PopupMenuItem(
+                    value: 'copy',
+                    enabled: view != null,
+                    child: const Text('Copy text'),
+                  ),
+                  PopupMenuItem(
+                    value: 'clear-view',
+                    enabled: view != null,
+                    child: const Text('Clear mobile view'),
+                  ),
+                  PopupMenuItem(
+                    value: 'files',
+                    enabled: c.connected && !sending,
+                    child: const Text('Files'),
+                  ),
+                  PopupMenuItem(
+                    value: 'close',
+                    enabled: c.connected && !sending,
+                    child: const Text('Close console'),
+                  ),
+                ],
               ),
             ],
           ),
-        ),
+          if (c.inputError.isNotEmpty || c.drafts.error.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Text(
+                c.inputError.isNotEmpty ? c.inputError : c.drafts.error,
+                style: const TextStyle(color: pink, fontSize: 12),
+              ),
+            ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(10, 0, 10, 12),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: composer,
+                    scrollController: composerScroll,
+                    focusNode: composerFocus,
+                    onChanged: (_) => stagedCommandTarget = null,
+                    minLines: 1,
+                    maxLines: 8,
+                    textInputAction: TextInputAction.newline,
+                    autocorrect: false,
+                    enableSuggestions: false,
+                    decoration: InputDecoration(
+                      labelText: 'Command or message',
+                      isDense: true,
+                      suffixIcon: IconButton(
+                        tooltip: 'Choose a file',
+                        onPressed: c.connected && !sending
+                            ? () => pickFile(session)
+                            : null,
+                        icon: const Icon(Icons.attach_file, color: blue),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                DockSendButton(
+                  onPressed: c.connected && !sending ? send : null,
+                  sending: sending,
+                ),
+              ],
+            ),
+          ),
+        ] else
+          Padding(
+            padding: const EdgeInsets.fromLTRB(10, 4, 10, 8),
+            child: Semantics(
+              button: true,
+              label: 'Enter chat mode',
+              child: InkWell(
+                onTap: enterChatMode,
+                borderRadius: BorderRadius.circular(8),
+                child: Container(
+                  height: 12,
+                  decoration: BoxDecoration(
+                    border: Border(
+                      top: BorderSide(color: blue.withValues(alpha: .75)),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
       ],
     );
   }
