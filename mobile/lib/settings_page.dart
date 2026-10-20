@@ -183,13 +183,7 @@ class _SettingsPageState extends State<SettingsPage> {
                 const Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      'Claude',
-                      style: TextStyle(
-                        color: Color(0xffe6a187),
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
+                    AccountProviderHeader(provider: 'claude', name: 'Claude'),
                     SizedBox(height: 8),
                     Text(
                       'Waiting for subscription usage. Claude reports its limits after an AI response. Then refresh here.',

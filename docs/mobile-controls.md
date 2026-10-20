@@ -1,6 +1,6 @@
 # Mobile terminal controls
 
-Available in Android **0.6.0-preview.13**. Reading, copying, drafts and command shortcuts work with older PC hosts. Agent selection, file suggestions and closing consoles require **Windows preview 13**. Install over your current app to preserve saved computers. Installing the phone update does not restart your PC.
+Available in Android **0.6.0-preview.14**. Reading, copying, drafts, remaining-allowance meters and command shortcuts work with older PC hosts. Agent selection, file suggestions and closing consoles require **Windows preview 13 or later**. Install over your current app to preserve saved computers. Installing the phone update does not restart your PC.
 
 ## Reading and copying
 
@@ -16,7 +16,7 @@ The message box and keyboard button start typing. Touching the terminal returns 
 
 ## Consoles and saved drafts
 
-Tap the **chat name and arrow** to switch consoles. Agent labels use logo-inspired accents; monochrome brands keep neutral colors, with their names visible.
+Tap the **chat name and arrow** to switch consoles. Agent labels use distinct accents and readable names. OpenAI/Codex, Cursor, OpenCode and Cline also show official icons. Other providers use colored names or initials while logo permission or suitable official artwork remains unverified. See [provider assets](provider-brand-assets.md).
 
 Choose **New console → Agent → Claude Code → Open** to start Claude once. Only installed agents appear. The folder is shown before opening and comes from the PC's configured default. Agent selection does not change that default or reuse another provider's model. The existing Claude trial console may have a different folder because it was launched there explicitly.
 
@@ -50,6 +50,8 @@ Commands were checked against the providers' documentation on 20 October 2026: [
 Current Claude Code documentation says `/model` can save a default for new sessions. Press **s** on a picker row to change only the current session; use the keyboard button to send that key. Check the installed CLI's prompt before confirming. [Claude model command](https://code.claude.com/docs/en/commands).
 
 Claude Pro/Max subscription meters appear after Claude supplies usage in a status-line callback, normally after the session's first AI response. Signing in alone does not populate the 5-hour or weekly percentages. Refresh **Usage** after a response. Until then, Dock shows a waiting message rather than inventing a value. [Claude status-line usage](https://code.claude.com/docs/en/statusline#rate-limit-usage).
+
+From preview 14, **Usage** shows the allowance remaining: a reported 38% used becomes **62% left**, with a bar filled to 62%. Each window stays separate. Missing or invalid values remain **Unknown**; stale readings and passed reset times keep their warnings. A reset timestamp alone never refills a bar. API dollar figures still show estimated spending. Windows preview 14 uses the same remaining values in Usage and the corner HUD. Icons are bundled locally and require no image-service requests.
 
 Shortcuts use the console's configured provider. Shells, custom commands and other providers keep ordinary terminal input without guessed AI shortcuts. A staged shortcut is bound to its PC, console, provider and connection generation. If these change, select the shortcut again. Nothing is automatically resent after a disconnect.
 

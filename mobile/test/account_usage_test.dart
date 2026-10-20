@@ -41,6 +41,7 @@ Map<String, dynamic> sampleAccount({String name = 'Codex', dynamic used = 38}) {
   final now = DateTime.now().millisecondsSinceEpoch;
   return {
     'name': name,
+    'provider': 'codex',
     'observedAt': now - 21 * 60000,
     'windows': [
       {'minutes': 300, 'usedPercent': used, 'resetsAt': now + 3600000},
@@ -75,7 +76,7 @@ void main() {
     expect(find.textContaining('Connect to your PC'), findsOneWidget);
     client.reconnect();
     await tester.pumpAndSettle();
-    expect(find.text('38% used'), findsOneWidget);
+    expect(find.text('62% left'), findsOneWidget);
     expect(find.textContaining('Connect to your PC'), findsNothing);
     expect(client.reads, 2);
   });
@@ -88,8 +89,8 @@ void main() {
       await showUsage(tester, client);
       expect(find.text('5 hours'), findsOneWidget);
       expect(find.text('Weekly'), findsOneWidget);
-      expect(find.text('38% used'), findsOneWidget);
-      expect(find.text('Unknown% used'), findsNothing);
+      expect(find.text('62% left'), findsOneWidget);
+      expect(find.text('Unknown% left'), findsNothing);
       expect(find.textContaining('Stale · Updated'), findsOneWidget);
       expect(find.text('Reset time unavailable'), findsOneWidget);
       final bars = tester
@@ -97,10 +98,13 @@ void main() {
             find.byKey(const ValueKey('usage-bar')),
           )
           .toList();
-      expect(bars.map((bar) => bar.widthFactor), [.38, 0]);
+      expect(bars.map((bar) => bar.widthFactor), [.62, 0]);
       expect(find.byType(CircularProgressIndicator), findsNothing);
       final semantics = tester.ensureSemantics();
-      expect(find.bySemanticsLabel('Weekly account usage'), findsOneWidget);
+      expect(
+        find.bySemanticsLabel('Weekly allowance remaining'),
+        findsOneWidget,
+      );
       semantics.dispose();
     },
   );
@@ -115,14 +119,14 @@ void main() {
       client.fail = true;
       await tester.tap(find.byTooltip('Refresh usage'));
       await tester.pumpAndSettle();
-      expect(find.text('38% used'), findsOneWidget);
+      expect(find.text('62% left'), findsOneWidget);
       expect(find.textContaining('Showing previous data.'), findsOneWidget);
       client.fail = false;
       client.usage['limits'] = [sampleAccount(used: 61)];
       await tester.drag(find.byType(ListView).first, const Offset(0, 350));
       await tester.pumpAndSettle();
       expect(client.reads, 3);
-      expect(find.text('61% used'), findsOneWidget);
+      expect(find.text('39% left'), findsOneWidget);
       expect(find.textContaining('Showing previous data.'), findsNothing);
     },
   );
@@ -220,7 +224,7 @@ void main() {
         ),
       ),
     );
-    expect(find.text('100% used'), findsOneWidget);
+    expect(find.text('0% left'), findsOneWidget);
     expect(find.text('Reset time passed · refresh to check'), findsOneWidget);
   });
 }

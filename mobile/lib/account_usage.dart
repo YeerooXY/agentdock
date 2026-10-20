@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'dock_style.dart';
+import 'agent_identity.dart';
 
 DateTime? usageDate(dynamic value) {
   if (value is! num || !value.isFinite || value <= 0) return null;
@@ -18,6 +19,38 @@ double? usagePercent(dynamic value) =>
 
 String percentLabel(double value) =>
     value.toStringAsFixed(value == value.roundToDouble() ? 0 : 1);
+
+Color accountColor(String provider) =>
+    ['codex', 'openai'].contains(provider.toLowerCase())
+    ? blue
+    : AgentIdentity.of(provider).color;
+
+class AccountProviderHeader extends StatelessWidget {
+  final String provider, name;
+  const AccountProviderHeader({
+    super.key,
+    required this.provider,
+    required this.name,
+  });
+
+  @override
+  Widget build(BuildContext context) => Row(
+    children: [
+      AgentMark(provider, size: 32),
+      const SizedBox(width: 12),
+      Expanded(
+        child: Text(
+          name,
+          style: TextStyle(
+            fontSize: 20,
+            color: accountColor(provider),
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ),
+    ],
+  );
+}
 
 String windowLabel(dynamic minutes) => switch (minutes) {
   300 => '5 hours',
@@ -42,6 +75,8 @@ class AccountUsageCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final provider = '${account['provider'] ?? ''}';
+    final accent = accountColor(provider);
     final now = DateTime.now(), observed = usageDate(account['observedAt']);
     final age = observed == null ? null : now.difference(observed);
     final stale = age != null && age > const Duration(minutes: 10);
@@ -50,18 +85,18 @@ class AccountUsageCard extends StatelessWidget {
             .whereType<Map>()
             .toList();
     return DockFrame(
+      background: Color.alphaBlend(
+        accent.withValues(alpha: .04),
+        const Color(0xff0b0c14),
+      ),
       child: Padding(
         padding: const EdgeInsets.all(18),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              '${account['name'] ?? account['provider'] ?? 'Account'}',
-              style: const TextStyle(
-                fontSize: 20,
-                color: blue,
-                fontWeight: FontWeight.w600,
-              ),
+            AccountProviderHeader(
+              provider: provider,
+              name: '${account['name'] ?? account['provider'] ?? 'Account'}',
             ),
             const SizedBox(height: 4),
             Text(
@@ -87,7 +122,7 @@ class AccountUsageCard extends StatelessWidget {
             for (final window in windows)
               Padding(
                 padding: const EdgeInsets.only(top: 20),
-                child: UsageWindow(window: window),
+                child: UsageWindow(window: window, accent: accent),
               ),
           ],
         ),
@@ -98,14 +133,21 @@ class AccountUsageCard extends StatelessWidget {
 
 class UsageWindow extends StatelessWidget {
   final Map<dynamic, dynamic> window;
-  const UsageWindow({super.key, required this.window});
+  final Color accent;
+  const UsageWindow({super.key, required this.window, this.accent = blue});
 
   @override
   Widget build(BuildContext context) {
     final used = usagePercent(window['usedPercent']);
+    final remaining = used == null ? null : 100 - used;
     final label = windowLabel(window['minutes']);
     final reset = usageDate(window['resetsAt']);
-    final amount = used == null ? 'Unknown' : '${percentLabel(used)}% used';
+    final amount = remaining == null
+        ? 'Unknown'
+        : '${percentLabel(remaining)}% left';
+    final color = remaining != null && remaining <= 10
+        ? const Color(0xffefbc7a)
+        : accent;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -119,17 +161,14 @@ class UsageWindow extends StatelessWidget {
               Text(label, style: const TextStyle(fontWeight: FontWeight.w500)),
               Text(
                 amount,
-                style: const TextStyle(
-                  color: pink,
-                  fontWeight: FontWeight.w600,
-                ),
+                style: TextStyle(color: color, fontWeight: FontWeight.w600),
               ),
             ],
           ),
         ),
         const SizedBox(height: 10),
         Semantics(
-          label: '$label account usage',
+          label: '$label allowance remaining',
           value: amount,
           child: ExcludeSemantics(
             child: ClipRRect(
@@ -141,10 +180,14 @@ class UsageWindow extends StatelessWidget {
                 alignment: AlignmentDirectional.centerStart,
                 child: FractionallySizedBox(
                   key: const ValueKey('usage-bar'),
-                  widthFactor: (used ?? 0) / 100,
+                  widthFactor: (remaining ?? 0) / 100,
                   heightFactor: 1,
-                  child: const DecoratedBox(
-                    decoration: BoxDecoration(gradient: dockGradient),
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [color.withValues(alpha: .8), color],
+                      ),
+                    ),
                   ),
                 ),
               ),

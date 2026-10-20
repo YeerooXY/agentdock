@@ -1,0 +1,19 @@
+.account-mark{display:inline-flex;align-items:center;justify-content:center;flex:none;width:32px;height:32px;border-radius:7px;background:color-mix(in srgb,var(--provider-accent,#9cbfff) 10%,transparent);color:var(--provider-accent,#9cbfff);font-size:18px;font-weight:650;line-height:1}
+.account-mark img{display:block;width:28px;height:28px;object-fit:contain}
+.quota-card{--provider-accent:#9cbfff;border-color:color-mix(in srgb,var(--provider-accent) 28%,#232638)}
+.usage-grid .quota-card{background:linear-gradient(130deg,color-mix(in srgb,var(--provider-accent) 5%,#0b0d14),#0b0d14 75%)}
+.quota-heading{gap:10px}
+.quota-heading>strong{min-width:0;overflow-wrap:anywhere;color:var(--provider-accent)}
+.quota-window strong{color:var(--provider-accent)}
+.quota-window .meter>span{background:linear-gradient(90deg,color-mix(in srgb,var(--provider-accent) 80%,#232638),var(--provider-accent))}
+.quota-window .meter.warning>span{background:#efbc7a}
+.quota-window .meter.unknown{background:repeating-linear-gradient(135deg,#232638,#232638 5px,#303448 5px,#303448 7px)}
+.hud-usage .hud-account{display:flex;align-items:center;gap:7px;letter-spacing:0;font-size:10px;color:var(--provider-accent)}
+.hud-usage .hud-account>small{margin-left:auto}
+.hud-account .account-mark{width:22px;height:22px;font-size:13px}
+.hud-account .account-mark img{width:20px;height:20px}
+.hud-usage b{color:var(--provider-accent)}
+.ledger-provider{display:flex;align-items:center;gap:7px}
+.ledger-provider .account-mark{width:22px;height:22px;font-size:13px}
+.ledger-provider .account-mark img{width:20px;height:20px}
+.usage-stats .stat>span:first-child,.usage-stats .stat-description{color:#b3bad0;font-size:11px;letter-spacing:0;white-space:normal}

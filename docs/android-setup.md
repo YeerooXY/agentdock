@@ -48,6 +48,8 @@ On the phone, tap **Updates** on the connection screen, **App updates** above yo
 
 Android preview 13 adds **Wrap text**, text selection and copying, saved drafts per console, colored agent labels, and a console dropdown on the chat name. These work with older PC hosts. Choosing an agent for a new console, browsing filenames and closing a console require **Windows preview 13**. Console links and model/command shortcuts remain available. See [mobile terminal controls](mobile-controls.md).
 
+Preview 14 changes subscription meters to **percent left**, with provider colors and locally bundled icons where reviewed brand assets are available. A 62% bar means 62% remains. Unknown and stale values stay explicit; API cost still means estimated spending. This Android display change works with older PC hosts. Install Windows preview 14 separately when you want the same display in desktop Usage and the HUD. [Provider asset notes](provider-brand-assets.md).
+
 On the PC, use **Settings → Updates** to check, download and install a newer Windows build. The PC verifies the download's size and SHA-256 before offering installation. Update both devices when a release asks for matching versions. Checks are manual and contact GitHub; no terminal content or keys are sent. Preview builds offer newer previews as well as stable releases.
 
 ## Direct internet, without a relay

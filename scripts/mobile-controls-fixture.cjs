@@ -77,7 +77,20 @@ results.items = []; results.unreadGroups = () => 0; results.list = () => [];
 inbox.items = [];
 const mobile = new MobileCompanion(root, storage, {
   sessions, results, inbox, testMode: true,
-  getDefaults: () => ({ provider: 'codex', cwd: root }), getUsage: () => ({ limits: [], summary: {} })
+  getDefaults: () => ({ provider: 'codex', cwd: root }),
+  getUsage: () => ({
+    limits: process.env.DOCK_USAGE_FIXTURE === '1' ? [
+      { provider: 'codex', name: 'Codex', observedAt: Date.now(), windows: [
+        { minutes: 300, usedPercent: 38, resetsAt: Date.now() + 3600000 },
+        { minutes: 10080, usedPercent: 0, resetsAt: Date.now() + 86400000 },
+      ] },
+      { provider: 'claude', name: 'Claude', observedAt: Date.now() - 1800000, windows: [
+        { minutes: 300, usedPercent: 100, resetsAt: Date.now() - 3600000 },
+        { minutes: 10080, usedPercent: null, resetsAt: null },
+      ] },
+    ] : [],
+    summary: {},
+  }),
 });
 (async () => {
   const reserve = net.createServer();
