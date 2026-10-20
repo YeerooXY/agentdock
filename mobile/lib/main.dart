@@ -13,7 +13,6 @@ import 'settings_page.dart';
 import 'update_panel.dart';
 import 'connection_panel.dart';
 import 'devices_page.dart';
-import 'agent_commands.dart';
 import 'terminal_viewport.dart';
 import 'terminal_links.dart';
 import 'terminal_reading.dart';
@@ -328,63 +327,6 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
       c.sessions.any(
         (s) => s['id'] == target.session && s['provider'] == target.provider,
       );
-
-  Future<void> agentCommands(Map<String, dynamic> session) async {
-    final catalog = AgentCommands.forProvider(session['provider'] as String);
-    if (catalog == null || sending) return;
-    final target = (
-      pc: c.activePC,
-      session: c.selected,
-      provider: session['provider'] as String,
-      generation: c.generation,
-    );
-    stopTerminalTyping();
-    composerFocus.unfocus();
-    final command = await showModalBottomSheet<AgentCommand>(
-      context: context,
-      showDragHandle: true,
-      isScrollControlled: true,
-      builder: (_) => AnimatedBuilder(
-        animation: c,
-        builder: (_, _) => AgentCommandSheet(
-          catalog: catalog,
-          consoleName: session['name'] as String? ?? catalog.name,
-          enabled: commandTargetIsCurrent(target),
-        ),
-      ),
-    );
-    if (!mounted || command == null || !commandTargetIsCurrent(target)) return;
-    if (['Model', 'Effort', 'Commands'].contains(command.label)) {
-      await liveControls(command.label);
-      return;
-    }
-    if (composer.text.isNotEmpty && composer.text != command.text) {
-      final replace = await showDialog<bool>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('Replace draft?'),
-          content: Text('Replace your unsent message with ${command.text}?'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Keep draft'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Replace'),
-            ),
-          ],
-        ),
-      );
-      if (replace != true || !commandTargetIsCurrent(target)) return;
-    }
-    composer.value = TextEditingValue(
-      text: command.text,
-      selection: TextSelection.collapsed(offset: command.text.length),
-    );
-    stagedCommandTarget = target;
-    stagedSlashCommand = true;
-  }
 
   Future<void> liveControls(String action, {String? completion}) async {
     final key = draftKey;
@@ -866,19 +808,6 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
     }
 
     final provider = session['provider'] as String;
-    final catalog = AgentCommands.forProvider(provider);
-    final prefix = composer.text.trimLeft().toLowerCase();
-    final suggestions =
-        prefix.startsWith('/') && !prefix.contains(RegExp(r'\s'))
-        ? catalog?.commands
-                  .where(
-                    (x) =>
-                        x.label != 'Effort' &&
-                        x.text.toLowerCase().startsWith(prefix),
-                  )
-                  .toList() ??
-              <AgentCommand>[]
-        : <AgentCommand>[];
     return Column(
       children: [
         Padding(
@@ -1035,12 +964,6 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
                 if (action == 'close') closeConsole(session);
                 if (action == 'model') liveControls('Model');
                 if (action == 'effort') liveControls('Effort');
-                if (action == 'complete') {
-                  liveControls(
-                    'Commands',
-                    completion: composer.text.isEmpty ? null : composer.text,
-                  );
-                }
               },
               itemBuilder: (_) => [
                 PopupMenuItem(
@@ -1054,22 +977,16 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
                     attaching ? 'Attaching image\u2026' : 'Attach image',
                   ),
                 ),
-                if (catalog != null) ...[
+                if (['claude', 'codex'].contains(provider)) ...[
                   PopupMenuItem(
                     value: 'model',
                     enabled: c.connected && !sending,
                     child: const Text('Choose model'),
                   ),
-                  if (['claude', 'codex'].contains(provider))
-                    PopupMenuItem(
-                      value: 'effort',
-                      enabled: c.connected && !sending,
-                      child: const Text('Choose effort'),
-                    ),
                   PopupMenuItem(
-                    value: 'complete',
+                    value: 'effort',
                     enabled: c.connected && !sending,
-                    child: const Text('Live completion'),
+                    child: const Text('Choose effort'),
                   ),
                 ],
                 PopupMenuItem(
@@ -1096,40 +1013,6 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
             ),
           ],
         ),
-        if (suggestions.isNotEmpty)
-          SizedBox(
-            height: max(48, MediaQuery.textScalerOf(context).scale(20) + 24),
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 10),
-              children: [
-                for (final command in suggestions)
-                  Padding(
-                    padding: const EdgeInsets.only(right: 6),
-                    child: ActionChip(
-                      label: Text(command.text),
-                      onPressed: c.connected && !sending
-                          ? () {
-                              composer.value = TextEditingValue(
-                                text: command.text,
-                                selection: TextSelection.collapsed(
-                                  offset: command.text.length,
-                                ),
-                              );
-                              stagedCommandTarget = (
-                                pc: c.activePC,
-                                session: c.selected,
-                                provider: provider,
-                                generation: c.generation,
-                              );
-                              stagedSlashCommand = true;
-                            }
-                          : null,
-                    ),
-                  ),
-              ],
-            ),
-          ),
         if (c.inputError.isNotEmpty || c.drafts.error.isNotEmpty)
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
