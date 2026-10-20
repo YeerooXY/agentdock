@@ -1,4 +1,5 @@
 import './projects.css';
+import { projectColor, projectDot } from './project-colors.js';
 import { projectPlanUI, milestoneLines, parseMilestones } from './project-plan-ui';
 
 export function projectsUI({ call, getState, escape: e, icon, toast, renderPage, openNew }) {
@@ -7,6 +8,7 @@ export function projectsUI({ call, getState, escape: e, icon, toast, renderPage,
   const dialog = document.createElement('dialog'); dialog.id = 'project-editor'; dialog.setAttribute('aria-labelledby', 'project-editor-title');
   dialog.innerHTML = `<form id="project-form"><div class="dialog-heading"><h2 id="project-editor-title">New project</h2><button type="button" class="icon-button" data-project-close aria-label="Close project">${icon('close')}</button></div>
     <div class="form-pair"><label>Name<input name="name" maxlength="64" required autocomplete="off"></label><label>Category<input name="category" maxlength="60" list="project-categories" placeholder="Game, app, research…"><datalist id="project-categories"></datalist></label></div>
+    <label class="project-color-field">Color<input type="color" name="color" value="#89b4ff" aria-label="Project color"></label>
     <label>Goals<textarea name="goals" maxlength="10000" rows="3" placeholder="What do you want to make?"></textarea></label>
     <div data-project-new-fields><label>Audience<textarea name="audience" maxlength="10000" rows="2" placeholder="Who is this for?"></textarea></label><label>Success criteria<textarea name="success" maxlength="10000" rows="2" placeholder="What would make it successful?"></textarea></label></div>
     <label data-project-existing>How it will work<textarea name="approach" maxlength="10000" rows="3"></textarea></label>
@@ -31,7 +33,7 @@ export function projectsUI({ call, getState, escape: e, icon, toast, renderPage,
       const done = p.milestones.filter(x => x.done).length, total = p.milestones.length;
       const stale = p.status === 'active' && Date.now() - (p.lastActiveAt || p.createdAt) > 7 * 86400000;
       const waiting = p.plan && ['brief', 'research', 'infrastructure', 'roadmap'].find(s => !p.plan.approvals[s]);
-      return `<article class="surface project-card" data-project-id="${e(p.id)}"><div class="project-card-heading"><div><span class="project-category">${e(p.category || 'Uncategorized')}</span><h2>${e(p.name)}</h2></div><span class="project-state" data-status="${e(p.status)}">${e(p.status)}</span></div>
+      return `<article class="surface project-card" data-project-id="${e(p.id)}"><div class="project-card-heading"><div><span class="project-category">${e(p.category || 'Uncategorized')}</span><h2>${projectDot(p)}${e(p.name)}</h2></div><span class="project-state" data-status="${e(p.status)}">${e(p.status)}</span></div>
         <p class="project-goals">${e(p.goals || 'No goals recorded.')}</p>
         <div class="project-next"><span>Next step</span><p>${e(p.plan?.proposal ? 'Review the agent proposal' : waiting ? 'Review ' + (waiting === 'brief' ? 'the project brief' : waiting) : p.nextStep || 'No next step recorded.')}</p></div>
         <div class="project-progress"><span>${done} / ${total} milestones</span>${total ? `<progress max="${total}" value="${done}" aria-label="${e(p.name)} milestone progress"></progress>` : ''}</div>
@@ -70,6 +72,7 @@ export function projectsUI({ call, getState, escape: e, icon, toast, renderPage,
       if (section.tagName === 'DETAILS') section.open = false;
     }
     for (const key of ['name','category','goals','approach','notes','nextStep','status']) form.elements[key].value = p?.[key] || (key === 'status' ? 'active' : '');
+    form.elements.color.value = projectColor(p);
     if (!p) { form.elements.name.value = seed.name || ''; form.elements.goals.value = seed.goals || ''; }
     form.elements.folders.value = p ? p.folders.map(x => (x.label ? x.label + ' | ' : '') + x.path).join('\n') : seed.cwd || getState().settings.consoleDefaults.cwd;
     form.elements.milestones.value = milestoneLines(p?.milestones);

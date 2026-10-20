@@ -24,6 +24,9 @@ import { sshUI } from './ssh-ui.js';
 import './ssh.css';
 import { updatesUI } from './updates-ui.js';
 import { accountIdentity, accountMark, remainingPercent } from './account-identity.js';
+import { shellPicker } from './shell-picker.js';
+import { projectUsage } from './project-usage.js';
+import { projectDot } from './project-colors.js';
 import './account-usage.css';
 
 const $ = selector => document.querySelector(selector);
@@ -62,7 +65,7 @@ const terminals = new Map();
 const gridSize = () => state?.grid || { columns: 3, rows: 3 };
 const gridCapacity = () => gridSize().columns * gridSize().rows;
 let openingConsole = false;
-let launchGesture, chooserOpener, vim, setup, workbench, layoutMotion, phone, projects, projectChats, imageGenerator, updates;
+let launchGesture, chooserOpener, vim, setup, workbench, layoutMotion, phone, projects, projectChats, imageGenerator, updates, usageView;
 const nameSaves = new Map();
 const launchHint = 'title="Click to open. Hold or right-click to choose." aria-haspopup="dialog"';
 let renderedView = null, viewAnimation, windowMoving = false;
@@ -91,7 +94,8 @@ function resetTime(at) {
 function windowLabel(minutes) { return minutes === 10080 ? 'Weekly' : minutes === 300 ? '5-hour' : minutes == null ? 'Usage window' : minutes >= 60 && minutes % 60 === 0 ? `${minutes / 60}-hour` : `${minutes} min`; }
 function badge(status) { return `<span class="status ${escape(status)}"><span class="dot"></span>${escape(labels[status] || status)}</span>`; }
 const isReady = session => session.alive && ['ready', 'attention'].includes(session.state);
-const readyIcon = session => `<span class="notification-icon">${icon('terminal')}<span class="notification-badge console-ready-badge" ${isReady(session) ? '' : 'hidden'} aria-label="Ready for you">1</span></span>`;
+const shellMark = provider => `<span class="shell-mark" data-shell="${escape(provider)}" role="img" aria-label="${escape(providerName(provider))}" title="${escape(providerName(provider))}">${['shell', 'custom'].includes(provider) ? icon('terminal') : accountMark(provider)}</span>`;
+const readyIcon = session => `<span class="notification-icon">${shellMark(session.provider)}<span class="notification-badge console-ready-badge" ${isReady(session) ? '' : 'hidden'} aria-label="Ready for you">1</span></span>`;
 function resizeHandles(slot) {
   return Object.entries({ n: 'top', e: 'right', s: 'bottom', w: 'left', ne: 'top right', nw: 'top left', se: 'bottom right', sw: 'bottom left' }).map(([edge, name]) => `<button class="console-resize" data-resize-edge="${edge}" aria-label="Resize console ${slot} from ${name}" title="Drag to resize. Arrow keys resize one grid cell; Escape cancels."></button>`).join('');
 }
@@ -129,7 +133,7 @@ $('#app').innerHTML = `
     <div class="dialog-heading"><div><h2 id="console-chooser-title">Open console</h2><p id="console-chooser-hint">Just for this console.</p></div><button type="button" class="icon-button" data-action="cancel-console" aria-label="Close chooser">${icon('close')}</button></div>
     <label>Computer<select name="remoteHostId"><option value="">This PC</option></select></label><label id="chooser-remote-folder" hidden>Linux folder<input name="remoteFolder" value="."></label><div class="chooser-project"><label>Project<div class="folder-input"><select name="projectId"><option value="">No project</option></select><button type="button" class="secondary" id="chooser-new-project">New project</button></div></label><label id="chooser-project-folders" hidden>Start in<select name="projectFolder"></select></label></div>
     <label>Name <span class="optional">optional</span><input name="name" maxlength="64" placeholder="Uses the folder name" autocomplete="off"></label>
-    <div class="form-pair"><label>Agent or shell<select name="provider">${consoleProviders().map(provider => `<option value="${provider}">${providerName(provider)}</option>`).join('')}</select></label><label id="one-off-model">Model<select name="model"><option value="">Agent default</option><option value="__custom__">Enter a model…</option></select></label></div>
+    <div class="form-pair"><div class="shell-field"><span>Agent or shell</span><select name="provider" aria-label="Agent or shell">${consoleProviders().map(provider => `<option value="${provider}">${providerName(provider)}</option>`).join('')}</select></div><label id="one-off-model">Model<select name="model"><option value="">Agent default</option><option value="__custom__">Enter a model…</option></select></label></div>
     <label id="one-off-custom-model" hidden>Model name<input name="customModel" maxlength="200" spellcheck="false" autocomplete="off" placeholder="Model name or alias"></label>
     <label>Project folder<div class="folder-input"><input name="cwd" required><button type="button" data-action="pick-folder" aria-label="Choose project folder for this console">${icon('folder')}</button></div></label>
     <label id="one-off-command" hidden>Command<textarea name="command" rows="3" maxlength="4000" spellcheck="false" placeholder="The command to run"></textarea></label>
@@ -137,6 +141,7 @@ $('#app').innerHTML = `
     <p class="form-error" role="alert"></p><div class="dialog-footer"><button type="button" class="secondary" data-action="cancel-console">Cancel</button><button type="submit" class="primary">Open console</button></div>
   </form>
 </dialog>`;
+const oneOffShellPicker = shellPicker($('#one-off-console-form [name=provider]'), shellMark);
 $('#sidebar-toggle').insertAdjacentHTML('afterend', `<button id="results-shortcut" class="results-shortcut" data-page="results" hidden title="New results"><span class="notification-icon">${icon('folder')}<span class="notification-badge"></span></span></button>`);
 $('#launch-folder').insertAdjacentHTML('afterend', '<button class="vim-mode" data-action="vim-normal" hidden></button>');
 document.querySelectorAll('.sidebar [data-page]').forEach(button => {
@@ -179,7 +184,7 @@ function syncSlotName(input, slot, session) {
 function sessionCard(slot) {
   const session = state.sessions.find(x => x.slot === slot && (x.alive || x.restoreError));
   if (!session) return `<article class="session-card empty" data-slot="${slot}"><header class="empty-panel-header">${slotNameInput(slot)}</header><button class="console-launch" data-action="new" data-slot="${slot}" aria-label="Open console ${slot}" ${launchHint} ${openingConsole ? 'disabled' : ''}>${newConsoleMark()}</button></article>`;
-  return `<article class="session-card ${escape(session.state)}" data-console-id="${session.id}" data-slot="${slot}"><header class="console-panel-header"><button class="console-grip" draggable="true" data-console-drag="${session.id}" aria-label="Move console ${slot}" title="Drag to move or swap. Focus here and press Alt + 1–9 to move.">${readyIcon(session)}</button><span class="slot" title="${escape(providerName(session.provider) + ' · ' + session.cwd)}">${String(slot).padStart(2, '0')}</span>${slotNameInput(slot, session)}<span class="panel-status">${badge(session.state)}</span>${projectChats.button(session)}<button class="icon-button" data-session="${session.id}" aria-label="Expand console ${slot}" title="Expand console">${icon('expand')}</button></header><div class="console-panel-body" data-terminal-mount="${session.id}"></div>${resizeHandles(slot)}</article>`;
+  return `<article class="session-card ${escape(session.state)}" data-console-id="${session.id}" data-slot="${slot}"><header class="console-panel-header"><button class="console-grip" draggable="true" data-console-drag="${session.id}" aria-label="Move console ${slot}" title="Drag to move or swap. Focus here and press Alt + 1–9 to move.">${readyIcon(session)}</button><span class="slot" title="${escape(providerName(session.provider) + ' · ' + session.cwd)}">${String(slot).padStart(2, '0')}</span>${slotNameInput(slot, session)}<span class="panel-status">${badge(session.state)}</span>${projectChats.button(session)}<button class="icon-button" data-session="${session.id}" aria-label="Expand console ${slot}" title="Expand console">${icon('expand')}</button><button class="icon-button console-close" data-action="end-session" data-id="${session.id}" aria-label="Close console ${slot}" title="End this console">${icon('close')}</button></header><div class="console-panel-body" data-terminal-mount="${session.id}"></div>${resizeHandles(slot)}</article>`;
 }
 function coveredSlots() {
   return new Map(state.sessions.filter(x => x.alive || x.restoreError).flatMap(x => Array.from({ length: x.height || 1 }, (_, y) => Array.from({ length: x.width || 1 }, (_, dx) => [x.slot + y * gridSize().columns + dx, x])).flat()));
@@ -213,6 +218,14 @@ function renderConsoles() {
     panel.tabIndex = -1;
     panel.setAttribute('aria-label', `Console ${slot}${session?.name || state.settings.slotNames?.[slot] ? ': ' + (session?.name || state.settings.slotNames[slot]) : ''}`);
     if (!session) { panel.querySelector('[data-action="new"]').disabled = openingConsole; continue; }
+    const project = state.projects?.find(p => p.id === session.projectId);
+    let projectColorMark = panel.querySelector('.console-project-color');
+    if (project) {
+      if (!projectColorMark) { projectColorMark = document.createElement('span'); projectColorMark.className = 'console-project-color'; panel.querySelector('.console-name').before(projectColorMark); }
+      const color = project.color || '';
+      if (projectColorMark.dataset.color !== color) { projectColorMark.innerHTML = projectDot(project); projectColorMark.dataset.color = color; projectColorMark.title = project.name; }
+      projectColorMark.title = project.name;
+    } else projectColorMark?.remove();
     if (panel.dataset.state !== session.state) {
       panel.className = `session-card ${session.state}`; panel.dataset.state = session.state;
       panel.querySelector('.panel-status').innerHTML = badge(session.state);
@@ -238,10 +251,8 @@ function renderUsage() {
     '<div class="usage-grid">' + [...new Set(['codex', 'claude', ...state.limits.map(x => x.provider).filter(x => typeof x === 'string' && x)])].map(provider => quotaCard(provider, true)).join('') + '</div><p class="section-note">Limits are shared across each account.</p><section class="ledger-panel"><div class="section-label"><div><h2>API requests</h2><p>Requests made through Agent Dock.</p></div><button class="subtle" data-action="export">Export</button></div>' + ledgerTable() + '<div class="ledger-foot">' + (state.ledger.length > 100 ? 'Latest 100 shown. Export includes all records. ' : '') + 'Costs are estimates, not invoices. Tool steps count as separate requests.</div></section>' +
     '<details class="surface pricing-details"><summary>Cost estimate settings</summary><form id="rates-form"><div class="form-pair"><label>API<select name="provider">' + state.shared.profiles.map(x => '<option value="' + escape(x.id) + '">' + escape(x.name) + '</option>').join('') + '</select></label><label>Model ID<input name="model" required placeholder="Model to price"></label></div><p class="field-hint">USD per million tokens. Leave unknown rates blank.</p><div class="price-grid">' + [['input', 'Input'], ['output', 'Output'], ['cached', 'Cache reads'], ['cacheWrite', 'Cache writes']].map(([key,label]) => '<label>' + label + '<input name="' + key + '" type="number" min="0" step="any" placeholder="Unknown"></label>').join('') + '</div><button type="submit" class="primary">Save rates</button><p class="form-error" role="alert"></p></form></details>';
 }
-function messageUsageTable() {
-  const rows = state.messages || [];
-  return `<section class="surface message-usage"><div class="section-label"><h2>Per message</h2><span>Latest ${rows.length}</span></div><p class="section-note">Reported tokens and API cost estimates. Subscription credits per message are not exposed by these agents. Claude counts cover the main agent.</p>${rows.length ? `<div class="table-scroll"><table><thead><tr><th>Time / console</th><th>Model</th><th>Input</th><th>Output</th><th>Cache reads</th><th>Est. USD</th></tr></thead><tbody>${rows.map(row => `<tr><td>${escape(new Date(row.at).toLocaleString([], { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' }))}<small>${escape(row.consoleName || providerName(row.provider))}</small></td><td>${escape(row.model || providerName(row.provider))}<small>${escape(row.source)}${row.steps ? ' · ' + row.steps + ' steps' : ''} · ${escape(row.status)}</small></td><td class="mono">${number(row.usage?.input)}</td><td class="mono">${number(row.usage?.output)}</td><td class="mono">${number(row.usage?.cached)}</td><td class="mono">${row.source === 'Dock API' ? money(row.estimatedCost) : '—'}</td></tr>`).join('')}</tbody></table></div>` : '<p class="section-note">Usage appears after a supported agent or API finishes a message. Missing counters stay blank.</p>'}</section>`;
-}
+function messageUsageTable() { return usageView.render(); }
+
 function renderApi() {
   const profiles = state.shared.profiles;
   if (!profiles.some(x => x.id === selectedApi)) selectedApi = profiles[0]?.id || '';
@@ -319,7 +330,7 @@ function renderPage() {
   workbench?.mount();
   if (page === 'tools') { $('.page-heading').insertAdjacentHTML('afterend', imageGenerator.render()); imageGenerator.mount(); }
   if (page === 'settings') $('.settings-layout').insertAdjacentHTML('afterbegin', updates?.render() || '');
-  if (page === 'usage') $('#content').insertAdjacentHTML('beforeend', messageUsageTable());
+  if (page === 'usage') { $('#content').insertAdjacentHTML('beforeend', messageUsageTable()); usageView.mount(); }
   if (page === 'usage') $('#content').insertAdjacentHTML('beforeend', imageGenerator.usage());
   if (page === 'settings') { $('.settings-layout').insertAdjacentHTML('afterbegin', (remoteHosts?.html() || '') + (phone?.renderSettings() || '') + renderGridSettings() + renderAppearanceSettings() + renderKeyboardSettings() + renderProjectSettings() + renderResultsSettings() + renderStartupSettings() + renderLaunchDefaults()); launchDefaultsFields(); }
   if (page === 'api') {
@@ -345,7 +356,7 @@ function hudHtml() {
     const name = state.settings.slotNames?.[i + 1];
     return item ? `<button style="${area}" class="hud-slot ${item.state} ${item.id === selectedId ? 'current' : ''}" data-slot="${i + 1}" data-session="${item.id}" title="${escape(item.name)} · ${labels[item.state]}"><span>${i + 1}</span>${readyIcon(item)}<small>${escape(item.name)}</small></button>` : `<button style="${area}" class="hud-slot empty ${name ? 'named' : ''}" data-action="new" data-slot="${i + 1}" aria-label="Open console ${i + 1}${name ? ': ' + escape(name) : ''}" ${launchHint} ${openingConsole ? 'disabled' : ''}>${newConsoleMark()}${name ? `<small class="hud-slot-name">${escape(name)}</small>` : ''}</button>`;
   }).join('');
-  return `<div class="hud-title"><span class="hud-brand" data-window-drag title="Drag to move">${icon('dock')}agentdock</span><button class="vim-mode" data-action="vim-normal" hidden></button><button class="icon-button" data-action="dashboard" aria-label="Expand dashboard">${icon('expand')}</button><button class="icon-button" data-action="tray" aria-label="Hide in system tray">${icon('close')}</button></div><button class="hud-summary" data-action="dashboard"><div><strong>${ready ? `${ready} ready for you` : active ? `${active} console${active === 1 ? '' : 's'} open` : ''}</strong>${icon('arrow')}</div></button><div class="hud-slots">${slots}</div>${selected ? `<button class="hud-console ${selected.state}" data-session="${selected.id}"><div><span>${icon('terminal')}${escape(selected.name)}</span>${icon('expand')}</div><pre id="hud-preview">${escape(terminalPreview(selected))}</pre></button>` : `<button class="hud-console empty" data-action="new" aria-label="Open console" ${launchHint} ${openingConsole ? 'disabled' : ''}>${newConsoleMark()}</button>`}<div class="hud-usage" style="--provider-accent:${accountIdentity(quotaProvider).color}"><span class="hud-account">${accountMark(quotaProvider)}${quotaProvider === 'claude' ? 'Claude remaining' : 'Codex remaining'} <small>${quota ? age(quota.observedAt) : 'Not connected'}</small></span><div><span>5h <b>${remainingPercent(five?.usedPercent) !== null ? number(remainingPercent(five.usedPercent)) + '% left' : 'Unknown'}</b></span><span>Weekly <b>${remainingPercent(weekly?.usedPercent) !== null ? number(remainingPercent(weekly.usedPercent)) + '% left' : 'Unknown'}</b></span></div></div>`;
+  return `<div class="hud-title"><span class="hud-brand" data-window-drag title="Drag to move">${icon('dock')}agentdock</span><button class="vim-mode" data-action="vim-normal" hidden></button><button class="icon-button" data-action="dashboard" aria-label="Expand dashboard">${icon('expand')}</button><button class="icon-button" data-action="tray" aria-label="Hide in system tray">${icon('close')}</button></div><button class="hud-summary" data-action="dashboard"><div><strong>${ready ? `${ready} ready for you` : active ? `${active} console${active === 1 ? '' : 's'} open` : ''}</strong>${icon('arrow')}</div></button><div class="hud-slots">${slots}</div>${selected ? `<button class="hud-console ${selected.state}" data-session="${selected.id}"><div><span>${shellMark(selected.provider)}${escape(selected.name)}</span>${icon('expand')}</div><pre id="hud-preview">${escape(terminalPreview(selected))}</pre></button>` : `<button class="hud-console empty" data-action="new" aria-label="Open console" ${launchHint} ${openingConsole ? 'disabled' : ''}>${newConsoleMark()}</button>`}<div class="hud-usage" style="--provider-accent:${accountIdentity(quotaProvider).color}"><span class="hud-account">${accountMark(quotaProvider)}${quotaProvider === 'claude' ? 'Claude remaining' : 'Codex remaining'} <small>${quota ? age(quota.observedAt) : 'Not connected'}</small></span><div><span>5h <b>${remainingPercent(five?.usedPercent) !== null ? number(remainingPercent(five.usedPercent)) + '% left' : 'Unknown'}</b></span><span>Weekly <b>${remainingPercent(weekly?.usedPercent) !== null ? number(remainingPercent(weekly.usedPercent)) + '% left' : 'Unknown'}</b></span></div></div>`;
 }
 function terminalPreview(session) {
   if (!session) return '> ready when you are';
@@ -514,7 +525,7 @@ function renderTerminal() {
   if (!session) { page = 'consoles'; renderPage(); return; }
   $('#terminal-host').dataset.state = session.state;
   if (!$('#terminal-heading').contains(document.activeElement) && !nameSaves.has(session.slot)) {
-    $('#terminal-heading').innerHTML = `<span class="slot">${String(session.slot).padStart(2, '0')}</span><div>${slotNameInput(session.slot, session)}<small>${escape(session.cwd)}</small></div>${projectChats.button(session)}${badge(session.state)}`;
+    $('#terminal-heading').innerHTML = `${shellMark(session.provider)}<span class="slot">${String(session.slot).padStart(2, '0')}</span><div>${slotNameInput(session.slot, session)}<small>${escape(session.cwd)}</small></div>${projectChats.button(session)}${badge(session.state)}`;
     if (session.permissions === 'unrestricted') $('#terminal-heading').insertAdjacentHTML('beforeend', '<span class="permission-tag">Full access</span>');
     if (session.restoreError) $('#terminal-heading').insertAdjacentHTML('beforeend', `<button class="secondary" data-action="retry-session" data-id="${session.id}">Try reopening</button>`);
   }
@@ -577,6 +588,7 @@ let remoteHosts;
 let chooserModelRequest = 0;
 function chooserFields() {
   const form = $('#one-off-console-form'), provider = form.elements.provider.value;
+  oneOffShellPicker.sync();
   const agent = ['codex', 'claude'].includes(provider) || !!state.agents?.find(x => x.id === provider)?.model, customModel = agent && form.elements.model.value === '__custom__';
   $('#one-off-model').hidden = !agent; form.elements.model.disabled = !agent;
   $('#one-off-custom-model').hidden = !customModel; form.elements.customModel.disabled = !customModel; form.elements.customModel.required = customModel;
@@ -774,7 +786,7 @@ document.addEventListener('click', async event => {
       case 'tray': await call('tray'); break;
       case 'refresh': await call('refresh'); break;
       case 'quit': await call('quit'); break;
-      case 'end-session': await call('session.end', selectedId); break;
+      case 'end-session': await call('session.end', button.dataset.id || selectedId); break;
       case 'retry-session': {
         button.disabled = true;
         try { const restored = await call('session.retry', button.dataset.id); if (page === 'terminal') selectedId = restored.id; renderPage(); }
@@ -912,6 +924,7 @@ projectChats = consoleProjects({ call, getState: () => state, getView: () => ({ 
 imageGenerator = imageGenerationUI({ call, getState: () => state, escape, toast });
 remoteHosts = sshUI({ call, escape, getState: () => state, toast, render: renderPage });
 updates = updatesUI({ call, getState: () => state, escape, icon, toast });
+usageView = projectUsage({ getState: () => state, escape, providerName, number, money, mark: shellMark });
 setup = firstRun({ call, escape, icon, getState: () => state });
 windowDragging(call, () => state);
 layoutMotion = consoleMotion({ render: renderConsoles, fit: scheduleFits });

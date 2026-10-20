@@ -2,14 +2,15 @@ import openai from '../mobile/assets/providers/openai.png';
 import cursor from '../mobile/assets/providers/cursor.png';
 import opencode from '../mobile/assets/providers/opencode.png';
 import cline from '../mobile/assets/providers/cline.png';
+import claude from '../mobile/assets/providers/claude.png';
 
 // Local assets only. Unknown/restricted logos use a plain initial and name.
 // See docs/provider-brand-assets.md for sources and permission boundaries.
 const identities = {
   codex: ['Codex', '#9cbfff', openai],
   openai: ['OpenAI', '#9cbfff', openai],
-  claude: ['Claude', '#e6a187'],
-  anthropic: ['Claude', '#e6a187'],
+  claude: ['Claude', '#e6a187', claude],
+  anthropic: ['Claude', '#e6a187', claude],
   gemini: ['Gemini', '#8aafff'],
   antigravity: ['Antigravity', '#90bdff'],
   copilot: ['Copilot', '#bb9aff'],

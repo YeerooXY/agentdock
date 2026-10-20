@@ -34,7 +34,7 @@ async function checkVimControls({ page, app, invoke, eventually, capture }) {
   await capture('test-vim-grid.png');
 
   await key('Shift+N'); await page.locator('#console-chooser[open]').waitFor();
-  await page.locator('#one-off-console-form summary').click();
+  await page.locator('#one-off-console-form .console-options>summary').click();
   await page.locator('#one-off-console-form [name=name]').fill('hjkl123');
   assert.equal(await page.locator('#one-off-console-form [name=name]').inputValue(), 'hjkl123');
   await key('Escape'); await page.locator('#console-chooser').waitFor({ state: 'hidden' });

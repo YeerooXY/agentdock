@@ -36,3 +36,31 @@
 @media(max-width:650px){#project-suggestion{flex-wrap:wrap;margin:0 10px 2px;padding:12px}.project-suggestion-actions{flex-wrap:wrap;width:100%}.project-suggestion-actions button{min-height:44px;flex:1}#console-project-picker button{min-height:44px}.console-panel-header .console-project{min-width:32px}.project-picker-links{flex-wrap:wrap}}
 .image-generation-settings{margin:0 0 28px;border:1px solid #6a547e;background:linear-gradient(125deg,#11182a,#140e19)}.image-generation-settings form{max-width:760px}.image-generation-settings label:not(.toggle-row){margin-top:14px}.image-generation-settings .form-pair{margin:0}.image-generation-settings .field-hint{color:#c3c9dc;line-height:1.7}.image-generation-settings h2{color:var(--accent-pink)}.image-generation-settings .toggle-row{gap:16px}.image-generation-settings [type=submit]{margin-top:12px}.preview-routing{padding:14px 0;border-bottom:1px solid #4b3c5b;margin-bottom:16px}.preview-routing p{color:#bec8e4}.image-job-list{display:grid;gap:8px;margin-top:12px}.image-job-list>div{display:flex;align-items:center;gap:12px;flex-wrap:wrap}.image-job-list>div>span{flex:1;min-width:150px}.image-job-list button{min-height:36px}
 .image-usage td small{display:block;color:#b2bad0;margin-top:5px}.image-usage>.field-hint{margin:12px 0;line-height:1.6}
+.project-color-dot{display:inline-block;flex:none;width:11px;height:11px;border-radius:50%;background:var(--project-color,#89b4ff);border:1px solid #aab3c8;vertical-align:middle;margin-right:9px}
+.project-card h2 .project-color-dot{width:12px;height:12px}
+.project-color-field{display:flex;align-items:center;gap:12px;width:fit-content}
+.project-color-field input[type=color]{width:56px;height:38px;padding:3px;border-radius:7px;cursor:pointer}
+.console-project-color{display:inline-flex;align-items:center;flex:none}.console-project-color .project-color-dot{width:8px;height:8px;margin:0}
+.usage-project-filter{max-width:360px;margin:14px 0}
+.usage-project{margin:14px 0;border:1px solid #464052;border-left:3px solid var(--project-color);border-radius:8px;overflow:hidden}
+.usage-project>summary{display:flex;align-items:center;gap:8px;min-height:48px;padding:12px;cursor:pointer;background:#101119;list-style:none}
+.usage-project>summary::-webkit-details-marker{display:none}
+.usage-project>summary::after{content:'›';font-size:20px;margin-left:6px;transform:rotate(90deg)}
+.usage-project[open]>summary::after{transform:rotate(-90deg)}
+.usage-project>summary>strong{min-width:0;overflow-wrap:anywhere;flex:1;color:#e7e9f2}
+.usage-project>summary>span:last-of-type{color:#bac2d5;font-size:12px}
+.usage-project .project-color-dot{margin-right:0}
+.usage-turn-model{display:flex;align-items:center;gap:8px}.usage-turn-model>span:last-child{overflow-wrap:anywhere}
+.usage-quota-cell{min-width:175px}.turn-quota{margin:7px 0}.turn-quota>span{display:flex;justify-content:space-between;gap:15px}.turn-quota b{font-variant-numeric:tabular-nums;color:#e1e7f4;font-weight:500}
+.turn-quota-meter{height:5px;background:#272737;border-radius:3px;overflow:hidden;margin-top:5px}.turn-quota-meter i{display:block;height:100%;background:var(--project-color);border-radius:3px}.turn-quota small{display:block;color:#bbc3d6;max-width:240px;white-space:normal;line-height:1.4}
+.usage-unknown{color:#bbc3d6}.usage-measurement-note{color:#bec8dd;font-size:12px;margin-top:18px;line-height:1.6}.usage-measurement-note>summary{cursor:pointer;width:fit-content}
+@media(max-width:760px){
+ .usage-project table,.usage-project tbody{display:block;min-width:0;width:100%}.usage-project thead{display:none}
+ .usage-project tr{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;padding:16px;border-bottom:1px solid #393442}
+ .usage-project td{display:block;min-width:0;padding:0;border:0;white-space:normal}
+ .usage-project td:nth-child(3){grid-column:1/-1;grid-row:2;min-width:0}
+ .usage-project td:nth-child(n+4)::before{display:block;color:#bbc3d6;font:11px/1.6 system-ui,sans-serif}
+ .usage-project td:nth-child(4)::before{content:'Input'}.usage-project td:nth-child(5)::before{content:'Output'}
+ .usage-project td:nth-child(6)::before{content:'Cache reads'}.usage-project td:nth-child(7)::before{content:'Est. USD'}
+ .usage-project .turn-quota small{max-width:none}.usage-turn-model{align-items:flex-start}
+}

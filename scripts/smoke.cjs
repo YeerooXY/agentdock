@@ -305,6 +305,14 @@ async function eventually(predicate, message) {
   };
   const activeBeforeChooser = (await invoke('state')).sessions.filter(x => x.alive).length;
   await holdPlus(page.locator('.session-card.empty[data-slot="6"]'));
+  await chooser.locator('.shell-picker>summary').click();
+  await chooser.locator('.shell-picker-options button').filter({ hasText: 'Claude Code' }).click();
+  assert.equal(await oneOff.locator('[name=provider]').inputValue(), 'claude');
+  assert.equal(await chooser.locator('.shell-picker>summary [data-shell=claude] img').evaluate(img => img.complete && img.naturalWidth > 0), true);
+  await chooser.locator('.shell-picker>summary').press('ArrowDown');
+  await page.keyboard.press('Escape');
+  assert.equal(await chooser.isVisible(), true, 'Escape closes the shell list before the console chooser');
+  assert.equal(await chooser.locator('.shell-picker').getAttribute('open'), null);
   assert.equal(await page.locator('#console-chooser-title').innerText(), 'Console 6');
   assert.equal((await invoke('state')).sessions.filter(x => x.alive).length, activeBeforeChooser);
   await oneOff.locator('[name=provider]').selectOption('claude');
@@ -325,7 +333,7 @@ async function eventually(predicate, message) {
   await oneOff.locator('[data-action=pick-folder]').click();
   assert.equal(await oneOff.locator('[name=cwd]').inputValue(), oneOffFolder);
   await app.evaluate(({ dialog }) => { dialog.showOpenDialog = globalThis.oneOffFolderDialog; });
-  await oneOff.locator('summary').click(); await oneOff.locator('[name=name]').fill('One-time command');
+  await oneOff.locator('.console-options>summary').click(); await oneOff.locator('[name=name]').fill('One-time command');
   await invoke('settings', { notifications: (await invoke('state')).settings.notifications });
   assert.equal(await oneOff.locator('[name=name]').inputValue(), 'One-time command');
   await oneOff.locator('[type=submit]').click();
@@ -483,7 +491,8 @@ async function eventually(predicate, message) {
     await capture({ path: path.join(artifacts, `test-${view}-narrow.png`) });
   }
   checks.push('Nine panels fill the window at desktop, fullscreen and narrow sizes; thinking has a blue-purple outline, ready is green');
-  await invoke('session.end', session.id);
+  await page.locator('[data-page=consoles]').first().click();
+  await page.getByRole('button', { name: `Close console ${session.slot}`, exact: true }).click();
   await eventually(async () => !(await invoke('state')).sessions.find(x => x.id === session.id).alive, 'Console did not exit');
   const replacement = await invoke('session.create', { provider: 'shell', cwd: root, name: 'Reused slot' });
   assert.equal(replacement.slot, 1); assert.notEqual(replacement.id, session.id);

@@ -2,7 +2,7 @@
 // Per-session CLI callback. Only whitelisted metadata is written; prompts and responses are discarded.
 const fs = require('node:fs');
 const path = require('node:path');
-const { atomicJson } = require('./storage.cjs');
+const { atomicJson, readJson } = require('./storage.cjs');
 const { claudeLimits } = require('./domain.cjs');
 const mode = process.argv[2];
 const root = mode === 'codex-session' ? process.argv[3] : process.env.AGENT_DOCK_DATA_DIR;
@@ -31,8 +31,24 @@ async function accept(raw) {
       if (mode === 'codex-notify' && input.type !== 'agent-turn-complete') return;
       if (name === 'Notification' && !['permission_prompt', 'idle_prompt', 'elicitation_dialog'].includes(input.notification_type)) return;
       event.state = statuses[name] || statuses[mode];
+      if (name === 'UserPromptSubmit') {
+        try {
+          const reading = readJson(path.join(root, 'events', `${session}.usage.json`), {});
+          const windows = event.at >= reading.at && event.at - reading.at <= 120000 && reading.providerSessionId === event.providerSessionId ? reading.limits?.windows || [] : [];
+          atomicJson(path.join(root, 'events', `${session}.quota-start.json`), { at: event.at, providerSessionId: event.providerSessionId, windows });
+        } catch {}
+      }
       if (['Stop', 'StopFailure'].includes(name) && input.transcript_path) {
-        try { const message = require('./message-usage.cjs').claudeMessage(input.transcript_path); if (message) event.messageUsage = { ...message, status: name === 'StopFailure' ? 'failed' : 'completed' }; } catch {}
+        try {
+          const { claudeMessage, quotaChange } = require('./message-usage.cjs');
+          const message = claudeMessage(input.transcript_path);
+          if (message) {
+            const before = readJson(path.join(root, 'events', `${session}.quota-start.json`), {});
+            const after = readJson(path.join(root, 'events', `${session}.usage.json`), {});
+            const matches = before.providerSessionId === event.providerSessionId && after.providerSessionId === event.providerSessionId && Math.abs(message.at - before.at) <= 10000 && after.at >= before.at && after.at <= event.at && event.at - after.at <= 120000;
+            event.messageUsage = { ...message, finishedAt: event.at, quota: matches ? quotaChange(before.windows, after.limits?.windows) : [], status: name === 'StopFailure' ? 'failed' : 'completed' };
+          }
+        } catch {}
       }
       // Await the baseline before the agent can edit. No prompts or answers leave this helper.
       const tool = event.state === 'active' ? 'dock/start_turn' : ['ready', 'error', 'ended'].includes(event.state) ? 'dock/finish_turn' : null;

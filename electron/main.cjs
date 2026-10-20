@@ -189,7 +189,7 @@ app.whenReady().then(async () => {
     catch { storageError = 'The chat title could not be saved to this slot.'; }
   });
   sessions.on('context-error', message => { storageError = message; publish(); });
-  sessions.on('message-usage', ({ session, messages }) => { try { messageUsage.record(session, messages); } catch { storageError = 'Message usage could not be saved.'; } });
+  sessions.on('message-usage', ({ session, messages }) => { try { messageUsage.record({ ...session, projectName: projects.get(session.projectId)?.name || '' }, messages); } catch { storageError = 'Message usage could not be saved.'; } });
   turns = new Turns(workbench.results, { enabled: settings.autoSaveResults !== false, getSession: id => sessions.items.get(id), getSecrets: () => vault.list().flatMap(x => { try { return [vault.get(x.id)]; } catch { return []; } }) });
   workbench.turns = turns;
   turns.on('tracking-error', ({ owner, message }) => workbench.inbox.add({ title: 'Code capture needs attention', message, sessionId: owner, kind: 'error' }));

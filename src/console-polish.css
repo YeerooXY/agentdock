@@ -15,6 +15,25 @@ input.console-name { color:var(--accent-pink); font-weight:550 }
 .console-panel-header { background:#080910; gap:6px }
 .console-panel-header .icon-button { width:28px; height:28px }
 .console-grip { color:var(--accent-pink); min-width:24px; min-height:28px }
+.shell-mark { display:inline-flex; align-items:center; justify-content:center; flex:none; vertical-align:middle; width:22px; height:22px }
+.shell-mark .account-mark { width:22px; height:22px; border-radius:4px; font-size:13px }
+.shell-mark .account-mark img { width:20px; height:20px; object-fit:contain }
+.console-grip .shell-mark { width:20px; height:20px }
+.console-close:hover { background:#432130; color:#ffc1d3 }
+.shell-field { position:relative; min-width:0; font-size:12px; color:var(--muted); display:flex; flex-direction:column; gap:7px }
+.shell-picker-value { position:absolute; width:1px!important; height:1px!important; padding:0!important; margin:0!important; border:0; opacity:0; pointer-events:none }
+#console-chooser .shell-picker { margin:0; color:#e5e7ef; font-size:14px; min-width:0 }
+#console-chooser .shell-picker>summary { display:flex; align-items:center; gap:9px; width:100%; min-height:44px; padding:9px 12px; border:1px solid #444256; border-radius:7px; background:#08090f; list-style:none }
+.shell-picker>summary::-webkit-details-marker { display:none }
+.shell-picker>summary>span:last-child { flex:1; min-width:0; overflow-wrap:anywhere }
+.shell-picker>summary::after { content:''; width:6px; height:6px; flex:none; margin-left:auto; border-right:1.5px solid #cbb1e2; border-bottom:1.5px solid #cbb1e2; transform:rotate(45deg); transition:transform .15s }
+.shell-picker[open]>summary::after { transform:rotate(225deg) }
+.shell-picker>summary:focus-visible,.shell-picker-options button:focus-visible { outline:2px solid var(--accent-blue); outline-offset:2px }
+.shell-picker-options { display:grid; gap:3px; max-height:236px; overflow:auto; overscroll-behavior:contain; margin-top:5px; padding:5px; border:1px solid #66577d; border-radius:8px; background:#0b0c14 }
+.shell-picker-options button { display:flex; align-items:center; gap:10px; min-width:0; min-height:44px; width:100%; padding:8px; color:#e5e7ef; background:transparent; border:1px solid transparent; border-radius:5px; text-align:left; font-weight:400 }
+.shell-picker-options button>span:last-child { overflow-wrap:anywhere }
+.shell-picker-options button:hover,.shell-picker-options button[aria-pressed=true] { background:linear-gradient(110deg,#192a43,#2d1b32); border-color:#9382b2 }
+@media (prefers-reduced-motion:reduce) { .shell-picker>summary::after { transition:none } }
 .consoles-only .session-card.empty { background:var(--empty-black) }
 .consoles-only .session-card.empty:hover,.consoles-only .session-card.empty:focus-within { background:#090a12; border-color:#9c8dce }
 #consoles-page { padding:12px 14px 20px }

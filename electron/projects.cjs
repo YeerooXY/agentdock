@@ -3,6 +3,12 @@ const fs = require('node:fs'), path = require('node:path'), { randomUUID } = req
 const { EventEmitter } = require('node:events');
 const { readJson, atomicJson } = require('./storage.cjs');
 const planning = require('./project-planning.cjs');
+const projectPalette = ['#89b4ff', '#f19cda', '#8bd6b0', '#f0bf78', '#b8a0f5', '#7ed6d0'];
+function projectColor(color, id) {
+  if (/^#[\da-f]{6}$/i.test(color || '')) return color.toLowerCase();
+  const index = [...String(id || '')].reduce((n, c) => (n * 31 + c.charCodeAt(0)) >>> 0, 0);
+  return projectPalette[index % projectPalette.length];
+}
 const text = (value, max, label) => {
   if (typeof value !== 'string' || value.length > max || value.includes('\0')) throw new Error(`${label} is too long or invalid.`);
   return value.trim();
@@ -13,19 +19,21 @@ function folder(value) {
 }
 class Projects extends EventEmitter {
   constructor(root) { super(); this.file = path.join(root, 'projects.json'); this.items = readJson(this.file, []); }
-  list() { return this.items.map(x => ({ ...x, progress: { done: x.milestones.filter(m => m.done).length, total: x.milestones.length } })).sort((a, b) => (b.lastActiveAt || b.createdAt) - (a.lastActiveAt || a.createdAt)); }
+  list() { return this.items.map(x => ({ ...x, color: projectColor(x.color, x.id), progress: { done: x.milestones.filter(m => m.done).length, total: x.milestones.length } })).sort((a, b) => (b.lastActiveAt || b.createdAt) - (a.lastActiveAt || a.createdAt)); }
   get(id) { return this.items.find(x => x.id === id); }
   commit(items) { atomicJson(this.file, items); this.items = items; this.emit('changed'); }
   save(raw) {
     const before = raw.id ? this.get(raw.id) : null;
     if (raw.id && !before) throw new Error('Project not found.');
     const name = text(raw.name, 64, 'Name'); if (!name) throw new Error('Give the project a name.');
+    if (raw.color !== undefined && (typeof raw.color !== 'string' || !/^#[\da-f]{6}$/i.test(raw.color))) throw new Error('Choose a valid project color.');
     if (!['planning', 'active', 'paused', 'complete', 'archived'].includes(raw.status || 'active')) throw new Error('Choose a project status.');
     if (!Array.isArray(raw.folders) || raw.folders.length < 1 || raw.folders.length > 20) throw new Error('Add 1 to 20 project folders.');
     const folders = raw.folders.map(x => ({ label: text(x.label || '', 64, 'Folder label'), path: folder(x.path) }));
     if (!Array.isArray(raw.milestones || []) || (raw.milestones || []).length > 100) throw new Error('Use up to 100 milestones.');
     const milestones = planning.milestones(raw.milestones || []);
     const item = { id: before?.id || randomUUID(), name, category: text(raw.category || '', 60, 'Category'), goals: text(raw.goals || '', 10000, 'Goals'), approach: text(raw.approach || '', 10000, 'Plan'), notes: text(raw.notes || '', 20000, 'Notes'), nextStep: text(raw.nextStep || '', 1000, 'Next step'), status: raw.status || 'active', folders, milestones, createdAt: before?.createdAt || Date.now(), updatedAt: Date.now(), lastActiveAt: before?.lastActiveAt || null };
+    item.color = projectColor(raw.color ?? before?.color, item.id);
     if (before?.plan) {
       planning.checkRevision(before, raw.revision);
       item.plan = structuredClone(before.plan);
