@@ -4,11 +4,11 @@
 
 | Device | Download |
 | --- | --- |
-| Windows 10/11 — Intel or AMD 64-bit | **[Windows installer](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.15/Agent-Dock-0.6.0-preview.15-Setup-x64.exe)** |
-| Android — most phones (ARM64) | **[Android APK](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.15/Agent-Dock-0.6.0-preview.15-Android-arm64.apk)** |
-| Android — older 32-bit phones (ARMv7) | [Android ARMv7 APK](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.15/Agent-Dock-0.6.0-preview.15-Android-armv7.apk) |
+| Windows 10/11 — Intel or AMD 64-bit | **[Windows installer](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.16/Agent-Dock-0.6.0-preview.16-Setup-x64.exe)** |
+| Android — most phones (ARM64) | **[Android APK](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.16/Agent-Dock-0.6.0-preview.16-Android-arm64.apk)** |
+| Android — older 32-bit phones (ARMv7) | [Android ARMv7 APK](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.16/Agent-Dock-0.6.0-preview.16-Android-armv7.apk) |
 
-Current previews: **Android 0.6.0-preview.15**, **Windows 0.6.0-preview.15**. Reading, copying and saved drafts work with older PC hosts. Project/folder selection, current Codex model choices, image attachments and SSH hosts require Windows preview 15. Older hosts retain basic terminal controls. [Android release notes](https://github.com/YeerooXY/agentdock/releases/tag/v0.6.0-preview.15) · [Windows release notes](https://github.com/YeerooXY/agentdock/releases/tag/v0.6.0-preview.15) · [All releases](https://github.com/YeerooXY/agentdock/releases) · [Previous stable desktop-only release](https://github.com/YeerooXY/agentdock/releases/tag/v0.5.0).
+Current previews: **Android 0.6.0-preview.16**, **Windows 0.6.0-preview.16**. Reading, copying, saved drafts and adjustable text size work with older PC hosts. Project/folder selection, current Codex model choices, image attachments and SSH hosts require Windows preview 15. Older hosts retain basic terminal controls. [Android release notes](https://github.com/YeerooXY/agentdock/releases/tag/v0.6.0-preview.16) · [Windows release notes](https://github.com/YeerooXY/agentdock/releases/tag/v0.6.0-preview.16) · [All releases](https://github.com/YeerooXY/agentdock/releases) · [Previous stable desktop-only release](https://github.com/YeerooXY/agentdock/releases/tag/v0.5.0).
 
 A Windows desktop app for agent consoles, projects, shared tools and usage tracking.
 
@@ -41,7 +41,7 @@ The native companion can control your PC consoles, view Results and receive opti
 
 Tap **Devices** above the console to name your phone, add computers, and switch between saved PCs. Each PC keeps its own pairing and address; switching leaves its consoles running. On Windows, **Settings → Connect a phone → Connection** names the PC, and **Pair phone** lets you rename or remove individual phones. [Multiple-device setup](docs/android-setup.md#multiple-computers-and-phones).
 
-**Preview 15:** wrapped text keeps terminal colors. Each console retains its draft, caret and reading position. The agent badge sits beside the chat name. New consoles can use a saved project/folder, an installed agent and current model choices. Live model, effort and completion controls show the installed CLI's menu. Selected screenshots can be attached to a draft. **Usage → Notifications → Stay connected** enables direct background alerts without Firebase. [Mobile controls](docs/mobile-controls.md).
+**Preview 16:** wrapped text keeps terminal colors. Each console retains its draft, caret and reading position. The agent badge sits beside the chat name. New consoles can use a saved project/folder, an installed agent and current model choices. The quick agent controls sheet puts model, effort and completion choices in one place, while **Console actions → Clear mobile view** drops old phone-side output without stopping the PC session. Text size is adjustable in Settings. Selected screenshots can be attached to a draft. **Usage → Notifications → Stay connected** enables direct background alerts without Firebase. [Mobile controls](docs/mobile-controls.md).
 
 **Linux VM through SSH:** add a host in **Settings → Linux hosts**, verify its fingerprint on the VM, then check the connection. Choose it when opening a console. tmux keeps the remote session available after Dock disconnects. A paired phone controls that same console through the PC. [SSH setup](docs/ssh-hosts.md).
 

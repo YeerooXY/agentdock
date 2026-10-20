@@ -1,6 +1,6 @@
 # Mobile terminal controls
 
-Available in Android **0.6.0-preview.15**. Reading, copying, drafts, remaining-allowance meters and command shortcuts work with older PC hosts. Project/folder selection, current Codex model choices, image attachments and SSH hosts require **Windows preview 15**. Agent selection, file suggestions and closing local consoles retain compatibility with preview 13. Install over your current app to preserve saved computers. Installing the phone update does not restart your PC.
+Available in Android **0.6.0-preview.16**. Reading, copying, drafts, adjustable text size, remaining-allowance meters and command shortcuts work with older PC hosts. Project/folder selection, current Codex model choices, image attachments and SSH hosts require **Windows preview 15**. Agent selection, file suggestions and closing local consoles retain compatibility with preview 13. Install over your current app to preserve saved computers. Installing the phone update does not restart your PC.
 
 ## Reading and copying
 
@@ -12,7 +12,11 @@ Tap **Wrap text** to show **Grid** for menus, tables and other terminal layouts.
 
 The PC terminal keeps its dimensions, process and scrollback. Turning the phone or showing the keyboard also leaves that grid unchanged. The display choice lasts while viewing the current PC; reopening starts in Wrap text.
 
+Use **Console actions ⋮ → Clear mobile view** to discard the loaded terminal text on the phone when a long session starts to feel heavy. This replaces only the phone's terminal buffer; the PC process, remote scrollback and sequence checkpoint stay intact, so new output continues normally without replaying the discarded history.
+
 The message box and keyboard button start typing. Touching the terminal returns to reading. Enter, Escape and the arrow buttons are below the terminal. Swipe that button row for Tab and Ctrl C. With a landscape keyboard and large system text, the controls can scroll vertically to remain reachable.
+
+Adjust the app's text size in **Settings → App & connection → Text size**. The setting is stored on the phone and applies across the mobile UI while preserving the device's accessibility scaling.
 
 ## Consoles and saved drafts
 

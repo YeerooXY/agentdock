@@ -22,11 +22,13 @@ class _SettingsPageState extends State<SettingsPage> {
   String usageError = '', message = '';
   bool loading = false, busy = false;
   bool wasConnected = false, refreshPending = false;
+  double textScale = 1.0;
 
   @override
   void initState() {
     super.initState();
     wasConnected = widget.client.connected;
+    textScale = widget.client.textScale;
     widget.client.addListener(connectionChanged);
     loadUsage();
   }
@@ -118,24 +120,22 @@ class _SettingsPageState extends State<SettingsPage> {
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
         children: [
-          Row(
-            children: [
-              const Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Account usage',
-                      style: TextStyle(fontSize: 23, color: pink),
-                    ),
-                    Text(
-                      'Shared across your consoles',
-                      style: TextStyle(color: muted, fontSize: 12),
-                    ),
-                  ],
-                ),
-              ),
-              IconButton(
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final heading = const Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Account usage',
+                    style: TextStyle(fontSize: 23, color: pink),
+                  ),
+                  Text(
+                    'Shared across your consoles',
+                    style: TextStyle(color: muted, fontSize: 12),
+                  ),
+                ],
+              );
+              final refresh = IconButton(
                 tooltip: 'Refresh usage',
                 onPressed: loading || !c.connected ? null : loadUsage,
                 icon: loading
@@ -148,8 +148,23 @@ class _SettingsPageState extends State<SettingsPage> {
                         ),
                       )
                     : const Icon(Icons.refresh, color: blue),
-              ),
-            ],
+              );
+              if (constraints.maxWidth < 360) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    heading,
+                    Align(alignment: Alignment.centerRight, child: refresh),
+                  ],
+                );
+              }
+              return Row(
+                children: [
+                  Expanded(child: heading),
+                  refresh,
+                ],
+              );
+            },
           ),
           if (usageError.isNotEmpty)
             Padding(
@@ -209,6 +224,47 @@ class _SettingsPageState extends State<SettingsPage> {
             style: TextStyle(color: pink, fontSize: 20),
           ),
           panel(const UpdatePanel()),
+          panel(
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Text size',
+                  style: TextStyle(fontSize: 18, color: blue),
+                ),
+                Text(
+                  '${(textScale * 100).round()}% · applies to menus and controls',
+                  style: const TextStyle(color: muted, fontSize: 12),
+                ),
+                Slider(
+                  value: textScale,
+                  min: .85,
+                  max: 1.15,
+                  divisions: 6,
+                  label: '${(textScale * 100).round()}%',
+                  onChanged: (value) => setState(() => textScale = value),
+                  onChangeEnd: (value) => action(() async {
+                    await c.setTextScale(value);
+                    return null;
+                  }),
+                ),
+                const Wrap(
+                  alignment: WrapAlignment.spaceBetween,
+                  runSpacing: 4,
+                  children: [
+                    Text(
+                      'Smaller',
+                      style: TextStyle(color: muted, fontSize: 12),
+                    ),
+                    Text(
+                      'Larger',
+                      style: TextStyle(color: muted, fontSize: 12),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
           panel(
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,

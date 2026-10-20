@@ -70,6 +70,7 @@ class DockClient extends ChangeNotifier {
   String get phoneName => devices.phoneName;
   bool changingDevice = false;
   bool stayConnected = false;
+  double textScale = 1.0;
   bool _alertBaselinePending = false;
   final Set<String> _seenAlerts = {};
   int _alertModeGeneration = -1;
@@ -108,6 +109,12 @@ class DockClient extends ChangeNotifier {
       deviceStoreError = '';
       pairing = devices.find(devices.active);
       dataSaver = await storage.read(key: 'dataSaver') != 'false';
+      final savedScale = double.tryParse(
+        await storage.read(key: 'textScale') ?? '',
+      );
+      if (savedScale != null && savedScale.isFinite) {
+        textScale = savedScale.clamp(.85, 1.15).toDouble();
+      }
       if (await storage.read(key: 'stayConnected') == 'true') {
         try {
           await setStayConnected(true);
@@ -121,6 +128,12 @@ class DockClient extends ChangeNotifier {
       deviceStoreError = status;
       notifyListeners();
     }
+  }
+
+  Future<void> setTextScale(double value) async {
+    textScale = value.clamp(.85, 1.15).toDouble();
+    await storage.write(key: 'textScale', value: textScale.toStringAsFixed(2));
+    notifyListeners();
   }
 
   static Map<String, dynamic> parseInvite(String code, {DateTime? now}) {
@@ -758,6 +771,22 @@ class DockClient extends ChangeNotifier {
     inputError = '';
     notifyListeners();
     await subscribe();
+  }
+
+  /// Clears only the copy of this terminal shown on the phone. The remote
+  /// process keeps running, and the sequence checkpoint is retained so a
+  /// reconnect does not replay the discarded history.
+  void clearSelectedView() {
+    final id = selected;
+    final current = screens[id];
+    if (id.isEmpty || current == null) return;
+    final replacement = makeScreen(id)
+      ..sequence = current.sequence
+      ..epoch = current.epoch
+      ..cols = current.cols
+      ..rows = current.rows;
+    screens[id] = replacement;
+    notifyListeners();
   }
 
   Future<void> setStreaming(bool value) async {

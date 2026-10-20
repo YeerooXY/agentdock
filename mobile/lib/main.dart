@@ -87,8 +87,17 @@ class DockApp extends StatelessWidget {
     ),
     home: AnimatedBuilder(
       animation: client,
-      builder: (_, _) =>
-          DockHome(key: ValueKey(client.activePC), client: client),
+      builder: (context, _) {
+        final systemScale = MediaQuery.textScalerOf(context).scale(1);
+        // Keep Android accessibility scaling, while allowing a small app-level
+        // adjustment so dense terminal controls remain usable on small screens.
+        final effective = (systemScale * client.textScale).clamp(.85, 1.55);
+        return MediaQuery(
+          data: MediaQuery.of(context)
+              .copyWith(textScaler: TextScaler.linear(effective)),
+          child: DockHome(key: ValueKey(client.activePC), client: client),
+        );
+      },
     ),
   );
 }
@@ -399,6 +408,56 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
               },
       ),
     );
+  }
+
+  Future<void> quickAgentControls(Map<String, dynamic> session) async {
+    if (sending || !c.connected) return;
+    stopTerminalTyping();
+    composerFocus.unfocus();
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 4, 12, 18),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const ListTile(
+                leading: Icon(Icons.auto_awesome, color: pink),
+                title: Text('Quick agent controls'),
+                subtitle: Text('Choose a control, then use the agent menu.'),
+              ),
+              ListTile(
+                leading: Icon(
+                  Icons.model_training_outlined,
+                  color: AgentIdentity.of(session['provider'] as String).color,
+                ),
+                title: const Text('Model'),
+                subtitle: const Text('Open the current agent model chooser'),
+                onTap: () => Navigator.pop(context, 'Model'),
+              ),
+              if (['claude', 'codex'].contains(session['provider']))
+                ListTile(
+                  leading: const Icon(Icons.speed, color: blue),
+                  title: const Text('Effort / speed'),
+                  subtitle: const Text('Open the current agent effort chooser'),
+                  onTap: () => Navigator.pop(context, 'Effort'),
+                ),
+              ListTile(
+                leading: const Icon(Icons.keyboard_alt_outlined, color: pink),
+                title: const Text('Commands and completion'),
+                subtitle: const Text(
+                  'Use shortcuts without typing a slash command',
+                ),
+                onTap: () => Navigator.pop(context, 'Commands'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (mounted && action != null) await liveControls(action);
   }
 
   Future<void> newConsole() async {
@@ -896,6 +955,13 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
                     color: AgentIdentity.of(provider).color,
                   ),
                 ),
+              IconButton(
+                tooltip: 'Quick model and effort controls',
+                onPressed: c.connected && !sending
+                    ? () => quickAgentControls(session)
+                    : null,
+                icon: const Icon(Icons.auto_awesome, color: pink),
+              ),
             ],
           ),
         ),
@@ -977,6 +1043,12 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
               },
               onSelected: (action) {
                 if (action == 'copy') copyConsole();
+                if (action == 'clear-view') {
+                  c.clearSelectedView();
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Mobile view cleared')),
+                  );
+                }
                 if (action == 'files') pickFile(session);
                 if (action == 'image') pickImage();
                 if (action == 'close') closeConsole(session);
@@ -1023,6 +1095,11 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
                   value: 'copy',
                   enabled: view != null,
                   child: const Text('Copy text'),
+                ),
+                PopupMenuItem(
+                  value: 'clear-view',
+                  enabled: view != null,
+                  child: const Text('Clear mobile view'),
                 ),
                 PopupMenuItem(
                   value: 'files',

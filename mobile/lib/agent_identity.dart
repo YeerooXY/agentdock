@@ -51,6 +51,17 @@ class AgentMark extends StatelessWidget {
   Widget build(BuildContext context) {
     final identity = AgentIdentity.of(provider);
     final asset = AgentIdentity.logo(provider);
+    if (provider.toLowerCase() == 'shell') {
+      return SizedBox.square(
+        dimension: size,
+        child: Icon(
+          Icons.desktop_windows,
+          size: size * .78,
+          color: identity.color,
+          semanticLabel: 'Computer terminal',
+        ),
+      );
+    }
     return ExcludeSemantics(
       child: SizedBox.square(
         dimension: size,

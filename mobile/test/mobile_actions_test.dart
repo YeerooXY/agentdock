@@ -61,6 +61,21 @@ void phone(WidgetTester tester, Size size, [double scale = 1]) {
 }
 
 void main() {
+  test('clearing the mobile view keeps the remote stream checkpoint', () {
+    final c = ActionsDock();
+    addTearDown(c.dispose);
+    final view = c.screen!;
+    view.sequence = 42;
+    view.epoch = 3;
+    view.terminal.write('\r\nOlder output');
+
+    c.clearSelectedView();
+
+    expect(terminalReadingText(c.screen!.terminal), isEmpty);
+    expect(c.screen!.sequence, 42);
+    expect(c.screen!.epoch, 3);
+  });
+
   test(
     'reading joins soft wraps and preserves hard breaks, code and Unicode',
     () {
