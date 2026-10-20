@@ -773,19 +773,15 @@ class DockClient extends ChangeNotifier {
     await subscribe();
   }
 
-  /// Clears only the copy of this terminal shown on the phone. The remote
-  /// process keeps running, and the sequence checkpoint is retained so a
-  /// reconnect does not replay the discarded history.
+  /// Discard phone scrollback, preserving the active screen, parser modes and
+  /// cursor needed by subsequent PTY frames. A host reset can send a new snapshot.
   void clearSelectedView() {
     final id = selected;
     final current = screens[id];
     if (id.isEmpty || current == null) return;
-    final replacement = makeScreen(id)
-      ..sequence = current.sequence
-      ..epoch = current.epoch
-      ..cols = current.cols
-      ..rows = current.rows;
-    screens[id] = replacement;
+    current.terminal.mainBuffer.clearScrollback();
+    current.terminal.altBuffer.clearScrollback();
+    current.terminal.write('');
     notifyListeners();
   }
 

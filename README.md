@@ -4,11 +4,11 @@
 
 | Device | Download |
 | --- | --- |
-| Windows 10/11 — Intel or AMD 64-bit | **[Windows installer](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.18/Agent-Dock-0.6.0-preview.18-Setup-x64.exe)** |
-| Android — most phones (ARM64) | **[Android APK](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.18/Agent-Dock-0.6.0-preview.18-Android-arm64.apk)** |
-| Android — older 32-bit phones (ARMv7) | [Android ARMv7 APK](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.18/Agent-Dock-0.6.0-preview.18-Android-armv7.apk) |
+| Windows 10/11 — Intel or AMD 64-bit | **[Windows installer](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.19/Agent-Dock-0.6.0-preview.19-Setup-x64.exe)** |
+| Android — most phones (ARM64) | **[Android APK](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.19/Agent-Dock-0.6.0-preview.19-Android-arm64.apk)** |
+| Android — older 32-bit phones (ARMv7) | [Android ARMv7 APK](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.19/Agent-Dock-0.6.0-preview.19-Android-armv7.apk) |
 
-Current previews: **Android 0.6.0-preview.18**, **Windows 0.6.0-preview.18**. Reading, copying, saved drafts and adjustable text size work with older PC hosts. Project/folder selection, current Codex model choices, image attachments and SSH hosts require Windows preview 15. Older hosts retain basic terminal controls. [Android release notes](https://github.com/YeerooXY/agentdock/releases/tag/v0.6.0-preview.18) · [Windows release notes](https://github.com/YeerooXY/agentdock/releases/tag/v0.6.0-preview.18) · [All releases](https://github.com/YeerooXY/agentdock/releases) · [Previous stable desktop-only release](https://github.com/YeerooXY/agentdock/releases/tag/v0.5.0).
+Current previews: **Android 0.6.0-preview.19**, **Windows 0.6.0-preview.19**. Reading, copying, saved drafts and adjustable text size work with older PC hosts. Project/folder selection, current Codex model choices, image attachments and SSH hosts require Windows preview 15. Older hosts retain basic terminal controls. [Android release notes](https://github.com/YeerooXY/agentdock/releases/tag/v0.6.0-preview.19) · [Windows release notes](https://github.com/YeerooXY/agentdock/releases/tag/v0.6.0-preview.19) · [All releases](https://github.com/YeerooXY/agentdock/releases) · [Previous stable desktop-only release](https://github.com/YeerooXY/agentdock/releases/tag/v0.5.0).
 
 A Windows desktop app for agent consoles, projects, shared tools and usage tracking.
 
@@ -37,11 +37,15 @@ This release is unsigned, so Windows may show an unknown-publisher or SmartScree
 
 ## Android preview
 
-The native companion can control your PC consoles, view Results and receive optional completion alerts. Account usage has separate remaining-allowance bars, provider colors, reset times and pull-to-refresh. Tap the message field to write a prompt, or the keyboard button beside the terminal controls to type directly. Touching the terminal returns to reading and keeps your message draft. Use the Windows and Android downloads above.
+The native Android companion controls your PC consoles, shows Results and account usage, and receives optional completion alerts. The header shows the harness icon, chat name, connection status and PC name.
 
-Tap **Devices** above the console to name your phone, add computers, and switch between saved PCs. Each PC keeps its own pairing and address; switching leaves its consoles running. On Windows, **Settings → Connect a phone → Connection** names the PC, and **Pair phone** lets you rename or remove individual phones. [Multiple-device setup](docs/android-setup.md#multiple-computers-and-phones).
+Tap the thin blue-pink handle below the terminal to write a message. **Model** and **Effort** appear while chat is open; the down arrow collapses it and keeps your draft. Each console retains its draft, caret and reading position. The top **?** menu contains **Text & display**, **Copy text**, **Console links**, **Clear mobile history** and direct keyboard input. Wrapped text keeps terminal colors; its size is adjustable. Clearing history keeps the active terminal screen and the PC process running.
 
-**Preview 16:** wrapped text keeps terminal colors. Each console retains its draft, caret and reading position. The agent badge sits beside the chat name. New consoles can use a saved project/folder, an installed agent and current model choices. The quick agent controls sheet puts model, effort and completion choices in one place, while **Console actions → Clear mobile view** drops old phone-side output without stopping the PC session. Text size is adjustable in Settings. Selected screenshots can be attached to a draft. **Usage → Notifications → Stay connected** enables direct background alerts without Firebase. [Mobile controls](docs/mobile-controls.md).
+Tap the **chat name ? New console** to select a saved project/folder and an installed agent. Codex and Claude model choices are read from their live menus and shown as tappable rows. Unknown menu layouts remain in the terminal. The message **+** attaches a project file or selected image. [Mobile controls](docs/mobile-controls.md).
+
+Use **Usage ? Devices** to name your phone, add computers and switch between saved PCs. Each PC keeps its pairing and address. On Windows, **Settings ? Connect a phone ? Connection** names the PC; **Pair phone** manages its paired phones. [Multiple-device setup](docs/android-setup.md#multiple-computers-and-phones).
+
+**Usage ? Notifications ? Stay connected** enables direct background alerts without Firebase. Android shows an ongoing notification; battery restrictions can delay alerts.
 
 **Linux VM through SSH:** add a host in **Settings → Linux hosts**, verify its fingerprint on the VM, then check the connection. Choose it when opening a console. tmux keeps the remote session available after Dock disconnects. A paired phone controls that same console through the PC. [SSH setup](docs/ssh-hosts.md).
 

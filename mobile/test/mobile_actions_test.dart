@@ -6,7 +6,7 @@ import 'package:agent_dock_mobile/terminal_reading.dart';
 import 'package:agent_dock_mobile/agent_identity.dart';
 import 'package:xterm/xterm.dart';
 
-import 'widget_test.dart' show FakeDock;
+import 'widget_test.dart' show FakeDock, enterChat, chooseFile;
 
 class ActionsDock extends FakeDock {
   final actions = <Map<String, dynamic>>[];
@@ -67,13 +67,27 @@ void main() {
     final view = c.screen!;
     view.sequence = 42;
     view.epoch = 3;
-    view.terminal.write('\r\nOlder output');
+    view.terminal.write('\r\n${'Older output\r\n' * 200}');
+    view.terminal.write('\x1b[?2004h\x1b[32mLIVE');
+    final cursorX = view.terminal.buffer.cursorX;
+    final cursorY = view.terminal.buffer.cursorY;
 
     c.clearSelectedView();
 
-    expect(terminalReadingText(c.screen!.terminal), isEmpty);
+    expect(c.screen!.terminal, same(view.terminal));
+    expect(view.terminal.buffer.scrollBack, 0);
+    expect(view.terminal.buffer.cursorX, cursorX);
+    expect(view.terminal.buffer.cursorY, cursorY);
+    expect(view.terminal.bracketedPasteMode, isTrue);
+    view.terminal.write(' update');
+    expect(terminalReadingText(view.terminal), endsWith('LIVE update'));
     expect(c.screen!.sequence, 42);
     expect(c.screen!.epoch, 3);
+    view.terminal.write('\r\n${'More output\r\n' * 200}\x1b[?1049hALT');
+    c.clearSelectedView();
+    expect(view.terminal.isUsingAltBuffer, isTrue);
+    expect(terminalReadingText(view.terminal), 'ALT');
+    expect(view.terminal.mainBuffer.scrollBack, 0);
   });
 
   test(
@@ -149,7 +163,7 @@ void main() {
         ),
       );
       await tester.pumpWidget(DockApp(client: c));
-      await tester.tap(find.byTooltip('Console actions'));
+      await tester.tap(find.byTooltip('More options'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Copy text'));
       await tester.pumpAndSettle();
@@ -203,7 +217,7 @@ void main() {
     await tester.tap(find.text('Trader'));
     await tester.pumpAndSettle();
     expect(find.text('Claude project'), findsOneWidget);
-    final claude = tester.widget<AgentBadge>(find.byType(AgentBadge).last);
+    final claude = tester.widget<AgentMark>(find.byType(AgentMark).last);
     expect(claude.provider, 'claude');
     await tester.tap(find.text('Claude project'));
     await tester.pumpAndSettle();
@@ -240,22 +254,16 @@ void main() {
     },
   );
 
-  testWidgets('files and slash suggestions change only the draft', (
+  testWidgets('choosing files changes only the draft until Send', (
     tester,
   ) async {
     final c = ActionsDock();
     addTearDown(c.dispose);
     await tester.pumpWidget(DockApp(client: c));
-    await tester.enterText(find.byType(TextField).last, '/mo');
-    await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(ActionChip, '/model'));
-    expect(
-      tester.widget<TextField>(find.byType(TextField).last).controller!.text,
-      '/model',
-    );
-    expect(c.inputs, isEmpty);
+    await enterChat(tester);
+    await enterChat(tester);
     await tester.enterText(find.byType(TextField).last, 'Review ');
-    await tester.tap(find.byTooltip('Choose a file'));
+    await chooseFile(tester);
     await tester.pumpAndSettle();
     await tester.tap(find.text('hello world.dart'));
     await tester.pumpAndSettle();
@@ -281,7 +289,7 @@ void main() {
       addTearDown(c.dispose);
       await tester.pumpWidget(DockApp(client: c));
       Future<void> ask() async {
-        await tester.tap(find.byTooltip('Console actions'));
+        await tester.tap(find.byTooltip('More options'));
         await tester.pumpAndSettle();
         await tester.tap(find.text('Close console'));
         await tester.pumpAndSettle();
@@ -313,7 +321,7 @@ void main() {
     final c = FakeDock();
     addTearDown(c.dispose);
     await tester.pumpWidget(DockApp(client: c));
-    await tester.tap(find.byTooltip('Choose a file'));
+    await chooseFile(tester);
     await tester.pumpAndSettle();
     expect(
       find.text('Update Dock on your PC to choose files here.'),

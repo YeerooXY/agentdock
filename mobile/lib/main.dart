@@ -83,7 +83,7 @@ class DockApp extends StatelessWidget {
         textColor: Colors.white,
       ),
     ),
-    home: AnimatedBuilder(
+    builder: (context, child) => AnimatedBuilder(
       animation: client,
       builder: (context, _) {
         final systemScale = MediaQuery.textScalerOf(context).scale(1);
@@ -93,9 +93,14 @@ class DockApp extends StatelessWidget {
         return MediaQuery(
           data: MediaQuery.of(context)
               .copyWith(textScaler: TextScaler.linear(effective)),
-          child: DockHome(key: ValueKey(client.activePC), client: client),
+          child: child!,
         );
       },
+    ),
+    home: AnimatedBuilder(
+      animation: client,
+      builder: (_, _) =>
+          DockHome(key: ValueKey(client.activePC), client: client),
     ),
   );
 }
@@ -129,7 +134,6 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
   static const media = MethodChannel('agentdock/media');
   bool fitWidth = false;
   _CommandTarget? stagedCommandTarget;
-  bool stagedSlashCommand = false;
   String? draftKey;
   bool restoringDraft = false;
   @override
@@ -178,8 +182,32 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
   }
 
   void enterChatMode() {
+    final key = draftKey;
+    final offset = key == null ? null : c.drafts.position(key, 'composer');
     if (!chatMode) setState(() => chatMode = true);
-    composerFocus.requestFocus();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !chatMode || key != draftKey) return;
+      // Reopening a draft is also a reading action. Let the next field tap
+      // focus it, so Flutter does not jump from saved scrollback to the caret.
+      if (composer.text.isEmpty) composerFocus.requestFocus();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted &&
+            chatMode &&
+            key == draftKey &&
+            offset != null &&
+            composerScroll.hasClients) {
+          composerScroll.jumpTo(
+            offset.toDouble().clamp(0, composerScroll.position.maxScrollExtent),
+          );
+        }
+      });
+    });
+  }
+
+  void leaveChatMode() {
+    stopTerminalTyping();
+    composerFocus.unfocus();
+    if (chatMode) setState(() => chatMode = false);
   }
 
   void draftChanged() {
@@ -221,7 +249,8 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
                 .clamp(0, value.length),
       ),
     );
-    chatMode = value.isNotEmpty;
+    chatMode = false;
+    composerFocus.unfocus();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted && draftKey == key && composerScroll.hasClients) {
         composerScroll.jumpTo(
@@ -307,10 +336,7 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
     final sentKey = draftKey;
     setState(() => sending = true);
     await run(() async {
-      await c.submit(
-        text,
-        command: stagedCommandTarget != null && stagedSlashCommand,
-      );
+      await c.submit(text);
       if (sentKey != null && c.drafts.get(sentKey) == text) {
         c.drafts.set(sentKey, '');
       }
@@ -334,70 +360,15 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
         (s) => s['id'] == target.session && s['provider'] == target.provider,
       );
 
-  Future<void> liveControls(String action, {String? completion}) async {
-    final key = draftKey;
+  Future<void> liveControls(String action) async {
     stopTerminalTyping();
     composerFocus.unfocus();
     await showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
       isScrollControlled: true,
-      builder: (_) => LiveAgentControls(
-        client: c,
-        theme: terminalTheme,
-        action: action,
-        completion: completion,
-        onTyped: completion == null
-            ? null
-            : () {
-                if (mounted && draftKey == key && composer.text == completion) {
-                  composer.clear();
-                }
-              },
-      ),
+      builder: (_) => LiveAgentControls(client: c, action: action),
     );
-  }
-
-  Future<void> quickAgentControls(Map<String, dynamic> session) async {
-    if (sending || !c.connected) return;
-    stopTerminalTyping();
-    composerFocus.unfocus();
-    final action = await showModalBottomSheet<String>(
-      context: context,
-      showDragHandle: true,
-      builder: (context) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 4, 12, 18),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const ListTile(
-                leading: Icon(Icons.auto_awesome, color: pink),
-                title: Text('Quick agent controls'),
-                subtitle: Text('Choose a control, then use the agent menu.'),
-              ),
-              ListTile(
-                leading: Icon(
-                  Icons.model_training_outlined,
-                  color: AgentIdentity.of(session['provider'] as String).color,
-                ),
-                title: const Text('Model'),
-                subtitle: const Text('Open the current agent model chooser'),
-                onTap: () => Navigator.pop(context, 'Model'),
-              ),
-              if (['claude', 'codex'].contains(session['provider']))
-                ListTile(
-                  leading: const Icon(Icons.speed, color: blue),
-                  title: const Text('Effort / speed'),
-                  subtitle: const Text('Open the current agent effort chooser'),
-                  onTap: () => Navigator.pop(context, 'Effort'),
-                ),
-            ],
-          ),
-        ),
-      ),
-    );
-    if (mounted && action != null) await liveControls(action);
   }
 
   Future<void> newConsole() async {
@@ -465,7 +436,6 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
           offset: composer.text.length + suffix.length,
         ),
       );
-      stagedSlashCommand = false;
     });
     if (mounted) setState(() => attaching = false);
   }
@@ -520,7 +490,6 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
       selection: TextSelection.collapsed(offset: start + inserted.length),
     );
     stagedCommandTarget = target;
-    stagedSlashCommand = false;
   }
 
   Future<void> closeConsole(Map<String, dynamic> session) async {
@@ -627,10 +596,8 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
           leadingWidth: 34,
           titleSpacing: 8,
           toolbarHeight: max(
-            kToolbarHeight,
-            MediaQuery.textScalerOf(context).scale(20) * 1.2 +
-                MediaQuery.textScalerOf(context).scale(12) * 1.2 +
-                32,
+            56,
+            MediaQuery.textScalerOf(context).scale(18) + 26,
           ),
           leading: Padding(
             padding: const EdgeInsets.all(6),
@@ -667,7 +634,10 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
                     const SizedBox(width: 5),
                     const Icon(Icons.desktop_windows, size: 14, color: blue),
                     const SizedBox(width: 3),
-                    Flexible(
+                    ConstrainedBox(
+                      constraints: BoxConstraints(
+                        maxWidth: MediaQuery.sizeOf(context).width * .23,
+                      ),
                       child: Text(
                         c.pcName,
                         maxLines: 1,
@@ -698,10 +668,44 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
               onSelected: (action) {
                 if (action == 'updates') openUpdates(context);
                 if (action == 'reconnect') run(c.reconnect);
+                if (action == 'display') displaySettings();
+                if (current != null) consoleAction(action, current);
               },
-              itemBuilder: (_) => const [
-                PopupMenuItem(value: 'updates', child: Text('App updates')),
-                PopupMenuItem(value: 'reconnect', child: Text('Reconnect')),
+              itemBuilder: (_) => [
+                if (page == 0 && current != null) ...[
+                  const PopupMenuItem(
+                    value: 'display',
+                    child: Text('Text & display'),
+                  ),
+                  const PopupMenuItem(value: 'copy', child: Text('Copy text')),
+                  const PopupMenuItem(
+                    value: 'links',
+                    child: Text('Console links'),
+                  ),
+                  PopupMenuItem(
+                    value: 'keyboard',
+                    enabled: c.connected,
+                    child: const Text('Type directly in terminal'),
+                  ),
+                  const PopupMenuItem(
+                    value: 'clear-view',
+                    child: Text('Clear mobile history'),
+                  ),
+                  PopupMenuItem(
+                    value: 'close',
+                    enabled: c.connected,
+                    child: const Text('Close console'),
+                  ),
+                  const PopupMenuDivider(),
+                ],
+                const PopupMenuItem(
+                  value: 'updates',
+                  child: Text('App updates'),
+                ),
+                const PopupMenuItem(
+                  value: 'reconnect',
+                  child: Text('Reconnect'),
+                ),
               ],
             ),
           ],
@@ -746,6 +750,7 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
         bottomNavigationBar: MediaQuery.viewInsetsOf(context).bottom > 0
             ? null
             : NavigationBar(
+                height: 64,
                 labelBehavior: MediaQuery.textScalerOf(context).scale(14) > 22
                     ? NavigationDestinationLabelBehavior.onlyShowSelected
                     : NavigationDestinationLabelBehavior.alwaysShow,
@@ -798,97 +803,114 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
         // A landscape keyboard can leave less room than the controls need.
         // Keep them reachable by scrolling instead of clipping the composer.
         child: SizedBox(
-          height: max(
-            constraints.maxHeight,
-            MediaQuery.viewInsetsOf(context).bottom > 0
-                ? 200 + MediaQuery.textScalerOf(context).scale(64)
-                : 160 + MediaQuery.textScalerOf(context).scale(32),
-          ),
+          height: !chatMode
+              ? constraints.maxHeight
+              : max(
+                  constraints.maxHeight,
+                  MediaQuery.viewInsetsOf(context).bottom > 0
+                      ? 200 + MediaQuery.textScalerOf(context).scale(64)
+                      : 160 + MediaQuery.textScalerOf(context).scale(32),
+                ),
           child: terminalContents(session, view),
         ),
       ),
     );
   }
 
-  Widget terminalContents(Map<String, dynamic> session, ConsoleScreen? view) {
-    final inChat = chatMode || composer.text.isNotEmpty;
-    final compactControls =
-        MediaQuery.sizeOf(context).width < 420 &&
-        MediaQuery.textScalerOf(context).scale(14) > 20;
-    void toggleDisplay() {
-      stopTerminalTyping();
-      composerFocus.unfocus();
-      setState(() => fitWidth = !fitWidth);
+  void consoleAction(String action, Map<String, dynamic> session) {
+    if (action == 'copy') copyConsole();
+    if (action == 'links') showConsoleLinks(session);
+    if (action == 'keyboard') startTerminalTyping();
+    if (action == 'clear-view') {
+      c.clearSelectedView();
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Mobile history cleared')));
     }
+    if (action == 'files') pickFile(session);
+    if (action == 'image') pickImage();
+    if (action == 'close') closeConsole(session);
+  }
 
-    final provider = session['provider'] as String;
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 8, 0),
-          child: Row(
-            children: [
-              Icon(
-                session['state'] == 'ready'
-                    ? Icons.check_circle_outline
-                    : Icons.circle,
-                size: 12,
-                color: session['state'] == 'ready'
-                    ? const Color(0xff96e6b8)
-                    : blue,
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  session['remote'] is Map
-                      ? '${session['remote']['name']} \u00b7 SSH'
-                      : '${session['state']}',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: muted, fontSize: 12),
-                ),
-              ),
-              if (compactControls)
-                IconButton(
-                  tooltip: fitWidth
-                      ? 'Wrap text at reading size'
-                      : 'Show the original terminal grid',
-                  onPressed: toggleDisplay,
-                  icon: Icon(
-                    fitWidth ? Icons.fit_screen : Icons.wrap_text,
-                    color: blue,
+  Future<void> displaySettings() async {
+    stopTerminalTyping();
+    composerFocus.unfocus();
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (context) => StatefulBuilder(
+        builder: (context, update) => SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Text & display',
+                    style: TextStyle(fontSize: 22, color: pink),
                   ),
-                )
-              else
-                Tooltip(
-                  message: fitWidth
-                      ? 'Wrap text at reading size'
-                      : 'Show the original terminal grid',
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 160),
-                    child: TextButton.icon(
-                      onPressed: toggleDisplay,
-                      icon: Icon(
-                        fitWidth ? Icons.fit_screen : Icons.text_fields,
-                      ),
-                      label: Text(
-                        fitWidth ? 'Grid' : 'Wrap text',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
+                ),
+                const SizedBox(height: 16),
+                SegmentedButton<bool>(
+                  segments: const [
+                    ButtonSegment(
+                      value: false,
+                      icon: Icon(Icons.wrap_text),
+                      label: Text('Wrap text'),
                     ),
-                  ),
+                    ButtonSegment(
+                      value: true,
+                      icon: Icon(Icons.grid_view),
+                      label: Text('Grid'),
+                    ),
+                  ],
+                  selected: {fitWidth},
+                  onSelectionChanged: (value) {
+                    setState(() => fitWidth = value.single);
+                    update(() {});
+                  },
                 ),
-              IconButton(
-                tooltip: 'Quick model and effort controls',
-                onPressed: c.connected && !sending
-                    ? () => quickAgentControls(session)
-                    : null,
-                icon: const Icon(Icons.auto_awesome, color: pink),
-              ),
-            ],
+                const SizedBox(height: 20),
+                Row(
+                  children: [
+                    const Expanded(child: Text('Text size')),
+                    Text(
+                      '${(c.textScale * 100).round()}%',
+                      style: const TextStyle(color: blue),
+                    ),
+                  ],
+                ),
+                Slider(
+                  value: c.textScale,
+                  min: .85,
+                  max: 1.15,
+                  divisions: 6,
+                  label: '${(c.textScale * 100).round()}%',
+                  onChanged: (value) {
+                    run(() => c.setTextScale(value));
+                    update(() {});
+                  },
+                ),
+                if (fitWidth)
+                  const Text(
+                    'Grid fits the PC?s columns. Use Wrap text for larger terminal text.',
+                    style: TextStyle(color: muted),
+                  ),
+              ],
+            ),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget terminalContents(Map<String, dynamic> session, ConsoleScreen? view) {
+    final provider = (session['provider'] as String).toLowerCase();
+    return Column(
+      children: [
         Expanded(
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -900,6 +922,7 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
                   ? const Center(child: CircularProgressIndicator())
                   : Listener(
                       onPointerDown: (_) {
+                        // Touching output must never activate the keyboard.
                         stopTerminalTyping();
                         composerFocus.unfocus();
                         if (['ready', 'attention'].contains(session['state'])) {
@@ -921,113 +944,42 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
             ),
           ),
         ),
-        if (inChat) ...[
-          Row(
-            children: [
-              Expanded(
-                child: SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Row(
-                    children: [
-                      TextButton.icon(
-                        onPressed: c.connected && !sending
-                            ? () => liveControls('Model')
-                            : null,
-                        icon: const Icon(Icons.model_training_outlined),
-                        label: const Text('Model'),
-                      ),
-                      if (['claude', 'codex'].contains(provider))
+        if (chatMode) ...[
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            child: Row(
+              children: [
+                Expanded(
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
                         TextButton.icon(
                           onPressed: c.connected && !sending
-                              ? () => liveControls('Effort')
+                              ? () => liveControls('Model')
                               : null,
-                          icon: const Icon(Icons.speed),
-                          label: const Text('Effort'),
+                          icon: const Icon(Icons.tune, size: 18),
+                          label: const Text('Model'),
                         ),
-                    ],
+                        if (['claude', 'codex'].contains(provider))
+                          TextButton.icon(
+                            onPressed: c.connected && !sending
+                                ? () => liveControls('Effort')
+                                : null,
+                            icon: const Icon(Icons.speed, size: 18),
+                            label: const Text('Effort'),
+                          ),
+                      ],
+                    ),
                   ),
                 ),
-              ),
-              IconButton(
-                tooltip: 'Console links',
-                onPressed: view == null
-                    ? null
-                    : () => showConsoleLinks(session),
-                icon: const Icon(Icons.link, color: blue),
-              ),
-              IconButton(
-                tooltip: 'Type directly in terminal',
-                onPressed: c.connected ? startTerminalTyping : null,
-                icon: const Icon(Icons.keyboard_alt_outlined, color: pink),
-              ),
-              PopupMenuButton<String>(
-                tooltip: 'Console actions',
-                icon: const Icon(Icons.more_vert, color: blue),
-                onOpened: () {
-                  stopTerminalTyping();
-                  composerFocus.unfocus();
-                },
-                onSelected: (action) {
-                  if (action == 'copy') copyConsole();
-                  if (action == 'clear-view') {
-                    c.clearSelectedView();
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Mobile view cleared')),
-                    );
-                  }
-                  if (action == 'files') pickFile(session);
-                  if (action == 'image') pickImage();
-                  if (action == 'close') closeConsole(session);
-                  if (action == 'model') liveControls('Model');
-                  if (action == 'effort') liveControls('Effort');
-                },
-                itemBuilder: (_) => [
-                  PopupMenuItem(
-                    value: 'image',
-                    enabled:
-                        c.connected &&
-                        !sending &&
-                        !attaching &&
-                        session['remote'] == null,
-                    child: Text(
-                      attaching ? 'Attaching image\u2026' : 'Attach image',
-                    ),
-                  ),
-                  if (['claude', 'codex'].contains(provider)) ...[
-                    PopupMenuItem(
-                      value: 'model',
-                      enabled: c.connected && !sending,
-                      child: const Text('Choose model'),
-                    ),
-                    PopupMenuItem(
-                      value: 'effort',
-                      enabled: c.connected && !sending,
-                      child: const Text('Choose effort'),
-                    ),
-                  ],
-                  PopupMenuItem(
-                    value: 'copy',
-                    enabled: view != null,
-                    child: const Text('Copy text'),
-                  ),
-                  PopupMenuItem(
-                    value: 'clear-view',
-                    enabled: view != null,
-                    child: const Text('Clear mobile view'),
-                  ),
-                  PopupMenuItem(
-                    value: 'files',
-                    enabled: c.connected && !sending,
-                    child: const Text('Files'),
-                  ),
-                  PopupMenuItem(
-                    value: 'close',
-                    enabled: c.connected && !sending,
-                    child: const Text('Close console'),
-                  ),
-                ],
-              ),
-            ],
+                IconButton(
+                  tooltip: 'Collapse chat',
+                  onPressed: leaveChatMode,
+                  icon: const Icon(Icons.keyboard_arrow_down, color: pink),
+                ),
+              ],
+            ),
           ),
           if (c.inputError.isNotEmpty || c.drafts.error.isNotEmpty)
             Padding(
@@ -1038,56 +990,97 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
               ),
             ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(10, 0, 10, 12),
+            padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
                 Expanded(
-                  child: TextField(
-                    controller: composer,
-                    scrollController: composerScroll,
-                    focusNode: composerFocus,
-                    onChanged: (_) => stagedCommandTarget = null,
-                    minLines: 1,
-                    maxLines: 8,
-                    textInputAction: TextInputAction.newline,
-                    autocorrect: false,
-                    enableSuggestions: false,
-                    decoration: InputDecoration(
-                      labelText: 'Command or message',
-                      isDense: true,
-                      suffixIcon: IconButton(
-                        tooltip: 'Choose a file',
-                        onPressed: c.connected && !sending
-                            ? () => pickFile(session)
-                            : null,
-                        icon: const Icon(Icons.attach_file, color: blue),
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxHeight: min(
+                        MediaQuery.textScalerOf(context).scale(16) * 1.4 * 8.5 +
+                            24,
+                        max(72, MediaQuery.sizeOf(context).height * .35),
+                      ),
+                    ),
+                    child: TextField(
+                      controller: composer,
+                      scrollController: composerScroll,
+                      focusNode: composerFocus,
+                      onChanged: (_) => stagedCommandTarget = null,
+                      minLines: 1,
+                      maxLines: null,
+                      style: const TextStyle(fontSize: 16, height: 1.4),
+                      textInputAction: TextInputAction.newline,
+                      autocorrect: false,
+                      enableSuggestions: false,
+                      decoration: InputDecoration(
+                        hintText: 'Message',
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 12,
+                        ),
+                        isDense: true,
+                        suffixIcon: PopupMenuButton<String>(
+                          tooltip: 'Attach',
+                          icon: const Icon(Icons.add, color: blue),
+                          enabled: c.connected && !sending && !attaching,
+                          onSelected: (action) =>
+                              consoleAction(action, session),
+                          itemBuilder: (_) => [
+                            const PopupMenuItem(
+                              value: 'files',
+                              child: Text('Files'),
+                            ),
+                            if (session['remote'] == null)
+                              const PopupMenuItem(
+                                value: 'image',
+                                child: Text('Image'),
+                              ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
                 ),
                 const SizedBox(width: 8),
                 DockSendButton(
-                  onPressed: c.connected && !sending ? send : null,
+                  onPressed:
+                      c.connected && !sending && composer.text.trim().isNotEmpty
+                      ? send
+                      : null,
                   sending: sending,
                 ),
               ],
             ),
           ),
         ] else
-          Padding(
-            padding: const EdgeInsets.fromLTRB(10, 4, 10, 8),
-            child: Semantics(
-              button: true,
-              label: 'Enter chat mode',
-              child: InkWell(
-                onTap: enterChatMode,
-                borderRadius: BorderRadius.circular(8),
-                child: Container(
-                  height: 12,
-                  decoration: BoxDecoration(
-                    border: Border(
-                      top: BorderSide(color: blue.withValues(alpha: .75)),
+          Semantics(
+            button: true,
+            label: composer.text.isEmpty
+                ? 'Enter chat mode'
+                : 'Enter chat mode, draft saved',
+            child: InkWell(
+              key: const ValueKey('enter-chat'),
+              onTap: enterChatMode,
+              child: SizedBox(
+                height: 40,
+                width: double.infinity,
+                child: Center(
+                  child: Container(
+                    width: 96,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(colors: [blue, pink]),
+                      borderRadius: BorderRadius.circular(4),
+                      boxShadow: composer.text.isEmpty
+                          ? null
+                          : [
+                              BoxShadow(
+                                color: pink.withValues(alpha: .35),
+                                blurRadius: 8,
+                              ),
+                            ],
                     ),
                   ),
                 ),
@@ -1122,7 +1115,7 @@ class _StatusDotState extends State<StatusDot>
   late final AnimationController pulse = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 1100),
-  )..repeat(reverse: true);
+  );
 
   @override
   void dispose() {
@@ -1132,21 +1125,43 @@ class _StatusDotState extends State<StatusDot>
 
   @override
   Widget build(BuildContext context) {
-    final reachable = widget.state == 'ready' || widget.state == 'open';
+    final reachable = [
+      'ready',
+      'open',
+      'attention',
+      'idle',
+    ].contains(widget.state);
     final working = widget.state == 'working' || widget.state == 'active';
+    final animate =
+        reachable &&
+        !MediaQuery.disableAnimationsOf(context) &&
+        TickerMode.valuesOf(context).enabled;
+    if (animate && !pulse.isAnimating) pulse.repeat(reverse: true);
+    if (!animate && pulse.isAnimating) pulse.stop();
     final color = reachable
         ? const Color(0xff8ee6aa)
         : working
         ? blue
         : const Color(0xffef777f);
-    return AnimatedBuilder(
-      animation: pulse,
-      builder: (_, _) => Opacity(
-        opacity: reachable ? .62 + pulse.value * .38 : 1,
-        child: Container(
-          width: 9,
-          height: 9,
-          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+    final label = working
+        ? 'Working'
+        : reachable
+        ? 'Connected'
+        : 'Disconnected';
+    return Tooltip(
+      message: label,
+      child: Semantics(
+        label: label,
+        child: AnimatedBuilder(
+          animation: pulse,
+          builder: (_, _) => Opacity(
+            opacity: animate ? .62 + pulse.value * .38 : 1,
+            child: Container(
+              width: 9,
+              height: 9,
+              decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+            ),
+          ),
         ),
       ),
     );

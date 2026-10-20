@@ -4,7 +4,7 @@ import 'package:agent_dock_mobile/main.dart';
 import 'package:agent_dock_mobile/terminal_links.dart';
 import 'package:xterm/xterm.dart';
 
-import 'widget_test.dart' show FakeDock;
+import 'widget_test.dart' show FakeDock, enterChat, consoleAction;
 
 const loginLink =
     'https://claude.com/cai/oauth/authorize?code=true&client_id=test-client'
@@ -134,8 +134,9 @@ void main() {
     addTearDown(c.dispose);
     c.screen!.terminal.write('\r\n$loginLink\r\n');
     await tester.pumpWidget(DockApp(client: c));
+    await enterChat(tester);
     await tester.enterText(find.byType(TextField), 'Unsent work');
-    await tester.tap(find.byTooltip('Console links'));
+    await consoleAction(tester, 'Console links');
     await tester.pumpAndSettle();
     expect(find.byType(TerminalLinksSheet), findsOneWidget);
     expect(find.text('claude.com'), findsOneWidget);

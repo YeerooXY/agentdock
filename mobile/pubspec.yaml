@@ -1,7 +1,7 @@
 name: agent_dock_mobile
 description: A private Android companion for Agent Dock terminals and results.
 publish_to: 'none'
-version: 0.6.0-preview.18+18
+version: 0.6.0-preview.19+19
 
 environment:
   sdk: ^3.13.5
@@ -27,6 +27,7 @@ flutter:
   uses-material-design: true
   assets:
     - assets/providers/openai.png
+    - assets/providers/claude.png
     - assets/providers/cursor.png
     - assets/providers/opencode.png
     - assets/providers/cline.png

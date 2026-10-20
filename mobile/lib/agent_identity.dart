@@ -1,16 +1,16 @@
 import 'package:flutter/material.dart';
 
 /// Logo-inspired accents, lifted for legibility on Dock's dark surfaces.
-/// Monochrome brands retain neutral accents; their names remain visible.
+/// Names remain available to accessibility tools when only the icon is shown.
 class AgentIdentity {
   final String name;
   final Color color;
   const AgentIdentity(this.name, this.color);
 
-  // Only assets with reviewed public brand guidance are bundled.
-  // Other providers retain their readable name/color, without an invented logo.
+  // Bundled official assets; provenance is recorded in provider-brand-assets.md.
   static String? logo(String provider) => switch (provider.toLowerCase()) {
     'codex' || 'openai' => 'assets/providers/openai.png',
+    'claude' || 'anthropic' => 'assets/providers/claude.png',
     'cursor' => 'assets/providers/cursor.png',
     'opencode' => 'assets/providers/opencode.png',
     'cline' => 'assets/providers/cline.png',
@@ -62,7 +62,10 @@ class AgentMark extends StatelessWidget {
         ),
       );
     }
-    return ExcludeSemantics(
+    return Semantics(
+      label: identity.name,
+      image: true,
+      excludeSemantics: true,
       child: SizedBox.square(
         dimension: size,
         child: asset != null

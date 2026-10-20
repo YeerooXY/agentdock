@@ -5,7 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:agent_dock_mobile/console_drafts.dart';
 import 'package:agent_dock_mobile/main.dart';
 
-import 'widget_test.dart' show FakeDock;
+import 'widget_test.dart' show FakeDock, enterChat;
 
 void main() {
   test(
@@ -98,14 +98,19 @@ void main() {
         'state': 'open',
       });
       await tester.pumpWidget(DockApp(client: c));
+      await enterChat(tester);
       final input = find.byType(TextField).last;
       await tester.enterText(input, 'Finish first task');
       await c.select('two');
       await tester.pumpAndSettle();
+      expect(find.byType(TextField), findsNothing);
+      await enterChat(tester);
       expect(tester.widget<TextField>(input).controller!.text, '');
       await tester.enterText(input, 'Work on the other project');
       await c.select('one');
       await tester.pumpAndSettle();
+      expect(find.byType(TextField), findsNothing);
+      await enterChat(tester);
       expect(
         tester.widget<TextField>(input).controller!.text,
         'Finish first task',
@@ -114,12 +119,15 @@ void main() {
       c.state['sessions'][0]['id'] = 'restored';
       await c.select('restored');
       await tester.pumpAndSettle();
+      await enterChat(tester);
       expect(
         tester.widget<TextField>(input).controller!.text,
         'Finish first task',
       );
       await c.select('two');
       await tester.pumpAndSettle();
+      expect(find.byType(TextField), findsNothing);
+      await enterChat(tester);
       expect(
         tester.widget<TextField>(input).controller!.text,
         'Work on the other project',
@@ -138,6 +146,7 @@ void main() {
     );
     final first = FakeDock(drafts: store());
     await tester.pumpWidget(DockApp(client: first));
+    await enterChat(tester);
     await tester.enterText(find.byType(TextField).last, 'Keep after reopening');
     await first.drafts.flush();
     await tester.pumpWidget(const SizedBox());
@@ -147,6 +156,7 @@ void main() {
     await second.drafts.load();
     await tester.pumpWidget(DockApp(client: second));
     await tester.pumpAndSettle();
+    await enterChat(tester);
     expect(
       tester.widget<TextField>(find.byType(TextField).last).controller!.text,
       'Keep after reopening',

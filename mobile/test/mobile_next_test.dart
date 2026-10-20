@@ -10,7 +10,7 @@ import 'package:agent_dock_mobile/dock_client.dart';
 import 'package:agent_dock_mobile/terminal_styles.dart';
 import 'package:agent_dock_mobile/terminal_reading.dart';
 
-import 'widget_test.dart' show FakeDock;
+import 'widget_test.dart' show FakeDock, enterChat;
 import 'mobile_actions_test.dart' show ActionsDock;
 
 class ProjectDock extends ActionsDock {
@@ -133,6 +133,7 @@ void main() {
         .widget<SingleChildScrollView>(scroll)
         .controller!
         .offset;
+    await enterChat(tester);
     final field = tester.widget<TextField>(find.byType(TextField).last);
     field.controller!.value = TextEditingValue(
       text: List.generate(60, (i) => 'Draft line $i').join('\n'),
@@ -143,12 +144,14 @@ void main() {
     await tester.pumpAndSettle();
     await c.select('two');
     await tester.pumpAndSettle();
+    await enterChat(tester);
     expect(
       tester.widget<TextField>(find.byType(TextField).last).controller!.text,
       '',
     );
     await c.select('one');
     await tester.pumpAndSettle();
+    await enterChat(tester);
     expect(
       tester.widget<SingleChildScrollView>(scroll).controller!.offset,
       closeTo(before, 1),
@@ -203,7 +206,7 @@ void main() {
     final c = FakeDock();
     addTearDown(c.dispose);
     await tester.pumpWidget(DockApp(client: c));
-    await tester.tap(find.byTooltip('Agent commands'));
+    await enterChat(tester);
     await tester.pumpAndSettle();
     await tester.tap(find.text('Model'));
     await tester.pumpAndSettle();
@@ -211,7 +214,7 @@ void main() {
     c.notifyListeners();
     await tester.pumpAndSettle();
     expect(
-      find.text('Connection or console changed. Reopen these controls.'),
+      find.text('Connection changed. Reopen the chooser.'),
       findsOneWidget,
     );
     await tester.tap(find.text('Open model'));
@@ -231,7 +234,7 @@ void main() {
     final c = FakeDock();
     addTearDown(c.dispose);
     await tester.pumpWidget(DockApp(client: c));
-    await tester.tap(find.byTooltip('Agent commands'));
+    await enterChat(tester);
     await tester.pumpAndSettle();
     await tester.tap(find.text('Model'));
     await tester.pumpAndSettle();
@@ -241,8 +244,8 @@ void main() {
     await tester.pump(const Duration(milliseconds: 200));
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
-    await tester.ensureVisible(find.text('Choose'));
-    expect(find.text('Choose').hitTestable(), findsOneWidget);
+    await tester.ensureVisible(find.byTooltip('Close chooser'));
+    expect(find.byTooltip('Close chooser').hitTestable(), findsOneWidget);
   });
 
   test('background mode streams status only and deduplicates local completion alerts', () async {

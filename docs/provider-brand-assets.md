@@ -2,14 +2,14 @@
 
 Reviewed 20 October 2026. Provider marks identify the connected service; Agent Dock has its own branding and does not claim sponsorship. All bundled images load locally. Viewing a meter, console badge or provider list makes no request to a logo service.
 
-The four bundled images are unchanged official PNGs. These assets retain their owners' rights and brand conditions; they are not relicensed under Agent Dock's code license. The use here is a small identifier next to the provider's name. This review records the published guidance and our implementation choice, not a legal certification.
+The five bundled images are unchanged official PNGs. These assets retain their owners' rights and brand conditions; they are not relicensed under Agent Dock's code license. The use here is a small identifier; icon-only controls include an accessible provider name. This review records the published guidance and our implementation choice, not a legal certification.
 
 | Provider | Display | Source / decision |
 | --- | --- | --- |
 | OpenAI / Codex | OpenAI icon, blue meter | [OpenAI brand guidelines](https://openai.com/brand/) permit related-service identification subject to their terms. The unchanged icon is supplied by [OpenAI's developer site](https://developers.openai.com/favicon.png). |
 | Cursor | Cursor icon, neutral badge | The [official brand resources](https://cursor.com/brand) provide icons to represent Cursor. Use the supplied [192px icon](https://cursor.com/marketing-static/icon-192x192-light.png), preserving colors and proportions. |
 | OpenCode | OpenCode icon, neutral badge | The [official brand resources](https://opencode.ai/brand) provide OpenCode assets. The [official site icon](https://opencode.ai/favicon-96x96-v3.png) is included unchanged. |
-| Claude / Anthropic | Coral name/initial | [Anthropic's trademark guidelines](https://www.anthropic.com/legal/trademark-guidelines) require specific permission and prior approval. No approval is recorded; no Claude logo is bundled. |
+| Claude / Anthropic | Official Claude icon, coral accent | Unchanged [Claude website favicon](https://assets.claude.com/95a868946ac8a31e5ff832e2899f294aa368b836.png), from [claude.com](https://claude.com/), identifies the selected service in the mobile app. [Anthropic trademark conditions](https://www.anthropic.com/legal/trademark-guidelines) remain applicable; this records provenance, not a separate permission grant or endorsement. |
 | GitHub Copilot | Purple name/initial | [GitHub's current Copilot guide](https://brand.github.com/brand-identity/copilot) deprecates the old standalone logo. No suitable approved asset/use has been established here. |
 | Gemini | Blue name/initial | [Google's brand guidance](https://about.google/brand-resource-center/guidance/) allows plain-text informational references and directs product icons to separate conditions. Permission for this icon use remains unverified. |
 | Antigravity | Blue name/initial | Same Google guidance; product-specific logo permission remains unverified. |

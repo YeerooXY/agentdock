@@ -28,15 +28,18 @@ const session = { id: 'fixture', slot: 1, name: 'Mobile controls', provider: 'co
 fs.mkdirSync(path.join(root, 'src'));
 fs.writeFileSync(path.join(root, 'src', 'mobile.dart'), '// Synthetic file, no project data.');
 fs.writeFileSync(path.join(root, 'README.md'), '# Fixture');
-let menu = false, chosen = 0, pending = '', stopped = false, timer, showLinks = false, connections = 0;
+let menu = false, effort = false, chosen = 0, pending = '', stopped = false, timer, showLinks = false, connections = 0;
 function picture() {
   const lines = menu
-    ? ['MODEL PICKER - TEST FIXTURE', '', `${chosen === 0 ? '>' : ' '} Fixture model A`, `${chosen === 1 ? '>' : ' '} Fixture model B`, '', 'Arrows: choose    Enter: confirm    Esc: close']
+    ? [effort ? 'Select Reasoning Level for Fixture model' : 'Select Model and Effort', '',
+       `${chosen === 0 ? '>' : ' '} 1. ${effort ? 'Low' : 'Fixture model A'}`,
+       `${chosen === 1 ? '>' : ' '} 2. ${effort ? 'High' : 'Fixture model B'}`, '',
+       'enter select · s session only · esc back']
     : ['\x1b[36;1mMobile verification\x1b[0m', '', 'This paragraph is intentionally wider than a phone. The app should wrap it into readable lines without making the letters smaller or changing the terminal on your computer.', '',
        'Ready to review:', '  • Read and copy console text', '  • Choose commands and project files', '  • Open a Claude console', '',
        `The PC terminal still has ${session.cols} columns.`, '', 'src/mobile.dart', '  final mode = "wrap";', '', 'Synthetic output. No AI requests.'];
-  return '\x1b[3J\x1b[2J\x1b[H' + lines.join('\r\n') + '\r\n\r\n' +
-    (showLinks ? 'https://example.com/login?fixture=true&redirect_uri=https%3A%2F%2Fexample.com%2Fdone&scope=profile+terminal&state=fixture-only\r\n\r\n' : '') + '> ';
+  return '\x1b[3J\x1b[2J\x1b[H' + lines.join('\r\n') + (menu ? '' : '\r\n\r\n' +
+    (showLinks ? 'https://example.com/login?fixture=true&redirect_uri=https%3A%2F%2Fexample.com%2Fdone&scope=profile+terminal&state=fixture-only\r\n\r\n' : '') + '> ');
 }
 function draw() {
   const data = picture();
@@ -54,10 +57,15 @@ sessions.write = (id, data) => {
   sessions.writes.push(data);
   if (menu) {
     if (data === '\x1b[A' || data === '\x1b[B') chosen = 1 - chosen;
-    if (data === '\r' || data === '\x1b' || data === 's') menu = false;
+    if (data === '\r' || data === 's') {
+      if (!effort && session.provider === 'codex') { effort = true; chosen = 0; }
+      else menu = false;
+    }
+    if (data === '\x1b') menu = false;
     draw();
   } else if (data === '\r') {
-    menu = pending.trim() === '/model';
+    menu = ['/model', '/effort'].includes(pending.trim());
+    effort = pending.trim() === '/effort'; chosen = 0;
     pending = '';
     draw();
   } else {

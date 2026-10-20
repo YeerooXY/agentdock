@@ -77,26 +77,14 @@ class _ConsoleSwitcherState extends State<ConsoleSwitcher> {
                     'ready',
                     'attention',
                   ].contains(session['state']),
-                  child: Icon(
-                    Icons.terminal,
-                    size: 20,
-                    color: AgentIdentity.of(session['provider'] as String)
-                        .color,
-                  ),
+                  child: AgentMark(session['provider'] as String, size: 24),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        session['name'] as String,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      const SizedBox(height: 4),
-                      AgentBadge(session['provider'] as String),
-                    ],
+                  child: Text(
+                    session['name'] as String,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
                 if (session['id'] == widget.client.selected)
@@ -129,15 +117,6 @@ class _ConsoleSwitcherState extends State<ConsoleSwitcher> {
                 case final session?) ...[
               AgentMark(session['provider'] as String, size: 20),
               const SizedBox(width: 5),
-              Text(
-                AgentIdentity.of(session['provider'] as String).name,
-                maxLines: 1,
-                style: TextStyle(
-                  fontSize: 11,
-                  color: AgentIdentity.of(session['provider'] as String).color,
-                ),
-              ),
-              const SizedBox(width: 7),
             ],
           Flexible(
             child: Text(
@@ -145,7 +124,7 @@ class _ConsoleSwitcherState extends State<ConsoleSwitcher> {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(
-                fontSize: 20,
+                fontSize: 18,
                 color: pink,
                 fontWeight: FontWeight.w600,
               ),

@@ -89,6 +89,39 @@ class FakeDock extends DockClient {
   }
 }
 
+Future<void> enterChat(WidgetTester tester) async {
+  final handle = find.byKey(const ValueKey('enter-chat'));
+  if (handle.evaluate().isNotEmpty) {
+    await tester.ensureVisible(handle);
+    await tester.tap(handle);
+    await tester.pumpAndSettle();
+  }
+}
+
+Future<void> consoleAction(WidgetTester tester, String action) async {
+  await tester.tap(find.byTooltip('More options'));
+  await tester.pumpAndSettle();
+  await tester.tap(find.text(action));
+  await tester.pumpAndSettle();
+}
+
+Future<void> useGrid(WidgetTester tester) async {
+  await consoleAction(tester, 'Text & display');
+  await tester.tap(find.text('Grid'));
+  await tester.pumpAndSettle();
+  // Dismiss only the display sheet.
+  await tester.tapAt(const Offset(10, 30));
+  await tester.pumpAndSettle();
+}
+
+Future<void> chooseFile(WidgetTester tester) async {
+  await enterChat(tester);
+  await tester.tap(find.byTooltip('Attach'));
+  await tester.pumpAndSettle();
+  await tester.tap(find.text('Files'));
+  await tester.pumpAndSettle();
+}
+
 void main() {
   testWidgets('slow terminal swipes scroll without opening the keyboard', (
     tester,
@@ -100,10 +133,10 @@ void main() {
     final c = FakeDock();
     addTearDown(c.dispose);
     c.screen!.terminal.write(
-      List.generate(150, (i) => 'History line $i\r\n').join(),
+      List.generate(400, (i) => 'History line $i\r\n').join(),
     );
     await tester.pumpWidget(DockApp(client: c));
-    await tester.tap(find.byTooltip('Show the original terminal grid'));
+    await useGrid(tester);
     await tester.pumpAndSettle();
     final terminal = find.byType(TerminalView);
     final scroll = tester
@@ -150,7 +183,7 @@ void main() {
     final c = FakeDock();
     addTearDown(c.dispose);
     await tester.pumpWidget(DockApp(client: c));
-    await tester.tap(find.byTooltip('Show the original terminal grid'));
+    await useGrid(tester);
     await tester.pumpAndSettle();
     final terminal = find.byType(TerminalView);
     await tester.tap(terminal);
@@ -172,11 +205,9 @@ void main() {
     final c = FakeDock();
     addTearDown(c.dispose);
     await tester.pumpWidget(DockApp(client: c));
-    final keyboardButton = tester.getRect(
-      find.byTooltip('Type directly in terminal'),
-    );
+    final keyboardButton = tester.getRect(find.byTooltip('More options'));
     expect(keyboardButton.right, lessThanOrEqualTo(393));
-    await tester.tap(find.byTooltip('Type directly in terminal'));
+    await consoleAction(tester, 'Type directly in terminal');
     await tester.pumpAndSettle();
     expect(tester.testTextInput.isVisible, isTrue);
     tester.testTextInput.enterText('  hello');
@@ -195,7 +226,7 @@ void main() {
     expect(tester.testTextInput.isVisible, isFalse);
     expect(c.inputs, hasLength(1));
 
-    await tester.tap(find.byTooltip('Type directly in terminal'));
+    await consoleAction(tester, 'Type directly in terminal');
     await tester.pumpAndSettle();
     expect(tester.testTextInput.isVisible, isTrue);
   });
@@ -206,6 +237,7 @@ void main() {
       final c = FakeDock();
       addTearDown(c.dispose);
       await tester.pumpWidget(DockApp(client: c));
+      await enterChat(tester);
       await tester.enterText(find.byType(TextField).last, 'keep this draft');
       await tester.drag(
         find.byKey(const ValueKey('terminal-reading-scroll')),
@@ -228,7 +260,7 @@ void main() {
     final c = FakeDock();
     addTearDown(c.dispose);
     await tester.pumpWidget(DockApp(client: c));
-    await tester.tap(find.byTooltip('Type directly in terminal'));
+    await consoleAction(tester, 'Type directly in terminal');
     await tester.pumpAndSettle();
     expect(tester.testTextInput.isVisible, isTrue);
     tester.view.viewInsets = const FakeViewPadding(bottom: 150);
@@ -239,7 +271,7 @@ void main() {
     await tester.tap(find.byType(TerminalView));
     await tester.pumpAndSettle();
     expect(tester.testTextInput.isVisible, isFalse);
-    await tester.tap(find.byTooltip('Type directly in terminal'));
+    await consoleAction(tester, 'Type directly in terminal');
     await tester.pumpAndSettle();
     expect(tester.testTextInput.isVisible, isTrue);
   });
@@ -287,7 +319,9 @@ void main() {
       'Connection lost. Check the console before sending again.',
     );
     await tester.pumpWidget(DockApp(client: c));
+    await enterChat(tester);
     await tester.enterText(find.byType(TextField).last, 'keep my message');
+    await tester.pump();
     await tester.tap(find.byTooltip('Send to console'));
     await tester.pumpAndSettle();
     expect(c.inputs, hasLength(1));
@@ -297,24 +331,6 @@ void main() {
     );
     expect(find.textContaining('Connection lost.'), findsOneWidget);
   });
-  testWidgets(
-    'Enter submits existing terminal input without resending the composer',
-    (tester) async {
-      final c = FakeDock();
-      addTearDown(c.dispose);
-      await tester.pumpWidget(DockApp(client: c));
-      await tester.enterText(find.byType(TextField).last, 'unsent draft');
-      await tester.tap(find.text('Enter'));
-      await tester.pumpAndSettle();
-      expect(c.inputs, [
-        {'id': 'one', 'data': '\r'},
-      ]);
-      expect(
-        tester.widget<TextField>(find.byType(TextField).last).controller!.text,
-        'unsent draft',
-      );
-    },
-  );
   testWidgets('Send pastes a message, then submits with a separate Enter', (
     tester,
   ) async {
@@ -322,10 +338,12 @@ void main() {
     addTearDown(c.dispose);
     c.screen!.terminal.write('\x1b[?2004h');
     await tester.pumpWidget(DockApp(client: c));
+    await enterChat(tester);
     await tester.enterText(
       find.byType(TextField).last,
       'first line\nsecond line',
     );
+    await tester.pump();
     await tester.tap(find.byTooltip('Send to console'));
     await tester.pump();
     expect(c.inputs, [
@@ -531,6 +549,7 @@ void main() {
       final c = FakeDock();
       addTearDown(c.dispose);
       await tester.pumpWidget(DockApp(client: c));
+      await enterChat(tester);
       await tester.enterText(
         find.byType(TextField).last,
         'inspect this project',

@@ -3,7 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:agent_dock_mobile/main.dart';
 import 'package:xterm/xterm.dart';
 
-import 'widget_test.dart' show FakeDock;
+import 'widget_test.dart' show FakeDock, enterChat, useGrid;
 
 void main() {
   for (final size in [
@@ -32,7 +32,7 @@ void main() {
         await tester.pumpWidget(DockApp(client: c));
         await tester.pumpAndSettle();
 
-        await tester.tap(find.byTooltip('Show the original terminal grid'));
+        await useGrid(tester);
         await tester.pumpAndSettle();
         final view = find.byType(TerminalView);
         final render = tester.state<TerminalViewState>(view).renderTerminal;
@@ -49,7 +49,7 @@ void main() {
         expect(c.calls.where((x) => x.contains('resize')), isEmpty);
         expect(tester.takeException(), isNull);
         expect(
-          tester.getRect(find.byTooltip('Agent commands')).right,
+          tester.getRect(find.byTooltip('More options')).right,
           lessThanOrEqualTo(size.width),
         );
       });
@@ -68,6 +68,7 @@ void main() {
       final c = FakeDock();
       addTearDown(c.dispose);
       await tester.pumpWidget(DockApp(client: c));
+      await enterChat(tester);
       await tester.enterText(find.byType(TextField).last, 'A draft');
       await tester.pumpAndSettle();
       final send = tester.getRect(find.byTooltip('Send to console'));
@@ -94,7 +95,7 @@ void main() {
     c.screen!.terminal.write('\r\n${'Output\r\n' * 20}> ');
     await tester.pumpWidget(DockApp(client: c));
     await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip('Show the original terminal grid'));
+    await useGrid(tester);
     await tester.pumpAndSettle();
     tester.view.physicalSize = const Size(852, 393);
     await tester.pumpAndSettle();
@@ -107,6 +108,7 @@ void main() {
       lessThanOrEqualTo(render.size.height + 0.01),
     );
     expect(c.screen!.terminal.viewWidth, 80);
+    await enterChat(tester);
     expect(
       tester.getRect(find.byTooltip('Send to console')).bottom,
       lessThanOrEqualTo(tester.getRect(find.byType(NavigationBar)).top),
@@ -126,7 +128,7 @@ void main() {
     c.screen!.terminal.write('Older output\r\n' * 300);
     await tester.pumpWidget(DockApp(client: c));
     await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip('Show the original terminal grid'));
+    await useGrid(tester);
     await tester.pumpAndSettle();
     final view = find.byType(TerminalView);
     final controller = tester.widget<TerminalView>(view).scrollController!;
@@ -158,6 +160,7 @@ void main() {
       final c = FakeDock();
       addTearDown(c.dispose);
       await tester.pumpWidget(DockApp(client: c));
+      await enterChat(tester);
       await tester.enterText(find.byType(TextField).last, 'Keep this request');
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
@@ -169,150 +172,6 @@ void main() {
         tester.getRect(send).bottom,
         lessThanOrEqualTo(size.height - tester.view.viewInsets.bottom),
       );
-    });
-  }
-
-  testWidgets('commands sheet fits a narrow phone with large text', (
-    tester,
-  ) async {
-    tester.view.physicalSize = const Size(320, 740);
-    tester.view.devicePixelRatio = 1;
-    tester.platformDispatcher.textScaleFactorTestValue = 2;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
-    final c = FakeDock();
-    c.sessions.first['provider'] = 'claude';
-    addTearDown(c.dispose);
-    await tester.pumpWidget(DockApp(client: c));
-    await tester.tap(find.byTooltip('Agent commands'));
-    await tester.pumpAndSettle();
-    expect(tester.takeException(), isNull);
-    await tester.ensureVisible(find.text('Model'));
-    await tester.tap(find.text('Model'));
-    await tester.pumpAndSettle();
-    expect(tester.takeException(), isNull);
-    expect(c.inputs, isEmpty);
-  });
-
-  for (final provider in {
-    'Codex': '/model',
-    'claude': '/model',
-    'opencode': '/models',
-    'gemini': '/model manage',
-  }.entries) {
-    testWidgets(
-      '${provider.key} live model menu preserves drafts and waits for Open',
-      (tester) async {
-        final c = FakeDock();
-        addTearDown(c.dispose);
-        c.sessions.first['provider'] = provider.key;
-        await tester.pumpWidget(DockApp(client: c));
-        await tester.enterText(find.byType(TextField).last, 'keep my draft');
-        await tester.tap(find.byTooltip('Agent commands'));
-        await tester.pumpAndSettle();
-        await tester.tap(find.text('Model'));
-        await tester.pumpAndSettle();
-        expect(c.inputs, isEmpty);
-        await tester.tap(find.text('Open model'));
-        await tester.pumpAndSettle();
-        expect(c.inputs, [
-          {'id': 'one', 'data': provider.value},
-          {'id': 'one', 'data': '\r'},
-        ]);
-        await tester.tap(find.byTooltip('Close controls'));
-        await tester.pumpAndSettle();
-        expect(
-          tester
-              .widget<TextField>(find.byType(TextField).last)
-              .controller!
-              .text,
-          'keep my draft',
-        );
-      },
-    );
-  }
-
-  testWidgets('choosing a status command preserves a draft unless replaced', (
-    tester,
-  ) async {
-    final c = FakeDock();
-    addTearDown(c.dispose);
-    await tester.pumpWidget(DockApp(client: c));
-    final field = find.byType(TextField).last;
-    await tester.enterText(field, 'keep my unfinished request');
-    await tester.tap(find.byTooltip('Agent commands'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Status'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Keep draft'));
-    await tester.pumpAndSettle();
-    expect(
-      tester.widget<TextField>(field).controller!.text,
-      'keep my unfinished request',
-    );
-    await tester.tap(find.byTooltip('Agent commands'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Status'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Replace'));
-    await tester.pumpAndSettle();
-    expect(tester.widget<TextField>(field).controller!.text, '/status');
-    expect(c.inputs, isEmpty);
-  });
-
-  testWidgets('a command menu cannot target a newly selected console', (
-    tester,
-  ) async {
-    final c = FakeDock();
-    addTearDown(c.dispose);
-    await tester.pumpWidget(DockApp(client: c));
-    await tester.tap(find.byTooltip('Agent commands'));
-    await tester.pumpAndSettle();
-    c.selected = 'two';
-    c.notifyListeners();
-    await tester.pumpAndSettle();
-    expect(
-      find.text('Connection or console changed. Reopen this menu.'),
-      findsOneWidget,
-    );
-    await tester.tap(find.text('Model'));
-    await tester.pumpAndSettle();
-    expect(c.inputs, isEmpty);
-    expect(find.text('Codex commands'), findsOneWidget);
-    await tester.tap(find.byTooltip('Close commands'));
-    await tester.pumpAndSettle();
-    expect(find.text('Codex commands'), findsNothing);
-  });
-
-  testWidgets('a staged command is not sent after a reconnect', (tester) async {
-    final c = FakeDock();
-    addTearDown(c.dispose);
-    await tester.pumpWidget(DockApp(client: c));
-    await tester.tap(find.byTooltip('Agent commands'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Status'));
-    await tester.pumpAndSettle();
-    c.generation++;
-    await tester.tap(find.byTooltip('Send to console'));
-    await tester.pumpAndSettle();
-    expect(c.inputs, isEmpty);
-    expect(
-      find.text('Console changed. Choose the command again.'),
-      findsOneWidget,
-    );
-  });
-
-  for (final provider in ['shell', 'custom', 'unsupported']) {
-    testWidgets('$provider has no guessed AI command shortcuts', (
-      tester,
-    ) async {
-      final c = FakeDock();
-      addTearDown(c.dispose);
-      c.sessions.first['provider'] = provider;
-      await tester.pumpWidget(DockApp(client: c));
-      expect(find.byTooltip('Agent commands'), findsNothing);
-      expect(find.byTooltip('Type directly in terminal'), findsOneWidget);
     });
   }
 }
