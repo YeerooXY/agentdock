@@ -23,7 +23,7 @@ async function eventually(predicate, message) {
   const problems = [], checks = [];
   let page;
   const launch = async () => {
-    app = await electron.launch({ args: [root, '--smoke-test', `--data-dir=${dataDir}`], timeout: 30000 });
+    app = await electron.launch({ args: [root, '--smoke-test', `--data-dir=${dataDir}`], env: { ...process.env, NO_COLOR: '1', TERM: 'dumb' }, timeout: 30000 });
     page = await app.firstWindow(); page.setDefaultTimeout(10000);
     page.on('pageerror', error => problems.push(error.message));
     await page.waitForSelector('.session-grid');
@@ -140,6 +140,13 @@ async function eventually(predicate, message) {
   await page.keyboard.type("Write-Output ('AGENT_' + 'DOCK_SMOKE_OK')"); await page.keyboard.press('Enter');
   await eventually(async () => (await invoke('session.buffer', session.id)).data.includes('AGENT_DOCK_SMOKE_OK'), 'Terminal command did not produce its expected output');
   await eventually(async () => (await page.locator('.session-card .xterm-rows').innerText()).includes('AGENT_DOCK_SMOKE_OK'));
+  const colorCommand = `& '${process.execPath.replaceAll("'", "''")}' -e "console.log(require('node:util').styleText('green','DOCK_COLOR_OK'))"\r`;
+  await invoke('session.input', { id: session.id, data: colorCommand });
+  await eventually(async () => page.locator('.session-card .xterm-rows span').evaluateAll(spans =>
+    spans.some(span => span.textContent === 'DOCK_COLOR_OK' && getComputedStyle(span).color === 'rgb(185, 232, 136)')),
+  'A color-aware command must render green even if Dock inherited NO_COLOR=1');
+  await capture({ path: path.join(artifacts, 'console-color-check.png') });
+  checks.push('Interactive commands render ANSI colors even when Dock starts with NO_COLOR=1 and TERM=dumb');
   await page.evaluate(() => { window.smokeTerminalNode = document.querySelector('.terminal-instance'); });
   const liveName = page.locator('.session-card[data-slot="1"] .console-name');
   await liveName.fill('Robonslaught');

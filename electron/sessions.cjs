@@ -11,6 +11,15 @@ const { prepareCli } = require('./cli-launch.cjs');
 const { prepareCodexSession } = require('./codex-session.cjs');
 function psQuote(text) { return "'" + text.replaceAll("'", "''") + "'"; }
 function shQuote(text) { return "'" + text.replaceAll("'", "'\"'\"'") + "'"; }
+function terminalEnvironment() {
+  const env = { ...process.env };
+  // Agents can launch Dock with NO_COLOR=1 and TERM=dumb for their command
+  // output. Our interactive PTYs have their own color capabilities.
+  for (const key of Object.keys(env)) {
+    if (/^(NO_COLOR|FORCE_COLOR|CLICOLOR|CLICOLOR_FORCE|TERM|COLORTERM)$/i.test(key)) delete env[key];
+  }
+  return { ...env, TERM: 'xterm-256color', COLORTERM: 'truecolor' };
+}
 function validateConsoleDefaults(raw) {
   if (!providers.includes(raw?.provider)) throw new Error('Choose an agent or shell.');
   const cwd = String(raw.cwd || '').trim();
@@ -161,7 +170,7 @@ class Sessions extends EventEmitter {
       const command = this.hub ? raw.command.replaceAll('{instructions}', psQuote(summaryPath)).replaceAll('{mcp_config}', psQuote(mcpConfig)) : raw.command;
       args.push('-NoExit', '-EncodedCommand', Buffer.from(command, 'utf16le').toString('base64'));
     }
-    const env = { ...process.env, AGENT_DOCK_DATA_DIR: this.root, AGENT_DOCK_SESSION_ID: id, TERM: 'xterm-256color', COLORTERM: 'truecolor' };
+    const env = { ...terminalEnvironment(), AGENT_DOCK_DATA_DIR: this.root, AGENT_DOCK_SESSION_ID: id };
     delete env.ELECTRON_RUN_AS_NODE;
     for (const key of ['OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'GOOGLE_API_KEY', 'GEMINI_API_KEY']) delete env[key];
     if (this.hub) Object.assign(env, this.hub.grant(id), { AGENT_DOCK_MCP_CONFIG: mcpConfig });
@@ -214,7 +223,7 @@ class Sessions extends EventEmitter {
     const launch = this.ssh.launch(raw.remoteHostId, { consoleKey, provider: raw.provider, folder: raw.remoteFolder, model: raw.model });
     const cwd = raw.cwd && path.isAbsolute(raw.cwd) && fs.existsSync(raw.cwd) ? raw.cwd : this.root;
     const name = String(raw.name?.trim() || this.projects?.get(raw.projectId)?.name || launch.remote.name).slice(0, 64);
-    const env = { ...process.env, TERM: 'xterm-256color', COLORTERM: 'truecolor' };
+    const env = terminalEnvironment();
     for (const key of Object.keys(env)) if (/^(AGENT_DOCK_|ELECTRON_RUN_AS_NODE$|OPENAI_API_KEY$|ANTHROPIC_API_KEY$|GOOGLE_API_KEY$|GEMINI_API_KEY$)/.test(key)) delete env[key];
     const terminal = this.pty.spawn(launch.executable, launch.args, { name: 'xterm-256color', cwd, cols: 110, rows: 30, env, useConpty: true });
     try { this.commitLayout(opening.plan.filter(x => this.items.has(x.id)), opening.grid); }
