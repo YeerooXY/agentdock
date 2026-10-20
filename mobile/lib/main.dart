@@ -444,14 +444,6 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
                   subtitle: const Text('Open the current agent effort chooser'),
                   onTap: () => Navigator.pop(context, 'Effort'),
                 ),
-              ListTile(
-                leading: const Icon(Icons.keyboard_alt_outlined, color: pink),
-                title: const Text('Commands and completion'),
-                subtitle: const Text(
-                  'Use shortcuts without typing a slash command',
-                ),
-                onTap: () => Navigator.pop(context, 'Commands'),
-              ),
             ],
           ),
         ),
@@ -942,17 +934,6 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
-                  ),
-                ),
-              if (catalog != null)
-                IconButton(
-                  tooltip: 'Agent commands',
-                  onPressed: c.connected && !sending
-                      ? () => agentCommands(session)
-                      : null,
-                  icon: Icon(
-                    Icons.tune,
-                    color: AgentIdentity.of(provider).color,
                   ),
                 ),
               IconButton(
