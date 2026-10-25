@@ -30,7 +30,7 @@ const windows = (fiveHour, weekly) => [{ minutes: 300, usedPercent: 100 - fiveHo
 function makeState() {
   return {
     mode: 'dashboard', transitioning: false, trayHidden: false, grid: { columns: 3, rows: 3 },
-    sessions: [{ id: 'kiro-1', consoleKey: 'kiro-1', projectId: null, slot: 1, width: 1, height: 1, name: 'Kiro', nameMode: 'custom', cwd: 'C:\\Workspace', provider: 'kiro', permissions: 'default', launchModel: '', accountId: null, launchId: 'l1', purpose: 'agent', switching: false, dismissed: false, draftSupported: false, switchTargets: [], state: 'open', alive: true, cols: 80, rows: 24, sequence: 0, usage: null, createdAt: now - hour, updatedAt: now - hour }],
+    sessions: [{ id: 'kiro-1', consoleKey: 'kiro-1', projectId: null, worktree: { repository: 'C:\\Workspace', path: 'C:\\Paddock\\worktrees\\workspace\\header-redesign-a1b2c3', branch: 'paddock/header-redesign-a1b2c3', base: 'a'.repeat(40) }, slot: 1, width: 1, height: 1, name: 'Kiro', nameMode: 'custom', cwd: 'C:\\Workspace', provider: 'kiro', permissions: 'default', launchModel: '', accountId: null, launchId: 'l1', purpose: 'agent', switching: false, dismissed: false, draftSupported: false, switchTargets: [], state: 'open', alive: true, cols: 80, rows: 24, sequence: 0, usage: null, createdAt: now - hour, updatedAt: now - hour }],
     settings: initialSettings({ setupComplete: true, suggestProjects: false, restoreConsoles: false, consoleDefaults: { provider: 'codex', cwd: 'C:\\Workspace', name: '', command: '' } }, 'C:\\Workspace', {}),
     agents: [agent('codex', 'Codex', true), agent('claude', 'Claude Code', true), agent('antigravity', 'Google Antigravity', false), agent('copilot', 'GitHub Copilot', false), agent('kiro', 'Kiro', true), agent('gemini', 'Gemini CLI', true), agent('cline', 'Cline', false)],
     accounts: [
@@ -71,6 +71,14 @@ function makeState() {
     });
     page = await context.newPage(); page.on('pageerror', error => errors.push(error.message));
     await page.goto(`http://127.0.0.1:${server.address().port}`);
+    // A worktree console shows its branch in the header without crowding the controls.
+    const badge = page.locator('.session-card[data-console-id="kiro-1"] .worktree-badge');
+    await badge.waitFor();
+    assert.equal(await badge.getAttribute('aria-label'), 'Git worktree branch paddock/header-redesign-a1b2c3');
+    assert.ok((await badge.boundingBox()).width <= 26, `${name}: a single-cell console shows only the branch icon`);
+    const header = await page.locator('.session-card[data-console-id="kiro-1"] .console-panel-header').evaluate(el => ({ fits: el.scrollWidth <= el.clientWidth + 1, scroll: el.scrollWidth, client: el.clientWidth, widths: [...el.children].map(c => c.className + ':' + Math.round(c.getBoundingClientRect().width)) }));
+    assert.equal(header.fits, true, `${name}: console header has no overflow with the worktree badge ${JSON.stringify(header)}`);
+    await page.locator('.session-card[data-console-id="kiro-1"]').screenshot({ path: path.join(out, `${name}-worktree-badge.png`) });
     await page.locator('.session-card.empty[data-slot="2"] [data-action=new]').click({ button: 'right' });
     const chooser = page.locator('#console-chooser'); await chooser.waitFor({ state: 'visible' });
     await page.evaluate(() => Promise.all(document.getAnimations().map(x => x.finished.catch(() => {}))));
@@ -98,10 +106,17 @@ function makeState() {
     assert.equal(await list.evaluate(el => el.matches(':popover-open')), false);
     assert.equal(await chooser.locator('[name=accountId]').inputValue(), 'codex:default');
     assert.match(await chooser.locator('.shell-picker-trigger').innerText(), /Codex · Personal/);
+    // Worktree option sits in Options and is sent with the launch.
+    await chooser.locator('.console-options>summary').click();
+    const worktreeOption = chooser.locator('#one-off-worktree');
+    await worktreeOption.waitFor();
+    assert.ok(await worktreeOption.evaluate(el => el.scrollWidth <= el.clientWidth + 1), `${name}: worktree option text wraps inside the dialog`);
+    await worktreeOption.locator('input').check();
+    await page.screenshot({ path: path.join(out, `${name}-worktree-option.png`) });
     await chooser.locator('[name=cwd]').fill('C:\\Workspace');
     await chooser.locator('[type=submit]').click();
     await chooser.locator('.form-error').filter({ hasText: 'Fixture stops' }).waitFor();
-    assert.equal(creates.at(-1).provider, 'codex'); assert.equal(creates.at(-1).accountId, 'codex:default');
+    assert.equal(creates.at(-1).provider, 'codex'); assert.equal(creates.at(-1).accountId, 'codex:default'); assert.equal(creates.at(-1).worktree, '1');
     await page.screenshot({ path: path.join(out, `${name}-chosen.png`) });
     assert.deepEqual(errors, [], name);
     record.push(`${name}: ${rows.length} rows; layout unchanged; list ${Math.round(box.width)}x${Math.round(box.height)} inside ${viewport.width}x${viewport.height}`);

@@ -13,6 +13,7 @@ const { copyConversation } = require('./account-history.cjs');
 const { defaultId, inside } = require('./account-profiles.cjs');
 const { hasClaudeEditorContext, validateDraftText } = require('./draft-policy.cjs');
 const { psQuote, shQuote, quote, shellLaunch, programLaunch, customLaunch, realRoot } = require('./platform.cjs');
+const { cleanWorktree } = require('./worktrees.cjs');
 function envValue(env, name) { return Object.entries(env).find(([key]) => key.toLowerCase() === name.toLowerCase())?.[1]; }
 function removeEnv(env, names) { const set = new Set(names.map(x => x.toLowerCase())); for (const key of Object.keys(env)) if (set.has(key.toLowerCase())) delete env[key]; }
 function canonical(value) { const result = path.resolve(value).replace(/[\\/]+$/, ''); return process.platform === 'win32' ? result.toLowerCase() : result; }
@@ -98,7 +99,8 @@ class Sessions extends EventEmitter {
       slot: x.slot, width: x.width || 1, height: x.height || 1, consoleKey: x.consoleKey || x.id, projectId: x.projectId || null, name: x.name, nameMode: x.nameMode, cwd: x.cwd, provider: x.provider, permissions: x.permissions,
       ...(x.kind === 'code' ? { kind: 'code', codeSourceKey: x.codeSourceKey } : {}),
       command: x.command || '', model: x.launchModel || '', accountId: ['codex', 'claude'].includes(x.provider) ? x.accountId || defaultId(x.provider) : null, providerSessionId: ['codex', 'claude'].includes(x.provider) ? x.providerSessionId : null, claudeTarget: x.claudeTarget,
-      ...(x.remote ? { remoteHostId: x.remote.hostId, remoteFolder: x.remote.folder } : {})
+      ...(x.remote ? { remoteHostId: x.remote.hostId, remoteFolder: x.remote.folder } : {}),
+      ...(x.worktree ? { worktree: x.worktree } : {})
     })).sort((a, b) => a.slot - b.slot);
   }
   async restore(entry) {
@@ -297,7 +299,7 @@ class Sessions extends EventEmitter {
     catch (error) { terminal.kill(); this.hub?.revoke(id, launchId); this.draftBridge?.unregister(id, launchId); throw error; }
     if (!stage) for (const [oldId, old] of this.items) if (old.slot === slot && !old.alive) this.items.delete(oldId);
     const consoleKey = /^[a-f0-9-]{36}$/i.test(raw.consoleKey || '') ? raw.consoleKey : id;
-    const session = { id, consoleKey, projectId: raw.projectId || null, slot, width, height, name, nameMode, cwd, provider: raw.provider, permissions, launchModel: resumeModel || model, command: raw.provider === 'custom' ? raw.command : '', claudeTarget: raw.provider === 'claude' ? claudeInstall : undefined, accountId: selectedAccountId, accountLabel: account?.label || null, accountConfigDir: account?.configDir || null, launchId, purpose, switching: false, draftSupported: !!bridge, ...(isWsl && raw.provider === 'claude' ? { draftSupportReason: 'Account switching is unavailable for Claude Code in WSL.' } : {}), editorRoots, state: 'open', alive: true, cols: 110, rows: 30, createdAt: Date.now(), updatedAt: Date.now(), terminal, buffer: '', sequence: 0, usage: null, providerSessionId: resumeId };
+    const session = { id, consoleKey, projectId: raw.projectId || null, ...(cleanWorktree(raw.worktree) ? { worktree: cleanWorktree(raw.worktree) } : {}), slot, width, height, name, nameMode, cwd, provider: raw.provider, permissions, launchModel: resumeModel || model, command: raw.provider === 'custom' ? raw.command : '', claudeTarget: raw.provider === 'claude' ? claudeInstall : undefined, accountId: selectedAccountId, accountLabel: account?.label || null, accountConfigDir: account?.configDir || null, launchId, purpose, switching: false, draftSupported: !!bridge, ...(isWsl && raw.provider === 'claude' ? { draftSupportReason: 'Account switching is unavailable for Claude Code in WSL.' } : {}), editorRoots, state: 'open', alive: true, cols: 110, rows: 30, createdAt: Date.now(), updatedAt: Date.now(), terminal, buffer: '', sequence: 0, usage: null, providerSessionId: resumeId };
     if (resumeModel) { session.model = resumeModel; session.modelId = resumeModel; session.settingsAt = Date.now(); }
     if (trackingWarning) session.buffer = trackingWarning;
     if (!stage) this.items.set(id, session);

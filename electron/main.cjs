@@ -38,6 +38,7 @@ const { APP_ID, taskbarIcon, developmentShortcuts } = require('./windows-identit
 const { CodePanel } = require('./code-panel.cjs');
 const { Screenshots, clipboardReader } = require('./screenshots.cjs');
 const { endSession } = require('./session-end.cjs');
+const { Worktrees, cleanWorktree } = require('./worktrees.cjs');
 const filePreview = require('./file-preview.cjs');
 const { userDataPath } = require('./user-data.cjs');
 const { AccountProfiles, defaultId } = require('./account-profiles.cjs');
@@ -56,7 +57,7 @@ if (testMode && testDir) app.setPath('userData', testDir);
 else app.setPath('userData', userDataPath(app.getPath('appData'), app.getPath('userData')));
 if (!app.requestSingleInstanceLock() && !testMode) app.quit();
 let window, tray, vault, sessions, workspace, projects, messageUsage, updates, account, root, settings, ledger, notifications, hub, integrations, mcpCatalog, workbench, cliSetup, skillPacks, turns, mobile, workPower, ssh, screenshots, accounts, draftBridge;
-let codePanel;
+let codePanel, worktrees;
 let mode = 'dashboard', quitting = false, refreshing = false, lastRefresh = 0, apiBusy = false, subscriptionUsage, usageRefresh;
 let modeTarget = null, modeTask, modeSequence = 0, transitioning = false;
 let trayHidden = false, windowDrag = null;
@@ -284,6 +285,7 @@ app.whenReady().then(async () => {
   if (process.platform !== 'win32' && !testMode) process.env.PATH = loginPath();
   root = app.getPath('userData'); fs.mkdirSync(root, { recursive: true }); root = require('./platform.cjs').realRoot(root);
   accounts = new AccountProfiles(root);
+  worktrees = new Worktrees(root);
   draftBridge = new DraftBridge(); await draftBridge.start();
   const runtime = runtimeFiles({ isPackaged: app.isPackaged, resourcesPath: process.resourcesPath, findProgram });
   cliSetup = new CliSetup(root, runtime, { testMode, onChange: publish });
@@ -541,7 +543,13 @@ app.whenReady().then(async () => {
           payload = payload?.projectId ? projects.launch(payload) : payload;
           const occupied = occupiedCells(sessions.items.values(), sessions.grid);
           const slot = payload?.slot ?? Array.from({ length: sessions.grid.columns * sessions.grid.rows }, (_, i) => i + 1).find(x => !occupied.has(x));
-          const { accountId, ...launch } = payload || {};
+          const { accountId, worktree: ownWorktree, ...launch } = payload || {};
+          if (ownWorktree) {
+            // A worktree gives this console its own branch and folder in the same repository.
+            if (launch.remoteHostId) throw new Error('Worktrees are available for consoles on this PC.');
+            const created = await worktrees.create(launch.cwd || settings.consoleDefaults.cwd, launch.name || path.basename(launch.cwd || settings.consoleDefaults.cwd));
+            Object.assign(launch, { cwd: created.cwd, worktree: cleanWorktree(created) });
+          }
           // Only a signed-in account of the chosen agent can be launched directly.
           if (accountId !== undefined && !accounts?.choices(launch.provider).some(choice => choice.id === accountId && (!choice.profile || choice.loginCompletedAt))) throw new Error('Choose a signed-in account for this agent.');
           const session = await sessions.create({ ...settings.consoleDefaults, ...(settings.slotNames?.[slot] ? { name: settings.slotNames[slot] } : {}), ...launch, permissions: launch.permissions ?? settings.agentPermissions }, accountId ? { accountId } : undefined);
@@ -683,7 +691,7 @@ app.whenReady().then(async () => {
         case 'session.buffer': return { ok: true, value: sessions.buffer(payload) };
         case 'session.acknowledge': sessions.acknowledge(payload); break;
         case 'session.end': {
-          return { ok: true, value: await endSession(payload, { sessions, getSettings: () => settings, persistSettings, dialog, window, testMode }) };
+          return { ok: true, value: await endSession(payload, { sessions, getSettings: () => settings, persistSettings, dialog, window, testMode, worktrees }) };
         }
         case 'vault.save': vault.set(payload?.provider, payload?.key, payload?.label); hub.writeSummary(); await Promise.allSettled([...hub.clients.keys()].map(id => hub.disconnect(id))); publish(); break;
         case 'vault.remove': {

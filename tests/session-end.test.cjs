@@ -96,3 +96,18 @@ test('a target ended while its confirmation is open cannot stop a replacement', 
   assert.equal(f.settings().slotNames[2], 'Trader');
   assert.deepEqual(f.calls.saved, []);
 });
+
+test('a clean worktree can be removed after its console stops; one with changes is kept', async () => {
+  const worktree = { repository: '/repo', path: '/data/worktrees/repo/header-abc123', branch: 'paddock/header-abc123', base: 'a'.repeat(40) };
+  for (const [dirty, response, removed] of [[false, 2, true], [false, 1, false], [true, 1, false]]) {
+    const f = fixture({ response }), order = [];
+    f.item.worktree = worktree;
+    f.options.sessions.end = async id => { order.push('end'); f.calls.ended.push(id); f.item.alive = false; };
+    f.options.worktrees = { status: async () => ({ dirty, ahead: 2 }), remove: async value => { order.push('remove'); assert.equal(value, worktree); } };
+    assert.equal(await endSession('console-a', f.options), true);
+    const { buttons, detail } = f.calls.dialogs[0];
+    assert.deepEqual(buttons, dirty ? ['Keep running', 'End console'] : ['Keep running', 'End console', 'End and remove worktree']);
+    assert.match(detail, dirty ? /uncommitted changes, so Paddock keeps it/ : /keeps the branch paddock\/header-abc123 and its 2 commits/);
+    assert.deepEqual(order, removed ? ['end', 'remove'] : ['end'], 'removal happens only after the process stops');
+  }
+});
