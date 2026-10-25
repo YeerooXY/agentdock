@@ -2,7 +2,7 @@
 
 19 October 2026 · preview 11 · focused review of pairing, saved devices and terminal transport.
 
-Tests used disposable loopback servers and an Android emulator. No attacks were sent to the owner's running Dock, router, physical phones, GitHub or third-party services. No real model or cloud-push calls were made. This is a focused engineering review, not a penetration-testing certification or a guarantee that all vulnerabilities have been found.
+Tests used disposable loopback servers and an Android emulator. No attacks were sent to the owner's running Paddock, router, physical phones, GitHub or third-party services. No real model or cloud-push calls were made. This is a focused engineering review, not a penetration-testing certification or a guarantee that all vulnerabilities have been found.
 
 ## Demonstrated issue and fix
 
@@ -49,7 +49,7 @@ Existing server constraints also include bounded pairing request bodies, request
 ## Remaining boundaries
 
 1. Pair only trusted personal devices. Each paired phone has broad control of the PC's consoles; there are no per-project roles, biometric app lock, MFA or sandbox boundary for a malicious approved phone. A stolen unlocked phone is significant exposure. Remove it from every PC where it was paired.
-2. Pairing tokens persist until revoked. Certificate checks and QR expiry are separate from token lifetime. A cloned VM must get a fresh Dock profile; copying server credentials also copies its identity.
+2. Pairing tokens persist until revoked. Certificate checks and QR expiry are separate from token lifetime. A cloned VM must get a fresh Paddock profile; copying server credentials also copies its identity.
 3. Internet access depends on host, OS, firewall and router configuration. Keep router administration private. Direct forwarding has no upstream traffic-absorption service and cannot prevent an attacker saturating a home connection.
 4. Forgetting a PC on an offline phone cannot revoke its server-side token or stop that PC's already configured push delivery. The confirmation explains removal on the PC as well.
 5. Firebase delivery, token rotation across several real PCs, physical mobile-data roaming, and phone-vendor battery restrictions remain unverified here. Multiple PCs currently need the same Firebase project. Generic notifications do not yet route to their originating PC.

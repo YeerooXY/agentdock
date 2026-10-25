@@ -58,7 +58,7 @@ class _PairPageState extends State<PairPage> {
     } catch (e) {
       if (mounted) {
         setState(
-          () => error = e is FormatException ? e.message : 'Could not reach your PC. Check the network, PC address and Windows Firewall.',
+          () => error = e is FormatException ? e.message : 'Could not reach your PC. Use the same Wi-Fi, or turn on Tailscale on this phone. Then check Windows Firewall on the PC.',
         );
       }
     } finally {
@@ -80,7 +80,7 @@ class _PairPageState extends State<PairPage> {
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
-      title: const Text('Agent Dock'),
+      title: const Text('Paddock'),
       actions: [
         TextButton.icon(
           onPressed: () => openUpdates(context),
@@ -100,7 +100,7 @@ class _PairPageState extends State<PairPage> {
               children: [
                 const SizedBox(height: 44, child: DockMark()),
                 const SizedBox(height: 24),
-                const Text(
+                Text(
                   'Connect your PC',
                   style: TextStyle(
                     fontSize: 35,
@@ -111,14 +111,14 @@ class _PairPageState extends State<PairPage> {
                 ),
                 const SizedBox(height: 20),
                 const Text(
-                  'On your PC, open Agent Dock → Settings → Connect a phone. Scan its QR code, compare the code on both screens, then allow your phone on the PC.',
+                  'On your PC, open Paddock → Settings → Devices → Connect a phone. Scan its QR code, compare the code on both screens, then allow your phone on the PC.',
                   style: TextStyle(height: 1.6, color: Color(0xffc8cbe0)),
                 ),
                 const SizedBox(height: 28),
                 if (widget.client.deviceStoreError.isNotEmpty) ...[
                   Text(
                     widget.client.deviceStoreError,
-                    style: const TextStyle(color: pink),
+                    style: TextStyle(color: pink),
                   ),
                   TextButton(
                     onPressed: () => widget.client.restore(),
@@ -219,7 +219,7 @@ class _PairPageState extends State<PairPage> {
                 if (error.isNotEmpty)
                   Padding(
                     padding: const EdgeInsets.only(top: 16),
-                    child: Text(error, style: const TextStyle(color: pink)),
+                    child: Text(error, style: TextStyle(color: pink)),
                   ),
                 const SizedBox(height: 24),
                 const Text(

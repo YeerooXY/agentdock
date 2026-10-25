@@ -20,7 +20,7 @@ let app;
   for (const [section, changes] of [['brief',{audience:'Players',success:'Finish a wave'}],['research',{purpose:'personal',evidence:'Personal prototype'}],['infrastructure',{stack:'Godot',reason:'Small game',alternative:'Unity',tradeoff:'Existing Godot skills',hosting:'Local PC',data:'Local saves',security:'Offline only',operations:'Tests and backups'}],['roadmap',{scope:'Playable arena',milestones:[{text:'Prototype',acceptance:'Runs',done:true},{text:'First wave',acceptance:'Can finish',done:false}]}]]) { project=(await call('state')).projects[0]; await call('projects.plan.review',{id:project.id,revision:project.plan.revision,section,changes,action:'approve'}); }
   await page.locator('[data-project-open]').click();await page.locator('.session-card:not(.empty)').waitFor();
   let state=await call('state');assert.equal(state.sessions[0].name,'Robonslaught');assert.equal(state.sessions[0].projectId,project.id);
-  assert.match(fs.readFileSync(path.join(profile,'sessions',state.sessions[0].id,'AGENT_DOCK.md'),'utf8'),/Ship a playable arena/);
+  assert.match(fs.readFileSync(path.join(profile,'sessions',state.sessions[0].id,'PADDOCK.md'),'utf8'),/Ship a playable arena/);
   await page.locator('.session-card.empty [data-action=new]').first().click({button:'right'});await page.locator('#console-chooser').waitFor();
   await page.locator('#one-off-console-form [name=projectId]').selectOption(project.id);await page.locator('#one-off-console-form [name=projectFolder]').selectOption(sub);
   assert.equal(await page.locator('#one-off-console-form [name=cwd]').inputValue(),sub);await page.locator('#one-off-console-form [type=submit]').click();await page.locator('#console-chooser').waitFor({state:'hidden'});

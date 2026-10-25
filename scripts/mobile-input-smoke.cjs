@@ -30,7 +30,7 @@ async function start(name, port) {
     'check_for_update_on_startup=false', 'windows.sandbox="unelevated"',
   ];
   const env = { ...process.env, CODEX_HOME: home, TERM: 'xterm-256color', COLORTERM: 'truecolor' };
-  for (const name of Object.keys(env)) if (/API_KEY|TOKEN|SECRET|PASSWORD|^AGENT_DOCK_|^ELECTRON_RUN_AS_NODE$/.test(name)) delete env[name];
+  for (const name of Object.keys(env)) if (/API_KEY|TOKEN|SECRET|PASSWORD|^PADDOCK_|^ELECTRON_RUN_AS_NODE$/.test(name)) delete env[name];
   terminal = pty.spawn(nativeCodex(), ['--no-daemon', '--no-alt-screen', '--ask-for-approval', 'never', '--sandbox', 'read-only', ...config.flatMap(x => ['-c', x])], { cwd: project, env, cols: 110, rows: 30, name: 'xterm-256color', useConpty: true });
   exited = false;
   let output = '', trusted = false;

@@ -3,7 +3,7 @@ const { EventEmitter } = require('node:events');
 const { randomUUID } = require('node:crypto');
 
 // Live delivery only. Notification history belongs to the operating system;
-// Dock keeps console status and saved Results, with no stored inbox.
+// Paddock keeps console status and saved Results, with no stored inbox.
 class AlertEvents extends EventEmitter {
   constructor() { super(); this.keys = new Set(); }
   send(raw) {
@@ -16,7 +16,8 @@ class AlertEvents extends EventEmitter {
     const item = { id: randomUUID(), at: Date.now(), title: text(raw.title, 180), message: text(raw.message, 1200),
       sessionId: raw.sessionId || null, resultId: raw.resultId || null, reviewId: raw.reviewId || null,
       kind: ['ready', 'question', 'error'].includes(raw.kind) ? raw.kind : 'ready' };
-    if (['usage', 'tools', 'projects'].includes(raw.destination)) item.destination = raw.destination;
+    if (raw.turnId) item.turnId = text(raw.turnId, 80);
+    if (['results', 'usage', 'tools', 'projects'].includes(raw.destination)) item.destination = raw.destination;
     this.emit('notification', item);
     return item;
   }

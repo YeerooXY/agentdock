@@ -10,6 +10,15 @@ const temp = t => { const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dock-ima
 const reply = value => new Response(JSON.stringify(value), { headers: { 'Content-Type': 'application/json' } });
 const done = async concepts => { const end = Date.now() + 3000; while (concepts.busy && Date.now() < end) await new Promise(r => setTimeout(r, 5)); assert.equal(concepts.busy, false); };
 
+test('Meshy preview authorization runs before reference upload or paid submission', async t => {
+  const root = temp(t), results = new Results(root), alerts = new AlertEvents();
+  const ref = results.add({ buffer: png, ext: '.png', title: 'Reference', kind: 'screenshot' }, { project: root, trusted: true });
+  let calls = 0;
+  const concepts = new Concepts(root, {}, results, {}, alerts, { getSettings: () => ({ provider: 'meshy' }), run: async () => { calls++; throw new Error('No CLI calls should run.'); }, authorizePreview: async () => { throw new Error('Blocked by your limits in Paddock'); } });
+  await assert.rejects(concepts.generate({ referenceId: ref.id, requestId: 'blocked-preview' }), /Blocked by your limits/);
+  assert.equal(calls, 0); assert.equal(concepts.items.length, 0); assert.equal(concepts.busy, false);
+});
+
 test('image preference persists without keys, reaches shared context and fixes official provider destinations', async t => {
   const root = temp(t), vault = { list: () => [{ id: 'image-key', label: 'Image account' }], get: () => { assert.fail('Saving settings must not resolve a key'); } };
   const hub = new SharedHub(root, vault);
@@ -17,7 +26,7 @@ test('image preference persists without keys, reaches shared context and fixes o
   hub.setImageGeneration({ provider: 'openai', keyId: 'image-key', url: 'https://attacker.invalid/', previewFirst: true });
   const restored = new SharedHub(root, vault); assert.equal(restored.config.imageGeneration.url, 'https://api.openai.com/v1/images/edits');
   assert.match(restored.summary(), /user selected openai/); assert.match(restored.summary(), /dock\/generate_preview/);
-  assert.throws(() => hub.setImageGeneration({ provider: 'gemini', keyId: 'missing' }), /Keys/);
+  assert.throws(() => hub.setImageGeneration({ provider: 'gemini', keyId: 'missing' }), /Paste this API key/);
   hub.setImageGeneration({ provider: 'agent', previewFirst: false }); assert.doesNotMatch(imageInstructions(hub.config.imageGeneration), /try to generate one/);
   for (const url of ['http://example.com/api', 'https://secret@example.com/api', 'https://example.com/api?key=secret', 'file:///tmp/images']) assert.throws(() => imageSettings({ provider: 'compatible', model: 'local-image', url }));
   assert.equal(imageSettings({ provider: 'compatible', model: 'local-image', url: 'http://127.0.0.1:8188/v1/images/edits' }).keyId, '');

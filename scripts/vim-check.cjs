@@ -1,4 +1,5 @@
 'use strict';
+const { openPage } = require('./ui-navigation.cjs');
 const assert = require('node:assert/strict');
 
 async function checkVimControls({ page, app, invoke, eventually, capture }) {
@@ -9,12 +10,18 @@ async function checkVimControls({ page, app, invoke, eventually, capture }) {
   const normal = async () => { await key('Control+Shift+Space'); await eventually(async () => await mode() === 'normal'); };
   const initial = await invoke('state'), defaults = initial.settings.consoleDefaults;
   assert.equal(initial.settings.vimControls, false);
-  await page.locator('nav [data-page=consoles]').click();
+  const expanded = page.locator('.session-card.console-expanded');
+  if (await expanded.count()) {
+    await expanded.locator('[data-action="toggle-console"]').click();
+    await expanded.waitFor({ state: 'detached' });
+  }
+  await openPage(page, 'consoles');
   await page.locator('.session-card[data-slot="1"]').focus(); await key('j');
   assert.equal(await mode(), 'off'); assert.equal(await slot(), '1');
   assert.equal(await page.locator('.vim-mode:visible').count(), 0);
 
   await page.locator('[data-page=settings]').click();
+  await openPage(page, 'console-settings');
   await page.locator('[data-setting=vimControls]').check();
   await eventually(async () => (await invoke('state')).settings.vimControls === true);
   await normal();
@@ -59,7 +66,7 @@ async function checkVimControls({ page, app, invoke, eventually, capture }) {
   assert.ok(keys.some(x => x.key === 'w' && x.ctrl && !x.prevented));
   assert.ok(keys.some(x => x.key === 'c' && x.ctrl && !x.prevented));
   assert.equal(await mode(), 'insert');
-  assert.equal(await app.evaluate(({ Menu }) => Menu.getApplicationMenu()), null, 'Native menu shortcuts must not close Dock or steal editor keys');
+  assert.equal(await app.evaluate(({ Menu }) => Menu.getApplicationMenu()), null, 'Native menu shortcuts must not close Paddock or steal editor keys');
   await app.evaluate(({ BrowserWindow }) => {
     const contents = BrowserWindow.getAllWindows()[0].webContents;
     contents.sendInputEvent({ type: 'keyDown', keyCode: 'W', modifiers: ['control'] });
@@ -94,12 +101,12 @@ async function checkVimControls({ page, app, invoke, eventually, capture }) {
   assert.equal(await page.locator('#api-form textarea[name=prompt]').inputValue(), 'hjkl 123 gn gi');
   assert.equal(await mode(), 'insert');
   await page.locator('#api-form textarea[name=prompt]').fill('');
-  await normal(); await sequence('gs'); await page.locator('[data-setting=vimControls]').waitFor();
+  await normal(); await sequence('gs'); await openPage(page, 'console-settings'); await page.locator('[data-setting=vimControls]').waitFor();
   await key('Shift+G');
-  assert.ok(await page.locator('#content').evaluate(el => el.scrollTop > 0));
-  await sequence('gg'); assert.equal(await page.locator('#content').evaluate(el => el.scrollTop), 0);
-  await key('Control+d'); assert.ok(await page.locator('#content').evaluate(el => el.scrollTop > 0));
-  await key('Control+u'); assert.equal(await page.locator('#content').evaluate(el => el.scrollTop), 0);
+  assert.ok(await page.locator('.settings-stage').evaluate(el => el.scrollTop > 0));
+  await sequence('gg'); assert.equal(await page.locator('.settings-stage').evaluate(el => el.scrollTop), 0);
+  await key('Control+d'); assert.ok(await page.locator('.settings-stage').evaluate(el => el.scrollTop > 0));
+  await key('Control+u'); assert.equal(await page.locator('.settings-stage').evaluate(el => el.scrollTop), 0);
   await sequence('gc'); await eventually(async () => await page.locator('#consoles-page').isVisible());
   await key('d'); await eventually(async () => (await invoke('state')).mode === 'hud' && !(await invoke('state')).transitioning);
   await key('1'); await key('l'); assert.equal(await slot(), '2');
@@ -121,9 +128,9 @@ async function checkVimControls({ page, app, invoke, eventually, capture }) {
   await invoke('session.end', created.id);
   await eventually(async () => !(await invoke('state')).sessions.find(x => x.id === created.id)?.alive);
   await invoke('slot.name', { slot: 9, name: '', sessionId: null });
-  await sequence('gs'); await page.locator('[data-setting=vimControls]').uncheck();
+  await sequence('gs'); await openPage(page, 'console-settings'); await page.locator('[data-setting=vimControls]').uncheck();
   await eventually(async () => (await invoke('state')).settings.vimControls === false);
-  await page.locator('nav [data-page=consoles]').click();
+  await openPage(page, 'consoles');
   await page.locator('.session-card[data-slot="1"]').focus(); await key('j');
   assert.equal(await mode(), 'off'); assert.equal(await page.locator('.vim-selected').count(), 0);
 }

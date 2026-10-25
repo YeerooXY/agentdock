@@ -3,11 +3,12 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { build } = require('esbuild');
+const { meshyZodPlugin } = require('./meshy-build.cjs');
 const root = path.resolve(__dirname, '..');
 const output = path.join(root, '.build', 'runtime');
-const version = '24.19.0';
-// Official Node.js v24.19.0 SHASUMS256.txt, win-x64/node.exe.
-const checksum = '3602f2bb1a10f2cbab4c36886218a33c1ab3db87290e73b033c46c77147d0237';
+const version = '24.22.1';
+// Official Node.js v24.22.1 SHASUMS256.txt, win-x64/node.exe.
+const checksum = 'd702daa815eabbff763c7d3808e235cf031cf2ca70211b56847bc72f51e240e5';
 // Keep the official CLI intact (including its own auth handling and sharp).
 // Copy only its runtime dependency graph, never developer tools or user data.
 function copyPackage(name, from, destination) {
@@ -58,10 +59,15 @@ async function download(url) {
     fs.writeFileSync(executable, binary);
   }
   const license = path.join(output, 'NODE-LICENSE.txt');
-  if (!fs.existsSync(license)) fs.writeFileSync(license, await download(`https://raw.githubusercontent.com/nodejs/node/v${version}/LICENSE`));
+  fs.copyFileSync(path.join(root, 'electron', 'draft-editor.cjs'), path.join(output, 'draft-editor.cjs'));
+  fs.copyFileSync(path.join(root, 'electron', 'draft-policy.cjs'), path.join(output, 'draft-policy.cjs'));
+  let previousVersion;
+  try { previousVersion = JSON.parse(fs.readFileSync(path.join(output, 'runtime.json'), 'utf8')).node; } catch {}
+  if (!fs.existsSync(license) || previousVersion !== version) fs.writeFileSync(license, await download(`https://raw.githubusercontent.com/nodejs/node/v${version}/LICENSE`));
   const result = await build({
-    absWorkingDir: root, entryPoints: { 'agent-event': 'electron/agent-event.cjs', 'agent-tools': 'electron/agent-tools.cjs', 'meshy-mcp': 'node_modules/@meshy-ai/meshy-mcp-server/dist/index.js' },
+    absWorkingDir: root, entryPoints: { 'mirofish-mcp': 'electron/mirofish-mcp.cjs', 'agent-event': 'electron/agent-event.cjs', 'agent-tools': 'electron/agent-tools.cjs', 'meshy-mcp': 'node_modules/@meshy-ai/meshy-mcp-server/dist/index.js' },
     alias: { dotenv: path.join(root, 'electron', 'no-dotenv.cjs') },
+    plugins: [meshyZodPlugin()],
     outdir: output, outExtension: { '.js': '.cjs' }, bundle: true,
     platform: 'node', target: 'node24', format: 'cjs', legalComments: 'eof', metafile: true
   });

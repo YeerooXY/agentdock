@@ -1,7 +1,7 @@
 name: agent_dock_mobile
-description: A private Android companion for Agent Dock terminals and results.
+description: A private Android companion for Paddock terminals and results.
 publish_to: 'none'
-version: 0.6.0-preview.20+20
+version: 0.6.0-preview.21+21
 
 environment:
   sdk: ^3.13.5
@@ -26,8 +26,16 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
+    - assets/textures/
     - assets/providers/openai.png
     - assets/providers/claude.png
     - assets/providers/cursor.png
     - assets/providers/opencode.png
     - assets/providers/cline.png
+    - assets/providers/gemini.png
+    - assets/providers/antigravity.png
+    - assets/providers/kiro.png
+    - assets/providers/droid.png
+    - assets/providers/pi.png
+    - assets/providers/zai.png
+    - assets/providers/ollama.png

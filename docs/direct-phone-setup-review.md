@@ -14,7 +14,7 @@ Setup now leads with the existing direct local-network connection. It no longer 
 
 Mac and phone browser checks are emulated on Windows. They do not establish actual macOS/iOS font rendering or physical-device behavior. The Android copy passed Flutter's widget checks; a new APK/native-device visual run was not performed for this copy-only change. Real-phone pairing and live Firebase delivery remain pending as recorded in [android-review.md](android-review.md).
 
-Evidence: `artifacts/mobile-views` and individual screenshots in Dock Results. No real account, paid request, user console or live mobile configuration was changed in verification.
+Evidence: `artifacts/mobile-views` and individual screenshots in Paddock Results. No real account, paid request, user console or live mobile configuration was changed in verification.
 
 ## Required page review
 

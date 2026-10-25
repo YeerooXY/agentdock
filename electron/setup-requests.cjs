@@ -13,7 +13,7 @@ class SetupRequests {
   }
   status() {
     const hub = this.getHub();
-    return { agents: this.getAgents(), keys: hub.vault.list(), connections: hub.config.connections, apis: hub.config.profiles, imageGeneration: hub.config.imageGeneration, pending: this.items, help: 'Prepare tool, API or image generator settings with dock/prepare_setup. Use kind key to request direct entry in Keys; never ask for the value in chat. Built-in Blender, Unity and Meshy setup is on Tools. CLI account sign-in stays in the provider console.' };
+    return { agents: this.getAgents(), keys: hub.vault.list(), connections: hub.config.connections, apis: hub.config.profiles, imageGeneration: hub.config.imageGeneration, pending: this.items, help: 'Prepare tool, API or image generator settings with dock/prepare_setup. Use kind key to request direct entry in Keys; never ask for the value in chat. Built-in Blender, Unity, Meshy, REA and MiroFish setup is on Tools. CLI account sign-in stays in the provider console.' };
   }
   prepare({ kind, config }, context) {
     if (!config || typeof config !== 'object' || Array.isArray(config)) throw new Error('Provide the connection settings.');
@@ -28,7 +28,7 @@ class SetupRequests {
     const item = { id: randomUUID(), kind, config: clean, consoleName: context.consoleName || 'API', at: Date.now() };
     const next = [item, ...this.items.filter(x => x.kind !== kind || x.config.id !== clean.id)].slice(0, 20);
     this.save(next);
-    return { id: item.id, destination: 'Tools', message: kind === 'key' ? 'Open Tools and choose Add key. Enter the secret in Keys.' : 'Settings are ready in Tools. Review and apply them there.' };
+    return { id: item.id, destination: 'Tools', message: kind === 'key' ? 'Open Tools and paste the key in the request card.' : 'Settings are ready in Tools. Review and apply them there.' };
   }
   save(items) { atomicJson(this.file, items); this.items = items; this.onChange(); }
   remove(id) { this.save(this.items.filter(x => x.id !== id)); }
@@ -36,10 +36,10 @@ class SetupRequests {
     const item = this.items.find(x => x.id === id);
     if (!item) throw new Error('This setup request is no longer available.');
     const hub = this.getHub();
-    if (item.kind === 'key') throw new Error('Enter this key directly in Keys.');
+    if (item.kind === 'key') throw new Error('Paste this key in its Tools card.');
     const ids = ['api','image'].includes(item.kind) ? [item.config.keyId].filter(Boolean) : ['envKeys','headerKeys','queryKeys'].flatMap(field => Object.values(item.config[field] || {}).map(x => x.key));
     const saved = new Set(hub.vault.list().map(x => x.id));
-    if (ids.some(key => !saved.has(key))) throw new Error('Add the requested key in Keys first, then apply these settings.');
+    if (ids.some(key => !saved.has(key))) throw new Error('Paste the requested key in Tools first, then apply these settings.');
     if (item.kind === 'tool') await hub.saveConnection(item.config); else if (item.kind === 'image') hub.setImageGeneration(item.config); else hub.saveProfile(item.config);
     this.remove(id);
   }

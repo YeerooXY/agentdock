@@ -36,8 +36,8 @@ async function until(check) { const end = Date.now() + 15000; while (Date.now() 
   for (const action of ['minimize', 'tray']) {
     await call('mode', 'dashboard'); await call(action);
     await activate({ sessionId: session.id, title: 'Notification console is ready' });
-    await until(async () => (await call('state')).mode === 'fullscreen' && await page.locator('#terminal-page').isVisible());
-    assert.equal(await page.locator('#terminal-heading .console-name').inputValue(), session.name);
+    await until(async () => (await call('state')).mode === 'fullscreen' && await page.locator(`.session-card.console-expanded[data-console-id="${session.id}"]`).isVisible());
+    assert.equal(await page.locator(`.session-card[data-console-id="${session.id}"] .console-name`).inputValue(), session.name);
     assert.ok(await app.evaluate(({ BrowserWindow }) => { const w = BrowserWindow.getAllWindows()[0]; return w.isVisible() && !w.isMinimized(); }));
     assert.equal((await call('state')).trayHidden, false);
   }

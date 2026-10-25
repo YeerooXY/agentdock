@@ -38,6 +38,18 @@ test('deletion reports failure if the saved files are still on disk', async t =>
   assert.deepEqual(await results.remove([item.id]), { deleted: [], failed: [item.id] });
   assert.equal(results.list().length, 1); assert.ok(fs.existsSync(results.path(item.id)));
 });
+
+test('old capture reports hide dependency noise without deleting the saved original or source files', t => {
+  const { root, results } = fixture(t);
+  const noise = { file: 'ice-age-village-research/.deps/package.dist-info/INSTALLER', type: 'modified', patch: null };
+  const empty = results.add({ text: JSON.stringify({ changes: [noise] }), kind: 'code', ext: '.json', title: '1 changed file' });
+  const mixed = results.add({ text: JSON.stringify({ changes: [noise, { file: 'src/main.js', type: 'modified', patch: '+code' }] }), kind: 'code', ext: '.json', title: '2 changed files' });
+  const loaded = new Results(root);
+  assert.deepEqual(loaded.list().map(x => [x.id, x.title, x.changeCount]), [[mixed.id, '1 changed file', 1]]);
+  assert.equal(loaded.unreadGroups(), 1);
+  assert.deepEqual(loaded.preview(mixed.id).diff.changes.map(x => x.file), ['src/main.js']);
+  assert.equal(JSON.parse(fs.readFileSync(loaded.path(empty.id), 'utf8')).changes.length, 1, 'Stored evidence remains available');
+});
 test('result notifications count batches, remember names and preserve unread state across launches', async t => {
   const { root, results, project } = fixture(t);
   const context = { project, sessionId: 'live-id', consoleKey: 'persistent-console', consoleName: 'Trader' };
@@ -98,12 +110,12 @@ test('Dock bridge validates native tool schemas and scopes file access to the ca
   const workbench=new Workbench(root,{}, {shell:{trashItem:async()=>{}},nativeImage:{}}, {testMode:true,onChange:()=>{},getSessions:()=>sessions,getProject:()=>project});
   const hub=new SharedHub(root,{list:()=>[]},{workbench}); await hub.start(); t.after(()=>hub.close());
   const grant=hub.grant('live');
-  const invoke=async args => (await fetch(grant.AGENT_DOCK_BRIDGE_URL,{method:'POST',headers:{Authorization:'Bearer '+grant.AGENT_DOCK_BRIDGE_TOKEN},body:JSON.stringify({name:'dock_call',arguments:args})})).json();
+  const invoke=async args => (await fetch(grant.PADDOCK_BRIDGE_URL,{method:'POST',headers:{Authorization:'Bearer '+grant.PADDOCK_BRIDGE_TOKEN},body:JSON.stringify({name:'dock_call',arguments:args})})).json();
   const saved=await invoke({tool:'dock/save_result',arguments:{file,title:'Verification',kind:'test'}}); assert.equal(saved.isError,undefined);
   assert.equal(workbench.results.items[0].sessionId,'live'); assert.equal(workbench.results.items[0].project,project);
   const blocked=await invoke({tool:'dock/save_result',arguments:{file:outside,title:'Private'}}); assert.equal(blocked.isError,true);assert.ok(!JSON.stringify(workbench.snapshot()).includes('DO_NOT_COPY'));
   const invalid=await invoke({tool:'dock/save_result',arguments:{title:'No spoofing',text:'test',sessionId:'someone-else'}}); assert.equal(invalid.isError,true);
-  hub.revoke('live'); const response=await fetch(grant.AGENT_DOCK_BRIDGE_URL,{method:'POST',headers:{Authorization:'Bearer '+grant.AGENT_DOCK_BRIDGE_TOKEN},body:'{}'});assert.equal(response.status,403);
+  hub.revoke('live'); const response=await fetch(grant.PADDOCK_BRIDGE_URL,{method:'POST',headers:{Authorization:'Bearer '+grant.PADDOCK_BRIDGE_TOKEN},body:'{}'});assert.equal(response.status,403);
 });
 test('Meshy device sign-in exposes only the user code and verification URL', async t=>{
   const {root,results,alerts}=fixture(t); let finish; const calls=[];

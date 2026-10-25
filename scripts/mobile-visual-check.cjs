@@ -1,4 +1,5 @@
 'use strict';
+const { openPage } = require('./ui-navigation.cjs');
 const { chromium, webkit, devices } = require('playwright');
 const fs = require('node:fs'), path = require('node:path'), http = require('node:http'), assert = require('node:assert/strict');
 const root = path.resolve(__dirname, '..'), out = path.join(root, 'artifacts', 'mobile-views'); fs.mkdirSync(out, { recursive: true });
@@ -9,7 +10,7 @@ const markdown = fs.readFileSync(path.join(__dirname, 'fixtures/result-preview.m
 const reports = []; let browser;
 (async () => {
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-  const qr = await require('qrcode').toDataURL('Agent Dock visual test — this is not a pairing credential');
+  const qr = await require('qrcode').toDataURL('Paddock visual test — this is not a pairing credential');
   for (const [name, engine, options] of profiles) {
     browser = await engine.launch(); const context = await browser.newContext(options); const state = structuredClone(fixture);
     state.mode = 'dashboard'; state.settings.setupComplete = true; state.settings.sidebarCollapsed = false;
@@ -46,7 +47,7 @@ const reports = []; let browser;
       assert.deepEqual(findings, [], `${name} ${view} accessibility checks`);
       const overflow = await page.evaluate(() => { const d = document.querySelector('dialog[open]'); return d ? d.scrollWidth > d.clientWidth + 1 || d.getBoundingClientRect().right > innerWidth + 1 : document.documentElement.scrollWidth > innerWidth + 1; }); assert.equal(overflow, false, `${name} ${view} overflow`); checks.push(view);
     }
-    await page.locator('[data-page=settings]').click(); await page.locator('[data-mobile=open]').click(); await page.locator('[data-field=name]').fill('Workstation'); await page.locator('[data-mobile=rename-pc]').click(); assert.equal(state.mobile.name, 'Workstation'); await capture('connection');
+    await openPage(page, 'devices'); await page.locator('[data-mobile=open]').click(); await page.locator('[data-field=name]').fill('Workstation'); await page.locator('[data-mobile=rename-pc]').click(); assert.equal(state.mobile.name, 'Workstation'); await capture('connection');
     await page.locator('#mobile-mode').selectOption('internet');
     await page.locator('[data-field=publicHost]').fill(''); await page.locator('[data-mobile=enable]').click();
     assert.match(await page.locator('.mobile-setup .form-error').textContent(), /public IPv4/);
@@ -80,7 +81,7 @@ const reports = []; let browser;
     assert.equal(await page.locator('.result-markdown table').count(), 1); assert.equal(await page.locator('.result-markdown pre code').count(), 1);
     await page.keyboard.press('Escape'); unsafeMarkdown = true; await page.getByRole('button', { name: 'Verification notes', exact: true }).click(); await page.locator('.result-markdown h1').waitFor();
     assert.equal(await page.locator('.result-markdown script,.result-markdown img,.result-markdown iframe,.result-markdown a').count(), 0); assert.equal(await page.evaluate(() => window.unsafeResult), undefined);
-    await page.keyboard.press('Escape'); await page.locator('[data-page=settings]').click(); await page.locator('[data-action=agent-setup]').click();
+    await page.keyboard.press('Escape'); await openPage(page, 'console-settings'); await page.locator('[data-action=agent-setup]').click();
     await page.locator('#first-run [name=mobileSetup]').check(); await page.locator('#first-run [name=mobileMode]').selectOption('internet'); await capture('first-run');
     assert.deepEqual(errors, []); reports.push({ profile: name, engine: browser.version(), emulated: name !== 'pc', captures, checks }); console.log('PASS ' + name + ' mobile setup, keyboard flow and code diff'); await browser.close(); browser = null;
   }

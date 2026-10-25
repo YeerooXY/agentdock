@@ -1,4 +1,5 @@
 'use strict';
+const { openPage } = require('./ui-navigation.cjs');
 const { chromium, webkit, devices } = require('playwright');
 const fs = require('node:fs'), path = require('node:path'), http = require('node:http'), assert = require('node:assert/strict');
 const root = path.resolve(__dirname, '..'), out = path.join(root, 'artifacts/ssh');
@@ -41,7 +42,7 @@ const reports = []; let browser;
     });
     page = await context.newPage(); page.on('pageerror', e => errors.push(e.message));
     await page.goto(`http://127.0.0.1:${server.address().port}`);
-    await page.locator('[data-page=settings]').click();
+    await openPage(page, 'devices');
     await page.getByRole('button', { name: 'Add SSH host' }).click();
     const form = page.locator('#ssh-form');
     await form.locator('[name=name]').fill('Linux development');

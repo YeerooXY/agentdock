@@ -19,7 +19,7 @@
 - Host: **156 passed, 1 skipped, 0 failed**. Includes pairing authorization, revoked input, saved project/folder validation, fresh model allow-lists, trusted SSH choices, selected-console attachment uploads, image bounds/order, linked-folder refusal and revoked upload authorization.
 - The actual installed Codex app-server returned **6 current model choices** through `model/list`. No model inference request was made.
 - Real Linux integration: Windows OpenSSH connected to a disposable Alpine Linux SSH/tmux container on loopback through WSL. The scanned fingerprint matched the container console. A shell variable survived disconnect/reconnect. A substituted host key was rejected. Explicit Close removed the exact session, and closing it again succeeded. Ephemeral keys/container were removed.
-- No paid AI request, production router change, user VM installation or restart of the running PC Dock was used for verification.
+- No paid AI request, production router change, user VM installation or restart of the running PC Paddock was used for verification.
 
 Desktop build, installer packaging, desktop smoke checks and packaged-app smoke checks passed. The packaged test exercised setup, a real terminal, bundled Node/Meshy tools, the MCP bridge, completion callbacks and restart/restore in an isolated profile.
 
@@ -32,7 +32,7 @@ Android 15 x86_64, with a loopback TLS server and synthetic terminal. This is se
 - A 180-column terminal wrapped at readable size with colors; PC dimensions stayed **180×32**.
 - Model controls sent `/model`, a separate Enter, Down and Choose. Opening/closing their UI preserved the message draft.
 - Project/folder, Claude and saved Linux-host choices were inspected. Large system text retained readable wrapping and reachable controls.
-- Notification permission was exercised. Direct mode kept one authenticated socket, paused terminal streaming in the background, received a completion notification without Firebase, and reopened Dock when tapped. **Stop alerts** disabled direct mode. No second terminal connection was created.
+- Notification permission was exercised. Direct mode kept one authenticated socket, paused terminal streaming in the background, received a completion notification without Firebase, and reopened Paddock when tapped. **Stop alerts** disabled direct mode. No second terminal connection was created.
 - The native photo picker selected a synthetic screenshot. One file was saved in the fixture project's attachment folder and its path appeared in the draft. No additional terminal input was sent.
 - Reinstalling over the existing emulator app retained its saved PC. Updating the phone leaves the PC's consoles running.
 
@@ -49,7 +49,7 @@ Mac, Android-browser and iPhone coverage is **emulated on Windows**. It does not
 ## Limits and remaining checks
 
 - Physical Android hardware-button screenshot detection still needs a device check. ADB screenshots do not trigger Android's screenshot callback and are not evidence for that feature.
-- Real-device Doze, vendor battery management, extended mobile-data use and VPN routing need field checks. A foreground service does not guarantee instant delivery or survival after force-stop/reboot. Reopen Dock to reconnect.
+- Real-device Doze, vendor battery management, extended mobile-data use and VPN routing need field checks. A foreground service does not guarantee instant delivery or survival after force-stop/reboot. Reopen Paddock to reconnect.
 - The user has not created a VM yet. Its address, SSH credentials, installed agent and subscription login still need setup. The Linux transport itself was tested.
 - VM file browsing, image uploads, shared MCP forwarding, automatic Results/usage capture and completion hooks are outside this first SSH increment. Remote consoles display **open** instead of guessing readiness. tmux does not survive a VM reboot.
 - Automatic remote checks and Close use SSH-key authentication. An unreachable host can leave a saved console needing reconnect before it can be ended.
@@ -72,7 +72,7 @@ Applies to the changed mobile console, live-control and creation sheets, image-p
 | 7. Data minimization | Checked: no remote private-key copies, no automatic screenshot reading, no background terminal streaming, bounded image/metadata storage. |
 | 8. Third-party SDKs | Checked: no new SDK. Existing Flutter, xterm, QR/ML Kit and optional Firebase remain. Images use the Android system picker; SSH uses local OpenSSH/tmux. |
 | 9. Dark patterns | Checked: alerts are optional and stoppable; denied permissions have a recovery path; no automatic paid request or image submission. |
-| 10. Fees | Checked: no Dock relay fee or mandatory cloud account. Battery/data and each user's provider costs remain distinct from app pricing. |
+| 10. Fees | Checked: no Paddock relay fee or mandatory cloud account. Battery/data and each user's provider costs remain distinct from app pricing. |
 | 11. Reviews | Not applicable: no testimonials or customer review claims. |
 | 12. Claims | Checked: mocks are labelled synthetic; real Linux transport is distinguished from the user's uncreated VM. Real-device and remote-hook limits are stated. |
 | 13. Image/control labels | Checked: provider names accompany marks; controls have labels/tooltips, and shared decorative marks do not replace names. New arrow controls have direction semantics. |

@@ -17,7 +17,7 @@ test('Blender setup isolates its runtime, pins the server and preserves partial 
     calls.push({ command, args, cwd });
     if (args.includes('venv')) { fs.mkdirSync(path.join(args.at(-1), 'Scripts'), { recursive: true }); fs.writeFileSync(path.join(args.at(-1), 'Scripts', 'python.exe'), 'fixture'); }
     if (args.includes('pip')) fs.writeFileSync(integration.blenderServer(), 'fixture');
-    return 'AGENT_DOCK_ADDON {"installed":true,"enabled":false,"lines":[]}';
+    return 'PADDOCK_ADDON {"installed":true,"enabled":false,"lines":[]}';
   } });
   const connection = await integration.prepare('blender');
   assert.ok(calls[1].args.includes(`mcp-for-blender==${BLENDER_VERSION}`));
@@ -56,17 +56,20 @@ test('Meshy stores a vault reference and resolves a relocated bundled runtime wi
   assert.throws(() => validateConnection({ ...connection, integration: 'unknown' }), /built-in/);
 });
 test('software setup does not inherit provider credentials and disables Blender telemetry', () => {
-  const previous = process.env.AGENT_DOCK_TEST_SECRET; process.env.AGENT_DOCK_TEST_SECRET = 'do-not-inherit';
-  try { const env = processEnvironment(); assert.equal(env.AGENT_DOCK_TEST_SECRET, undefined); assert.equal(env.BLENDER_MCP_DISABLE_TELEMETRY, 'true'); }
-  finally { if (previous === undefined) delete process.env.AGENT_DOCK_TEST_SECRET; else process.env.AGENT_DOCK_TEST_SECRET = previous; }
+  const previous = process.env.PADDOCK_TEST_SECRET; process.env.PADDOCK_TEST_SECRET = 'do-not-inherit';
+  try { const env = processEnvironment(); assert.equal(env.PADDOCK_TEST_SECRET, undefined); assert.equal(env.BLENDER_MCP_DISABLE_TELEMETRY, 'true'); }
+  finally { if (previous === undefined) delete process.env.PADDOCK_TEST_SECRET; else process.env.PADDOCK_TEST_SECRET = previous; }
 });
-test('web guide defaults on for existing profiles, reaches context and persists opt-out without overwriting instructions', async t => {
+test('web guide is opt-in, reaches context when enabled and persists opt-out without overwriting instructions', async t => {
   const root = fixture(t), vault = { list: () => [] };
   fs.writeFileSync(path.join(root, 'shared.json'), JSON.stringify({ instructions: 'Keep my wording.', connections: [], profiles: [] }));
   const hub = new SharedHub(root, vault); t.after(() => hub.close());
-  assert.match(hub.summary(), /20\. \*\*Data deletion requests/);
-  assert.match((await hub.invoke('dock_context')).content[0].text, /Keyboard navigation/);
-  assert.match(fs.readFileSync(hub.summaryPath, 'utf8'), /No fake reviews/);
+  assert.doesNotMatch(hub.summary(), /Web design and page review/);
+  hub.setGuides(['web-design']); assert.match(hub.config.instructions, /Keep my wording/);
+  assert.match(hub.summary(), /full 20 page and 50 security requirements/);
+  assert.doesNotMatch(hub.summary(), /20\. \*\*Data deletion requests/);
+  assert.match((await hub.invoke('dock_context')).content[0].text, /dock\/website_guide/);
+  assert.match(fs.readFileSync(hub.summaryPath, 'utf8'), /topics and checklist/);
   hub.setGuides([]); assert.doesNotMatch(hub.summary(), /Web design and page review/);
   assert.throws(() => hub.setGuides(['missing']), /available guide/);
   const reopened = new SharedHub(root, vault); t.after(() => reopened.close());

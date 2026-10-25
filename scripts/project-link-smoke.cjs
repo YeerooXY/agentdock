@@ -2,7 +2,7 @@
 // An isolated Electron profile and unpaid shell exercise the complete linking flow.
 const { _electron: electron } = require('playwright');
 const fs = require('node:fs'), path = require('node:path'), assert = require('node:assert/strict');
-const root = path.resolve(__dirname, '..'), parent = path.join(root, 'test-data'), out = path.join(root, 'artifacts', 'project-link');
+const root = path.resolve(__dirname, '..'), parent = path.join(root, 'test-data'), out = path.join(root, '.build', 'prompt7-project-link');
 fs.mkdirSync(parent, { recursive: true }); fs.mkdirSync(out, { recursive: true });
 const profile = fs.mkdtempSync(path.join(parent, 'project-link-')), folder = path.join(profile, 'Existing game');
 fs.mkdirSync(folder); fs.writeFileSync(path.join(folder, 'keep.txt'), 'Existing project file');
@@ -30,8 +30,25 @@ async function stop() { await call('quit'); await app.close(); app = null; }
   const s = (await call('state')).sessions[0];
   await call('session.input', { id: s.id, data: "$linkProbe='KEPT_'+'AFTER_LINK'; Write-Output 'LINK_INITIALIZED'\r" });
   await until(async () => (await call('session.buffer', s.id)).data.includes('LINK_INITIALIZED'));
+  const panel = page.locator(`.session-card[data-console-id="${s.id}"]`);
+  await page.evaluate(id => { window.projectTerminalBeforeExpand = document.querySelector(`[data-terminal-id="${id}"]`); }, s.id);
+  await panel.locator('[data-action="toggle-console"]').click();
+  await page.locator(`.session-card.console-expanded[data-console-id="${s.id}"]`).waitFor();
+  await panel.locator('[data-console-project]').click();
+  await page.locator('#console-project-picker').waitFor({ state: 'visible' });
+  assert.equal(await page.locator('[data-project-chat]').textContent(), s.name);
+  assert.equal(await page.locator('[data-project-cwd]').textContent(), folder);
+  assert.match(await page.locator('[data-project-help]').textContent(), /No project is linked\. Choose a saved project/);
+  await page.keyboard.press('Escape');
+  await page.locator('#console-project-picker').waitFor({ state: 'hidden' });
+  assert.equal(await page.locator('.session-card.console-expanded').count(), 1, 'Escape closes the project dialog before restoring the console grid');
+  assert.equal(await page.evaluate(id => document.querySelector(`[data-terminal-id="${id}"]`) === window.projectTerminalBeforeExpand, s.id), true);
+  await page.keyboard.press('Escape');
+  await page.locator('.session-card.console-expanded').waitFor({ state: 'detached' });
+  await panel.locator('[data-action="toggle-console"]').click();
+  await page.locator(`.session-card.console-expanded[data-console-id="${s.id}"]`).waitFor();
   // Explicit project setup remains available when suggestions are off.
-  await page.locator(`[data-console-project="${s.id}"]`).click(); await page.locator('[data-project-create]').click();
+  await panel.locator('[data-console-project]').click(); await page.locator('[data-project-create]').click();
   const form = page.locator('#project-form');
   assert.equal(await form.locator('[name=name]').inputValue(), s.name); assert.equal(await form.locator('[name=folders]').inputValue(), folder);
   assert.equal(await form.locator('[name=approach]').isVisible(), false);
@@ -46,7 +63,7 @@ async function stop() { await call('quit'); await app.close(); app = null; }
   for (const [section, changes] of [['brief',{audience:'Players',success:'Finish a wave'}],['research',{purpose:'personal',evidence:'Personal prototype'}],['infrastructure',{stack:'Godot',reason:'Small game',alternative:'Unity',tradeoff:'Existing Godot skills',hosting:'Local PC',data:'Local saves',security:'Offline only',operations:'Tests and backups'}],['roadmap',{scope:'Playable arena',milestones:[{text:'Playable arena',acceptance:'Can finish the arena',done:false}]}]]) { p=(await call('state')).projects[0]; await call('projects.plan.review',{id:p.id,revision:p.plan.revision,section,changes,action:'approve'}); }
   p=(await call('state')).projects[0];
   const bridgeFile = path.join(profile, 'bridge.json');
-  await call('session.input', { id: s.id, data: `@{url=$env:AGENT_DOCK_BRIDGE_URL;token=$env:AGENT_DOCK_BRIDGE_TOKEN} | ConvertTo-Json -Compress | Set-Content -LiteralPath '${bridgeFile.replaceAll("'", "''")}'\r` });
+  await call('session.input', { id: s.id, data: `@{url=$env:PADDOCK_BRIDGE_URL;token=$env:PADDOCK_BRIDGE_TOKEN} | ConvertTo-Json -Compress | Set-Content -LiteralPath '${bridgeFile.replaceAll("'", "''")}'\r` });
   await until(() => fs.existsSync(bridgeFile));
   const grant = JSON.parse(fs.readFileSync(bridgeFile, 'utf8').replace(/^\uFEFF/, ''));
   async function bridge(name, args = {}) {
@@ -61,11 +78,11 @@ async function stop() { await call('quit'); await app.close(); app = null; }
   assert.equal((await currentSession()).nameMode, 'project');
   assert.equal((await call('state')).settings.slotNames[s.slot], 'Arena project');
   assert.match(JSON.stringify(await bridge('dock_context')), /Arena project/);
-  assert.match(fs.readFileSync(path.join(profile, 'sessions', s.id, 'AGENT_DOCK.md'), 'utf8'), /Arena project/);
+  assert.match(fs.readFileSync(path.join(profile, 'sessions', s.id, 'PADDOCK.md'), 'utf8'), /Arena project/);
   await call('slot.name', { slot: s.slot, sessionId: s.id, name: 'Combat review' });
   p = (await call('state')).projects[0]; await call('projects.save', { ...p, revision: p.plan.revision, name: 'Arena release' });
   assert.equal((await currentSession()).name, 'Combat review');
-  await page.locator(`[data-console-project="${s.id}"]`).click();
+  await panel.locator('[data-console-project]').click();
   const naming = page.locator('#console-project-form [name=useProjectName]'); assert.equal(await naming.isChecked(), false);
   await page.screenshot({ path: path.join(out, 'desktop-title-choice.png') }); await naming.check();
   await page.locator('#console-project-form [type=submit]').click(); await page.locator('#console-project-picker').waitFor({ state: 'hidden' });
@@ -81,6 +98,7 @@ async function stop() { await call('quit'); await app.close(); app = null; }
   checks.push('the same agent bridge reads project context; progress updates appear live in Projects');
   await page.locator('[data-page=settings]').click(); await page.locator('[data-setting=suggestProjects]').check();
   await until(async () => (await call('state')).settings.suggestProjects === true);
+  await page.getByRole('button', { name: 'Close settings', exact: true }).click();
   await page.locator('[data-page=consoles]').first().click(); assert.equal(await page.locator('#project-suggestion').isVisible(), false);
   await page.locator('.session-card.empty [data-action=new]').first().click(); await page.locator('#project-suggestion').waitFor();
   const second = (await call('state')).sessions.find(x => x.id !== s.id);
@@ -89,8 +107,17 @@ async function stop() { await call('quit'); await app.close(); app = null; }
   await until(async () => (await call('state')).sessions.every(x => x.projectId === p.id));
   assert.equal(await page.locator('#project-suggestion').isVisible(), false);
   // Unlink and then deliberately choose no future suggestions.
-  await page.locator(`[data-console-project="${second.id}"]`).click(); await page.locator('#console-project-form [name=projectId]').selectOption('');
+  const secondPanel = page.locator(`.session-card[data-console-id="${second.id}"]`);
+  await secondPanel.locator('[data-action="toggle-console"]').click();
+  await page.locator(`.session-card.console-expanded[data-console-id="${second.id}"]`).waitFor();
+  await secondPanel.locator('[data-console-project]').click();
+  const linkedSecond = (await call('state')).sessions.find(item => item.id === second.id);
+  assert.equal(await page.locator('[data-project-chat]').textContent(), linkedSecond.name, 'The expanded folder control opens the selected console with its current project title');
+  assert.equal(await page.locator('[data-project-cwd]').textContent(), second.cwd);
+  await page.locator('#console-project-form [name=projectId]').selectOption('');
   await page.locator('#console-project-form [type=submit]').click(); await page.locator('#console-project-picker').waitFor({ state: 'hidden' });
+  await secondPanel.locator('[data-action="toggle-console"]').click();
+  await page.locator('.session-card.console-expanded').waitFor({ state: 'detached' });
   await page.locator('#project-suggestion').waitFor(); await page.locator('[data-project-stop]').click();
   const invalid = await page.evaluate(id => window.dock.call('session.project', { id, projectId: 'missing' }), s.id);
   assert.equal(invalid.ok, false); assert.equal((await call('state')).sessions.find(x => x.id === s.id).projectId, p.id);

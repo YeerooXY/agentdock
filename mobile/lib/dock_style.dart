@@ -1,10 +1,22 @@
 import 'package:flutter/material.dart';
 
-const blue = Color(0xff9cbfff),
-    pink = Color(0xffee9fd7),
-    ink = Color(0xff030407),
-    muted = Color(0xffb3bad0);
-const dockGradient = LinearGradient(colors: [blue, pink]);
+import 'console_theme.dart';
+
+const ink = Color(0xff030407), muted = Color(0xffb3bad0);
+
+/// The selected theme colors the whole app, as on the desktop. Void's frame
+/// colors are too dark for text, so its interface accents are lighter.
+class DockAccent {
+  static ConsoleTheme theme = ConsoleTheme.all.first;
+  static Color get primary =>
+      theme.id == 'void' ? const Color(0xff8f80ff) : theme.primary;
+  static Color get secondary =>
+      theme.id == 'void' ? const Color(0xffb9a8ff) : theme.secondary;
+}
+
+Color get blue => DockAccent.primary;
+Color get pink => DockAccent.secondary;
+LinearGradient get dockGradient => LinearGradient(colors: [blue, pink]);
 
 /// A quiet accent border shared by the console and usage cards.
 class DockFrame extends StatelessWidget {

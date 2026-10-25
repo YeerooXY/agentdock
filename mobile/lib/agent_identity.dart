@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-/// Logo-inspired accents, lifted for legibility on Dock's dark surfaces.
+/// Logo-inspired accents, lifted for legibility on Paddock's dark surfaces.
 /// Names remain available to accessibility tools when only the icon is shown.
 class AgentIdentity {
   final String name;
@@ -14,6 +14,13 @@ class AgentIdentity {
     'cursor' => 'assets/providers/cursor.png',
     'opencode' => 'assets/providers/opencode.png',
     'cline' => 'assets/providers/cline.png',
+    'gemini' => 'assets/providers/gemini.png',
+    'antigravity' => 'assets/providers/antigravity.png',
+    'kiro' => 'assets/providers/kiro.png',
+    'droid' => 'assets/providers/droid.png',
+    'pi' => 'assets/providers/pi.png',
+    'zai' || 'z.ai' => 'assets/providers/zai.png',
+    'ollama' => 'assets/providers/ollama.png',
     _ => null,
   };
 

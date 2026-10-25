@@ -13,7 +13,7 @@ test('fresh installs choose an available console; existing and unfinished setups
     const settings = initialSettings({}, folder, capabilities);
     assert.equal(settings.setupComplete, false); assert.equal(settings.consoleDefaults.provider, provider);
     assert.equal(settings.keepAwakeWhileWorking, true);
-    assert.equal(settings.autoSaveResults, true);
+    assert.equal(settings.autoSaveResults, false);
   }
   const existing = { consoleDefaults: { provider: 'custom', cwd: folder, command: 'my-agent' }, agentPermissions: 'unrestricted', slotNames: { 4: 'Trader' }, vimControls: true };
   const migrated = initialSettings(existing, 'unused', {});
@@ -21,10 +21,42 @@ test('fresh installs choose an available console; existing and unfinished setups
   assert.equal(migrated.consoleDefaults.cwd, folder); assert.equal(migrated.agentPermissions, 'unrestricted');
   assert.equal(migrated.vimControls, true); assert.equal(migrated.slotNames[4], 'Trader');
   assert.equal(migrated.keepAwakeWhileWorking, true);
-  assert.equal(migrated.autoSaveResults, true);
+  assert.equal(migrated.autoSaveResults, false);
   assert.equal(initialSettings({ ...existing, autoSaveResults: false }, folder, {}).autoSaveResults, false);
   assert.equal(initialSettings({ ...existing, keepAwakeWhileWorking: false }, folder, {}).keepAwakeWhileWorking, false);
   assert.equal(initialSettings({ ...existing, setupComplete: false }, folder, {}).setupComplete, false);
+});
+
+test('requested-output policy migrates old capture defaults once and retains later opt-ins', () => {
+  const folder = path.resolve(__dirname, '..');
+  const old = { autoSaveResults: true, notifications: false, consoleDefaults: { provider: 'shell', cwd: folder } };
+  const migrated = initialSettings(old, folder, {});
+  assert.equal(migrated.autoSaveResults, false);
+  assert.equal(migrated.resultsPolicyVersion, 1);
+  assert.equal(migrated.notifications, false);
+  assert.deepEqual(migrated.consoleDefaults, { provider: 'shell', cwd: folder, name: '', command: '' });
+  assert.equal(initialSettings({ ...migrated, autoSaveResults: true }, folder, {}).autoSaveResults, true);
+  assert.equal(initialSettings({ ...migrated, autoSaveResults: false }, folder, {}).autoSaveResults, false);
+});
+
+test('individual console end confirmation defaults on and accepts only an explicit false', () => {
+  const folder = path.resolve(__dirname, '..');
+  assert.equal(initialSettings({}, folder, {}).confirmConsoleEnd, true);
+  assert.equal(initialSettings({ restoreConsoles: false }, folder, {}).confirmConsoleEnd, true);
+  assert.equal(initialSettings({ confirmConsoleEnd: false }, folder, {}).confirmConsoleEnd, false);
+  for (const malformed of [null, 0, 'false', {}]) {
+    assert.equal(initialSettings({ confirmConsoleEnd: malformed }, folder, {}).confirmConsoleEnd, true);
+  }
+});
+
+test('source helpers prefer the prepared Node runtime and retain PATH fallback before preparation', t => {
+  const prepared = path.resolve(__dirname, '..', '.build', 'runtime', 'node.exe');
+  const exists = fs.existsSync;
+  let ready = true;
+  t.mock.method(fs, 'existsSync', file => file === prepared ? ready : exists(file));
+  assert.equal(runtimeFiles({ findProgram: () => { throw Error('Do not use the older PATH runtime'); } }).node, prepared);
+  ready = false;
+  assert.equal(runtimeFiles({ findProgram: () => 'system-node.exe' }).node, 'system-node.exe');
 });
 
 test('packaged sessions use their bundled runtime and helpers without Node on PATH', async t => {

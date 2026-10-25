@@ -43,6 +43,18 @@ function client(f, auth) {
   return { ws, wait, messages, call };
 }
 
+test('phone refresh starts the common account refresh and polling reads its progress', async t => {
+  const f = await fixture(t), paired = await f.pair(), c = client(f, paired.data.token);
+  t.after(() => c.ws.terminate()); await once(c.ws, 'open');
+  let calls = 0, refreshing = false, finish;
+  f.m.refreshUsage = () => { calls++; refreshing = true; return new Promise(resolve => { finish = () => { refreshing = false; resolve(); }; }); };
+  f.m.getUsage = () => ({ refreshing, usageChecks: [{ accountId: 'claude:default', status: refreshing ? 'refreshing' : 'current' }] });
+  assert.equal((await c.call('usage', { refresh: true })).refreshing, true);
+  assert.equal((await c.call('usage', {})).usageChecks[0].status, 'refreshing');
+  assert.equal(calls, 1); finish();
+  assert.equal((await c.call('usage', {})).usageChecks[0].status, 'current');
+});
+
 test('live completion alerts reach paired phones without a stored inbox', async t => {
   const f = await fixture(t), paired = await f.pair(), c = client(f, paired.data.token);
   t.after(() => c.ws.terminate());
@@ -58,6 +70,23 @@ test('live completion alerts reach paired phones without a stored inbox', async 
   for (let i = 0; i < 60; i++) f.alerts.send({ title: 'Completion ' + i });
   assert.equal(f.m.publicState().alerts.length, 50);
   assert.equal(f.m.publicState().alerts.at(-1).title, 'Completion 59');
+});
+
+test('paired phones receive confirmed agent settings and configuration names without credentials', async t => {
+  const f = await fixture(t), paired = (await f.pair()).data, c = client(f, paired.token);
+  t.after(() => c.ws.terminate()); await once(c.ws, 'open');
+  const session = f.sessions.items.get('console-1');
+  Object.assign(session, { provider: 'codex', providerSessionId: 'chat-one', model: '6.1 Sol', modelId: 'gpt-6.1-sol', effort: 'medium', settingsAt: 1234 });
+  f.m.getModels = async () => [{ id: 'gpt-6.1-sol', name: '6.1 Sol', efforts: ['medium', 'max'], defaultEffort: 'medium' }];
+  f.m.getSettings = () => ({ shared: { profiles: [{ id: 'api', name: 'API', url: 'private endpoint', keyId: 'key' }], connections: [{ id: 'tool', name: 'Tool', command: 'private command', envKeys: { TOKEN: 'key' }, enabled: true }], instructions: 'Shared instructions' }, keys: [{ id: 'key', label: 'Key name', value: 'PRIVATE_VALUE', encrypted: 'PRIVATE_ENCRYPTED' }] });
+  const snapshot = await c.call('state');
+  assert.deepEqual(Object.fromEntries(['providerSessionId', 'model', 'effort', 'settingsAt'].map(key => [key, snapshot.sessions[0][key]])), { providerSessionId: 'chat-one', model: 'gpt-6.1-sol', effort: 'medium', settingsAt: 1234 });
+  assert.deepEqual((await c.call('console.models', { provider: 'codex' })).models[0].efforts, ['medium', 'max']);
+  const settings = await c.call('settings.summary');
+  assert.deepEqual(settings.keys, [{ id: 'key', name: 'Key name' }]);
+  assert.equal(settings.instructions, 'Shared instructions');
+  assert.ok(!/PRIVATE|private endpoint|private command|envKeys/.test(JSON.stringify(settings)));
+  assert.deepEqual(f.sessions.writes, [], 'Reading choices never sends console input');
 });
 
 test('saved phone names are independent; remote rename cannot target another phone', async t => {
@@ -254,9 +283,9 @@ test('mobile pairing is private, single-use, encrypted at rest, and revocable', 
   const c = client(f, paired.data.token); await once(c.ws, 'open');
   const firstState = await c.wait(x => x.type === 'state');
   assert.deepEqual(firstState.state.connection, { url: `https://127.0.0.1:${f.port}`, name: f.m.name });
-  Object.assign(f.m.config, { mode: 'internet', publicHost: 'dock-test.duckdns.org', externalPort: 47831 });
+  Object.assign(f.m.config, { mode: 'tailscale' });
   const nextState = await c.call('state');
-  assert.deepEqual(nextState.connection, { url: 'https://dock-test.duckdns.org:47831', localUrl: `https://127.0.0.1:${f.port}`, name: f.m.name });
+  assert.deepEqual(nextState.connection, { url: `https://127.0.0.1:${f.port}`, name: f.m.name });
   assert.ok(!JSON.stringify(nextState).includes(paired.data.token));
   assert.ok(!JSON.stringify(nextState).includes('PRIVATE KEY'));
   await assert.rejects(c.call('vault.get', { id: 'openai' }), /unavailable/);
@@ -342,22 +371,45 @@ test('one selected terminal streams and resumes without replaying commands', asy
   d.ws.close();
 });
 
-test('internet mode preserves pairing authentication and device revocation across public peers', async t => {
+test('Tailscale mode accepts only tailnet peers and keeps pairing and revocation', async t => {
   const f = await fixture(t);
   const paired = await f.pair();
-  const request = { headers: { authorization: 'Bearer ' + paired.data.token }, socket: { remoteAddress: '8.8.8.8' } };
-  assert.equal(f.m.authenticate(request), null, 'local mode blocks public peers even with a valid token');
-  Object.assign(f.m.config, { mode: 'internet', publicHost: 'test.duckdns.org', externalPort: 49000 });
-  assert.equal(f.m.authenticate(request).id, paired.data.id);
-  assert.equal(f.m.authenticate({ ...request, headers: { authorization: 'Bearer wrong' } }), null);
-  assert.equal(f.m.authenticate({ ...request, headers: { ...request.headers, origin: 'https://evil.example' } }), null);
-  assert.equal(f.m.authenticate({ headers: { ...request.headers, 'x-forwarded-for': '192.168.1.1' }, socket: { remoteAddress: '169.254.1.1' } }), null);
+  const request = address => ({ headers: { authorization: 'Bearer ' + paired.data.token }, socket: { remoteAddress: address } });
+  assert.equal(f.m.authenticate(request('8.8.8.8')), null, 'public peers are refused even with a valid token');
+  Object.assign(f.m.config, { mode: 'tailscale' });
+  assert.equal(f.m.authenticate(request('100.101.102.103')).id, paired.data.id);
+  assert.equal(f.m.authenticate(request('::ffff:100.64.0.9')).id, paired.data.id);
+  for (const address of ['8.8.8.8', '192.168.1.20', '169.254.1.1']) assert.equal(f.m.authenticate(request(address)), null, address);
+  assert.equal(f.m.authenticate({ ...request('100.64.0.9'), headers: { authorization: 'Bearer wrong' } }), null);
+  assert.equal(f.m.authenticate({ ...request('100.64.0.9'), headers: { ...request('').headers, origin: 'https://evil.example' } }), null);
   const invite = JSON.parse(Buffer.from((await f.m.invite()).code.slice(10), 'base64url'));
-  assert.equal(invite.v, 2); assert.equal(invite.mode, 'internet'); assert.equal(invite.url, 'https://test.duckdns.org:49000'); assert.equal(invite.localUrl, `https://127.0.0.1:${f.port}`); assert.equal(invite.pin, f.invite.pin);
-  f.m.revoke(paired.data.id); assert.equal(f.m.authenticate(request), null);
-  let allowed = 0; for (let i = 0; i < 1000; i++) allowed += Number(f.m.allowAttempt({ socket: { remoteAddress: '1.1.1.1' } }));
-  assert.equal(allowed, 30); assert.ok(f.m.attempts.size < 250);
+  assert.equal(invite.v, 1); assert.equal(invite.url, `https://127.0.0.1:${f.port}`); assert.equal(invite.pin, f.invite.pin); assert.equal(invite.localUrl, undefined);
+  await assert.rejects(f.m.configure({ enabled: true, host: '127.0.0.1', mode: 'tailscale' }), /Tailscale address/);
+  await assert.rejects(f.m.configure({ enabled: true, host: '127.0.0.1', mode: 'internet' }), /replaced by Tailscale/);
+  f.m.revoke(paired.data.id); assert.equal(f.m.authenticate(request('100.101.102.103')), null);
 });
+test('a saved direct-internet connection falls back to Wi-Fi and asks for Tailscale', async t => {
+  const f = await fixture(t);
+  await f.m.stop();
+  const saved = JSON.parse(fs.readFileSync(f.m.file, 'utf8'));
+  fs.writeFileSync(f.m.file, JSON.stringify({ ...saved, mode: 'internet', publicHost: 'old.duckdns.org', externalPort: 49000, duckKeyId: 'ddns', routerMode: 'automatic' }));
+  const sessions = new EventEmitter(); sessions.items = new Map(); sessions.list = () => [];
+  const m = new MobileCompanion(path.dirname(f.m.file), safe, { sessions, results: new EventEmitter(), alerts: new AlertEvents(), getDefaults: () => ({}), getUsage: () => ({ limits: [], summary: {} }), testMode: true });
+  const state = m.snapshot();
+  assert.equal(state.mode, 'local'); assert.equal(state.publicHost, ''); assert.equal(state.duckKeyId, '');
+  assert.match(state.notice, /replaced by Tailscale/);
+  assert.equal(JSON.parse(fs.readFileSync(m.file, 'utf8')).mode, 'local');
+});
+test('terminal checkpoint carries a long answer, not only the last screens', async () => {
+  const s = new TerminalStream({ buffer: '', sequence: 0, cols: 80, rows: 24 });
+  try {
+    s.write({ sequence: 1, data: Array.from({ length: 1500 }, (_, i) => 'answer line ' + i).join('\r\n') });
+    const snapshot = await s.read(-1, 0);
+    assert.ok(/answer line 0\s/.test(snapshot.data),'start of a 1500-line answer reaches the phone');
+    assert.ok(snapshot.data.includes('answer line 1499'));
+  } finally { s.dispose(); }
+});
+
 test('terminal checkpoint retains screen modes and resynchronizes after history eviction', async () => {
   const s = new TerminalStream({ buffer: '', sequence: 0, cols: 80, rows: 24 });
   s.write({ sequence: 1, data: '\x1b[?1049h\x1b[31mHello\x1b[0m' });

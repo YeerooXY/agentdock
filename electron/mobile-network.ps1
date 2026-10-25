@@ -5,7 +5,7 @@ param(
   [ValidateRange(1024,65535)][int]$ExternalPort = 47831,
   [string]$Owner,
   [string]$Program,
-  [ValidateSet('local','internet')][string]$Mode = 'local',
+  [ValidateSet('local','tailscale')][string]$Mode = 'local',
   [switch]$Elevated
 )
 $ErrorActionPreference = 'Stop'
@@ -41,15 +41,16 @@ function Soap([string]$Name, [hashtable]$Values = @{}) {
   }
 }
 try {
-  if ($Action -ne 'inspect' -and $Owner -notmatch '^[a-f0-9-]{36}$') { throw 'Invalid Dock rule identifier.' }
-  $network = @(Get-NetIPConfiguration | Where-Object { $_.IPv4Address.IPAddress -contains $LocalAddress -and $_.IPv4DefaultGateway }) | Select-Object -First 1
+  if ($Action -ne 'inspect' -and $Owner -notmatch '^[a-f0-9-]{36}$') { throw 'Invalid Paddock rule identifier.' }
+  # The Tailscale adapter has no default gateway; Wi-Fi and Ethernet do.
+  $network = @(Get-NetIPConfiguration | Where-Object { $_.IPv4Address.IPAddress -contains $LocalAddress -and ($Mode -eq 'tailscale' -or $_.IPv4DefaultGateway) }) | Select-Object -First 1
   if (-not $network -and $Action -ne 'firewall-remove') { throw 'Choose a connected Wi-Fi or Ethernet address.' }
   $script:gateway = [string]$network.IPv4DefaultGateway.NextHop
   $result = @{ ok=$true; gateway=$script:gateway; localAddress=$LocalAddress; routerName='Router'; upnp=$false; wanAddress=''; mapped=$false }
   $profile = if ($network) { Get-NetConnectionProfile -InterfaceIndex $network.InterfaceIndex -ErrorAction SilentlyContinue | Select-Object -First 1 } else { $null }
   $result.networkProfile = if ($profile) { [string]$profile.NetworkCategory } else { 'Unknown' }
   if ($Action -like 'firewall*') {
-    if (-not [IO.Path]::IsPathRooted($Program) -or -not (Test-Path -LiteralPath $Program -PathType Leaf)) { throw 'The Dock executable could not be found.' }
+    if (-not [IO.Path]::IsPathRooted($Program) -or -not (Test-Path -LiteralPath $Program -PathType Leaf)) { throw 'The Paddock executable could not be found.' }
     $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
     if (-not $isAdmin) {
       if ($Elevated) { throw 'Windows administrator approval is required for this rule.' }
@@ -59,8 +60,8 @@ try {
       $ruleName = 'AgentDock-Mobile-'+$Owner
       Get-NetFirewallRule -Name $ruleName -ErrorAction SilentlyContinue | Remove-NetFirewallRule
       if ($Action -eq 'firewall') {
-        $remote = if ($Mode -eq 'internet') { 'Any' } else { 'LocalSubnet' }
-        New-NetFirewallRule -Name $ruleName -DisplayName 'Agent Dock phone connection' -Direction Inbound -Action Allow -Protocol TCP -LocalPort $Port -LocalAddress $LocalAddress -InterfaceAlias $network.InterfaceAlias -Program $Program -RemoteAddress $remote -Profile Any | Out-Null
+        $remote = if ($Mode -eq 'tailscale') { '100.64.0.0/10' } else { 'LocalSubnet' }
+        New-NetFirewallRule -Name $ruleName -DisplayName 'Paddock phone connection' -Direction Inbound -Action Allow -Protocol TCP -LocalPort $Port -LocalAddress $LocalAddress -InterfaceAlias $network.InterfaceAlias -Program $Program -RemoteAddress $remote -Profile Any | Out-Null
       }
     }
     $result.firewall = $Action -eq 'firewall'; $result | ConvertTo-Json -Compress; exit 0
@@ -79,7 +80,7 @@ try {
     }
   } finally { $udp.Close() }
   if (-not $location) {
-    if ($Action -ne 'inspect') { throw 'Automatic port forwarding is unavailable. Open your router settings and add the rule shown in Dock.' }
+    if ($Action -ne 'inspect') { throw 'Automatic port forwarding is unavailable. Open your router settings and add the rule shown in Paddock.' }
     $result | ConvertTo-Json -Compress; exit 0
   }
   $descriptionUri = Router-Uri $location ([uri]('http://'+$script:gateway+'/'))
@@ -94,7 +95,7 @@ try {
   if ($Action -ne 'inspect') {
     $lookup = @{ NewRemoteHost=''; NewExternalPort=$ExternalPort; NewProtocol='TCP' }
     $entry = Soap 'GetSpecificPortMappingEntry' $lookup
-    $owned = $entry -and (Text-At $entry 'NewPortMappingDescription') -eq ('Agent Dock '+$Owner) -and (Text-At $entry 'NewInternalClient') -eq $LocalAddress -and (Text-At $entry 'NewInternalPort') -eq [string]$Port
+    $owned = $entry -and (Text-At $entry 'NewPortMappingDescription') -eq ('Paddock '+$Owner) -and (Text-At $entry 'NewInternalClient') -eq $LocalAddress -and (Text-At $entry 'NewInternalPort') -eq [string]$Port
     if ($Action -eq 'unmap') {
       if ($owned) {
         [void](Soap 'DeletePortMapping' $lookup)
@@ -102,9 +103,9 @@ try {
       }
     } else {
       if ($entry -and -not $owned) { throw 'That outside port already belongs to another rule. Choose a different port.' }
-      [void](Soap 'AddPortMapping' @{ NewRemoteHost=''; NewExternalPort=$ExternalPort; NewProtocol='TCP'; NewInternalPort=$Port; NewInternalClient=$LocalAddress; NewEnabled=1; NewPortMappingDescription=('Agent Dock '+$Owner); NewLeaseDuration=3600 })
+      [void](Soap 'AddPortMapping' @{ NewRemoteHost=''; NewExternalPort=$ExternalPort; NewProtocol='TCP'; NewInternalPort=$Port; NewInternalClient=$LocalAddress; NewEnabled=1; NewPortMappingDescription=('Paddock '+$Owner); NewLeaseDuration=3600 })
       $verify = Soap 'GetSpecificPortMappingEntry' $lookup
-      if (-not $verify -or (Text-At $verify 'NewInternalClient') -ne $LocalAddress -or (Text-At $verify 'NewInternalPort') -ne [string]$Port -or (Text-At $verify 'NewPortMappingDescription') -ne ('Agent Dock '+$Owner)) { throw 'The router did not confirm the forwarding rule.' }
+      if (-not $verify -or (Text-At $verify 'NewInternalClient') -ne $LocalAddress -or (Text-At $verify 'NewInternalPort') -ne [string]$Port -or (Text-At $verify 'NewPortMappingDescription') -ne ('Paddock '+$Owner)) { throw 'The router did not confirm the forwarding rule.' }
       $result.mapped = $true
     }
   }

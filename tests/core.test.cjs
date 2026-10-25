@@ -119,14 +119,15 @@ test('Codex log reader extracts counters without retaining conversation text', (
 });
 
 test('CLI callbacks write only state and usage metadata, including real zero percent limits', () => {
-  const session = crypto.randomUUID(), helper = path.join(__dirname, '..', 'electron', 'agent-event.cjs');
-  const env = { ...process.env, AGENT_DOCK_DATA_DIR: temp, AGENT_DOCK_SESSION_ID: session };
+  const session = crypto.randomUUID(), launchId = crypto.randomUUID(), helper = path.join(__dirname, '..', 'electron', 'agent-event.cjs');
+  const env = { ...process.env, PADDOCK_DATA_DIR: temp, PADDOCK_SESSION_ID: session, PADDOCK_LAUNCH_ID: launchId };
+  delete env.PADDOCK_BRIDGE_URL; delete env.PADDOCK_BRIDGE_TOKEN;
   const payload = { type: 'agent-turn-complete', 'thread-id': 'thread', 'input-messages': ['PRIVATE_PROMPT'], 'last-assistant-message': 'PRIVATE_RESPONSE' };
   assert.equal(spawnSync(process.execPath, [helper, 'codex-notify', JSON.stringify(payload)], { env, windowsHide: true }).status, 0);
-  const event = readJson(path.join(temp, 'events', `${session}.state.json`));
+  const event = readJson(path.join(temp, 'events', `${session}.${launchId}.state.json`));
   assert.equal(event.state, 'ready'); assert.equal(event.providerSessionId, 'thread'); assert.ok(!JSON.stringify(event).includes('PRIVATE_'));
   const input = { session_id: 'claude-id', rate_limits: { five_hour: { used_percentage: 0, resets_at: 1800000000 } }, context_window: { used_percentage: 20, total_input_tokens: 60, total_output_tokens: 10 }, model: { display_name: 'Test' }, transcript_path: 'PRIVATE_TRANSCRIPT_PATH' };
   assert.equal(spawnSync(process.execPath, [helper, 'statusline'], { env, input: JSON.stringify(input), windowsHide: true }).status, 0);
-  const usage = readJson(path.join(temp, 'events', `${session}.usage.json`));
+  const usage = readJson(path.join(temp, 'events', `${session}.${launchId}.usage.json`));
   assert.equal(usage.usage.total, 70); assert.equal(usage.limits.windows[0].usedPercent, 0); assert.ok(!JSON.stringify(usage).includes('PRIVATE_'));
 });

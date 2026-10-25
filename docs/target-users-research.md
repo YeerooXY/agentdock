@@ -1,14 +1,14 @@
-# Who Agent Dock should serve first
+# Who Paddock should serve first
 
 Research date: 19 October 2026. Recommendation for discussion, not an approved expansion of the roadmap. Sources describe their own products or users' experiences; competing applications were not installed or penetration-tested.
 
 ## Recommended first audience
 
-Independent developers and technically comfortable makers who already use coding-agent CLIs, have several active projects, and want to check work from an Android phone. Windows users are the practical first group because that is Dock's supported host today.
+Independent developers and technically comfortable makers who already use coding-agent CLIs, have several active projects, and want to check work from an Android phone. Windows users are the practical first group because that is Paddock's supported host today.
 
 Their main job: **Start work in the right project, see what needs attention, review the actual changes, and continue from another device.**
 
-This is a provisional audience recommendation. Public issues give useful evidence of these problems, but do not measure market size, willingness to switch, or willingness to pay. The Windows emphasis comes from Dock's current implementation, not a representative market survey.
+This is a provisional audience recommendation. Public issues give useful evidence of these problems, but do not measure market size, willingness to switch, or willingness to pay. The Windows emphasis comes from Paddock's current implementation, not a representative market survey.
 
 | Group | Fit now | What they would need |
 | --- | --- | --- |
@@ -20,7 +20,7 @@ This is a provisional audience recommendation. Public issues give useful evidenc
 
 ## What users actually asked for
 
-These are independent public reports, not interviews conducted for Dock. Closed or improved issues are evidence of a user need, not proof of a current competitor defect. Quotations are limited to brief excerpts.
+These are independent public reports, not interviews conducted for Paddock. Closed or improved issues are evidence of a user need, not proof of a current competitor defect. Quotations are limited to brief excerpts.
 
 | Evidence and date | Need | Status and confidence |
 | --- | --- | --- |
@@ -31,23 +31,23 @@ These are independent public reports, not interviews conducted for Dock. Closed 
 | [Paseo #3842](https://github.com/getpaseo/paseo/issues/3842), Aug–Sep 2026: users documented apparently connected sessions that stopped updating. A maintainer later described a resume check and remaining network-change limitations. | Honest connection status, fast recovery, no duplicate submissions. | Resume fix reported for a September prerelease; other paths remained discussed. Medium confidence; version-specific. |
 | [Paseo #2103](https://github.com/getpaseo/paseo/issues/2103), 16 July 2026: multiple users reported an update preventing desktop startup. | Test the packaged release; provide an update/recovery path that works when the main connection is broken. | Maintainer reported a fix in 0.1.109 and manual upgrade instructions. High confidence in this historical incident; not a current defect claim. |
 
-An independent research paper, [Professional Software Developers Don't Vibe, They Control](https://arxiv.org/abs/2512.14012), also examines developers' use of agent control and review. It supports investigating human oversight; it does not validate demand for Agent Dock specifically.
+An independent research paper, [Professional Software Developers Don't Vibe, They Control](https://arxiv.org/abs/2512.14012), also examines developers' use of agent control and review. It supports investigating human oversight; it does not validate demand for Paddock specifically.
 
 ## What competitors already provide
 
-| Tool | Documented strengths | Implication for Dock |
+| Tool | Documented strengths | Implication for Paddock |
 | --- | --- | --- |
-| [Paseo](https://github.com/getpaseo/paseo) | Desktop/mobile/web clients, multiple hosts and providers, worktrees, terminals, diffs, review and a server mode for VMs. | Multi-agent remote control is established functionality. Dock needs a smaller workflow it performs reliably, not a longer feature list. |
-| [Happier](https://docs.happier.dev/) | Agents on users' machines, encrypted session synchronization, mobile control, review, machines, MCP and self-hosting. | Provider choice, privacy and self-hosting alone do not distinguish Dock. Compare setup effort and review clarity with real users. |
+| [Paseo](https://github.com/getpaseo/paseo) | Desktop/mobile/web clients, multiple hosts and providers, worktrees, terminals, diffs, review and a server mode for VMs. | Multi-agent remote control is established functionality. Paddock needs a smaller workflow it performs reliably, not a longer feature list. |
+| [Happier](https://docs.happier.dev/) | Agents on users' machines, encrypted session synchronization, mobile control, review, machines, MCP and self-hosting. | Provider choice, privacy and self-hosting alone do not distinguish Paddock. Compare setup effort and review clarity with real users. |
 | [Vibe Kanban](https://github.com/BloopAI/vibe-kanban) | Issue planning, agent workspaces, inline diff comments, previews and pull requests. | Review feedback should remain attached to the work. Its [shutdown announcement](https://www.vibekanban.com/blog/shutdown) also illustrates why portability and maintainability matter; community continuation is described, so do not call the code unavailable. |
 
 These are documented capabilities, not a claim that every workflow is bug-free. GitHub stars and repository activity are not customer counts.
 
 ## The opportunity to validate
 
-Dock can focus on a complete review handoff: **project → turn → code changes, images and test evidence → user feedback → verified revision**. Keep the actual terminal available, keep project instructions portable, and make the same work easy to find on a phone.
+Paddock can focus on a complete review handoff: **project → turn → code changes, images and test evidence → user feedback → verified revision**. Keep the actual terminal available, keep project instructions portable, and make the same work easy to find on a phone.
 
-The gap is not that other tools lack all these parts. Public feedback suggests that users lose time when the parts are unreliable, poorly connected or require repeated setup. Whether Dock's particular combination is enough to make people switch remains an open question.
+The gap is not that other tools lack all these parts. Public feedback suggests that users lose time when the parts are unreliable, poorly connected or require repeated setup. Whether Paddock's particular combination is enough to make people switch remains an open question.
 
 Recommended priorities, using what already exists:
 
@@ -64,14 +64,14 @@ Postpone a workflow marketplace, broad business-management suite, autonomous age
 
 Recruit six to eight independent developers already using at least two coding projects; include Windows/Android users and people using more than one agent. This is a proposed study, not completed research. No outreach has been sent.
 
-Ask each person to show their last real workflow: where they lost context, how they checked completion, what failed when away from the desk, and what they currently use. Avoid leading with Dock's planned features.
+Ask each person to show their last real workflow: where they lost context, how they checked completion, what failed when away from the desk, and what they currently use. Avoid leading with Paddock's planned features.
 
-Then observe five tasks: install and pair; start a task in the correct project; switch computers without pairing again; review a turn's diff and screenshot; resume after a network interruption. Record completion, time, mistakes, recovery steps and whether they would use Dock for an actual project the following week. Targets should be agreed before testing, not presented as measured results.
+Then observe five tasks: install and pair; start a task in the correct project; switch computers without pairing again; review a turn's diff and screenshot; resume after a network interruption. Record completion, time, mistakes, recovery steps and whether they would use Paddock for an actual project the following week. Targets should be agreed before testing, not presented as measured results.
 
 Decisions after that study: whether mobile review is frequent enough to justify priority, whether users prefer direct access or an optional relay, how often they need VMs, and whether the project/turn evidence view is meaningfully better than their existing workflow.
 
 ## VM boundaries in this release
 
-A Windows VM running Dock can be paired like another PC once its address is reachable. A bridged adapter or forwarding through the host may be needed; do not expose the hypervisor's management interface. Phones receive terminal updates and requested Results, not a video of the desktop.
+A Windows VM running Paddock can be paired like another PC once its address is reachable. A bridged adapter or forwarding through the host may be needed; do not expose the hypervisor's management interface. Phones receive terminal updates and requested Results, not a video of the desktop.
 
 This release does not add a Linux SSH launcher, a desktop remote-host picker, or a per-host mobile AI chooser. Desktop VM use is through its normal VM console or existing remote-desktop access. Android's new-console action still uses the selected host's configured default. The saved-device tests use two isolated Windows processes; they are not a real hypervisor/network deployment test.

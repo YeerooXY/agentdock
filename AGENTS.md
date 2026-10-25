@@ -1,4 +1,4 @@
-# Agent Dock
+# Paddock
 
 Local Windows desktop app. Keep user-facing copy short, direct and factual. Preserve any applicable parent writing instructions.
 

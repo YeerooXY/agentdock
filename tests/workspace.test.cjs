@@ -10,6 +10,7 @@ const { Workspace } = require('../electron/workspace.cjs');
 const { atomicJson } = require('../electron/storage.cjs');
 const parent = path.resolve(__dirname, '..', 'test-data');
 fs.mkdirSync(parent, { recursive: true });
+const resumeArgs = args => { const index = args.indexOf('resume'); return index < 0 ? [] : args.slice(index, index + 2); };
 const key = crypto.randomBytes(32);
 const storage = {
   isEncryptionAvailable: () => true,
@@ -42,7 +43,7 @@ test('restores nine slots, folders, names and exact agent conversations without 
     const created = await first.sessions.create({ slot, provider, name: `Project ${slot}`, cwd: first.root, permissions: slot === 1 ? 'unrestricted' : 'default', command: 'Write-Output PRIVATE_COMMAND', model: provider === 'codex' ? 'test-model' : provider === 'claude' ? 'sonnet' : '' });
     if (['codex', 'claude'].includes(provider)) {
       const thread = crypto.randomUUID(); ids.push(thread);
-      atomicJson(path.join(first.root, 'events', `${created.id}.state.json`), { session: created.id, providerSessionId: thread, state: 'active', at: Date.now() });
+      atomicJson(path.join(first.root, 'events', `${created.id}.${created.launchId}.state.json`), { session: created.id, launchId: created.launchId, providerSessionId: thread, state: 'active', at: Date.now() });
     }
   }
   first.workspace.freeze(); await first.sessions.stop();
@@ -52,14 +53,14 @@ test('restores nine slots, folders, names and exact agent conversations without 
   await second.workspace.restore(); await second.workspace.restore();
   assert.equal(second.calls.length, 9, 'startup restoration runs once');
   assert.deepEqual(second.sessions.list().map(x => [x.slot, x.name, x.cwd]), Array.from({ length: 9 }, (_, i) => [i + 1, `Project ${i + 1}`, first.root]));
-  assert.deepEqual(second.calls.slice(0, 3).map(x => x.args.slice(0, 2)), ids.slice(0, 3).map(id => ['resume', id]));
+  assert.deepEqual(second.calls.slice(0, 3).map(x => resumeArgs(x.args)), ids.slice(0, 3).map(id => ['resume', id]));
   for (let index = 3; index < 5; index++) assert.equal(second.calls[index].args[second.calls[index].args.indexOf('--resume') + 1], ids[index]);
   assert.ok(second.calls[0].args.includes('--dangerously-bypass-approvals-and-sandbox'));
   assert.ok(!second.calls[1].args.includes('--dangerously-bypass-approvals-and-sandbox'));
   assert.ok(second.calls.every(x => !x.args.includes('--last') && !x.args.includes('--continue')));
   assert.ok(second.sessions.list().every(x => x.state === 'open'), 'old thinking/ready statuses are not shown as live');
   assert.deepEqual(second.sessions.list().map(x => x.launchModel), ['test-model', 'test-model', 'test-model', 'sonnet', 'sonnet', '', '', '', '']);
-  for (let index = 0; index < 5; index++) assert.equal(second.calls[index].args[second.calls[index].args.indexOf('--model') + 1], index < 3 ? 'test-model' : 'sonnet');
+  assert.ok(second.calls.slice(0, 5).every(call => !call.args.includes('--model')), 'resumed provider threads restore their saved model instead of forcing an older launch choice');
   assert.ok(!JSON.stringify(second.sessions.list()).includes('PRIVATE_COMMAND'));
   assert.deepEqual(second.errors, []);
 });
@@ -80,27 +81,37 @@ test('unfinished first turns restore each exact Codex chat, including consoles i
     const item = await first.sessions.create({ provider: 'codex', cwd: first.root, name: `Chat ${index + 1}` });
     first.sessions.items.get(item.id).state = 'active';
     const input = { hook_event_name: 'SessionStart', session_id: threads[index], source: 'startup', prompt: 'PRIVATE_PROMPT', transcript_path: 'PRIVATE_TRANSCRIPT' };
-    const run = spawnSync(process.execPath, [path.resolve(__dirname, '../electron/agent-event.cjs'), 'codex-session', first.root, item.id], { input: JSON.stringify(input), windowsHide: true });
+    const run = spawnSync(process.execPath, [path.resolve(__dirname, '../electron/agent-event.cjs'), 'codex-session', first.root, item.id, item.launchId], { input: JSON.stringify(input), windowsHide: true });
     assert.equal(run.status, 0);
-    const metadata = fs.readFileSync(path.join(first.root, 'events', `${item.id}.identity.json`), 'utf8');
+    const metadata = fs.readFileSync(path.join(first.root, 'events', `${item.id}.${item.launchId}.identity.json`), 'utf8');
     assert.ok(!metadata.includes('PRIVATE_'));
-    assert.equal(fs.existsSync(path.join(first.root, 'events', `${item.id}.state.json`)), false, 'no completion callback has fired');
+    assert.equal(fs.existsSync(path.join(first.root, 'events', `${item.id}.${item.launchId}.state.json`)), false, 'no completion callback has fired');
   }
   first.workspace.freeze();
   assert.ok(first.sessions.list().every(x => x.state === 'active'), 'identity must not stop work tracking');
   await first.sessions.stop();
   const second = fixture(t, first.root); await second.workspace.restore();
-  assert.deepEqual(second.calls.map(x => x.args.slice(0, 2)), threads.map(id => ['resume', id]));
+  assert.deepEqual(second.calls.map(x => resumeArgs(x.args)), threads.map(id => ['resume', id]));
 });
 
 test('switching Codex chat preserves the new identity despite a late completion from the previous chat', async t => {
   const f = fixture(t), oldId = crypto.randomUUID(), newId = crypto.randomUUID();
   const item = await f.sessions.create({ provider: 'codex', cwd: f.root }, { resumeId: oldId });
   f.sessions.items.get(item.id).state = 'active';
-  atomicJson(path.join(f.root, 'events', `${item.id}.identity.json`), { session: item.id, providerSessionId: newId, at: Date.now() });
-  atomicJson(path.join(f.root, 'events', `${item.id}.state.json`), { session: item.id, providerSessionId: oldId, state: 'ready', at: Date.now() + 1 });
+  atomicJson(path.join(f.root, 'events', `${item.id}.${item.launchId}.identity.json`), { session: item.id, launchId: item.launchId, providerSessionId: newId, at: Date.now() });
+  atomicJson(path.join(f.root, 'events', `${item.id}.${item.launchId}.state.json`), { session: item.id, launchId: item.launchId, providerSessionId: oldId, state: 'ready', at: Date.now() + 1 });
   f.workspace.freeze();
   assert.equal(f.saved()[0].providerSessionId, newId); assert.equal(f.sessions.list()[0].state, 'active');
+});
+
+test('completion callbacks expose their exact turn only in the attention event', async t => {
+  const f = fixture(t), turnId = crypto.randomUUID();
+  const item = await f.sessions.create({ provider: 'codex', cwd: f.root });
+  const attention = []; f.sessions.on('attention', value => attention.push(value));
+  atomicJson(path.join(f.root, 'events', `${item.id}.${item.launchId}.state.json`), { session: item.id, launchId: item.launchId, state: 'ready', at: Date.now(), turnId });
+  f.sessions.scanEvents();
+  assert.equal(attention[0].turnId, turnId);
+  assert.equal(f.sessions.list()[0].turnId, undefined, 'Notification linkage is not persisted as current console state');
 });
 
 test('async Codex setup reserves its grid space and cannot launch after shutdown', async t => {

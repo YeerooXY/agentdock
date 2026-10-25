@@ -1,4 +1,4 @@
-# Agent Dock for Android
+# Paddock for Android
 
 A native Flutter companion for the Windows app. It connects to your own PC over pinned TLS, shows one live terminal at a time, and loads Results on demand. Optional direct alerts keep a status connection open without a cloud account. Firebase alerts remain available with your own project.
 
@@ -28,6 +28,16 @@ The current preview uses the local Android development signing key even in relea
 Do not put `google-services.json` or service-account JSON in the app source. Each PC imports its user's files; the APK loads only public Firebase options at runtime. Native initialization also runs when Android starts the app for a background FCM message. The private sender key never reaches the APK.
 
 ## Checks
+
+Preview 21 adds phone console styles under **Settings → Appearance** and the
+console menu's **Console style**. Normal, Accent colors, Blue, Violet, Hot pink,
+Redline, Cyber, Arctic, Inferno and RGB each have a distinct opening animation.
+Stars, ambient motion and opening animations have separate switches. Preferences
+stay on the phone and apply to its console views; PC appearance is unchanged.
+Effects pause while the app is backgrounded, covered by another route or under
+the device's reduced-motion setting. Explicit ANSI backgrounds stay opaque.
+
+See [native console FX verification](../docs/mobile-console-fx-review.md).
 
 `flutter test` covers invalid pairing, narrow layout, separate message submission, interrupted sends, terminal checkpoint replacement, draft retention, on-demand Results, native Markdown and update selection. Root `npm test` exercises the HTTPS/WebSocket protocol, resize ordering, token revocation, compressed reconnects, and mocked Firebase sends. The [preview 3 checks](../docs/mobile-input-resize-review.md) also exercise the installed Codex CLI against a local mock API.
 

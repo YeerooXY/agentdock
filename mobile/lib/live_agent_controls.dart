@@ -5,10 +5,11 @@ import 'package:xterm/xterm.dart';
 
 import 'agent_identity.dart';
 import 'agent_menu.dart';
+import 'agent_selection.dart';
 import 'dock_client.dart';
 import 'dock_style.dart';
 
-/// Native choices from the running CLI, with no stored model catalogue.
+/// The terminal receives commands only after an explicit Apply.
 class LiveAgentControls extends StatefulWidget {
   final DockClient client;
   final String action;
@@ -25,10 +26,15 @@ class _LiveAgentControlsState extends State<LiveAgentControls> {
   DockClient get c => widget.client;
   late final pc = c.activePC, id = c.selected, generation = c.generation;
   late final String initialProvider;
+  late final dynamic chat;
+  late final AgentSelection initial;
   Terminal? terminal;
-  bool busy = false, opened = false, sent = false;
+  List<Map<String, dynamic>> models = [];
+  String? model, effort;
   String error = '';
-  bool sessionOnly = true;
+  bool loading = true, busy = false, attempted = false;
+  Map get session => c.sessions.where((s) => s['id'] == id).firstOrNull ?? {};
+  String get provider => '${session['provider']}'.toLowerCase();
   bool get current =>
       mounted &&
       c.connected &&
@@ -36,29 +42,33 @@ class _LiveAgentControlsState extends State<LiveAgentControls> {
       c.activePC == pc &&
       c.selected == id &&
       c.generation == generation &&
-      provider == initialProvider;
-  String get provider =>
-      '${c.sessions.where((s) => s['id'] == id).firstOrNull?['provider']}'
-          .toLowerCase();
+      provider == initialProvider &&
+      session['providerSessionId'] == chat;
   AgentMenu? get menu =>
       terminal == null ? null : AgentMenu.parse(activeTerminalText(terminal!));
-  bool get canOpen =>
+  bool get idle =>
       current &&
       terminal != null &&
-      ['open', 'ready', 'idle'].contains(
-        c.sessions.where((s) => s['id'] == id).firstOrNull?['state'],
-      ) &&
+      ['open', 'ready', 'idle'].contains(session['state']) &&
       hasEmptyAgentPrompt(terminal!, provider);
+  Map<String, dynamic>? get chosen =>
+      models.where((x) => x['id'] == model).firstOrNull;
+  List<String> get efforts =>
+      (chosen?['efforts'] as List? ?? []).whereType<String>().toList();
+  bool get unchanged =>
+      model == initial.model && (effort == initial.effort || efforts.isEmpty);
 
   @override
   void initState() {
     super.initState();
     initialProvider = provider;
+    chat = session['providerSessionId'];
+    initial = c.agentSelection(id);
+    model = initial.model;
+    effort = initial.effort;
     c.addListener(changed);
     listenToTerminal();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (current && menu == null && canOpen) open();
-    });
+    load();
   }
 
   void listenToTerminal() {
@@ -70,9 +80,10 @@ class _LiveAgentControlsState extends State<LiveAgentControls> {
   }
 
   void changed() {
-    if (!mounted) return;
-    listenToTerminal();
-    setState(() {});
+    if (mounted) {
+      listenToTerminal();
+      setState(() {});
+    }
   }
 
   @override
@@ -82,14 +93,209 @@ class _LiveAgentControlsState extends State<LiveAgentControls> {
     super.dispose();
   }
 
-  Future<void> act(Future<void> Function() action) async {
-    if (!current || busy) return;
+  Future<void> load() async {
     setState(() {
-      busy = true;
+      loading = true;
       error = '';
     });
     try {
-      await action();
+      final result = await c.request('console.models', {'provider': provider});
+      if (!current) return;
+      final values = (result is Map ? result['models'] as List? : null) ?? [];
+      models = values
+          .whereType<Map>()
+          .map((x) => Map<String, dynamic>.from(x))
+          .toList();
+      if (models.isEmpty) {
+        throw StateError(
+          'Model choices are unavailable. Retry or use the terminal.',
+        );
+      }
+      if (model != null && chosen == null) {
+        models.insert(0, {
+          'id': model,
+          'name': modelLabel(model!),
+          'efforts': provider == 'claude'
+              ? models.first['efforts'] ?? <String>[]
+              : <String>[],
+        });
+      }
+      if (effort != null && !efforts.contains(effort)) effort = null;
+    } catch (e) {
+      if (mounted) error = e.toString().replaceFirst('Bad state: ', '');
+    } finally {
+      if (mounted) setState(() => loading = false);
+    }
+  }
+
+  Future<void> waitFor(bool Function() ready) async {
+    final done = Completer<void>();
+    Timer? poll, deadline;
+    void check() {
+      if (done.isCompleted) return;
+      try {
+        if (!current) {
+          throw StateError('Connection or chat changed. Reopen the chooser.');
+        }
+        if (ready()) done.complete();
+      } catch (e, stack) {
+        done.completeError(e, stack);
+      }
+    }
+
+    check();
+    if (!done.isCompleted) {
+      poll = Timer.periodic(const Duration(milliseconds: 50), (_) => check());
+      deadline = Timer(const Duration(seconds: 6), () {
+        if (!done.isCompleted) {
+          done.completeError(
+            StateError(
+              'Could not confirm the change. Check the terminal before trying again.',
+            ),
+          );
+        }
+      });
+    }
+    try {
+      await done.future;
+    } finally {
+      poll?.cancel();
+      deadline?.cancel();
+    }
+  }
+
+  int optionIndex(AgentMenu live, String value, {String? name}) {
+    final labels = {
+      value.toLowerCase(),
+      if (name != null) name.toLowerCase(),
+      if (value == 'xhigh') 'extra high',
+    };
+    return live.options.indexWhere(
+      (text) => labels.any(
+        (label) => RegExp(
+          '(^|[^a-z0-9])${RegExp.escape(label)}(?=[^a-z0-9]|\$)',
+          caseSensitive: false,
+        ).hasMatch(text),
+      ),
+    );
+  }
+
+  Future<void> choose(AgentMenu expected, int index) async {
+    if (index < 0) {
+      throw StateError(
+        'The agent does not offer this choice. Refresh the chooser.',
+      );
+    }
+    AgentMenu checked() {
+      final now = menu;
+      if (!current || now == null || now.signature != expected.signature) {
+        throw StateError('The agent menu changed. Check the terminal.');
+      }
+      return now;
+    }
+
+    var now = checked();
+    while (now.selected != index) {
+      final next = now.selected + (index > now.selected ? 1 : -1);
+      await c.input(index > now.selected ? '\x1b[B' : '\x1b[A', id: id);
+      await waitFor(() => menu != null && checked().selected == next);
+      now = checked();
+    }
+    final before = activeTerminalText(terminal!);
+    checked();
+    await c.input(now.sessionOnly ? 's' : '\r', id: id);
+    await waitFor(() => activeTerminalText(terminal!) != before);
+  }
+
+  Future<void> apply() async {
+    if (!current || busy || loading) return;
+    if (unchanged) {
+      Navigator.pop(context);
+      return;
+    }
+    if (!idle || menu != null) {
+      setState(
+        () => error = 'Wait for the agent and clear its terminal input first.',
+      );
+      return;
+    }
+    final latest = c.agentSelection(id);
+    if (latest.model != initial.model || latest.effort != initial.effort) {
+      setState(
+        () => error = 'The active settings changed. Reopen the chooser.',
+      );
+      return;
+    }
+    setState(() {
+      busy = true;
+      attempted = true;
+      error = '';
+    });
+    try {
+      final before = activeTerminalText(terminal!);
+      if (provider == 'codex' || model != initial.model) {
+        await c.submit('/model', command: true, canContinue: () => current);
+        await waitFor(() => menu != null);
+        final live = menu!;
+        await choose(
+          live,
+          optionIndex(live, model!, name: chosen?['name'] as String?),
+        );
+      }
+      if (provider == 'codex' && efforts.isNotEmpty) {
+        await waitFor(
+          () =>
+              menu != null &&
+              RegExp(
+                r'reasoning|effort',
+                caseSensitive: false,
+              ).hasMatch(menu!.title) &&
+              !menu!.title.toLowerCase().contains('model and effort'),
+        );
+        final live = menu!;
+        await choose(live, optionIndex(live, effort!));
+      } else if (provider == 'claude' &&
+          effort != null &&
+          effort != initial.effort) {
+        await waitFor(
+          () => menu == null && hasEmptyAgentPrompt(terminal!, provider),
+        );
+        await c.submit(
+          '/effort $effort',
+          command: true,
+          canContinue: () => current,
+        );
+      }
+      await waitFor(() {
+        final text = activeTerminalText(terminal!);
+        if (text == before || menu != null) return false;
+        final confirmation = selectionConfirmation(text),
+            reported = AgentSelection.fromSession(session);
+        final modelConfirmed =
+            confirmation?.model?.toLowerCase() == model?.toLowerCase() ||
+            (reported.at > initial.at && reported.model == model) ||
+            (provider == 'claude' && model == initial.model);
+        final effortConfirmed =
+            effort == null ||
+            confirmation?.effort == effort ||
+            (reported.at > initial.at && reported.effort == effort) ||
+            (provider == 'claude' &&
+                RegExp(
+                  '(?:effort|Effort)[^\\n]{0,30}\\b${RegExp.escape(effort!)}\\b',
+                ).hasMatch(text));
+        return modelConfirmed && effortConfirmed;
+      });
+      if (current) {
+        c.rememberAgentSelection(
+          id,
+          AgentSelection(
+            model: model,
+            effort: effort,
+            at: DateTime.now().millisecondsSinceEpoch,
+          ),
+        );
+        if (mounted) Navigator.pop(context);
+      }
     } catch (e) {
       if (mounted) {
         setState(() => error = e.toString().replaceFirst('Bad state: ', ''));
@@ -99,199 +305,148 @@ class _LiveAgentControlsState extends State<LiveAgentControls> {
     }
   }
 
-  Future<void> waitFor(bool Function() ready) async {
-    final until = DateTime.now().add(const Duration(seconds: 4));
-    while (!ready()) {
-      if (!current) throw StateError('Connection changed. Reopen the chooser.');
-      if (DateTime.now().isAfter(until)) {
-        throw StateError(
-          'The agent did not confirm the change. Check the terminal.',
-        );
-      }
-      await Future<void>.delayed(const Duration(milliseconds: 50));
-    }
-    if (!current) throw StateError('Connection changed. Reopen the chooser.');
-  }
-
-  Future<void> open() => act(() async {
-    if (!canOpen) {
-      throw StateError(
-        'Wait for the agent and clear its terminal input first.',
-      );
-    }
-    opened = true;
-    await c.submit(
-      widget.action == 'Effort' && provider == 'claude' ? '/effort' : '/model',
-      command: true,
-    );
-    await waitFor(() => menu != null);
-  });
-
-  Future<void> choose(AgentMenu expected, int index) => act(() async {
-    AgentMenu checked() {
-      final now = menu;
-      if (!current || now == null || now.signature != expected.signature) {
-        throw StateError('The agent menu changed. Choose again.');
-      }
-      return now;
-    }
-
-    var now = checked();
-    // Confirm every observed move before sending the next key.
-    while (now.selected != index) {
-      final next = now.selected + (index > now.selected ? 1 : -1);
-      await c.input(index > now.selected ? '\x1b[B' : '\x1b[A', id: id);
-      await waitFor(() {
-        // PTY redraws can arrive in separate frames. Wait through an incomplete
-        // repaint, but reject a different complete menu.
-        if (menu == null) return false;
-        return checked().selected == next;
-      });
-      now = checked();
-    }
-    final before = activeTerminalText(terminal!);
-    final key = sessionOnly && now.sessionOnly ? 's' : '\r';
-    checked();
-    await c.input(key, id: id);
-    await waitFor(() => activeTerminalText(terminal!) != before);
-    await Future<void>.delayed(const Duration(milliseconds: 150));
-    if (current) setState(() => sent = menu == null);
-  });
-
-  Future<void> close() async {
-    if (busy) return;
-    if (current && menu != null) await act(() => c.input('\x1b', id: id));
-    if (mounted) Navigator.pop(context);
-  }
-
   @override
-  Widget build(BuildContext context) {
-    final live = menu;
-    return PopScope(
-      canPop: !busy,
-      child: SafeArea(
-        child: ConstrainedBox(
-          constraints: BoxConstraints(
-            maxHeight: MediaQuery.sizeOf(context).height * .8,
-          ),
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
+  Widget build(BuildContext context) => PopScope(
+    canPop: !busy,
+    child: SafeArea(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
               children: [
-                Row(
-                  children: [
-                    AgentMark(provider, size: 26),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        live?.title ?? widget.action,
-                        style: const TextStyle(fontSize: 20, color: pink),
-                      ),
-                    ),
-                    IconButton(
-                      tooltip: 'Close chooser',
-                      onPressed: busy ? null : close,
-                      icon: const Icon(Icons.close, color: blue),
-                    ),
-                  ],
+                AgentMark(provider, size: 26),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Model & effort',
+                    style: TextStyle(fontSize: 20, color: pink),
+                  ),
                 ),
-                if (busy) const LinearProgressIndicator(minHeight: 2),
-                if (!current || error.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    child: Text(
-                      current
-                          ? error
-                          : 'Connection changed. Reopen the chooser.',
-                      style: const TextStyle(color: pink),
-                    ),
-                  ),
-                if (live != null) ...[
-                  for (var i = 0; i < live.options.length; i++)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 8),
-                      child: Material(
-                        color: i == live.selected
-                            ? blue.withValues(alpha: .12)
-                            : Colors.white.withValues(alpha: .025),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          side: BorderSide(
-                            color: i == live.selected
-                                ? blue
-                                : blue.withValues(alpha: .2),
-                          ),
-                        ),
-                        child: ListTile(
-                          title: Text(
-                            live.options[i].split(RegExp(r' {2,}|\n')).first,
-                          ),
-                          subtitle:
-                              live.options[i]
-                                      .split(RegExp(r' {2,}|\n'))
-                                      .length >
-                                  1
-                              ? Text(
-                                  live.options[i]
-                                      .split(RegExp(r' {2,}|\n'))
-                                      .skip(1)
-                                      .join(' '),
-                                )
-                              : null,
-                          trailing: i == live.selected
-                              ? const Icon(Icons.check, color: pink)
-                              : null,
-                          onTap: current && !busy
-                              ? () => choose(live, i)
-                              : null,
-                        ),
-                      ),
-                    ),
-                  if (live.sessionOnly)
-                    SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: const Text('This session only'),
-                      value: sessionOnly,
-                      onChanged: busy
-                          ? null
-                          : (value) => setState(() => sessionOnly = value),
-                    ),
-                  Padding(
-                    padding: const EdgeInsets.only(top: 12),
-                    child: Text(
-                      live.footer,
-                      style: const TextStyle(color: muted, fontSize: 12),
-                    ),
-                  ),
-                ] else if (sent) ...[
-                  const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 16),
-                    child: Text(
-                      'Selection sent. Check the confirmation in the terminal.',
-                    ),
-                  ),
-                  FilledButton(onPressed: close, child: const Text('Done')),
-                ] else if (!busy) ...[
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    child: Text(
-                      opened
-                          ? 'This agent menu needs attention in the terminal.'
-                          : 'Open the chooser from an idle, empty agent prompt.',
-                    ),
-                  ),
-                  FilledButton(
-                    onPressed: canOpen ? open : null,
-                    child: Text('Open ${widget.action.toLowerCase()}'),
-                  ),
-                ],
+                IconButton(
+                  tooltip: 'Close chooser',
+                  onPressed: busy ? null : () => Navigator.pop(context),
+                  icon: Icon(Icons.close, color: blue),
+                ),
               ],
             ),
-          ),
+            if (loading || busy) const LinearProgressIndicator(minHeight: 2),
+            if (!loading && models.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              DropdownButtonFormField<String>(
+                initialValue: model,
+                isExpanded: true,
+                decoration: const InputDecoration(
+                  labelText: 'Model',
+                  hintText: 'Choose model',
+                ),
+                items: models
+                    .map(
+                      (x) => DropdownMenuItem(
+                        value: x['id'] as String,
+                        child: Text(
+                          x['name'] as String? ?? x['id'] as String,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    )
+                    .toList(),
+                onChanged: busy || attempted || !current
+                    ? null
+                    : (value) => setState(() {
+                        model = value;
+                        if (!efforts.contains(effort)) {
+                          effort = chosen?['defaultEffort'] as String?;
+                        }
+                      }),
+              ),
+              const SizedBox(height: 16),
+              DropdownButtonFormField<String>(
+                key: ValueKey('$model:$effort'),
+                initialValue: effort,
+                isExpanded: true,
+                autofocus: widget.action == 'Effort',
+                decoration: InputDecoration(
+                  labelText: 'Effort',
+                  hintText: model == null
+                      ? 'Choose a model first'
+                      : efforts.isEmpty
+                      ? 'Not reported for this model'
+                      : 'Choose effort',
+                ),
+                items: efforts
+                    .map(
+                      (x) => DropdownMenuItem(
+                        value: x,
+                        child: Text(effortLabel(x)),
+                      ),
+                    )
+                    .toList(),
+                onChanged: busy || attempted || !current || efforts.isEmpty
+                    ? null
+                    : (value) => setState(() => effort = value),
+              ),
+              if (provider == 'claude')
+                const Padding(
+                  padding: EdgeInsets.only(top: 12),
+                  child: Text(
+                    'Available effort levels depend on the model.',
+                    style: TextStyle(color: muted),
+                  ),
+                ),
+            ],
+            if (error.isNotEmpty || !current)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                child: Text(
+                  current
+                      ? error
+                      : 'Connection or chat changed. Reopen the chooser.',
+                  style: TextStyle(color: pink),
+                ),
+              ),
+            if (!loading && models.isEmpty)
+              TextButton(
+                onPressed: current ? load : null,
+                child: const Text('Retry loading choices'),
+              ),
+            const SizedBox(height: 20),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: busy ? null : () => Navigator.pop(context),
+                    child: const Text('Cancel'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: FilledButton(
+                    onPressed:
+                        !loading &&
+                            !busy &&
+                            !attempted &&
+                            current &&
+                            model != null &&
+                            (efforts.isEmpty || effort != null)
+                        ? apply
+                        : null,
+                    child: Text(
+                      busy
+                          ? 'Applying…'
+                          : unchanged
+                          ? 'Done'
+                          : 'Apply',
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
         ),
       ),
-    );
-  }
+    ),
+  );
 }

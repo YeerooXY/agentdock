@@ -47,7 +47,7 @@ test('SSH pinning and quoting preserve spaces without local hooks or forwarding'
   assert.throws(() => remoteCommand('codex', '-bad'));
   assert.throws(() => remoteCommand('codex', 'model; rm'));
 });
-test('SSH console restoration reattaches the same tmux identity and keeps remote jobs alive on Dock shutdown', async t => {
+test('SSH console restoration reattaches the same tmux identity and keeps remote jobs alive on Paddock shutdown', async t => {
   const { root, ssh, raw } = fixture(t), scan = await ssh.scan(raw);
   const [host] = ssh.approve({ ...scan, verified: true });
   const spawned = [];

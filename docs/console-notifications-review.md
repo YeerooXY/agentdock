@@ -13,7 +13,7 @@ Only user interaction triggers acknowledgment. Ordinary focus, incoming output a
 - `npm run test:desktop`: all four scripts passed with temporary profiles and real Windows PTYs. Added checks cover clicking and typing in the grid/fullscreen, text insertion, paste, an already-focused console completing again, automatic cursor-position replies, per-console Inbox scope and independent Results counts.
 - `node scripts/visual-layout-check.cjs`: all four profiles passed. Grid clicks, typed/composed input and fullscreen typing clear only the selected console's badge. No renderer errors, horizontal page/content overflow or selected axe contrast/name/label violations.
 - Persistence checks confirm read flags survive a new Inbox instance, unrelated errors/alerts stay unread, repeated acknowledgment does not save again, and later completions remain unread.
-- No paid model requests. The user's running Dock and consoles were left running; the updated main process loads on the next app restart.
+- No paid model requests. The user's running Paddock and consoles were left running; the updated main process loads on the next app restart.
 
 | Profile | Coverage | Status |
 | --- | --- | --- |

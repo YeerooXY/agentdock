@@ -14,6 +14,7 @@ class UsageClient extends DockClient {
   Completer<dynamic>? response;
   bool fail = false;
   int reads = 0;
+  final payloads = <Map<String, dynamic>>[];
   UsageClient() {
     connected = true;
     pairing = {'name': 'Test PC'};
@@ -26,6 +27,7 @@ class UsageClient extends DockClient {
   ]) async {
     if (method != 'usage') throw StateError('Unexpected request: $method');
     reads++;
+    payloads.add(payload);
     if (fail || !connected) throw StateError('Fixture offline');
     return response?.future ?? usage;
   }
@@ -60,7 +62,7 @@ Future<void> showUsage(
       theme: ThemeData.dark(),
       home: MediaQuery(
         data: MediaQueryData(textScaler: TextScaler.linear(scale)),
-        child: Scaffold(body: SettingsPage(client: client)),
+        child: Scaffold(body: SettingsPage(client: client, usageOnly: true)),
       ),
     ),
   );
@@ -68,6 +70,79 @@ Future<void> showUsage(
 }
 
 void main() {
+  testWidgets(
+    'refresh checks providers and polls until their readings complete',
+    (tester) async {
+      final client = UsageClient();
+      addTearDown(client.dispose);
+      client.usage = {
+        'refreshing': true,
+        'accounts': [
+          {
+            'id': 'claude:default',
+            'provider': 'claude',
+            'label': 'Claude',
+            'usageCheck': {'status': 'refreshing'},
+          },
+        ],
+        'limits': [],
+      };
+      await showUsage(tester, client);
+      expect(client.payloads.first['refresh'], true);
+      expect(find.text('Checking'), findsOneWidget);
+      client.usage = {
+        'refreshing': false,
+        'accounts': [
+          {
+            'id': 'claude:default',
+            'provider': 'claude',
+            'label': 'Claude',
+            'usageCheck': {
+              'status': 'sign-in',
+              'message': 'Sign in through this CLI, then refresh.',
+            },
+          },
+        ],
+        'limits': [],
+      };
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pumpAndSettle();
+      expect(client.payloads.last['refresh'], isNull);
+      expect(find.text('Sign in'), findsOneWidget);
+      expect(
+        find.text('Sign in through this CLI, then refresh.'),
+        findsOneWidget,
+      );
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
+
+  testWidgets(
+    'native window names and unlimited allowances render without false percentages',
+    (tester) async {
+      final client = UsageClient();
+      addTearDown(client.dispose);
+      client.usage['limits'] = [
+        {
+          'provider': 'copilot',
+          'name': 'Copilot',
+          'observedAt': DateTime.now().millisecondsSinceEpoch,
+          'usageCheck': {'status': 'current'},
+          'windows': [
+            {'label': 'Premium interactions', 'usedPercent': 25},
+            {'label': 'Chat', 'unlimited': true},
+          ],
+        },
+      ];
+      await showUsage(tester, client);
+      expect(find.text('Premium interactions'), findsOneWidget);
+      expect(find.text('Unlimited'), findsOneWidget);
+      expect(find.text('75% left'), findsOneWidget);
+      expect(find.byKey(const ValueKey('usage-bar')), findsOneWidget);
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
+
   testWidgets('usage recovers when the PC reconnects', (tester) async {
     final client = UsageClient()..connected = false;
     addTearDown(client.dispose);
@@ -130,6 +205,45 @@ void main() {
       expect(find.textContaining('Showing previous data.'), findsNothing);
     },
   );
+
+  testWidgets('named accounts keep their own readings and unmatched limits', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(800, 2200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final client = UsageClient();
+    addTearDown(client.dispose);
+    client.usage['accounts'] = [
+      {'id': 'codex:alpha', 'provider': 'codex', 'label': 'Alpha'},
+      {'id': 'codex:beta', 'provider': 'codex', 'label': 'Beta'},
+      {'id': 'claude:empty', 'provider': 'claude', 'label': 'Claude backup'},
+    ];
+    client.usage['limits'] = [
+      {...sampleAccount(used: 38), 'accountId': 'codex:alpha'},
+      {...sampleAccount(used: 91), 'accountId': 'codex:beta'},
+      {
+        ...sampleAccount(name: 'Older account', used: 12),
+        'accountId': 'codex:older',
+      },
+    ];
+    await showUsage(tester, client);
+    final cards = tester
+        .widgetList<AccountUsageCard>(find.byType(AccountUsageCard))
+        .toList();
+    expect(cards.map((card) => card.account['accountLabel']), [
+      'Alpha',
+      'Beta',
+      'Claude backup',
+      'Older account',
+    ]);
+    expect(find.text('62% left'), findsOneWidget);
+    expect(find.text('9% left'), findsOneWidget);
+    expect(find.text('88% left'), findsOneWidget);
+    expect(find.text('Refresh to check account usage.'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets('loading, errors and empty readings are distinct', (
     tester,

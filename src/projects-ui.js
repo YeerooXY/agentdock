@@ -1,10 +1,10 @@
 import './projects.css';
 import { projectColor, projectDot } from './project-colors.js';
-import { projectPlanUI, milestoneLines, parseMilestones } from './project-plan-ui';
+import { projectPlanUI, milestoneLines, parseMilestones, waitingProposal } from './project-plan-ui';
 
-export function projectsUI({ call, getState, escape: e, icon, toast, renderPage, openNew }) {
+export function projectsUI({ call, getState, escape: e, icon, toast, renderPage, openNew, preview }) {
   let query = '', category = '', status = 'open', opener, afterSave;
-  const plan = projectPlanUI({ call, getState, escape: e, icon, toast, renderPage, openNew });
+  const plan = projectPlanUI({ call, getState, escape: e, icon, toast, renderPage, openNew, preview });
   const dialog = document.createElement('dialog'); dialog.id = 'project-editor'; dialog.setAttribute('aria-labelledby', 'project-editor-title');
   dialog.innerHTML = `<form id="project-form"><div class="dialog-heading"><h2 id="project-editor-title">New project</h2><button type="button" class="icon-button" data-project-close aria-label="Close project">${icon('close')}</button></div>
     <div class="form-pair"><label>Name<input name="name" maxlength="64" required autocomplete="off"></label><label>Category<input name="category" maxlength="60" list="project-categories" placeholder="Game, app, research…"><datalist id="project-categories"></datalist></label></div>
@@ -16,7 +16,7 @@ export function projectsUI({ call, getState, escape: e, icon, toast, renderPage,
     <label>Initial milestones<textarea name="milestones" rows="4" placeholder="Milestone | Done when"></textarea><span class="field-hint">Start with the outcomes you know. Refine them during planning.</span></label>
     <label>Project folders<textarea name="folders" required rows="2" placeholder="One folder per line. Optional label: Game | C:\\Projects\\Game"></textarea></label><button type="button" class="secondary" data-project-folder>${icon('folder')}Add folder</button>
     <details data-project-existing><summary>Notes and status</summary><label>Project notes<textarea name="notes" maxlength="20000" rows="5"></textarea></label><label>Status<select name="status"><option value="planning">Planning</option><option value="active">Active</option><option value="paused">Paused</option><option value="complete">Complete</option><option value="archived">Archived</option></select></label></details>
-    <p class="field-hint" data-project-new-note>Saved as Planning. Review the brief, research, infrastructure and roadmap before activating it.</p>
+    <p class="field-hint" data-project-new-note>Saved as Planning. Approve the roadmap to start; the other sections are optional.</p>
     <p class="form-error" role="alert"></p><div class="project-dialog-actions"><button type="button" class="subtle danger" data-project-remove hidden>Delete project</button><button type="submit" class="primary">Save project</button></div></form>`;
   document.body.append(dialog);
   const form = dialog.querySelector('form');
@@ -32,16 +32,16 @@ export function projectsUI({ call, getState, escape: e, icon, toast, renderPage,
     return items.length ? items.map(p => {
       const done = p.milestones.filter(x => x.done).length, total = p.milestones.length;
       const stale = p.status === 'active' && Date.now() - (p.lastActiveAt || p.createdAt) > 7 * 86400000;
-      const waiting = p.plan && ['brief', 'research', 'infrastructure', 'roadmap'].find(s => !p.plan.approvals[s]);
+      const waiting = p.plan && !p.plan.approvals.roadmap, proposal = p.plan && waitingProposal(p.plan);
       return `<article class="surface project-card" data-project-id="${e(p.id)}"><div class="project-card-heading"><div><span class="project-category">${e(p.category || 'Uncategorized')}</span><h2>${projectDot(p)}${e(p.name)}</h2></div><span class="project-state" data-status="${e(p.status)}">${e(p.status)}</span></div>
         <p class="project-goals">${e(p.goals || 'No goals recorded.')}</p>
-        <div class="project-next"><span>Next step</span><p>${e(p.plan?.proposal ? 'Review the agent proposal' : waiting ? 'Review ' + (waiting === 'brief' ? 'the project brief' : waiting) : p.nextStep || 'No next step recorded.')}</p></div>
+        <div class="project-next"><span>Next step</span><p>${e(proposal ? 'Review the agent proposal' : waiting ? 'Review and approve the roadmap' : p.nextStep || 'No next step recorded.')}</p></div>
         <div class="project-progress"><span>${done} / ${total} milestones</span>${total ? `<progress max="${total}" value="${done}" aria-label="${e(p.name)} milestone progress"></progress>` : ''}</div>
         ${total ? `<details class="project-milestones"><summary>Milestones${waiting ? ' · Draft' : ''}</summary>${p.milestones.map((m, i) => `<label><input type="checkbox" data-project-milestone="${i}" ${m.done ? 'checked' : ''} ${waiting ? 'disabled' : ''}><span>${e(m.text)}${m.acceptance ? `<small>Done when: ${e(m.acceptance)}</small>` : ''}</span></label>`).join('')}</details>` : ''}
         <div class="project-last"><time title="${p.lastActiveAt ? e(new Date(p.lastActiveAt).toLocaleString()) : ''}">Last worked: ${since(p.lastActiveAt)}</time>${stale ? '<span class="project-return">Pick up again</span>' : ''}</div>
         <div class="project-folder-links">${p.folders.map((f, index) => `<button class="subtle" data-project-folder-open="${e(p.id)}" data-folder-index="${index}" title="${e(f.path)}">${icon('folder')}<span>${e(f.label || f.path)}</span></button>`).join('')}</div>
         ${p.plan?.files?.error ? `<p class="form-error">Project files need attention. Open Roadmap to retry.</p>` : ''}
-        <div class="project-actions"><button class="${waiting ? 'secondary' : 'primary'}" data-project-open="${e(p.id)}">${icon('terminal')}Open console</button><button class="${waiting ? 'primary' : 'secondary'}" data-project-plan="${e(p.id)}">${p.plan?.proposal ? 'Review proposal' : p.plan ? 'Roadmap' : 'Plan project'}</button><button class="subtle" data-project-edit="${e(p.id)}">Edit</button></div></article>`;
+        <div class="project-actions"><button class="${waiting ? 'secondary' : 'primary'}" data-project-open="${e(p.id)}">${icon('terminal')}Open console</button><button class="${waiting ? 'primary' : 'secondary'}" data-project-plan="${e(p.id)}">${proposal ? 'Review proposal' : p.plan ? 'Plan' : 'Plan project'}</button><button class="subtle" data-project-edit="${e(p.id)}">Edit</button></div></article>`;
     }).join('') : `<div class="surface project-empty"><h2>${projects().length ? 'No matching projects' : 'No projects'}</h2>${projects().length ? '<p>Try a different filter.</p>' : ''}<button class="primary" data-project-new>${icon('plus')}New project</button></div>`;
   }
   function refreshCards() {

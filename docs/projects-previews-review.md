@@ -27,7 +27,7 @@ Reviewed 18 October 2026. Covers the console suggestion and picker, project prog
 | Windows package | Installer built; clean-PC packaged smoke passed without system Node. Both new feature smoke scripts also passed against the packaged executable. Backend, guides and renderer files match the source build. |
 | Android package | ARM64 and ARMv7 release builds passed, version 0.6.0-preview.7 / code 2007. Both retain the preview-6 signing certificate. No native behavior change or new device test is claimed. |
 
-Screenshots and JSON reports are under `artifacts/project-link/` and `artifacts/image-preview/`, with representative files saved individually in Dock Results. Each includes Windows Chromium at 1440×1000, WebKit with a Mac Safari profile, Chromium with Pixel 7 and WebKit with iPhone 13. Rendered screenshots were inspected for wrapping, spacing, icon alignment, clipping and control states. Narrow usage tables scroll horizontally within their container.
+Screenshots and JSON reports are under `artifacts/project-link/` and `artifacts/image-preview/`, with representative files saved individually in Paddock Results. Each includes Windows Chromium at 1440×1000, WebKit with a Mac Safari profile, Chromium with Pixel 7 and WebKit with iPhone 13. Rendered screenshots were inspected for wrapping, spacing, icon alignment, clipping and control states. Narrow usage tables scroll horizontally within their container.
 
 These browser profiles exercise the desktop HTML renderer; they do not add a mobile web app. Mac/Android/iPhone coverage is emulated on Windows. Actual macOS/iOS fonts, physical touch behavior and screen-reader behavior remain unverified. The Android native code is unchanged except its release version. Provider account access, live image quality and billing were not tested. The visible returned-image fixture is labelled mock data, not an AI-generated design.
 
@@ -39,9 +39,9 @@ The common outcomes below apply to the affected console/Projects/Settings, Tools
 
 | Item | Status | Evidence and applicability |
 | --- | --- | --- |
-| 1. Privacy policy | Checked | [Project data guide](projects-and-updates.md) and [image data flow](screen-previews.md#data-and-usage) describe local records, selected-agent context and screenshot uploads to the chosen provider. Saving preferences sends no generation request. No hosted Dock service introduced. |
+| 1. Privacy policy | Checked | [Project data guide](projects-and-updates.md) and [image data flow](screen-previews.md#data-and-usage) describe local records, selected-agent context and screenshot uploads to the chosen provider. Saving preferences sends no generation request. No hosted Paddock service introduced. |
 | 2. Terms | Not applicable | No new hosted account, sale or contractual checkout. Users still use their own provider accounts. |
-| 3. Refund policy | Not applicable | Dock does not sell image credits or process payments. Provider billing is explicitly separate. |
+| 3. Refund policy | Not applicable | Paddock does not sell image credits or process payments. Provider billing is explicitly separate. |
 | 4. Cookies/storage | Checked | Project suggestion is a local settings flag; generator configuration stores vault IDs, not keys. Jobs and retained usage/request IDs are documented. No tracking cookies added. |
 | 5. Consent banner | Not applicable | No added tracking technology or marketing cookies. |
 | 6. Form consents | Checked | Linking and settings are explicit actions. Agent preparation requires Apply in Tools. Generation buttons disclose upload and possible charges; agents receive the same selected routing. No marketing fields. |

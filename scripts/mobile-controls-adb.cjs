@@ -28,7 +28,10 @@ if (action === 'reset') {
   run('shell', 'am', 'start', '-n', 'com.yeeroo.agentdock.mobile/.MainActivity');
 }
 if (action === 'inspect') console.log(nodes().filter(x => x['content-desc'] || x.class === 'android.widget.EditText').map(x => `${x['content-desc'] || x.text} ${x.bounds}`).join('\n'));
-if (action === 'tap') tap(nodes().find(x => x['content-desc'] === value || x.text === value || x['content-desc']?.startsWith(value + '&#10;')));
+if (action === 'tap') {
+  const matches = nodes().filter(x => x['content-desc'] === value || x.text === value || x['content-desc']?.split('&#10;').includes(value));
+  tap(matches.find(x => x.clickable === 'true') || matches[0]);
+}
 if (action === 'back') run('shell', 'input', 'keyevent', '4');
 if (action === 'compose') tap(nodes().filter(x => x.class === 'android.widget.EditText').at(-1));
 if (action === 'profile') {

@@ -29,7 +29,7 @@ async function eventually(fn, timeout = 30000) {
   await page.waitForSelector('.session-grid');
   await page.screenshot({ path: path.join(artifacts, 'desktop-overview.png') });
   const codex = await invoke('session.create', { provider: 'codex', cwd: root, name: 'Codex launch check' });
-  await page.locator(`[data-session="${codex.id}"]`).click();
+  await page.locator(`.session-card[data-console-id="${codex.id}"] [data-action="toggle-console"]`).click();
   await eventually(async () => (await invoke('session.buffer', codex.id)).data.length > 40);
   await new Promise(resolve => setTimeout(resolve, 2000));
   const state = await invoke('state');

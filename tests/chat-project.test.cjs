@@ -14,7 +14,7 @@ function fixture(t) {
   } } });
   const sessions = createSessions();
   const project = (name, goals) => projects.save({ name, goals, folders: [{ path: folder }] });
-  const file = s => path.join(root, 'sessions', s.id, 'AGENT_DOCK.md');
+  const file = s => path.join(root, 'sessions', s.id, 'PADDOCK.md');
   t.after(async () => { await hub.close(); assert.equal(path.dirname(fs.realpathSync(root)), fs.realpathSync(os.tmpdir())); fs.rmSync(root, { recursive: true, force: true, maxRetries: 3 }); });
   return { root, folder, projects, hub, sessions, createSessions, project, launches, file };
 }
@@ -71,7 +71,8 @@ test('workspace saves title mode and resumes the same conversation after a proje
   f.projects.save({ ...p, name: 'Current project name' });
   const restored = f.createSessions(), second = new Workspace(f.root, restored, crypto); await second.restore();
   const item = restored.list()[0]; assert.equal(item.name, 'Current project name'); assert.equal(item.nameMode, 'project'); assert.equal(item.consoleKey, session.consoleKey); assert.equal(item.providerSessionId, thread);
-  assert.deepEqual(f.launches.at(-1).args.slice(0, 2), ['resume', thread]); second.freeze();
+  const resumeArgs = f.launches.at(-1).args, resumeIndex = resumeArgs.indexOf('resume');
+  assert.deepEqual(resumeArgs.slice(resumeIndex, resumeIndex + 2), ['resume', thread]); second.freeze();
   // Old saved titles that do not match the project are treated as custom.
   const legacy = f.createSessions(); await legacy.restore({ ...f.sessions.savedConsoles()[0], slot: 2, nameMode: undefined, name: 'My legacy title' });
   assert.equal(legacy.list()[0].name, 'My legacy title'); assert.equal(legacy.list()[0].nameMode, 'custom');

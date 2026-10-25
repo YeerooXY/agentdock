@@ -1,4 +1,5 @@
 'use strict';
+const { openPage } = require('./ui-navigation.cjs');
 const { _electron: electron } = require('playwright');
 const assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path'), https = require('node:https'), net = require('node:net'), crypto = require('node:crypto');
 const root = path.resolve(__dirname, '..'), parent = path.join(root, 'test-data'), out = path.join(root, 'artifacts/pairing-check');
@@ -13,7 +14,7 @@ let app;
   const call = (method, payload) => page.evaluate(async ([m,p]) => { const r = await window.dock.call(m,p); if (!r.ok) throw Error(r.error); return r.value; }, [method,payload]);
   const request = (route, auth, body) => new Promise((resolve,reject) => { const req = https.request({ hostname:'127.0.0.1', port, path:route, method:'POST', rejectUnauthorized:false, agent:false, headers:{ Authorization:'Bearer '+auth } }, res => { let s=''; res.on('data',x=>s+=x); res.on('end',()=>resolve({status:res.statusCode, data:JSON.parse(s)})); }); req.on('error',reject); req.end(JSON.stringify(body)); });
   await call('mobile.configure', { enabled: true, host:'127.0.0.1', port });
-  await page.locator('[data-page=settings]').click(); await page.locator('[data-mobile=open]').click(); await page.locator('[data-mobile=step][data-step="2"]').click();
+  await openPage(page, 'devices'); await page.locator('[data-mobile=open]').click(); await page.locator('[data-mobile=step][data-step="2"]').click();
   for (const allow of [false,true]) {
     const invite = JSON.parse(Buffer.from((await call('mobile.invite')).code.slice(10), 'base64url')), key = crypto.randomBytes(32).toString('base64url');
     const pending = await request('/v1/pair', invite.secret, { approval:true, requestKey:key, name:'Test Android' }); assert.equal(pending.status,202);

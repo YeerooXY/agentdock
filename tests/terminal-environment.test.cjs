@@ -41,11 +41,11 @@ function assertColorTerminal(call) {
   assert.equal(env.TERM, 'xterm-256color');
   assert.equal(env.COLORTERM, 'truecolor');
   for (const key of ['NO_COLOR', 'FORCE_COLOR', 'CLICOLOR']) {
-    assert.equal(env[key], undefined, `${key} from Dock's launcher must not suppress console colors`);
+    assert.equal(env[key], undefined, `${key} from Paddock's launcher must not suppress console colors`);
   }
 }
 
-test('new and resumed consoles detect colors independently of the process that started Dock', async t => {
+test('new and resumed consoles detect colors independently of the process that started Paddock', async t => {
   const { root, make, calls, inherited } = fixture(t);
   const sessions = make();
   const threads = [crypto.randomUUID(), crypto.randomUUID()];
@@ -57,18 +57,19 @@ test('new and resumed consoles detect colors independently of the process that s
   for (const entry of saved) await restored.restore(entry);
   assert.equal(calls.length, 10);
   calls.forEach(assertColorTerminal);
-  assert.deepEqual(calls[5].args.slice(0, 2), ['resume', threads[0]]);
+  const codexResumeIndex = calls[5].args.indexOf('resume');
+  assert.deepEqual(calls[5].args.slice(codexResumeIndex, codexResumeIndex + 2), ['resume', threads[0]]);
   assert.equal(calls[6].args[calls[6].args.indexOf('--resume') + 1], threads[1]);
   for (const [key, value] of Object.entries(inherited)) {
     assert.equal(process.env[key], value, 'Changing a child environment must not change the host environment');
   }
 });
 
-test('SSH terminals also discard inherited color suppression without forwarding Dock credentials', async t => {
+test('SSH terminals also discard inherited color suppression without forwarding Paddock credentials', async t => {
   const { root, make, calls } = fixture(t, {
     ssh: { launch: () => ({ executable: 'ssh.exe', args: ['example'], remote: { hostId: 'test', tmux: 'dock-test' } }) }
   });
   await make().create({ remoteHostId: 'test', provider: 'shell', cwd: root });
   assertColorTerminal(calls[0]);
-  assert.ok(!Object.keys(calls[0].options.env).some(key => key.startsWith('AGENT_DOCK_')));
+  assert.ok(!Object.keys(calls[0].options.env).some(key => key.startsWith('PADDOCK_')));
 });

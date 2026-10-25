@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:xterm/xterm.dart';
 
-import 'dock_style.dart';
 import 'terminal_styles.dart';
 import 'console_drafts.dart';
 
@@ -58,6 +57,8 @@ class _TerminalReadingViewState extends State<TerminalReadingView> {
       _text = terminalReadingText(widget.terminal);
       _span = terminalReadingSpan(widget.terminal, widget.theme);
       _restorePlace();
+    } else if (oldWidget.theme != widget.theme) {
+      _span = terminalReadingSpan(widget.terminal, widget.theme);
     }
   }
 
@@ -158,7 +159,7 @@ class _TerminalReadingViewState extends State<TerminalReadingView> {
                 height: 1.45,
                 color: Color(0xffe4e7ef),
               ),
-              cursorColor: pink,
+              cursorColor: widget.theme.cursor,
               showCursor: false,
               onSelectionChanged: (selection, _) {
                 _selecting = !selection.isCollapsed;

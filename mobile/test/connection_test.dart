@@ -111,13 +111,19 @@ void main() {
       DockClient.connectionError(const SocketException('private detail'), {
         'url': 'https://192.168.1.4:47831',
       }),
-      contains('private address'),
+      contains('same Wi-Fi'),
     );
     expect(
       DockClient.connectionError(const SocketException('private detail'), {
         'url': 'https://8.8.8.8:47831',
       }),
-      contains('Home IP addresses can change'),
+      contains('replaced by Tailscale'),
+    );
+    expect(
+      DockClient.connectionError(const SocketException('private detail'), {
+        'url': 'https://100.101.102.103:47831',
+      }),
+      contains('Turn on Tailscale'),
     );
     expect(
       DockClient.connectionError(const HandshakeException('secret'), {}),

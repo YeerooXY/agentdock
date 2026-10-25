@@ -133,10 +133,7 @@ class _NewConsoleSheetState extends State<NewConsoleSheet> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Text(
-              'New console',
-              style: TextStyle(color: pink, fontSize: 22),
-            ),
+            Text('New console', style: TextStyle(color: pink, fontSize: 22)),
             const SizedBox(height: 16),
             if (hosts.isNotEmpty) ...[
               DropdownButtonFormField<String>(
@@ -228,7 +225,7 @@ class _NewConsoleSheetState extends State<NewConsoleSheet> {
             if (loading) const LinearProgressIndicator(),
             if (!supported)
               const Text(
-                'Uses your PC default. Update Dock on the PC to choose an agent here.',
+                'Uses your PC default. Update Paddock on the PC to choose an agent here.',
                 style: TextStyle(color: muted),
               ),
             if (supported && !loading)
@@ -309,7 +306,7 @@ class _NewConsoleSheetState extends State<NewConsoleSheet> {
                 padding: const EdgeInsets.only(top: 12),
                 child: Text(
                   current ? error : 'Connection changed. Reopen New console.',
-                  style: const TextStyle(color: pink),
+                  style: TextStyle(color: pink),
                 ),
               ),
             const SizedBox(height: 16),
@@ -442,7 +439,7 @@ class _ConsoleFilesSheetState extends State<ConsoleFilesSheet> {
                 Expanded(
                   child: Text(
                     'Files',
-                    style: const TextStyle(color: pink, fontSize: 22),
+                    style: TextStyle(color: pink, fontSize: 22),
                   ),
                 ),
                 IconButton(

@@ -18,18 +18,38 @@ function approveAll(f) {
   f.review('brief', {}); f.review('research', { purpose: 'personal', evidence: 'Used only for my own notes.' });
   f.review('infrastructure', infrastructure); return f.review('roadmap', roadmap);
 }
-test('new guided projects retain initial milestones and require all human reviews before activation', t => {
+test('sections are independent: only the roadmap is needed to start, others can be marked not needed', t => {
   const f = fixture(t); assert.equal(f.p.status, 'planning'); assert.equal(f.p.milestones.length, 1);
-  assert.throws(() => f.review('roadmap', roadmap), /earlier sections/);
   assert.throws(() => f.store.progress(f.p.id, { milestone: 0, done: true, revision: f.p.plan.revision }), /Approve the roadmap/);
-  f.review('brief', {}); assert.equal(f.store.get(f.p.id).status, 'planning');
-  assert.throws(() => f.review('research', {}), /Complete this section/);
-  f.review('research', { purpose: 'public', alternatives: 'Example app: https://example.org', niche: 'Private class practice', evidence: 'Source reviewed 2026-10-19; user demand remains unverified.' });
-  f.review('infrastructure', infrastructure);
   assert.throws(() => f.review('roadmap', { scope: 'Practice', milestones: [{ text: 'Ship' }] }), /completion check/);
-  const p = f.review('roadmap', roadmap); assert.equal(p.status, 'active'); assert.equal(Object.keys(p.plan.approvals).length, 4);
+  assert.throws(() => f.review('roadmap', { scope: '', milestones: roadmap.milestones }), /what is included/);
+  let p = f.review('roadmap', roadmap); assert.equal(p.status, 'active'); assert.deepEqual(Object.keys(p.plan.approvals), ['roadmap']);
   assert.equal(p.nextStep, 'Practice prototype');
+  assert.throws(() => f.review('research', {}), /at least one finding|Not needed/);
+  p = f.review('research', {}, 'skip'); assert.ok(p.plan.skipped.research); assert.equal(p.status, 'active');
+  assert.throws(() => f.review('roadmap', {}, 'skip'), /needed to start/);
+  p = f.review('infrastructure', { stack: 'TypeScript and Electron' }); assert.ok(p.plan.approvals.infrastructure);
+  p = f.review('research', {}, 'unskip'); assert.equal(p.plan.skipped.research, undefined);
   assert.equal(new Projects(f.root).get(p.id).status, 'active');
+  assert.match(fs.readFileSync(path.join(p.plan.files.directory, 'ROADMAP.md'), 'utf8'), /## Not included/);
+});
+test('the roadmap records what is not included', t => {
+  const f = fixture(t), p = f.review('roadmap', { ...roadmap, excluded: 'Shared libraries and accounts' });
+  assert.equal(p.plan.excluded, 'Shared libraries and accounts');
+  assert.match(fs.readFileSync(path.join(p.plan.files.directory, 'ROADMAP.md'), 'utf8'), /Shared libraries and accounts/);
+});
+test('references: links are validated, files are copied into the plan folder and removed with the reference', t => {
+  const f = fixture(t), source = path.join(f.root, 'shot.png'); fs.writeFileSync(source, 'png');
+  assert.throws(() => f.store.addReference(f.p.id, { revision: f.store.get(f.p.id).plan.revision, kind: 'link', value: 'javascript:alert(1)' }), /web address/);
+  let p = f.store.addReference(f.p.id, { revision: f.store.get(f.p.id).plan.revision, kind: 'link', value: 'https://example.org/app', title: 'Example' });
+  p = f.store.addReference(f.p.id, { revision: p.plan.revision, kind: 'file', value: source });
+  const image = p.plan.references.find(x => x.kind === 'image');
+  assert.ok(image.value.startsWith(path.join(p.plan.files.directory, 'references') + path.sep)); assert.equal(fs.readFileSync(image.value, 'utf8'), 'png');
+  assert.throws(() => f.store.addReference(f.p.id, { revision: p.plan.revision, kind: 'file', value: f.root }), /not a folder/);
+  assert.equal(f.store.plan(f.p.id).references.length, 2);
+  assert.match(fs.readFileSync(path.join(p.plan.files.directory, 'PROJECT.md'), 'utf8'), /Example: https:\/\/example.org\/app/);
+  p = f.store.removeReference(f.p.id, { revision: p.plan.revision, ref: image.id });
+  assert.equal(fs.existsSync(image.value), false); assert.equal(fs.existsSync(source), true); assert.equal(p.plan.references.length, 1);
 });
 test('agent proposals cannot approve, replace pending proposals, overwrite user edits or change another project', async t => {
   const f = fixture(t), original = f.store.plan(f.p.id);
@@ -38,6 +58,8 @@ test('agent proposals cannot approve, replace pending proposals, overwrite user 
   await bridge.invoke('dock/propose_project_plan', { revision: original.revision, section: 'brief', changes: { goals: 'Reviewed goal' } }, 'agent');
   assert.equal(f.store.get(f.p.id).goals, 'Practice class notes'); assert.deepEqual(f.store.get(f.p.id).plan.approvals, {});
   assert.throws(() => f.store.propose(f.p.id, { revision: f.store.get(f.p.id).plan.revision, section: 'brief', changes: { goals: 'Overwrite' } }, 'Second agent'), /waiting for the user/);
+  f.store.propose(f.p.id, { revision: f.store.get(f.p.id).plan.revision, section: 'roadmap', changes: { excluded: 'Accounts' } }, 'Second agent');
+  assert.deepEqual(Object.keys(f.store.get(f.p.id).plan.proposals).sort(), ['brief', 'roadmap']);
   assert.throws(() => f.store.review(f.p.id, { revision: original.revision, section: 'brief', changes: { goals: 'Old save' }, action: 'save' }), /project changed/);
   f.review('brief', { goals: 'User edited goal' }); assert.equal(f.store.get(f.p.id).goals, 'User edited goal');
   assert.throws(() => f.store.propose(f.p.id, { revision: f.store.get(f.p.id).plan.revision, section: 'brief', changes: { status: 'active' } }), /cannot change/);
@@ -46,13 +68,17 @@ test('agent proposals cannot approve, replace pending proposals, overwrite user 
   sessions.set('other-agent', { id: 'other-agent', alive: true, cwd: f.folder, projectId: other.id });
   assert.equal((await bridge.invoke('dock/project_plan', {}, 'other-agent')).projectId, other.id);
   await bridge.invoke('dock/propose_project_plan', { projectId: other.id, revision: f.store.get(f.p.id).plan.revision, section: 'brief', changes: { audience: 'Proposed audience' } }, 'agent');
-  assert.equal(f.store.get(other.id).plan.proposal, null); assert.equal(f.store.get(f.p.id).plan.proposal.data.audience, 'Proposed audience');
+  assert.deepEqual(f.store.get(other.id).plan.proposals, {}); assert.equal(f.store.get(f.p.id).plan.proposals.brief.data.audience, 'Proposed audience');
   assert.equal(bridge.tools().some(x => x.name.includes('project') && /approve|review/.test(x.name)), false);
 });
 test('editing approved decisions requires review again and preserves legacy projects', t => {
   const f = fixture(t), active = approveAll(f);
   const changed = f.store.review(active.id, { revision: active.plan.revision, section: 'infrastructure', changes: { stack: 'Changed stack' }, action: 'save' });
-  assert.equal(changed.status, 'planning'); assert.ok(changed.plan.approvals.brief); assert.ok(changed.plan.approvals.research); assert.equal(changed.plan.approvals.roadmap, undefined);
+  assert.equal(changed.status, 'active'); assert.equal(changed.plan.approvals.infrastructure, undefined); assert.ok(changed.plan.approvals.roadmap);
+  const scope = f.store.review(active.id, { revision: changed.plan.revision, section: 'roadmap', changes: { scope: 'Changed scope' }, action: 'save' });
+  assert.equal(scope.status, 'planning'); assert.equal(scope.plan.approvals.roadmap, undefined); assert.ok(scope.plan.approvals.brief);
+  const legacyPlan = structuredClone(f.store.get(active.id)); legacyPlan.plan.proposal = { id: 'x', section: 'research', data: { niche: 'Old' }, agent: 'A', at: 1 }; delete legacyPlan.plan.proposals;
+  assert.equal(require('../electron/project-planning.cjs').context(legacyPlan, 'research').proposal.data.niche, 'Old');
   const legacy = f.store.save({ name: 'Existing project', goals: 'Maintain it', folders: [{ path: f.folder }], status: 'paused' });
   assert.equal(legacy.plan, undefined); assert.equal(new Projects(f.root).get(legacy.id).status, 'paused');
   const converted = f.store.beginPlan(legacy.id); assert.equal(converted.status, 'planning'); assert.equal(converted.goals, 'Maintain it');

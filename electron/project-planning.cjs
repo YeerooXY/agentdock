@@ -7,7 +7,7 @@ const fields = {
   brief: ['goals', 'audience', 'success'],
   research: ['purpose', 'alternatives', 'niche', 'evidence'],
   infrastructure: ['experience', 'platform', 'language', 'stack', 'reason', 'alternative', 'tradeoff', 'hosting', 'data', 'security', 'operations'],
-  roadmap: ['scope', 'milestones'],
+  roadmap: ['scope', 'excluded', 'milestones'],
 };
 const clean = (value, limit = 10000) => {
   if (typeof value !== 'string' || value.length > limit || value.includes('\0')) throw new Error('Use valid text within the field limit.');
@@ -18,14 +18,19 @@ function milestones(values) {
   return values.map(m => ({ text: clean(m.text, 500), acceptance: clean(m.acceptance || '', 1000), done: m.done === true })).filter(m => m.text);
 }
 function initial() {
-  return { version: 1, revision: 1, approvals: {}, brief: { audience: '', success: '' }, research: { purpose: 'public', alternatives: '', niche: '', evidence: '' }, infrastructure: { experience: 'guided', platform: 'web', language: '', stack: '', reason: '', alternative: '', tradeoff: '', hosting: '', data: '', security: '', operations: '' }, scope: '', laterFeatures: [], proposal: null, files: null };
+  return { version: 1, revision: 1, approvals: {}, brief: { audience: '', success: '' }, research: { purpose: 'public', alternatives: '', niche: '', evidence: '' }, infrastructure: { experience: 'guided', platform: 'web', language: '', stack: '', reason: '', alternative: '', tradeoff: '', hosting: '', data: '', security: '', operations: '' }, scope: '', excluded: '', laterFeatures: [], proposals: {}, skipped: {}, references: [], files: null };
 }
-const approved = p => !!p.plan && sections.every(s => p.plan.approvals[s]);
-const currentSection = p => sections.find(s => !p.plan.approvals[s]) || 'roadmap';
+// Sections are reviewed independently. Approving the roadmap starts the project;
+// other sections are optional and can be marked Not needed.
+const approved = p => !!p.plan?.approvals.roadmap;
+// Plans saved before per-section proposals kept a single proposal field.
+function proposals(plan) { return plan.proposals || (plan.proposal ? { [plan.proposal.section]: plan.proposal } : {}); }
+function setProposals(plan, value) { plan.proposals = value; delete plan.proposal; }
+const currentSection = p => sections.find(s => proposals(p.plan)[s]) || sections.find(s => !p.plan.approvals[s] && !p.plan.skipped?.[s]) || 'roadmap';
 function sectionData(p, section) {
   if (!sections.includes(section)) throw new Error('Choose a planning section.');
   if (section === 'brief') return { goals: p.goals, ...p.plan.brief };
-  if (section === 'roadmap') return { scope: p.plan.scope, milestones: p.milestones };
+  if (section === 'roadmap') return { scope: p.plan.scope, excluded: p.plan.excluded || '', milestones: p.milestones };
   return { ...p.plan[section] };
 }
 function patch(p, section, changes) {
@@ -41,58 +46,67 @@ function patch(p, section, changes) {
 }
 function apply(p, section, data) {
   if (section === 'brief') { p.goals = data.goals; p.plan.brief = { audience: data.audience, success: data.success }; }
-  else if (section === 'roadmap') { p.plan.scope = data.scope; p.milestones = data.milestones; }
+  else if (section === 'roadmap') { p.plan.scope = data.scope; p.plan.excluded = data.excluded; p.milestones = data.milestones; }
   else p.plan[section] = data;
 }
 function validate(p, section) {
   const d = sectionData(p, section);
-  const required = section === 'brief' ? ['goals', 'audience', 'success'] : section === 'research' ? (d.purpose === 'personal' ? ['evidence'] : ['alternatives', 'niche', 'evidence']) : section === 'infrastructure' ? ['stack', 'reason', 'alternative', 'tradeoff', 'hosting', 'data', 'security', 'operations'] : ['scope'];
-  if (required.some(key => !d[key]?.trim())) throw new Error('Complete this section before approving it. Save a draft to return later.');
+  const required = { brief: ['goals'], research: [], infrastructure: ['stack'], roadmap: ['scope'] }[section];
+  const missing = required.find(key => !d[key]?.trim());
+  if (missing) throw new Error(`Add ${labels[missing]} before approving, or mark this section Not needed.`);
+  if (section === 'research' && !['alternatives', 'niche', 'evidence'].some(key => d[key]?.trim())) throw new Error('Add at least one finding before approving, or mark this section Not needed.');
   if (section === 'roadmap' && (!d.milestones.length || d.milestones.some(m => !m.acceptance))) throw new Error('Add milestones and a completion check for each one.');
 }
 function checkRevision(p, revision) {
   if (!p?.plan) throw new Error('Open this project’s Roadmap to start guided planning.');
   if (revision !== p.plan.revision) throw new Error('The project changed. Reload this section before saving. Your entered text is still available.');
 }
+const labels = { goals: 'the goal', stack: 'the tools', scope: 'what is included' };
+// A changed section needs review again. Only a changed roadmap pauses the project.
 function invalidate(p, section) {
-  for (const key of sections.slice(sections.indexOf(section))) delete p.plan.approvals[key];
-  if (['active', 'complete'].includes(p.status)) p.status = 'planning';
+  delete p.plan.approvals[section];
+  if (section === 'roadmap' && ['active', 'complete'].includes(p.status)) p.status = 'planning';
 }
 function context(p, section) {
   if (!p?.plan) throw new Error('Open this project’s Roadmap to start guided planning.');
   const selected = section || currentSection(p);
-  return { projectId: p.id, name: p.name, status: p.status, revision: p.plan.revision, section: selected, approvedSections: sections.filter(s => p.plan.approvals[s]), data: sectionData(p, selected), proposal: p.plan.proposal, laterFeatures: p.plan.laterFeatures, files: p.plan.files };
+  return { projectId: p.id, name: p.name, status: p.status, revision: p.plan.revision, section: selected, approvedSections: sections.filter(s => p.plan.approvals[s]), notNeeded: sections.filter(s => p.plan.skipped?.[s]), data: sectionData(p, selected), proposal: proposals(p.plan)[selected] || null, waitingProposals: Object.keys(proposals(p.plan)), references: (p.plan.references || []).map(({ id, kind, title, value }) => ({ id, kind, title, value })), laterFeatures: p.plan.laterFeatures, files: p.plan.files };
 }
 function review(p, { revision, section, changes, action }) {
   checkRevision(p, revision);
-  if (!['save', 'approve', 'reject'].includes(action)) throw new Error('Choose Save, Approve or Reject.');
-  const next = structuredClone(p);
+  if (!['save', 'approve', 'reject', 'skip', 'unskip'].includes(action)) throw new Error('Choose Save, Approve or Reject.');
+  if (!sections.includes(section)) throw new Error('Choose a planning section.');
+  const next = structuredClone(p), waiting = proposals(next.plan);
+  setProposals(next.plan, waiting); next.plan.skipped ||= {};
   if (action === 'reject') {
-    if (!next.plan.proposal || next.plan.proposal.section !== section) throw new Error('No proposal is waiting for this section.');
-    next.plan.proposal = null;
+    if (!waiting[section]) throw new Error('No proposal is waiting for this section.');
+    delete waiting[section];
+  } else if (action === 'skip' || action === 'unskip') {
+    if (section === 'roadmap') throw new Error('The roadmap is needed to start the project.');
+    if (action === 'skip') { next.plan.skipped[section] = Date.now(); delete next.plan.approvals[section]; }
+    else delete next.plan.skipped[section];
   } else {
     const data = patch(next, section, changes);
     if (JSON.stringify(data) !== JSON.stringify(sectionData(p, section))) invalidate(next, section);
     apply(next, section, data);
     if (action === 'approve') {
-      if (sections.slice(0, sections.indexOf(section)).some(s => !next.plan.approvals[s])) throw new Error('Approve the earlier sections first.');
       validate(next, section);
-      next.plan.approvals[section] = Date.now();
+      next.plan.approvals[section] = Date.now(); delete next.plan.skipped[section];
       if (approved(next)) {
         if (next.status === 'planning') next.status = 'active';
         next.nextStep = next.milestones.find(m => !m.done)?.text || 'Review project completion';
       }
     }
-    if (next.plan.proposal?.section === section) next.plan.proposal = null;
+    delete waiting[section];
   }
   next.plan.revision++; next.updatedAt = Date.now();
   return next;
 }
 function propose(p, { revision, section, changes }, agent) {
   checkRevision(p, revision);
-  if (p.plan.proposal) throw new Error('A proposal is waiting for the user. Ask them to review it before proposing another.');
+  if (proposals(p.plan)[section]) throw new Error(`A ${section} proposal is waiting for the user. Ask them to review it before proposing another change to this section.`);
   const data = patch(p, section, changes), next = structuredClone(p);
-  next.plan.proposal = { id: randomUUID(), section, data, agent: String(agent || 'Agent').slice(0, 64), at: Date.now() };
+  setProposals(next.plan, { ...proposals(next.plan), [section]: { id: randomUUID(), section, data, agent: String(agent || 'Agent').slice(0, 64), at: Date.now() } });
   next.plan.revision++; next.updatedAt = Date.now();
   return next;
 }
@@ -103,6 +117,27 @@ function later(p, { revision, text }) {
   if (next.plan.laterFeatures.some(x => x.text === value)) return p;
   if (next.plan.laterFeatures.length >= 100) throw new Error('Review Later features before adding more.');
   next.plan.laterFeatures.push({ id: randomUUID(), text: value, at: Date.now() });
+  next.plan.revision++; next.updatedAt = Date.now(); return next;
+}
+const REFERENCE_KINDS = ['file', 'image', 'link'];
+function addReference(p, { revision, kind, value, title }) {
+  checkRevision(p, revision);
+  if (!REFERENCE_KINDS.includes(kind)) throw new Error('Choose a file, image or link.');
+  const text = clean(value, 2048);
+  if (kind === 'link') {
+    let url; try { url = new URL(text); } catch { throw new Error('Enter a full web address starting with https://'); }
+    if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password) throw new Error('Enter a full web address starting with https://');
+  }
+  const next = structuredClone(p); next.plan.references ||= [];
+  if (next.plan.references.length >= 60) throw new Error('Remove a reference before adding more.');
+  next.plan.references.push({ id: randomUUID(), kind, value: text, title: clean(title || '', 200) || text, at: Date.now() });
+  next.plan.revision++; next.updatedAt = Date.now(); return next;
+}
+function removeReference(p, { revision, ref }) {
+  checkRevision(p, revision);
+  const next = structuredClone(p), before = next.plan.references || [];
+  next.plan.references = before.filter(x => x.id !== ref);
+  if (next.plan.references.length === before.length) throw new Error('Reference not found.');
   next.plan.revision++; next.updatedAt = Date.now(); return next;
 }
 function directory(p, create = false) {
@@ -117,11 +152,15 @@ function directory(p, create = false) {
 }
 function writeFiles(p) {
   const root = directory(p, true), d = p.plan;
-  const heading = title => `# ${p.name} — ${title}\n\nStatus: ${p.status}\nPlan revision: ${d.revision}\n\nManaged by Agent Dock. Edit the plan in Projects; these files are readable copies.\n\n`;
+  const heading = title => `# ${p.name} — ${title}\n\nStatus: ${p.status}\nPlan revision: ${d.revision}\n\nManaged by Paddock. Edit the plan in Projects; these files are readable copies.\n\n`;
   const fieldsText = values => Object.entries(values).map(([key, value]) => `## ${key}\n\n${value || 'Not decided'}\n`).join('\n');
   const docs = {
-    'PROJECT.md': heading('Project brief') + fieldsText({ Goals: p.goals, Audience: d.brief.audience, 'Success criteria': d.brief.success, 'Similar applications': d.research.alternatives, Niche: d.research.niche, 'Research evidence': d.research.evidence }) + '\n# Infrastructure\n\n' + fieldsText(d.infrastructure) + '\nMarketing strategy follows completion. Extra features need user approval.\n',
-    'ROADMAP.md': heading('Roadmap') + `Approved sections: ${sections.filter(s => d.approvals[s]).join(', ') || 'None'}\n\n## Agreed scope\n\n${d.scope || 'Not approved yet'}\n\n## Milestones\n\n` + p.milestones.map(m => `- [${m.done ? 'x' : ' '}] ${m.text}\n  - Done when: ${m.acceptance || 'To be agreed'}`).join('\n') + '\n',
+    'PROJECT.md': heading('Project brief') + fieldsText({ Goals: p.goals, Audience: d.brief.audience, 'Success criteria': d.brief.success })
+      + '\n# Research\n\n' + (d.skipped?.research ? 'Not needed.\n' : fieldsText({ 'Similar applications': d.research.alternatives, Niche: d.research.niche, 'Research evidence': d.research.evidence }))
+      + '\n# Setup\n\n' + (d.skipped?.infrastructure ? 'Not needed.\n' : fieldsText(d.infrastructure))
+      + '\n# References\n\n' + ((d.references || []).map(r => `- ${r.title}: ${r.value}`).join('\n') || 'None.')
+      + '\n\nMarketing strategy follows completion. Extra features need user approval.\n',
+    'ROADMAP.md': heading('Roadmap') + `Approved sections: ${sections.filter(s => d.approvals[s]).join(', ') || 'None'}\n\n## Included\n\n${d.scope || 'Not approved yet'}\n\n## Not included\n\n${d.excluded || 'Not recorded'}\n\n## Milestones\n\n` + p.milestones.map(m => `- [${m.done ? 'x' : ' '}] ${m.text}\n  - Done when: ${m.acceptance || 'To be agreed'}`).join('\n') + '\n',
     'LATER_FEATURES.md': heading('Later features') + 'These ideas are outside the approved scope. Move an idea into the roadmap only after the user agrees.\n\n' + (d.laterFeatures.map(f => `- ${f.text}`).join('\n') || 'No later features recorded.') + '\n',
   };
   for (const [name, content] of Object.entries(docs)) {
@@ -143,4 +182,4 @@ Agree on a bounded first release and ordered milestones with a concrete completi
 Use dock/add_later_feature for extra ideas. Do not implement them or expand scope without explicit user agreement and a reviewed roadmap. Marketing strategy comes after completion.
 Project files: ${directory(p)}. Use dock/project_progress for verified work after roadmap approval, with the current plan revision.\n`;
 }
-module.exports = { sections, initial, milestones, approved, currentSection, sectionData, checkRevision, invalidate, context, review, propose, later, directory, writeFiles, instructions };
+module.exports = { sections, proposals, addReference, removeReference, initial, milestones, approved, currentSection, sectionData, checkRevision, invalidate, context, review, propose, later, directory, writeFiles, instructions };

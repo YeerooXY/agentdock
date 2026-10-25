@@ -1,5 +1,13 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 import 'package:xterm/xterm.dart';
+
+const ruleWidth = 12;
+final _rule = RegExp(r'^[─━═╌┄┈\-_╭╮╰╯┌┐└┘├┤┬┴┼]{8,}$');
+
+/// A line drawn only with horizontal box or dash characters, no text.
+bool terminalRule(String line) => _rule.hasMatch(line.trim());
 
 /// Read the parsed cells so escape sequences, links and controls never become
 /// markup. Group adjacent equal styles rather than allocating a span per cell.
@@ -54,10 +62,23 @@ TextSpan terminalReadingSpan(Terminal terminal, TerminalTheme theme) {
   }
 
   final lines = terminal.buffer.lines;
+  var previousRule = false;
   for (var y = 0; y < lines.length; y++) {
     final line = lines[y];
+    // Full-width rules wrap into several rows on a phone; show one short rule.
+    final rule = !line.isWrapped && terminalRule(line.getText());
+    if (rule && previousRule) continue;
+    previousRule = rule;
     if (y > 0 && !line.isWrapped) text.write('\n');
-    for (var x = 0; x < line.length; x++) {
+    var end = line.length;
+    if (rule) {
+      var start = 0;
+      while (start < end && const [0, 32].contains(line.getCodePoint(start))) {
+        start++;
+      }
+      end = min(end, start + ruleWidth);
+    }
+    for (var x = 0; x < end; x++) {
       final cp = line.getCodePoint(x);
       if (cp == 0) continue;
       final flags = line.getAttributes(x);
@@ -71,7 +92,13 @@ TextSpan terminalReadingSpan(Terminal terminal, TerminalTheme theme) {
         previousFlags = flags;
         var fg = color(foreground, theme.foreground);
         var bg = color(background, theme.background);
-        if (flags & CellAttr.inverse != 0) (fg, bg) = (bg, fg);
+        if (flags & CellAttr.inverse != 0) {
+          (fg, bg) = (bg, fg);
+        } else if (background & CellColor.typeMask == CellColor.normal) {
+          // Only the default background is transparent. Explicit ANSI fills
+          // and inverse video remain opaque and readable over the effects.
+          bg = Colors.transparent;
+        }
         if (flags & CellAttr.faint != 0) fg = fg.withValues(alpha: .65);
         final next = TextStyle(
           color: fg,

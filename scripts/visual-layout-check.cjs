@@ -1,4 +1,5 @@
 'use strict';
+const { openPage } = require('./ui-navigation.cjs');
 // Browser-only view checks use fixture data; real PTYs/IPC are covered by layout-smoke.
 const { chromium, webkit, devices } = require('playwright');
 const fs = require('node:fs'), path = require('node:path'), http = require('node:http'), assert = require('node:assert/strict');
@@ -112,7 +113,7 @@ const reports = [], browsers = new Set(), overflowProblems = [];
     await plus.click({ button: 'right' }); await capture('chooser');
     assert.equal(await page.locator('#one-off-console-form [name=name]').isVisible(), true); await page.keyboard.press('Escape');
     for (const view of ['results', 'usage', 'api', 'vault', 'tools', 'instructions', 'settings']) {
-      await page.locator(`.sidebar [data-page=${view}]`).click(); await capture(view);
+      await openPage(page, view); await capture(view);
       if (view === 'results') {
         assert.equal(await page.locator('#results-count').innerText(), '2');
         const pager = await page.locator('.result-pagination').evaluate(el => { const r = el.getBoundingClientRect(), c = document.querySelector('#content').getBoundingClientRect(); return Math.abs((r.left + r.right) / 2 - (c.left + c.right) / 2); });
@@ -135,35 +136,36 @@ const reports = [], browsers = new Set(), overflowProblems = [];
         assert.equal(state.settings.consoleDefaults.provider, 'opencode');
       }
     }
-    await page.locator('.sidebar nav [data-page=consoles]').click(); await page.locator('#consoles-page [data-session]').first().click();
-    await page.locator('#terminal-host .xterm-helper-textarea:not([hidden])').first().focus();
-    await page.locator('#terminal-host .xterm-cursor-blink').waitFor();
-    await page.waitForFunction(() => { const cursor = document.querySelector('#terminal-host .xterm-cursor-blink'); return cursor?.isConnected && getComputedStyle(cursor).animationName === 'none'; });
-    assert.equal(await page.locator('#terminal-host .xterm-cursor-blink').evaluate(el => getComputedStyle(el).animationName), 'none', 'Steady cursor overrides a CLI blink request');
+    await openPage(page, 'consoles');
+    const [first, second] = state.sessions, firstPanel = page.locator(`.session-card[data-console-id="${state.sessions[0].id}"]`);
+    await firstPanel.locator('[data-action="toggle-console"]').click(); await page.locator(`.session-card.console-expanded[data-console-id="${first.id}"]`).waitFor();
+    await firstPanel.locator('.xterm-helper-textarea:not([hidden])').first().focus();
+    await firstPanel.locator('.xterm-cursor-blink').waitFor();
+    await page.waitForFunction(id => { const cursor = document.querySelector(`[data-console-id="${id}"] .xterm-cursor-blink`); return cursor?.isConnected && getComputedStyle(cursor).animationName === 'none'; }, first.id);
+    assert.equal(await firstPanel.locator('.xterm-cursor-blink').evaluate(el => getComputedStyle(el).animationName), 'none', 'Steady cursor overrides a CLI blink request');
     await page.evaluate(() => window.dock.call('settings', { cursorBlink: true }));
-    assert.notEqual(await page.locator('#terminal-host .xterm-cursor-blink').evaluate(el => getComputedStyle(el).animationName), 'none', 'Blinking can be re-enabled');
+    assert.notEqual(await firstPanel.locator('.xterm-cursor-blink').evaluate(el => getComputedStyle(el).animationName), 'none', 'Blinking can be re-enabled');
     await page.evaluate(() => window.dock.call('settings', { cursorBlink: false }));
-    const cursorFrames = await page.evaluate(async id => {
+    const cursorFrames = await page.evaluate(async ({ id, launchId }) => {
       let hidden = 0, sequence = 1, checking = true;
-      const sample = () => { if (!checking) return; const el = document.querySelector('#terminal-host .xterm-cursor'); if (!el || getComputedStyle(el).visibility === 'hidden') hidden++; requestAnimationFrame(sample); };
+      const sample = () => { if (!checking) return; const el = document.querySelector(`[data-console-id="${id}"] .xterm-cursor`); if (!el || getComputedStyle(el).visibility === 'hidden') hidden++; requestAnimationFrame(sample); };
       const pause = ms => new Promise(r => setTimeout(r, ms));
       requestAnimationFrame(sample);
       for (let i = 0; i < 8; i++) {
-        window.fixtureOutput({ id, sequence: sequence++, data: '\x1b[?25l\r\x1b[2KCursor redraw ' + i });
+        window.fixtureOutput({ id, launchId, sequence: sequence++, data: '\x1b[?25l\r\x1b[2KCursor redraw ' + i });
         await pause(25);
-        window.fixtureOutput({ id, sequence: sequence++, data: '\x1b[?2' });
+        window.fixtureOutput({ id, launchId, sequence: sequence++, data: '\x1b[?2' });
         await pause(3);
-        window.fixtureOutput({ id, sequence: sequence++, data: '5h' });
+        window.fixtureOutput({ id, launchId, sequence: sequence++, data: '5h' });
         await pause(35);
       }
       checking = false; return hidden;
-    }, state.sessions[0].id);
+    }, { id: state.sessions[0].id, launchId: state.sessions[0].launchId });
     assert.equal(cursorFrames, 0, 'Fragmented redraws do not paint a hidden cursor frame');
     await capture('terminal');
     await page.emulateMedia({ reducedMotion: 'reduce' });
-    await page.locator('#terminal-page [data-page=consoles]').click();
+    await firstPanel.locator('[data-action="toggle-console"]').click();
     assert.equal(await page.locator('.session-card.ready').evaluate(el => getComputedStyle(el).animationName), 'none');
-    const [first, second] = state.sessions;
     async function readyFor(session) {
       session.state = 'ready';
       await page.evaluate(next => window.fixtureState(next), state);
@@ -180,12 +182,12 @@ const reports = [], browsers = new Set(), overflowProblems = [];
     await capture('notification-click-cleared');
     await readyFor(second); await page.keyboard.type('x'); await checkAcknowledged(second, first);
     await readyFor(second); await page.keyboard.insertText('input'); await checkAcknowledged(second, first);
-    await page.locator(`[data-console-id="${first.id}"] [data-session]`).click();
+    await page.locator(`[data-console-id="${first.id}"] [data-action="toggle-console"]`).click();
     await readyFor(first); await readyFor(second);
-    await page.locator('#terminal-host .xterm-helper-textarea').focus();
+    await page.locator(`[data-console-id="${first.id}"] .xterm-helper-textarea`).focus();
     await capture('notification-fullscreen-ready');
     await page.keyboard.type('x'); await checkAcknowledged(first, second);
-    assert.equal(await page.locator(`#terminal-tabs [data-session="${first.id}"] .console-ready-badge`).isVisible(), false);
+    assert.equal(await page.locator(`[data-console-id="${first.id}"] .console-ready-badge`).isVisible(), false);
     await capture('notification-fullscreen-cleared');
     assert.deepEqual(errors, []); reports.push({ profile: name, browser: browser.version(), viewport: options.viewport, emulated: name !== 'pc', captures, accessibility, calls: reads });
     console.log('PASS ' + name + ' view layouts, dialogs, grouped results, fullscreen, reduced motion and console notification acknowledgment');

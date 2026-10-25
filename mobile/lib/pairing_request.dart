@@ -54,7 +54,7 @@ class PairingRequest {
       403 => 'Pairing was denied on your PC.',
       401 =>
         'This request expired or was canceled. Show a new code on your PC.',
-      426 => 'Update Agent Dock on both devices, then try again.',
+      426 => 'Update Paddock on both devices, then try again.',
       429 => 'Too many attempts. Wait a minute, then show a new code.',
       409 => 'Remove an old phone in PC setup, then try again.',
       _ => 'The PC could not complete pairing. Show a new code and try again.',
@@ -64,7 +64,7 @@ class PairingRequest {
   Future<Map<String, dynamic>> run(void Function(String code) onCode) async {
     if (invite['approval'] != true) {
       throw const FormatException(
-        'Update Agent Dock on your PC to use phone approval.',
+        'Update Paddock on your PC to use phone approval.',
       );
     }
     final started = await exchange('/v1/pair', invite['secret'] as String, {

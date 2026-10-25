@@ -4,12 +4,12 @@ const quote = value => "'" + value.replaceAll("'", "''") + "'";
 
 // Ask Codex for the identity/hash of our own hook. Trust only that exact
 // definition for this invocation; never edit config.toml or trust other hooks.
-function startupHook(node, helper, root, session) {
-  const script = `& ${[node, helper, 'codex-session', root, session].map(quote).join(' ')}`;
+function startupHook(node, helper, root, session, launchId) {
+  const script = `& ${[node, helper, 'codex-session', root, session, launchId].map(quote).join(' ')}`;
   return `powershell.exe -NoLogo -NoProfile -NonInteractive -EncodedCommand ${Buffer.from(script, 'utf16le').toString('base64')}`;
 }
-function prepareCodexSession(executable, { node, helper, root, session, cwd, env }, { spawnProcess = spawn, timeout = 8000 } = {}) {
-  const command = startupHook(node, helper, root, session);
+function prepareCodexSession(executable, { node, helper, root, session, launchId, cwd, env, sqliteHome = null }, { spawnProcess = spawn, timeout = 8000 } = {}) {
+  const command = startupHook(node, helper, root, session, launchId);
   const hook = `hooks.SessionStart=[{hooks=[{type="command",command=${JSON.stringify(command)},timeout=10}]}]`;
   return new Promise((resolve, reject) => {
     let child, buffer = '', finished = false;
@@ -20,7 +20,8 @@ function prepareCodexSession(executable, { node, helper, root, session, cwd, env
     }
     function send(message) { child.stdin.write(JSON.stringify(message) + '\n'); }
     try {
-      child = spawnProcess(executable, ['app-server', '-c', hook], { cwd, env, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
+      const args = [...(sqliteHome ? ['-c', `sqlite_home=${JSON.stringify(sqliteHome)}`] : []), 'app-server', '-c', hook];
+      child = spawnProcess(executable, args, { cwd, env, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
       child.on('error', () => finish(new Error('Codex chat tracking could not start.')));
       child.on('exit', () => finish(new Error('Codex chat tracking closed before setup finished.')));
       child.stdin.on('error', () => finish(new Error('Codex chat tracking disconnected.')));
@@ -53,7 +54,7 @@ function prepareCodexSession(executable, { node, helper, root, session, cwd, env
           }
         }
       });
-      send({ id: 1, method: 'initialize', params: { clientInfo: { name: 'agent_dock', version: '0.6.0' }, capabilities: { experimentalApi: true } } });
+      send({ id: 1, method: 'initialize', params: { clientInfo: { name: 'paddock', version: '0.6.0' }, capabilities: { experimentalApi: true } } });
     } catch { finish(new Error('Codex chat tracking could not start.')); }
   });
 }

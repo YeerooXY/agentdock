@@ -5,7 +5,8 @@ const { isPrivate, isPublic, networkRelation } = require('./mobile-address.cjs')
 
 function runHelper(script, action, config, { program = process.execPath, timeout = 30000 } = {}) {
   if (process.platform !== 'win32') return Promise.reject(new Error('Automatic router and firewall setup is available on Windows.'));
-  if (!isPrivate(config.host) || config.host.startsWith('127.') || /^100\./.test(config.host)) return Promise.reject(new Error('Choose your Wi-Fi or Ethernet address.'));
+  const tailnet = /^100\./.test(config.host || '');
+  if (!isPrivate(config.host) || config.host.startsWith('127.') || tailnet && !action.startsWith('firewall')) return Promise.reject(new Error('Choose your Wi-Fi or Ethernet address.'));
   const args = ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script, '-Action', action, '-LocalAddress', config.host];
   if (action !== 'inspect') {
     if (!/^[a-f0-9-]{36}$/.test(config.mappingId || '') || ![config.port, config.externalPort].every(x => Number.isInteger(x) && x >= 1024 && x <= 65535)) return Promise.reject(new Error('Invalid phone connection settings.'));
@@ -70,7 +71,8 @@ class MobileNetwork {
     this.changed();
   }
   async start(config) {
-    if (this.testMode || config.mode !== 'internet') return;
+    // Router mapping and Duck DNS were for direct internet, now replaced by Tailscale.
+    return;
     const generation = ++this.generation;
     this.running = this.maintain(config, generation);
     await this.running;

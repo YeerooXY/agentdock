@@ -3,7 +3,7 @@ $ErrorActionPreference = 'Stop'
 $repoDir = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 if (-not $Installer) {
   $version = (Get-Content (Join-Path $repoDir 'package.json') -Raw | ConvertFrom-Json).version
-  $Installer = Join-Path $repoDir "release\Agent-Dock-$version-Setup-x64.exe"
+  $Installer = Join-Path $repoDir "release\Paddock-$version-Setup-x64.exe"
 }
 $Installer = (Resolve-Path -LiteralPath $Installer).Path
 $uninstallRoots = @(
@@ -13,9 +13,9 @@ $uninstallRoots = @(
   'HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall'
 )
 function Get-DockInstall {
-  @($uninstallRoots | Where-Object { Test-Path $_ } | ForEach-Object { Get-ChildItem $_ } | Get-ItemProperty | Where-Object { $_.DisplayName -eq 'Agent Dock' })
+  @($uninstallRoots | Where-Object { Test-Path $_ } | ForEach-Object { Get-ChildItem $_ } | Get-ItemProperty | Where-Object { $_.DisplayName -eq 'Paddock' })
 }
-if ((Get-DockInstall).Count) { throw 'An installed copy of Agent Dock already exists. Test on a clean Windows account instead.' }
+if ((Get-DockInstall).Count) { throw 'An installed copy of Paddock already exists. Test on a clean Windows account instead.' }
 $testParent = (Resolve-Path (Join-Path $repoDir 'test-data')).Path
 $workDir = Join-Path $testParent ('Installer check ' + [guid]::NewGuid().ToString('N'))
 $installDir = Join-Path $workDir 'Chosen app folder'
@@ -27,8 +27,8 @@ function Assert-TestPath([string]$target) {
 Assert-TestPath $workDir
 Assert-TestPath $installDir
 $shortcuts = @(
-  (Join-Path ([Environment]::GetFolderPath('DesktopDirectory')) 'Agent Dock.lnk'),
-  (Join-Path ([Environment]::GetFolderPath('Programs')) 'Agent Dock.lnk')
+  (Join-Path ([Environment]::GetFolderPath('DesktopDirectory')) 'Paddock.lnk'),
+  (Join-Path ([Environment]::GetFolderPath('Programs')) 'Paddock.lnk')
 )
 $backups = @{}
 foreach ($shortcut in $shortcuts) {
@@ -38,7 +38,7 @@ try {
   $process = Start-Process -FilePath $Installer -ArgumentList @('/S', '/currentuser', '--no-desktop-shortcut', "/D=$installDir") -WindowStyle Hidden -PassThru
   if (-not $process.WaitForExit(60000)) { throw 'Installer did not finish within 60 seconds.' }
   if ($process.ExitCode -ne 0) { throw "Installer exited with $($process.ExitCode)." }
-  $exe = Join-Path $installDir 'Agent Dock.exe'
+  $exe = Join-Path $installDir 'Paddock.exe'
   if (-not (Test-Path -LiteralPath $exe)) { throw 'Installer did not use the chosen destination.' }
   $registered = @(Get-DockInstall)
   if ($registered.Count -ne 1 -or -not $registered[0].UninstallString.Contains($installDir)) { throw ('Windows uninstall registration is incorrect: ' + ($registered | Select-Object DisplayName,UninstallString,PSPath | ConvertTo-Json -Compress)) }
@@ -52,7 +52,7 @@ try {
   if ($LASTEXITCODE -ne 0) { throw 'The installed first-run phone setup failed.' }
 } finally {
   try {
-    $uninstaller = Join-Path $installDir 'Uninstall Agent Dock.exe'
+    $uninstaller = Join-Path $installDir 'Uninstall Paddock.exe'
     if (Test-Path -LiteralPath $uninstaller) {
       Assert-TestPath $installDir
       $process = Start-Process -FilePath $uninstaller -ArgumentList @('/S', '/currentuser', "_?=$installDir") -WindowStyle Hidden -PassThru
@@ -67,7 +67,7 @@ try {
   }
 }
 if ((Get-DockInstall).Count) { throw 'Uninstaller left a Windows uninstall registration behind.' }
-if (Test-Path -LiteralPath (Join-Path $installDir 'Agent Dock.exe')) { throw 'Uninstaller left the application behind.' }
+if (Test-Path -LiteralPath (Join-Path $installDir 'Paddock.exe')) { throw 'Uninstaller left the application behind.' }
 Assert-TestPath $workDir
 Remove-Item -LiteralPath $workDir -Recurse -Force
 Write-Output 'PASS: per-user install in a chosen folder, Start menu shortcut, installed app checks, and clean uninstall. Existing shortcuts restored.'

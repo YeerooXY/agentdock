@@ -51,16 +51,19 @@ Map<String, dynamic>? androidRelease(
   for (final r in candidates) {
     final tag = r['tag_name'] as String,
         version = tag.replaceFirst(RegExp('^v'), '');
-    final name = 'Agent-Dock-$version-Android-$arch.apk';
-    final url =
-        'https://github.com/YeerooXY/agentdock/releases/download/$tag/$name';
-    for (final asset in r['assets'] as List? ?? []) {
-      if (asset['name'] == name &&
-          asset['browser_download_url'] == url &&
-          asset['size'] is int &&
-          asset['size'] > 0 &&
-          asset['size'] < 200 * 1024 * 1024) {
-        return {'version': version, 'url': url, 'size': asset['size']};
+    // Releases before the rename were named Agent-Dock-*.
+    for (final prefix in const ['Paddock', 'Agent-Dock']) {
+      final name = '$prefix-$version-Android-$arch.apk';
+      final url =
+          'https://github.com/YeerooXY/agentdock/releases/download/$tag/$name';
+      for (final asset in r['assets'] as List? ?? []) {
+        if (asset['name'] == name &&
+            asset['browser_download_url'] == url &&
+            asset['size'] is int &&
+            asset['size'] > 0 &&
+            asset['size'] < 200 * 1024 * 1024) {
+          return {'version': version, 'url': url, 'size': asset['size']};
+        }
       }
     }
   }
@@ -157,7 +160,7 @@ class _UpdatePanelState extends State<UpdatePanel> {
         ),
       );
       request.followRedirects = false;
-      request.headers.set('User-Agent', 'Agent-Dock-Android');
+      request.headers.set('User-Agent', 'Paddock-Android');
       request.headers.set('Accept', 'application/vnd.github+json');
       final response = await request.close().timeout(
         const Duration(seconds: 20),

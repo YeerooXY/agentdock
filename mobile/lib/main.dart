@@ -3,7 +3,6 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:xterm/xterm.dart';
 
 import 'dock_client.dart';
 import 'dock_style.dart';
@@ -20,6 +19,11 @@ import 'console_actions.dart';
 import 'console_switcher.dart';
 import 'console_drafts.dart';
 import 'live_agent_controls.dart';
+import 'agent_selection.dart';
+import 'terminal_keys.dart';
+import 'console_surface.dart';
+import 'console_theme.dart';
+import 'console_appearance_controls.dart';
 
 export 'dock_style.dart' show blue, pink, ink;
 
@@ -31,58 +35,70 @@ void main() {
 class DockApp extends StatelessWidget {
   final DockClient client;
   const DockApp({super.key, required this.client});
+  // One ThemeData per app theme; the client notifies often for output.
+  static final _themes = <String, ThemeData>{};
   @override
-  Widget build(BuildContext context) => MaterialApp(
-    title: 'Agent Dock',
-    debugShowCheckedModeBanner: false,
-    theme: ThemeData(
-      brightness: Brightness.dark,
-      useMaterial3: true,
-      scaffoldBackgroundColor: ink,
-      colorScheme: const ColorScheme.dark(
-        primary: blue,
-        secondary: pink,
-        surface: Color(0xff0b0c14),
-        error: Color(0xffffa7bc),
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: client,
+    builder: (context, _) {
+      DockAccent.theme = client.appearance.theme;
+      return _app(_themes.putIfAbsent(client.appearance.themeId, _theme));
+    },
+  );
+
+  ThemeData _theme() => ThemeData(
+    brightness: Brightness.dark,
+    useMaterial3: true,
+    scaffoldBackgroundColor: ink,
+    colorScheme: ColorScheme.dark(
+      primary: blue,
+      secondary: pink,
+      surface: Color(0xff0b0c14),
+      error: Color(0xffffa7bc),
+    ),
+    appBarTheme: const AppBarTheme(backgroundColor: ink, centerTitle: false),
+    inputDecorationTheme: InputDecorationTheme(
+      filled: true,
+      fillColor: const Color(0xff11131e),
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: BorderSide(color: blue.withValues(alpha: .55)),
       ),
-      appBarTheme: const AppBarTheme(backgroundColor: ink, centerTitle: false),
-      inputDecorationTheme: InputDecorationTheme(
-        filled: true,
-        fillColor: const Color(0xff11131e),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: BorderSide(color: blue.withValues(alpha: .55)),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: pink, width: 1.5),
-        ),
-      ),
-      filledButtonTheme: FilledButtonThemeData(
-        style: FilledButton.styleFrom(minimumSize: const Size(48, 48)),
-      ),
-      outlinedButtonTheme: OutlinedButtonThemeData(
-        style: OutlinedButton.styleFrom(
-          minimumSize: const Size(48, 48),
-          side: BorderSide(color: blue.withValues(alpha: .55)),
-        ),
-      ),
-      textButtonTheme: TextButtonThemeData(
-        style: TextButton.styleFrom(minimumSize: const Size(48, 48)),
-      ),
-      iconButtonTheme: IconButtonThemeData(
-        style: IconButton.styleFrom(minimumSize: const Size(48, 48)),
-      ),
-      navigationBarTheme: const NavigationBarThemeData(
-        backgroundColor: Color(0xff090a11),
-        indicatorColor: Color(0xff2b2847),
-      ),
-      badgeTheme: const BadgeThemeData(
-        backgroundColor: Color(0xffdc3249),
-        textColor: Colors.white,
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: BorderSide(color: pink, width: 1.5),
       ),
     ),
+    filledButtonTheme: FilledButtonThemeData(
+      style: FilledButton.styleFrom(minimumSize: const Size(48, 48)),
+    ),
+    outlinedButtonTheme: OutlinedButtonThemeData(
+      style: OutlinedButton.styleFrom(
+        minimumSize: const Size(48, 48),
+        side: BorderSide(color: blue.withValues(alpha: .55)),
+      ),
+    ),
+    textButtonTheme: TextButtonThemeData(
+      style: TextButton.styleFrom(minimumSize: const Size(48, 48)),
+    ),
+    iconButtonTheme: IconButtonThemeData(
+      style: IconButton.styleFrom(minimumSize: const Size(48, 48)),
+    ),
+    navigationBarTheme: const NavigationBarThemeData(
+      backgroundColor: Color(0xff090a11),
+      indicatorColor: Color(0xff2b2847),
+    ),
+    badgeTheme: const BadgeThemeData(
+      backgroundColor: Color(0xffdc3249),
+      textColor: Colors.white,
+    ),
+  );
+
+  Widget _app(ThemeData theme) => MaterialApp(
+    title: 'Paddock',
+    debugShowCheckedModeBanner: false,
+    theme: theme,
     builder: (context, child) => AnimatedBuilder(
       animation: client,
       builder: (context, _) {
@@ -134,6 +150,9 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
   static const media = MethodChannel('agentdock/media');
   bool fitWidth = false;
   _CommandTarget? stagedCommandTarget;
+  Map<String, dynamic>? pinnedAccountSession;
+  String pinnedAccountPC = '';
+  int pinnedAccountGeneration = -1;
   String? draftKey;
   bool restoringDraft = false;
   @override
@@ -406,7 +425,7 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
     if (attaching || sending) return;
     if (!supports('console.attachments')) {
       await run(() async {
-        throw StateError('Update Dock on the PC to attach images.');
+        throw StateError('Update Paddock on the PC to attach images.');
       });
       return;
     }
@@ -447,7 +466,7 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
     if (!supports('console.files')) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Update Dock on your PC to choose files here.'),
+          content: Text('Update Paddock on your PC to choose files here.'),
         ),
       );
       return;
@@ -496,7 +515,7 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
     if (!supports('console.close')) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Update Dock on your PC to close consoles here.'),
+          content: Text('Update Paddock on your PC to close consoles here.'),
         ),
       );
       return;
@@ -591,6 +610,7 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
       final current = c.sessions
           .where((s) => s['id'] == c.selected)
           .firstOrNull;
+      final menuSession = pinnedAccountSession ?? current;
       return Scaffold(
         appBar: AppBar(
           leadingWidth: 34,
@@ -632,7 +652,7 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
                           : current?['state'] as String? ?? 'active',
                     ),
                     const SizedBox(width: 5),
-                    const Icon(Icons.desktop_windows, size: 14, color: blue),
+                    Icon(Icons.desktop_windows, size: 14, color: blue),
                     const SizedBox(width: 3),
                     ConstrainedBox(
                       constraints: BoxConstraints(
@@ -642,16 +662,20 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
                         c.pcName,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontSize: 11, color: blue),
+                        style: TextStyle(fontSize: 11, color: blue),
                       ),
                     ),
                   ],
                 )
               : Text(
-                  page == 1 ? 'Results' : 'Usage',
+                  page == 1
+                      ? 'Results'
+                      : page == 2
+                      ? 'Usage'
+                      : 'Settings',
                   overflow: TextOverflow.ellipsis,
                   maxLines: 1,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 20,
                     color: pink,
                     fontWeight: FontWeight.w600,
@@ -660,22 +684,93 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
           actions: [
             PopupMenuButton<String>(
               tooltip: 'More options',
-              icon: const Icon(Icons.more_vert, color: pink),
+              icon: Icon(Icons.more_vert, color: pink),
               onOpened: () {
+                pinnedAccountSession = current == null
+                    ? null
+                    : Map<String, dynamic>.from(current);
+                pinnedAccountPC = c.activePC;
+                pinnedAccountGeneration = c.generation;
                 stopTerminalTyping();
                 composerFocus.unfocus();
               },
+              onCanceled: () {
+                pinnedAccountSession = null;
+                pinnedAccountPC = '';
+                pinnedAccountGeneration = -1;
+              },
               onSelected: (action) {
+                if (action.startsWith('account-switch:') ||
+                    action.startsWith('account-setup:')) {
+                  final pinned = pinnedAccountSession;
+                  final pc = pinnedAccountPC,
+                      generation = pinnedAccountGeneration;
+                  pinnedAccountSession = null;
+                  if (pinned == null) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text(
+                          'Console changed. Open its account menu again.',
+                        ),
+                      ),
+                    );
+                    return;
+                  }
+                  final target = action.substring(
+                    action.startsWith('account-setup:')
+                        ? 'account-setup:'.length
+                        : 'account-switch:'.length,
+                  );
+                  if (action.startsWith('account-setup:')) {
+                    setupAccountPinned(pinned, target, pc, generation);
+                  } else {
+                    switchAccountPinned(pinned, target, pc, generation);
+                  }
+                  return;
+                }
+                pinnedAccountSession = null;
+                pinnedAccountPC = '';
+                pinnedAccountGeneration = -1;
                 if (action == 'updates') openUpdates(context);
                 if (action == 'reconnect') run(c.reconnect);
                 if (action == 'display') displaySettings();
+                if (action == 'appearance') appearanceSettings();
                 if (current != null) consoleAction(action, current);
               },
               itemBuilder: (_) => [
-                if (page == 0 && current != null) ...[
+                if (page == 0 && menuSession != null) ...[
+                  if (['codex', 'claude'].contains(menuSession['provider']) &&
+                      menuSession['draftSupported'] == true &&
+                      menuSession['switching'] != true) ...[
+                    for (final target
+                        in (menuSession['switchTargets'] as List? ?? [])
+                            .whereType<Map>()
+                            .where((target) => target['ready'] == true))
+                      PopupMenuItem(
+                        value: 'account-switch:${target['id']}',
+                        child: Text('Switch to ${target['label']}'),
+                      ),
+                    for (final target
+                        in (menuSession['switchTargets'] as List? ?? [])
+                            .whereType<Map>()
+                            .where((target) => target['ready'] == true))
+                      PopupMenuItem(
+                        value: 'account-setup:${target['id']}',
+                        child: Text('Set up ${target['label']}'),
+                      ),
+                  ],
+                  if (menuSession['accountLabel'] is String)
+                    PopupMenuItem(
+                      enabled: false,
+                      child: Text('Account · ${menuSession['accountLabel']}'),
+                    ),
                   const PopupMenuItem(
                     value: 'display',
                     child: Text('Text & display'),
+                  ),
+                  const PopupMenuItem(
+                    value: 'appearance',
+                    child: Text('Console style'),
                   ),
                   const PopupMenuItem(value: 'copy', child: Text('Copy text')),
                   const PopupMenuItem(
@@ -742,7 +837,7 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
                     ? terminal(current)
                     : page == 1
                     ? ResultsPage(client: c)
-                    : SettingsPage(client: c),
+                    : SettingsPage(client: c, usageOnly: page == 2),
               ),
             ],
           ),
@@ -762,7 +857,7 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
                   run(() => c.setStreaming(value == 0));
                 },
                 destinations: [
-                  const NavigationDestination(
+                  NavigationDestination(
                     icon: Icon(Icons.terminal, color: blue),
                     label: 'Console',
                   ),
@@ -771,16 +866,17 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
                       isLabelVisible:
                           (c.state['unreadResults'] as num? ?? 0) > 0,
                       label: Text('${c.state['unreadResults'] ?? 0}'),
-                      child: const Icon(
-                        Icons.photo_library_outlined,
-                        color: pink,
-                      ),
+                      child: Icon(Icons.photo_library_outlined, color: pink),
                     ),
                     label: 'Results',
                   ),
-                  const NavigationDestination(
+                  NavigationDestination(
                     icon: Icon(Icons.bar_chart_rounded, color: blue),
                     label: 'Usage',
+                  ),
+                  NavigationDestination(
+                    icon: Icon(Icons.settings_outlined, color: blue),
+                    label: 'Settings',
                   ),
                 ],
               ),
@@ -790,6 +886,28 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
   Widget terminal(Map<String, dynamic>? session) {
     final view = c.screen;
     if (session == null) {
+      if (c.appearance.themeId == 'void') {
+        return Center(
+          child: SizedBox(
+            width: min(MediaQuery.sizeOf(context).width - 32, 520),
+            height: 220,
+            child: ConsoleSurface(
+              appearance: c.appearance,
+              openingKey: 'empty:${c.activePC}',
+              connected: c.connected,
+              connectionGeneration: c.generation,
+              emptyPanel: true,
+              child: Center(
+                child: FilledButton.icon(
+                  onPressed: c.connected ? newConsole : null,
+                  icon: const Icon(Icons.add),
+                  label: const Text('New console'),
+                ),
+              ),
+            ),
+          ),
+        );
+      }
       return Center(
         child: FilledButton.icon(
           onPressed: c.connected ? newConsole : null,
@@ -832,6 +950,144 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
     if (action == 'close') closeConsole(session);
   }
 
+  Future<void> switchAccountPinned(
+    Map<String, dynamic> session,
+    String targetAccountId,
+    String pc,
+    int generation,
+  ) async {
+    if (!mounted) return;
+    final id = '${session['id'] ?? ''}';
+    bool currentLaunch() =>
+        mounted &&
+        c.connected &&
+        c.foreground &&
+        c.activePC == pc &&
+        c.generation == generation &&
+        c.selected == id &&
+        c.sessions.any(
+          (item) =>
+              item['id'] == id &&
+              item['launchId'] == session['launchId'] &&
+              item['consoleKey'] == session['consoleKey'] &&
+              item['accountId'] == session['accountId'],
+        );
+    if (!currentLaunch()) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Console changed. Open its account menu again.'),
+        ),
+      );
+      return;
+    }
+    try {
+      await c.request('console.switch', {
+        'id': id,
+        'launchId': session['launchId'],
+        'consoleKey': session['consoleKey'],
+        'accountId': session['accountId'],
+        'targetAccountId': targetAccountId,
+      });
+      if (!mounted) return;
+      final stillSelected =
+          mounted &&
+          c.connected &&
+          c.activePC == pc &&
+          c.generation == generation &&
+          c.selected == id &&
+          c.sessions.any(
+            (item) =>
+                item['id'] == id &&
+                item['consoleKey'] == session['consoleKey'] &&
+                item['accountId'] == targetAccountId,
+          );
+      if (stillSelected) {
+        final targets = (session['switchTargets'] as List? ?? [])
+            .whereType<Map>();
+        final label =
+            targets
+                .where((item) => item['id'] == targetAccountId)
+                .firstOrNull?['label'] ??
+            'account';
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Switched to $label.')));
+      }
+    } catch (error) {
+      if (!mounted) return;
+      if (currentLaunch()) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('$error')));
+      }
+    }
+  }
+
+  Future<void> setupAccountPinned(
+    Map<String, dynamic> session,
+    String targetAccountId,
+    String pc,
+    int generation,
+  ) async {
+    if (!mounted) return;
+    final id = '${session['id'] ?? ''}';
+    bool currentLaunch() =>
+        mounted &&
+        c.connected &&
+        c.foreground &&
+        c.activePC == pc &&
+        c.generation == generation &&
+        c.selected == id &&
+        c.sessions.any(
+          (item) =>
+              item['id'] == id &&
+              item['launchId'] == session['launchId'] &&
+              item['consoleKey'] == session['consoleKey'] &&
+              item['accountId'] == session['accountId'],
+        );
+    if (!currentLaunch()) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Console changed. Open its account menu again.'),
+        ),
+      );
+      return;
+    }
+    try {
+      final setup = await c.request('console.setup', {
+        'id': id,
+        'launchId': session['launchId'],
+        'consoleKey': session['consoleKey'],
+        'accountId': session['accountId'],
+        'targetAccountId': targetAccountId,
+      });
+      if (!mounted) return;
+      if (currentLaunch()) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Setup console opened on the PC in ${setup['cwd']}.'),
+          ),
+        );
+      }
+    } catch (error) {
+      if (!mounted) return;
+      if (currentLaunch()) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('$error')));
+      }
+    }
+  }
+
+  Future<void> terminalKeys() async {
+    stopTerminalTyping();
+    composerFocus.unfocus();
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (_) => TerminalKeys(client: c),
+    );
+  }
+
   Future<void> displaySettings() async {
     stopTerminalTyping();
     composerFocus.unfocus();
@@ -846,7 +1102,7 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Align(
+                Align(
                   alignment: Alignment.centerLeft,
                   child: Text(
                     'Text & display',
@@ -879,7 +1135,7 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
                     const Expanded(child: Text('Text size')),
                     Text(
                       '${(c.textScale * 100).round()}%',
-                      style: const TextStyle(color: blue),
+                      style: TextStyle(color: blue),
                     ),
                   ],
                 ),
@@ -896,7 +1152,7 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
                 ),
                 if (fitWidth)
                   const Text(
-                    'Grid fits the PC?s columns. Use Wrap text for larger terminal text.',
+                    'Grid fits the PC’s columns. Use Wrap text for larger terminal text.',
                     style: TextStyle(color: muted),
                   ),
               ],
@@ -907,17 +1163,109 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
     );
   }
 
+  Future<void> appearanceSettings() async {
+    stopTerminalTyping();
+    composerFocus.unfocus();
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      showDragHandle: true,
+      builder: (context) => SizedBox(
+        height: MediaQuery.sizeOf(context).height * .85,
+        child: SafeArea(
+          child: Column(
+            children: [
+              Align(
+                alignment: Alignment.centerRight,
+                child: IconButton(
+                  tooltip: 'Close appearance',
+                  onPressed: () => Navigator.pop(context),
+                  icon: const Icon(Icons.close),
+                ),
+              ),
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+                  child: ConsoleAppearanceControls(client: c),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget terminalContents(Map<String, dynamic> session, ConsoleScreen? view) {
     final provider = (session['provider'] as String).toLowerCase();
+    final selection = c.agentSelection(session['id'] as String);
     return Column(
       children: [
+        if (session['switchOffer'] is Map && session['switching'] != true)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(10, 8, 10, 2),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: blue.withValues(alpha: .10),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: blue.withValues(alpha: .35)),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
+                child: Wrap(
+                  alignment: WrapAlignment.spaceBetween,
+                  spacing: 8,
+                  runSpacing: 4,
+                  children: [
+                    Text(
+                      'Usage reached ${(session['switchOffer'] as Map)['usedPercent'] ?? '?'}%.',
+                      style: const TextStyle(color: muted),
+                    ),
+                    TextButton(
+                      onPressed: c.connected
+                          ? () {
+                              final offer = session['switchOffer'] as Map;
+                              switchAccountPinned(
+                                Map<String, dynamic>.from(session),
+                                '${offer['targetAccountId'] ?? ''}',
+                                c.activePC,
+                                c.generation,
+                              );
+                            }
+                          : null,
+                      child: Text(
+                        'Switch to ${(session['switchOffer'] as Map)['targetLabel'] ?? 'account'}',
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
         Expanded(
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8),
-            child: DockFrame(
-              radius: 14,
-              background: Colors.black,
-              ready: session['state'] == 'ready',
+            child: ConsoleSurface(
+              appearance: c.appearance,
+              openingKey: '${c.activePC}:${session['id']}',
+              connected: c.connected,
+              connectionGeneration: c.generation,
+              playOpening: c.claimConsoleOpening(session['id'] as String),
+              sessionState: session['state'] as String?,
+              stateEffectSequence: c.consoleStateEffectSequence(
+                session['id'] as String,
+              ),
+              stateEffectKind: c.consoleStateEffectKind(
+                session['id'] as String,
+              ),
+              activity: c.consoleOutputSequence(session['id'] as String),
+              outputBurst: c.consoleOutputBurstSequence(
+                session['id'] as String,
+              ),
               child: view == null
                   ? const Center(child: CircularProgressIndicator())
                   : Listener(
@@ -938,45 +1286,69 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
                         fitWidth: fitWidth,
                         readOnly: !c.connected,
                         focusNode: terminalFocus,
-                        theme: terminalTheme,
+                        theme: c.appearance.theme.terminal,
                       ),
                     ),
             ),
           ),
         ),
+        if (!chatMode)
+          Align(
+            alignment: Alignment.centerRight,
+            child: Tooltip(
+              message: 'Terminal keys',
+              child: TextButton.icon(
+                onPressed: c.connected && !sending ? terminalKeys : null,
+                icon: const Icon(Icons.keyboard_alt_outlined, size: 20),
+                label: const Text('Terminal keys'),
+              ),
+            ),
+          ),
         if (chatMode) ...[
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 10),
             child: Row(
               children: [
                 Expanded(
-                  child: SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: Row(
-                      children: [
+                  child: Wrap(
+                    children: [
+                      TextButton.icon(
+                        onPressed: c.connected && !sending
+                            ? () => liveControls('Model')
+                            : null,
+                        icon: const Icon(Icons.tune, size: 18),
+                        label: Text(
+                          selection.model == null
+                              ? 'Model unknown'
+                              : modelLabel(selection.model!),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      if (['claude', 'codex'].contains(provider))
                         TextButton.icon(
                           onPressed: c.connected && !sending
-                              ? () => liveControls('Model')
+                              ? () => liveControls('Effort')
                               : null,
-                          icon: const Icon(Icons.tune, size: 18),
-                          label: const Text('Model'),
-                        ),
-                        if (['claude', 'codex'].contains(provider))
-                          TextButton.icon(
-                            onPressed: c.connected && !sending
-                                ? () => liveControls('Effort')
-                                : null,
-                            icon: const Icon(Icons.speed, size: 18),
-                            label: const Text('Effort'),
+                          icon: const Icon(Icons.speed, size: 18),
+                          label: Text(
+                            selection.effort == null
+                                ? 'Effort unknown'
+                                : effortLabel(selection.effort!),
                           ),
-                      ],
-                    ),
+                        ),
+                    ],
                   ),
+                ),
+                IconButton(
+                  tooltip: 'Terminal keys',
+                  onPressed: c.connected && !sending ? terminalKeys : null,
+                  icon: Icon(Icons.keyboard_alt_outlined, color: blue),
                 ),
                 IconButton(
                   tooltip: 'Collapse chat',
                   onPressed: leaveChatMode,
-                  icon: const Icon(Icons.keyboard_arrow_down, color: pink),
+                  icon: Icon(Icons.keyboard_arrow_down, color: pink),
                 ),
               ],
             ),
@@ -986,7 +1358,7 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Text(
                 c.inputError.isNotEmpty ? c.inputError : c.drafts.error,
-                style: const TextStyle(color: pink, fontSize: 12),
+                style: TextStyle(color: pink, fontSize: 12),
               ),
             ),
           Padding(
@@ -1023,7 +1395,7 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
                         isDense: true,
                         suffixIcon: PopupMenuButton<String>(
                           tooltip: 'Attach',
-                          icon: const Icon(Icons.add, color: blue),
+                          icon: Icon(Icons.add, color: blue),
                           enabled: c.connected && !sending && !attaching,
                           onSelected: (action) =>
                               consoleAction(action, session),
@@ -1071,7 +1443,7 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
                     width: 96,
                     height: 4,
                     decoration: BoxDecoration(
-                      gradient: const LinearGradient(colors: [blue, pink]),
+                      gradient: LinearGradient(colors: [blue, pink]),
                       borderRadius: BorderRadius.circular(4),
                       boxShadow: composer.text.isEmpty
                           ? null
@@ -1097,7 +1469,7 @@ class DockMark extends StatelessWidget {
   @override
   Widget build(BuildContext context) => ShaderMask(
     shaderCallback: (rect) =>
-        const LinearGradient(colors: [blue, pink]).createShader(rect),
+        LinearGradient(colors: [blue, pink]).createShader(rect),
     child: const Icon(Icons.auto_awesome, color: Colors.white),
   );
 }
@@ -1173,28 +1545,4 @@ String formatBytes(int bytes) => bytes < 1024
     : bytes < 1024 * 1024
     ? '${(bytes / 1024).toStringAsFixed(1)} KB'
     : '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
-const terminalTheme = TerminalTheme(
-  cursor: pink,
-  selection: Color(0xff33405c),
-  foreground: Color(0xffe5e7ef),
-  background: Color(0xff010103),
-  black: Color(0xff1b2126),
-  red: Color(0xffef8a86),
-  green: Color(0xffb9e888),
-  yellow: Color(0xffe8c57e),
-  blue: blue,
-  magenta: pink,
-  cyan: Color(0xff89ccc4),
-  white: Color(0xffe1e8e3),
-  brightBlack: Color(0xff81908d),
-  brightRed: Color(0xffffa5a0),
-  brightGreen: Color(0xffceffa2),
-  brightYellow: Color(0xffffdfa0),
-  brightBlue: Color(0xffb9d3ff),
-  brightMagenta: Color(0xffffb9e4),
-  brightCyan: Color(0xffb9fff3),
-  brightWhite: Colors.white,
-  searchHitBackground: Color(0xff51436c),
-  searchHitBackgroundCurrent: Color(0xff685383),
-  searchHitForeground: Colors.white,
-);
+final terminalTheme = ConsoleTheme.named('classic').terminal;

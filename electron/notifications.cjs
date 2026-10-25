@@ -1,6 +1,6 @@
 'use strict';
 
-// Keep native notifications alive until they close, including while Dock is in
+// Keep native notifications alive until they close, including while Paddock is in
 // the tray. The same activation path handles Windows toast and balloon clicks.
 class DockNotifications {
   constructor({ Notification, getTray, getWindow, getMode, setMode, reveal, publish, getSessions, icon }) {
@@ -12,8 +12,8 @@ class DockNotifications {
     if (!window || window.isDestroyed()) return;
     this.reveal();
     const hasConsole = item.sessionId && this.getSessions().some(x => x.id === item.sessionId);
-    const destination = item.destination || item.resultId || item.reviewId;
-    await this.setMode(hasConsole && !destination ? 'fullscreen' : this.getMode() === 'hud' ? 'dashboard' : this.getMode());
+    const destination = item.destination || item.resultId || item.reviewId || item.turnId || item.kind === 'ready';
+    await this.setMode(hasConsole && !destination ? 'fullscreen' : 'dashboard');
     if (window.isDestroyed()) return;
     this.reveal(); this.publish();
     window.webContents.send('dock:notice', item);

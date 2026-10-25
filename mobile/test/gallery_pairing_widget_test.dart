@@ -96,6 +96,9 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(phone.viewed, ['r1']);
+      expect(find.text('main · bbbbbbbb · Uncommitted changes'), findsNothing);
+      await tester.tap(find.text('Details'));
+      await tester.pumpAndSettle();
       expect(
         find.text('main · bbbbbbbb · Uncommitted changes'),
         findsOneWidget,

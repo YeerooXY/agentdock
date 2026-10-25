@@ -1,4 +1,6 @@
-﻿export function firstRun({ call, escape, icon, getState }) {
+import { agentInstallDisabled, agentOptionDisabled, pendingAgentIds } from './setup-agent-state.mjs';
+
+export function firstRun({ call, escape, icon, pdMark = () => icon('dock'), getState }) {
   const dialog = document.createElement('dialog');
   dialog.id = 'first-run'; dialog.setAttribute('aria-labelledby', 'first-run-title'); dialog.setAttribute('aria-describedby', 'first-run-hint');
   document.body.append(dialog);
@@ -10,10 +12,10 @@
     const form = dialog.querySelector('form'), select = form.elements.provider;
     for (const agent of agents()) {
       const option = select.querySelector(`[value="${agent.id}"]`);
-      if (option) option.disabled = !agent.installed && !selected.has(agent.id);
+      if (option) option.disabled = agentOptionDisabled(agent, selected.has(agent.id));
       const row = dialog.querySelector(`[data-setup-agent="${agent.id}"]`); if (!row) continue;
       const status = row.querySelector('.setup-install-status'), checkbox = row.querySelector('input'), job = agent.job;
-      checkbox.disabled = busy || agent.installed || !agent.installable; checkbox.checked = selected.has(agent.id);
+      checkbox.disabled = agentInstallDisabled(agent, busy); checkbox.checked = selected.has(agent.id);
       row.dataset.status = job?.state || (agent.installed ? 'installed' : 'available');
       status.textContent = job?.state === 'error' ? job.error : job?.state === 'installing' ? 'Installing…' : job?.state === 'queued' ? 'Waiting…' : agent.installed ? 'Installed' : !agent.installable ? agent.requirement : 'Not installed';
     }
@@ -22,9 +24,10 @@
     dialog.querySelector('#setup-command').hidden = provider !== 'custom'; form.elements.command.required = provider === 'custom';
     dialog.querySelector('#setup-agent-hint').textContent = agent?.auth || (provider === 'shell' ? 'PowerShell is ready to use.' : 'Use any other CLI with its launch command.');
     const guide = dialog.querySelector('[data-setup-guide]'); guide.hidden = !agent; guide.dataset.docs = agent?.id || '';
-    const pending = [...selected].filter(id => !agents().find(x => x.id === id)?.installed), submit = form.querySelector('[type=submit]');
-    submit.disabled = busy; submit.textContent = busy ? 'Setting up…' : pending.length ? `Install ${pending.length} & ${manual ? 'save' : 'open Dock'}` : manual ? 'Save choices' : 'Open Dock';
+    const pending = pendingAgentIds(selected, agents()), submit = form.querySelector('[type=submit]');
+    submit.disabled = busy; submit.textContent = busy ? 'Setting up…' : pending.length ? `Install ${pending.length} & ${manual ? 'save' : 'open Paddock'}` : manual ? 'Save choices' : 'Open Paddock';
     form.elements.provider.disabled = busy; form.elements.cwd.readOnly = busy; form.elements.launchNow.disabled = busy;
+    for (const input of form.querySelectorAll('[data-install-skill]:not([data-installed])')) input.disabled = busy;
     form.elements.mobileSetup.disabled = busy; form.elements.mobileMode.disabled = busy; dialog.querySelector('#setup-mobile-mode').hidden = !form.elements.mobileSetup.checked;
     dialog.querySelector('[data-setup-refresh]').disabled = busy; dialog.querySelector('[data-setup-close]').disabled = busy;
   }
@@ -33,10 +36,10 @@
     manual = isManual; opened = true; selected.clear();
     const defaults = getState().settings.consoleDefaults;
     dialog.innerHTML = `<form id="first-run-form">
-      <button type="button" class="icon-button setup-close" data-setup-close aria-label="${manual ? 'Close setup' : 'Exit Agent Dock'}">${icon('close')}</button>
-      <div class="setup-star" aria-hidden="true">${icon('dock')}</div>
-      <h1 id="first-run-title">${manual ? 'Set up your agents.' : 'Make yourself at home.'}</h1>
-      <p id="first-run-hint">Your folder. Your agents. Ready to go.</p>
+      <button type="button" class="icon-button setup-close" data-setup-close aria-label="${manual ? 'Close setup' : 'Exit Paddock'}">${icon('close')}</button>
+      <div class="setup-star" aria-hidden="true">${pdMark()}</div>
+      <h1 id="first-run-title">${manual ? 'Set up your agents.' : 'Set up Paddock.'}</h1>
+      <p id="first-run-hint">Choose a project folder and default console.</p>
       <div class="setup-columns"><section aria-label="Workspace">
         <label>Project folder<div class="folder-input"><input name="cwd" required value="${escape(defaults.cwd)}" autofocus><button type="button" data-action="pick-folder" aria-label="Choose your first project folder">${icon('folder')}</button></div></label>
         <label>Default console<select name="provider">${agents().map(agent => `<option value="${agent.id}">${escape(agent.name)}</option>`).join('')}<option value="shell">PowerShell</option><option value="custom">Custom command</option></select></label>
@@ -44,16 +47,19 @@
         <p id="setup-agent-hint" class="field-hint"></p><button type="button" class="subtle" data-setup-guide data-docs="codex">Setup guide ↗</button>
         <label class="setup-check"><input type="checkbox" name="launchNow"><span>Open this console when setup finishes</span></label>
         <label class="setup-check"><input type="checkbox" name="mobileSetup"><span>Connect my Android phone next</span></label>
-        <label id="setup-mobile-mode" hidden>Phone connection<select name="mobileMode"><option value="local">Same Wi-Fi</option><option value="internet">Direct internet through my router</option></select></label>
+        <label id="setup-mobile-mode" hidden>Phone connection<select name="mobileMode"><option value="local">Same Wi-Fi</option><option value="tailscale">Anywhere · Tailscale</option></select></label>
         <div class="setup-zai"><strong>Z.AI / GLM</strong><p>Choose OpenCode, then connect Z.AI in its console.</p><button type="button" class="subtle" data-docs="zai">Connection guide ↗</button></div>
       </section><section class="setup-agents" aria-label="Install agents">
         <div class="setup-agents-heading"><h2>Install agents <span class="optional">optional</span></h2><button type="button" class="subtle" data-setup-refresh>Check again</button></div>
         <p class="field-hint">Tick the ones you want. Your own account or API billing applies.</p>
         <div class="setup-agent-list">${agents().map(agent => `<div class="setup-agent" data-setup-agent="${agent.id}"><label><input type="checkbox" value="${agent.id}" data-install-agent><span><strong>${escape(agent.name)}</strong><small class="setup-install-status" role="status"></small></span></label><button type="button" class="subtle" data-docs="${agent.id}" aria-label="${escape(agent.name)} setup guide">↗</button></div>`).join('')}</div>
-        <p class="setup-tools-note">Dock connects shared tools and instructions. Existing MCP settings are kept, with a backup when changed.</p>
+        ${(getState().skills?.packs || []).length ? `<div class="setup-agents-heading setup-skills-heading"><h2>Skill packs <span class="optional">optional</span></h2></div>
+        <p class="field-hint">Knowledge your agents load when a task matches. Remove it any time under Instructions.</p>
+        <div class="setup-agent-list">${getState().skills.packs.map(pack => `<div class="setup-agent" data-setup-skill="${escape(pack.id)}"><label><input type="checkbox" value="${escape(pack.id)}" data-install-skill ${pack.targets.some(t => t.state !== 'not-installed') ? 'checked disabled data-installed' : ''}><span><strong>${escape(pack.name)}</strong><small class="setup-install-status">${pack.targets.some(t => t.state !== 'not-installed') ? 'Installed' : pack.source === 'local' ? 'Local · this PC only' : 'Included with Paddock'}</small></span></label></div>`).join('')}</div>` : ''}
+        <p class="setup-tools-note">Paddock connects shared tools and instructions. Existing MCP settings are kept, with a backup when changed.</p>
       </section></div>
       <p class="form-error" role="alert"></p>
-      <div class="setup-footer"><span>Run this again from Settings.</span><button type="submit" class="primary">Open Dock</button></div>
+      <div class="setup-footer"><span>Run this again from Settings.</span><button type="submit" class="primary">Open Paddock</button></div>
     </form>`;
     dialog.querySelector('[name=provider]').value = defaults.provider; update(); dialog.showModal();
   }
@@ -81,10 +87,15 @@
     busy = true; form.querySelector('.form-error').textContent = ''; update();
     try {
       await call('setup.validate', data);
-      const pending = [...selected].filter(id => !agents().find(x => x.id === id)?.installed);
+      const pending = pendingAgentIds(selected, agents());
       if (pending.length) {
         await call('agents.install', pending);
-        if (pending.some(id => !agents().find(x => x.id === id)?.installed)) throw new Error('Some agents need another try. Retry, or untick them to continue.');
+        if (pendingAgentIds(pending, agents()).length) throw new Error('Some agents need another try. Retry, or untick them to continue.');
+      }
+      for (const input of form.querySelectorAll('[data-install-skill]:checked:not([data-installed])')) {
+        const failed = (await call('skills.install', input.value)).filter(x => x.state === 'failed' || x.state === 'skipped');
+        if (failed.length) throw new Error(failed[0].reason);
+        input.dataset.installed = ''; input.disabled = true;
       }
       await call('setup.complete', data); dialog.close(); document.querySelector('.session-card [data-action=new]')?.focus(); if (form.elements.mobileSetup.checked) document.dispatchEvent(new CustomEvent('dock-mobile-setup', { detail: { mode: form.elements.mobileMode.value } }));
     } catch (error) { form.querySelector('.form-error').textContent = error.message; }

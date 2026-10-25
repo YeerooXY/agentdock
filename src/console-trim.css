@@ -1,0 +1,100 @@
+/* One inherited clock keeps all RGB frames, accents and stars in phase,
+   including consoles opened later. Stepped colors limit full-page restyles. */
+@property --rgb-blue { syntax:'<color>'; inherits:true; initial-value:#ff7895 }
+@property --rgb-pink { syntax:'<color>'; inherits:true; initial-value:#80bfff }
+@property --redline-glow { syntax:'<number>'; inherits:true; initial-value:22 }
+body { --rgb-clock:none; --trim-clock:none; animation:var(--rgb-clock) 12s steps(24) infinite,var(--trim-clock) 2.6s steps(16) infinite }
+body[data-rgb=on] { --rgb-clock:console-rgb }
+body[data-pulse=on] { --trim-clock:console-redline }
+body[data-accent=hot-pink] { --accent-blue:#ffa3dc; --accent-pink:#ff3da8 }
+body[data-accent=redline] { --accent-blue:#ff9b91; --accent-pink:#ff4763 }
+body[data-accent=rgb] { --accent-blue:var(--rgb-blue); --accent-pink:var(--rgb-pink) }
+@keyframes console-rgb {
+  0% { --rgb-blue:#ff7895; --rgb-pink:#80bfff; --chroma-turn:0deg }
+  17% { --rgb-blue:#ffbd80; --rgb-pink:#b79bff; --chroma-turn:60deg }
+  33% { --rgb-blue:#e6ff85; --rgb-pink:#ff8fe3; --chroma-turn:120deg }
+  50% { --rgb-blue:#85ffb1; --rgb-pink:#ff7895; --chroma-turn:180deg }
+  67% { --rgb-blue:#80dfff; --rgb-pink:#ffbd80; --chroma-turn:240deg }
+  83% { --rgb-blue:#b79bff; --rgb-pink:#85ffb1; --chroma-turn:300deg }
+  100% { --rgb-blue:#ff7895; --rgb-pink:#80bfff; --chroma-turn:360deg }
+}
+@keyframes console-redline { 50% { --redline-glow:36 } }
+
+/* Frame colors are separate from terminal content and status indicators. */
+[data-frame] { --frame-a:var(--accent-blue); --frame-b:var(--accent-pink); --frame-glow:18%; --frame-edge:64% }
+[data-frame=blue] { --frame-a:#80c7ff; --frame-b:#6488ff }
+[data-frame=violet] { --frame-a:#c7a3ff; --frame-b:#9c77ff }
+[data-frame=hot-pink] { --frame-a:#ffa3dc; --frame-b:#ff3da8 }
+[data-frame=redline] { --frame-a:#ff9b91; --frame-b:#ff4763; --frame-glow:calc(var(--redline-glow) * 1%) }
+[data-frame=gamer] { --frame-a:var(--rgb-blue); --frame-b:var(--rgb-pink) }
+.consoles-only .session-card[data-frame],
+.consoles-only .session-card.empty:is(:hover,:focus-within) {
+  border:var(--trim-width,1px) solid transparent; border-radius:12px;
+  background:linear-gradient(var(--console-black),var(--console-black)) padding-box,linear-gradient(135deg,color-mix(in srgb,var(--frame-a) var(--frame-edge),#161524),#30253e 46%,color-mix(in srgb,var(--frame-b) var(--frame-edge),#161524)) border-box;
+  box-shadow:0 0 3px color-mix(in srgb,var(--frame-a) 40%,transparent),0 0 15px color-mix(in srgb,var(--frame-b) var(--frame-glow),transparent),inset 0 0 0 1px #ffffff0a;
+}
+.consoles-only .session-card:is(.active,:hover,:focus-within) { --frame-edge:100%; --frame-glow:25% }
+.consoles-only .session-card { border-width:var(--trim-width,1px)!important }
+.consoles-only .session-card.active[data-frame=redline] { --frame-glow:calc(var(--redline-glow) * 1%) }
+.consoles-only .session-card.ready { border-color:#62d99a }
+.consoles-only .session-card.attention { border-color:#c9a05d }
+.consoles-only .session-card.error { border-color:#ef8a86 }
+.console-panel-header,.empty-panel-header {
+  background:linear-gradient(115deg,color-mix(in srgb,var(--frame-a) 13%,#080b16),#0b0b17 55%,color-mix(in srgb,var(--frame-b) 14%,#080b16));
+  border-bottom:1px solid color-mix(in srgb,var(--frame-a) 22%,#171725);
+  box-shadow:inset 0 1px 0 #ffffff12,0 2px 9px color-mix(in srgb,var(--frame-b) 8%,transparent);
+}
+.console-panel-header { flex-basis:36px }
+.empty-panel-header { inset:0 0 auto; display:flex; align-items:center; gap:6px; height:37px; padding:0 7px 0 10px }
+.empty-panel-header .console-name { flex:1; min-width:0 }
+.session-card .icon-blue { stop-color:var(--frame-a) }
+.session-card .icon-pink { stop-color:var(--frame-b) }
+.session-card input.console-name { color:color-mix(in srgb,var(--frame-a) 65%,#fff) }
+.console-color-button { flex:none; display:grid; place-items:center; width:28px; height:28px; padding:0 }
+.frame-swatch { display:block; width:13px; height:13px; border-radius:50%; background:linear-gradient(135deg,var(--frame-a,var(--accent-blue)),var(--frame-b,var(--accent-pink))); border:1px solid #ffffff70; box-shadow:0 0 7px color-mix(in srgb,var(--frame-b,var(--accent-pink)) 30%,transparent) }
+.console-color-button:hover { background:#ffffff12 }
+#console-color-dialog { width:360px; max-width:calc(100vw - 28px); max-height:calc(100dvh - 28px); overflow-y:auto; padding:22px; border:1px solid #82739d; border-radius:14px; background:#0c0d17; color:#ebe5f3 }
+#console-color-dialog h2 { margin:0 0 18px; font-size:18px }
+#console-color-dialog fieldset { padding:0; margin:0; border:0 }
+#console-color-dialog .sr-only { position:absolute; width:1px; height:1px; padding:0; overflow:hidden; clip-path:inset(50%); white-space:nowrap }
+.console-color-options { display:grid; grid-template-columns:1fr 1fr; gap:8px }
+.console-color-options label { display:flex; flex-direction:row; align-items:center; gap:8px; min-height:44px; padding:9px; margin:0; border:1px solid #4b455c; border-radius:7px; color:#e0dbea; font-size:12px }
+.console-color-options label:has(:checked) { border-color:var(--frame-a); background:#202031 }
+.console-color-options label:focus-within { outline:2px solid #e2d3ff; outline-offset:2px }
+.console-color-options input { margin:0; width:14px; height:14px; accent-color:var(--frame-a) }
+.console-color-options .frame-swatch { flex:none; width:12px; height:12px }
+#console-color-dialog .form-error:empty { margin:0 }
+#console-color-dialog .dialog-footer { margin-top:20px }
+
+/* Dense sky: only twelve of the forty-eight stars animate in each panel. */
+.panel-stars { position:absolute; inset:38px 0 0; z-index:-1; overflow:hidden; pointer-events:none; opacity:1; visibility:visible; transition:opacity 200ms ease,visibility 0s }
+.panel-stars i { position:absolute; width:var(--star); height:var(--star); border-radius:50%; background:var(--frame-a); box-shadow:0 0 3px var(--frame-a); opacity:var(--star-opacity) }
+.panel-stars i:nth-child(even) { background:var(--frame-b); box-shadow:0 0 3px var(--frame-b) }
+.panel-stars i.twinkle { animation-name:star-twinkle; animation-timing-function:ease-in-out; animation-iteration-count:infinite }
+.panel-stars i.spark { border-radius:0; box-shadow:none; background:linear-gradient(135deg,var(--frame-a),var(--frame-b)); clip-path:polygon(50% 0,61% 39%,100% 50%,61% 61%,50% 100%,39% 61%,0 50%,39% 39%) }
+body[data-stars=off] .panel-stars { opacity:0; visibility:hidden; transition:opacity 200ms ease,visibility 0s 200ms }
+body[data-stars=off] .panel-stars i { animation-play-state:paused }
+.session-card.empty:has(.panel-stars)::before,.session-card.empty:has(.panel-stars)::after { display:none }
+@keyframes star-twinkle { 0%,100% { opacity:.12; transform:scale(.55) } 45%,55% { opacity:.8; transform:scale(1) } }
+
+/* Animate native checkboxes without replacing their keyboard behavior. */
+.toggle-row input[type=checkbox],.toggle-row input[type=checkbox]:checked { --toggle-travel:13px; background:#282c3c; isolation:isolate; transition:border-color 180ms ease }
+.settings-content .toggle-row input[type=checkbox] { --toggle-travel:16px }
+.toggle-row input[type=checkbox]::after { content:''; position:absolute; inset:0; z-index:-1; border-radius:inherit; background:linear-gradient(115deg,var(--accent-blue),var(--accent-pink)); opacity:0; transition:opacity 180ms ease }
+.toggle-row input[type=checkbox]:checked::after { opacity:1 }
+.toggle-row input[type=checkbox]::before,.toggle-row input[type=checkbox]:checked::before,.settings-content .toggle-row input[type=checkbox]:checked::before { left:3px; transform:translateX(0); transition:transform 180ms ease,background-color 180ms ease }
+.toggle-row input[type=checkbox]:checked::before,.settings-content .toggle-row input[type=checkbox]:checked::before { transform:translateX(var(--toggle-travel)) }
+.toggle-row input[type=checkbox]:focus-visible { outline:2px solid var(--accent-blue); outline-offset:3px }
+.console-exit { position:fixed; z-index:20; pointer-events:none; transform-origin:center; border-radius:12px }
+.console-exit * { pointer-events:none!important; animation:none!important }
+@media (pointer:coarse) {
+  .console-panel-header,.empty-panel-header { min-height:44px }
+  .console-panel-header .icon-button,.empty-panel-header .icon-button { width:32px; height:40px }
+}
+@media (prefers-reduced-motion:reduce) {
+  body { animation:none!important }
+  .panel-stars i { animation:none!important }
+  .panel-stars,.toggle-row input[type=checkbox],.toggle-row input[type=checkbox]::before,.toggle-row input[type=checkbox]::after { transition:none!important }
+  .console-exit { display:none }
+}
+

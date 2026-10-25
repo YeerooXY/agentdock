@@ -25,7 +25,7 @@ Verified 18 October 2026, on Windows. No paid AI calls or user projects were use
 
 Browser checks used the actual renderer with an isolated fixture bridge. Mac, Android-browser and iPhone-browser checks were emulated on Windows. They do not prove physical-device input or macOS/iOS font rendering. The native Android APK was tested separately in an Android emulator; there is no iPhone app.
 
-Evidence is in `artifacts/mobile-focus/` and `artifacts/projects/`, with selected individual screenshots and this report saved to Dock Results. Pairing codes and test profiles are excluded from published evidence.
+Evidence is in `artifacts/mobile-focus/` and `artifacts/projects/`, with selected individual screenshots and this report saved to Paddock Results. Pairing codes and test profiles are excluded from published evidence.
 
 Remaining checks: a physical phone with its usual keyboard; TalkBack and physical external keyboards. Rapid `adb shell input text` injection duplicated characters in xterm, while tapping the emulated touchscreen keyboard passed. Rapid/hardware input needs a separate investigation; this release does not claim to fix it. Existing Kotlin/SDK toolchain warnings remain, although all APKs built. No live Firebase or off-Wi-Fi checks were repeated.
 

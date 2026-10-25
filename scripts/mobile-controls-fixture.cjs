@@ -1,11 +1,12 @@
 'use strict';
 const { AlertEvents } = require('../electron/alerts.cjs');
 // Loopback-only synthetic terminal for the Android emulator. No CLI processes,
-// model calls, production credentials, router changes or real Dock sessions.
+// model calls, production credentials, router changes or real Paddock sessions.
 const fs = require('node:fs'), path = require('node:path'), os = require('node:os');
 const crypto = require('node:crypto'), net = require('node:net');
 const { EventEmitter } = require('node:events');
 const { MobileCompanion } = require('../electron/mobile.cjs');
+const { Results } = require('../electron/results.cjs');
 const out = path.resolve(__dirname, '../artifacts/mobile-controls');
 fs.mkdirSync(out, { recursive: true });
 fs.rmSync(path.join(out, 'stop'), { force: true });
@@ -24,19 +25,33 @@ const storage = {
     return Buffer.concat([c.update(value.subarray(28)), c.final()]).toString();
   }
 };
-const sessions = new EventEmitter(), results = new EventEmitter(), alerts = new AlertEvents();
-const session = { id: 'fixture', slot: 1, name: 'Mobile controls', provider: 'codex', state: 'ready', alive: true, cols: 180, rows: 32, buffer: '', sequence: 0, cwd: root };
+const sessions = new EventEmitter(), alerts = new AlertEvents();
+const results = new Results(root, { trash: async dir => {
+  if (path.dirname(fs.realpathSync(dir)) !== path.join(fs.realpathSync(root), 'results')) throw new Error('Unexpected fixture result');
+  await fs.promises.rm(dir, { recursive: true, force: true });
+} });
+const session = { id: 'fixture', slot: 1, name: 'Mobile controls', provider: 'codex', providerSessionId: 'fixture-chat', model: 'gpt-6.1-sol', modelName: '6.1 Sol', effort: 'medium', settingsAt: Date.now(), state: 'ready', alive: true, cols: 180, rows: 32, buffer: '', sequence: 0, cwd: root };
+const fixtureModels = [
+  { id: 'gpt-6.1-sol', name: '6.1 Sol', efforts: ['medium', 'max'], defaultEffort: 'medium' },
+  { id: 'gpt-6-luna', name: '6 Luna', efforts: ['medium', 'max'], defaultEffort: 'medium' },
+];
 fs.mkdirSync(path.join(root, 'src'));
 fs.writeFileSync(path.join(root, 'src', 'mobile.dart'), '// Synthetic file, no project data.');
 fs.writeFileSync(path.join(root, 'README.md'), '# Fixture');
-let menu = false, effort = false, chosen = 0, pending = '', stopped = false, timer, showLinks = false, connections = 0;
+let menu = false, effort = false, chosen = 0, pendingModel = 0, pending = '', stopped = false, timer, showLinks = false, connections = 0, confirmation = '', dialogue = '', decision = '';
 function picture() {
+  if (dialogue) return '\x1b[3J\x1b[2J\x1b[H' + [
+    dialogue === 'folder' ? 'Do you trust the files in this folder?' : dialogue === 'tool' ? 'Allow this tool to use the project folder?' : 'Allow access? [y/n]',
+    'C:/Test/project', '',
+    ...(dialogue === 'yes-no' ? ['Press y to allow or n to cancel.'] : [`${chosen === 0 ? '>' : ' '} 1. Allow`, `${chosen === 1 ? '>' : ' '} 2. Cancel`, '', 'Enter to confirm, Esc to cancel']),
+    '', 'Synthetic permission test. No real folder grant or AI request.',
+  ].join('\r\n');
   const lines = menu
-    ? [effort ? 'Select Reasoning Level for Fixture model' : 'Select Model and Effort', '',
-       `${chosen === 0 ? '>' : ' '} 1. ${effort ? 'Low' : 'Fixture model A'}`,
-       `${chosen === 1 ? '>' : ' '} 2. ${effort ? 'High' : 'Fixture model B'}`, '',
+    ? [effort ? `Select Reasoning Level for ${fixtureModels[pendingModel].name}` : 'Select Model and Effort', '',
+       `${chosen === 0 ? '>' : ' '} 1. ${effort ? 'Medium' : fixtureModels[0].id}`,
+       `${chosen === 1 ? '>' : ' '} 2. ${effort ? 'Max' : fixtureModels[1].id}`, '',
        'enter select · s session only · esc back']
-    : ['\x1b[36;1mMobile verification\x1b[0m', '', 'This paragraph is intentionally wider than a phone. The app should wrap it into readable lines without making the letters smaller or changing the terminal on your computer.', '',
+    : ['\x1b[36;1mMobile verification\x1b[0m', confirmation, 'This paragraph is intentionally wider than a phone. The app should wrap it into readable lines without making the letters smaller or changing the terminal on your computer.', '',
        'Ready to review:', '  • Read and copy console text', '  • Choose commands and project files', '  • Open a Claude console', '',
        `The PC terminal still has ${session.cols} columns.`, '', 'src/mobile.dart', '  final mode = "wrap";', '', 'Synthetic output. No AI requests.'];
   return '\x1b[3J\x1b[2J\x1b[H' + lines.join('\r\n') + (menu ? '' : '\r\n\r\n' +
@@ -56,17 +71,32 @@ sessions.writes = [];
 sessions.write = (id, data) => {
   if (id !== session.id) throw new Error('Unknown test console');
   sessions.writes.push(data);
+  if (dialogue) {
+    if (data === '\x1b[A' || data === '\x1b[B') chosen = 1 - chosen;
+    if (data === '\x1b' || data === '\r' || ['y', 'n'].includes(data)) {
+      decision = data === '\x1b' || data === 'n' || data === '\r' && chosen === 1 ? 'cancelled' : 'allowed';
+      confirmation = `Synthetic permission ${decision}.`;
+      dialogue = ''; session.state = 'ready'; sessions.emit('changed');
+    }
+    draw(); return;
+  }
   if (menu) {
     if (data === '\x1b[A' || data === '\x1b[B') chosen = 1 - chosen;
     if (data === '\r' || data === 's') {
-      if (!effort && session.provider === 'codex') { effort = true; chosen = 0; }
-      else menu = false;
+      if (!effort && session.provider === 'codex') { pendingModel = chosen; effort = true; chosen = session.effort === 'max' ? 1 : 0; }
+      else {
+        menu = false;
+        session.model = fixtureModels[pendingModel].id; session.modelName = fixtureModels[pendingModel].name;
+        session.effort = chosen === 0 ? 'medium' : 'max'; session.settingsAt = Date.now();
+        confirmation = `Model changed to ${session.model} with ${session.effort} reasoning`;
+        sessions.emit('changed');
+      }
     }
     if (data === '\x1b') menu = false;
     draw();
   } else if (data === '\r') {
     menu = ['/model', '/effort'].includes(pending.trim());
-    effort = pending.trim() === '/effort'; chosen = 0;
+    effort = pending.trim() === '/effort'; chosen = fixtureModels.findIndex(x => x.id === session.model);
     pending = '';
     draw();
   } else {
@@ -83,10 +113,14 @@ sessions.create = options => {
   sessions.items.set(created.id, created); sessions.emit('changed'); return created;
 };
 sessions.end = id => { sessions.items.delete(id); sessions.emit('changed'); };
-results.items = []; results.unreadGroups = () => 0; results.list = () => [];
+const resultContext = { project: root, consoleKey: 'fixture', consoleName: 'Mobile controls' };
+results.add({ text: '# Review ready\n\nSettings and mobile controls checked with synthetic data.', title: 'Settings checks', summary: 'Settings categories and model choices checked.', groupId: 'fixture-turn', status: 'passed' }, resultContext);
+results.add({ text: JSON.stringify({ notes: ['Synthetic folder snapshot.'], changes: [{ file: 'src/mobile.dart', type: 'modified', patch: '-old setting\n+updated setting' }] }), ext: '.json', title: '1 changed file', kind: 'code', groupId: 'fixture-turn', status: 'needs-review' }, resultContext);
+results.add({ text: '# Earlier checks\n\nSynthetic report for a separate chat.', title: 'Earlier checks', summary: 'A separate chat in the same folder.', groupId: 'fixture-other', status: 'passed' }, { ...resultContext, consoleKey: 'fixture-other', consoleName: 'Other chat' });
 const mobile = new MobileCompanion(root, storage, {
   sessions, results, alerts, testMode: true,
-  getModels: async () => [{ id: 'fixture-model', name: 'Fixture model (test)' }],
+  getModels: async () => fixtureModels,
+  getSettings: () => ({ shared: { profiles: [{ id: 'test-api', name: 'Test API', protocol: 'openai' }], connections: [{ id: 'dock', name: 'Dock', enabled: true }], instructions: 'Use direct labels. Keep results grouped by chat.' }, keys: [{ id: 'test-key', label: 'Test key' }] }),
   getDefaults: () => ({ provider: 'codex', cwd: root }),
   getUsage: () => ({
     limits: process.env.DOCK_USAGE_FIXTURE === '1' ? [
@@ -124,11 +158,13 @@ const mobile = new MobileCompanion(root, storage, {
       }
       if (['codex', 'claude', 'opencode', 'gemini', 'shell'].includes(action.provider)) session.provider = action.provider;
       if (typeof action.links === 'boolean') showLinks = action.links;
+      if (action.resetWrites === true) sessions.writes.length = 0;
+      if (['folder', 'tool', 'yes-no'].includes(action.prompt)) { dialogue = action.prompt; chosen = 0; decision = ''; session.state = 'open'; }
       if (action.alert === true) { alerts.send({ title: 'Fixture console is ready', kind: 'ready' }); }
       menu = false; draw(); sessions.emit('changed');
     }
     const attachments = path.join(root, '.agentdock', 'mobile-attachments');
-    fs.writeFileSync(path.join(out, 'observed.json'), JSON.stringify({ cols: session.cols, rows: session.rows, writes: sessions.writes, connections, pairedDevices: mobile.private.devices.length, connectedDevices: mobile.clients.size, selected: [...mobile.clients].map(x => x.selected), directAlerts: mobile.private.devices.map(x => x.directAlerts === true), attachments: fs.existsSync(attachments) ? fs.readdirSync(attachments).length : 0 }));
+    fs.writeFileSync(path.join(out, 'observed.json'), JSON.stringify({ cols: session.cols, rows: session.rows, model: session.model, effort: session.effort, dialogue, decision, writes: sessions.writes, connections, pairedDevices: mobile.private.devices.length, connectedDevices: mobile.clients.size, selected: [...mobile.clients].map(x => x.selected), directAlerts: mobile.private.devices.map(x => x.directAlerts === true), attachments: fs.existsSync(attachments) ? fs.readdirSync(attachments).length : 0 }));
     if (fs.existsSync(path.join(out, 'stop'))) void shutdown();
   }, 250);
   setTimeout(shutdown, 45 * 60000).unref();

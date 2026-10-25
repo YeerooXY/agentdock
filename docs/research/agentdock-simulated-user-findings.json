@@ -1,0 +1,98 @@
+{
+  "date": "2026-10-22",
+  "project": "Paddock",
+  "branch": "main",
+  "baseCommit": "88409424c563967eed4c2749e9385f04fe46d64c",
+  "method": "One AI evaluator, script-assisted cognitive walkthrough; hypothetical perspectives, zero recruited participants",
+  "applicationCodeChanged": false,
+  "report": "docs/research/agentdock-simulated-user-review.md",
+  "scenarios": "docs/research/simulated-user-scenarios.json",
+  "coverage": {
+    "electronRecordedStates": 16,
+    "browserProfiles": 4,
+    "browserCapturedStates": 24,
+    "pageErrors": 0,
+    "documentOverflowCaptures": 0,
+    "uniqueAutomatedAccessibilityFindings": 1,
+    "providerLoginExercised": false,
+    "paidModelRequests": 0,
+    "physicalDevicesExercisedThisStudy": false,
+    "nativePhoneEvidence": "Reused earlier 22 October emulator verification; source review for collapsed chat entry"
+  },
+  "audienceHypothesis": "People already using coding-agent CLIs who want several projects organized and PC work continued from Android",
+  "findings": [
+    {
+      "id": "SU-01",
+      "priority": 1,
+      "title": "Make the first useful conversation explicit",
+      "perspectives": ["first-use"],
+      "observation": "Fresh setup has 14 agent choices and an unchecked optional launch action. Saving reaches an empty nine-panel grid. A plus opens the selected local shell.",
+      "hypothesis": "A user new to agent CLIs may need help understanding prerequisites and starting a conversation.",
+      "recommendation": "Explain the selected agent/account requirements and offer an explicit Open first console action with readable first-use text.",
+      "validation": "A real first-time user explains what will open and reaches a first prompt without assistance; test real provider login separately.",
+      "evidence": ["01-first-use.png", "03-empty-console-grid.png", "04-first-console.png"],
+      "evidenceConfidence": "Directly reproduced UI behavior; user impact unvalidated"
+    },
+    {
+      "id": "SU-02",
+      "priority": 1,
+      "title": "Give existing folders a quick project path",
+      "perspectives": ["several-projects"],
+      "observation": "Saving an existing folder automatically opens the planning brief. The project still has an Open console action. One-time console options use right-click.",
+      "hypothesis": "A CLI user bringing a working repository may find planning and hidden launch options an unnecessary detour.",
+      "recommendation": "Offer Open existing folder alongside Plan a new project, and a visible launch-options control.",
+      "validation": "Attach and open an existing folder without planning; separately verify deliberate planning and discoverability of launch options.",
+      "evidence": ["05-one-time-options.png", "05b-two-consoles.png", "06-new-project.png", "08-project-planning.png"],
+      "evidenceConfidence": "Directly reproduced UI behavior; user preference unvalidated"
+    },
+    {
+      "id": "SU-03",
+      "priority": 1,
+      "title": "Put a visible reply action on the phone console",
+      "perspectives": ["phone-continuation"],
+      "observation": "Collapsed native chat entry is a thin gradient handle with a semantic Enter chat mode label and no visible word. Terminal keys is separately visible.",
+      "hypothesis": "A sighted new user may overlook normal message entry.",
+      "recommendation": "Add a visible Message or Reply label and preserve manual Terminal keys and target identity.",
+      "validation": "On a physical paired phone, ask someone to reply without describing the gesture; exercise a sample permission prompt and connection failure.",
+      "evidence": ["mobile/lib/main.dart:enter-chat", "docs/settings-space-permissions-review.md"],
+      "evidenceConfidence": "Current source and earlier emulator evidence; no new native session in this study"
+    },
+    {
+      "id": "SU-04",
+      "priority": 1,
+      "title": "Give every finished prompt a useful destination",
+      "perspectives": ["first-use", "several-projects", "phone-continuation"],
+      "observation": "Saved reports group under the console and preview. A synthetic completion without a saved artifact shows No results were saved for this prompt and leaves the previous report visible.",
+      "hypothesis": "A completion alert recipient expects an answer or a clear route to that prompt even when it produces only text.",
+      "recommendation": "Provide a readable outcome or pinned route to the corresponding answer while preserving exact chat/prompt attribution.",
+      "validation": "Find outcomes from older artifact and text-only prompts after later work completes; repeat after deletion.",
+      "evidence": ["13-completed-results.png", "14-result-preview.png", "15-no-saved-result.png"],
+      "evidenceConfidence": "Reproduced with a synthetic completion; no real AI answer or OS toast exercised"
+    },
+    {
+      "id": "SU-05",
+      "priority": 2,
+      "title": "Clarify account usage and optional API readiness",
+      "perspectives": ["privacy-and-cost"],
+      "observation": "API totals lead Usage. Provider account data is unknown. API templates are listed with no keys saved. Existing estimate boundaries and local encryption labels are present.",
+      "hypothesis": "Users may confuse subscription usage with the optional API ledger or read a template as a ready connection.",
+      "recommendation": "Separate account usage and API spending, and show actual connection readiness with setup actions.",
+      "validation": "Ask a CLI account user which figures apply to their account and which actions make API requests.",
+      "evidence": ["10-account-usage.png", "11-api-settings.png", "12-key-storage.png"],
+      "evidenceConfidence": "Directly observed empty states; comprehension unvalidated"
+    },
+    {
+      "id": "SU-06",
+      "priority": 2,
+      "title": "Correct the shared drag handle ARIA",
+      "perspectives": ["all"],
+      "observation": "Axe reports aria-prohibited-attr, serious, on the generic .window-drag-handle div with aria-label. Repeated on three states in four profiles.",
+      "hypothesis": null,
+      "recommendation": "Remove the unsupported name or implement complete appropriate semantics and keyboard behavior; verify window controls manually.",
+      "validation": "Rerun the audit and keyboard flow; confirm zero instances of this shared violation.",
+      "evidence": ["artifacts/simulated-users/profiles.json", "src/app.js"],
+      "evidenceConfidence": "Confirmed automated finding and source inspection; one unique shared defect"
+    }
+  ],
+  "decision": "Review the four priority-1 improvements as a bounded next batch; validate with real people before broad audience or demand claims. No implementation or milestone approval is recorded."
+}

@@ -1,4 +1,4 @@
 'use strict';
-// Managed MCP servers receive only the credentials explicitly bound by Dock.
+// Managed MCP servers receive only the credentials explicitly bound by Paddock.
 // Do not read a .env file from a project or the current working directory.
 module.exports = { config: () => ({ parsed: {} }) };

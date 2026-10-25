@@ -1,10 +1,11 @@
 import './workbench.css';
-import { projectKey, projectLabel, resultGroupKey, resultGroups, resultRevision, revisionLabel, turnRevisions } from './results-model';
+import { projectKey, projectLabel, resultGroupKey, resultGroups, resultRevision, revisionLabel, turnRevisions, resultChatKey, resultTurnTitle } from './results-model';
 
 export function workbenchUI({ call, getState, getPage, renderPage, escape: e, toast, selectSession, navigate }) {
   const api = (method, value) => call('workbench.' + method, value);
   const selected = new Set(), previews = new Map();
   let resultPage = 0;
+  let controlsOpen = !matchMedia('(max-width:650px)').matches;
   let filter = '', kind = '', project = '', consoleFilter = '', detail = null, stamp = '', modalVersion = 0;
   const data = () => getState()?.workbench || { results: [], concepts: [] };
   const date = at => new Date(at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
@@ -20,11 +21,11 @@ export function workbenchUI({ call, getState, getPage, renderPage, escape: e, to
   const empty = text => `<div class="wb-empty">${text}</div>`;
   const visible = () => resultGroups(filtered()).slice(resultPage * 12, (resultPage + 1) * 12).flat();
   const pagination = () => button('previous-results','Previous','','subtle',resultPage === 0) + `<span class="result-page-number">${resultPage + 1} / ${Math.max(1, Math.ceil(resultGroups(filtered()).length / 12))}</span>` + button('next-results','Next','','subtle',(resultPage + 1) * 12 >= resultGroups(filtered()).length);
-  const card = x => `<article class="result-card"><button class="result-image" data-wb="preview" data-id="${x.id}" aria-label="Open ${e(x.title)}">${!x.image ? `<span class="result-file">${x.kind === 'code' ? '&lt;/&gt;' : e(x.ext.slice(1).toUpperCase())}</span>` : ''}${x.image || x.ext === '.zip' ? `<img data-result-image="${x.id}" alt="${e(x.title)}">` : ''}</button><div class="result-copy"><div class="result-meta"><span>${e(x.kind)}</span><label class="result-select"><input type="checkbox" data-result-select="${x.id}" aria-label="Select ${e(x.title)}" ${selected.has(x.id) ? 'checked' : ''}></label></div><button class="result-title" data-wb="preview" data-id="${x.id}">${e(x.title)}</button><p>${e(x.summary || (x.project.split(/[\\/]/).filter(Boolean).pop() || 'No project'))}</p><div class="result-meta"><time>${date(x.at)}</time><span>${e(x.status.replaceAll('-', ' '))}</span></div></div></article>`;
+  const card = x => `<article class="result-card ${!x.image && x.ext !== '.zip' ? 'result-document' : ''}"><button class="result-image" data-wb="preview" data-id="${x.id}" aria-label="Open ${e(x.title)}">${!x.image ? `<span class="result-file">${x.kind === 'code' ? '&lt;/&gt;' : e(x.ext.slice(1).toUpperCase())}</span>` : ''}${x.image || x.ext === '.zip' ? `<img data-result-image="${x.id}" alt="${e(x.title)}">` : ''}</button><div class="result-copy"><div class="result-meta"><span>${e(x.kind)}</span><label class="result-select"><input type="checkbox" data-result-select="${x.id}" aria-label="Select ${e(x.title)}" ${selected.has(x.id) ? 'checked' : ''}></label></div><button class="result-title" data-wb="preview" data-id="${x.id}">${e(x.title)}</button><p>${e(x.summary || 'Saved file')}</p><div class="result-meta"><time>${date(x.at)}</time><span>${e(x.status.replaceAll('-', ' '))}</span></div></div></article>`;
   const resultsList = () => {
     const consoles = new Map();
     for (const item of visible()) {
-      const key = projectKey(item);
+      const key = resultChatKey(item);
       if (!consoles.has(key)) consoles.set(key, new Map());
       const groups = consoles.get(key), group = groupKey(item);
       if (!groups.has(group)) groups.set(group, []);
@@ -32,10 +33,10 @@ export function workbenchUI({ call, getState, getPage, renderPage, escape: e, to
     }
     return [...consoles.values()].map(groups => {
       const first = groups.values().next().value[0];
-      return `<section class="result-console-group"><header class="result-console-heading"><h2>${e(projectName(first))}</h2><span class="project-label">${first.projectId ? 'Project' : 'Working folder'}</span></header>${[...groups.values()].map(items => {
+      return `<section class="result-console-group"><header class="result-console-heading"><h2>${e(consoleName(first))}</h2></header>${[...groups.values()].map(items => {
         const first = items[0], all = batch(first.id), unread = all.some(x => !x.seenAt), code = all.find(x => x.kind === 'code'), revisions = turnRevisions(all);
         const pictures = items.filter(x => x.image), files = items.filter(x => !x.image && x.ext !== '.json' || x.kind === 'code' && x.changeCount !== 0), supporting = items.filter(x => x.ext === '.json' && x.kind !== 'code');
-        return `<section class="result-batch ${unread ? 'unread' : ''}"><header class="result-batch-heading"><div><strong>${e(consoleName(first))}</strong><time>${date(first.at)}</time>${revisions.length ? revisions.map(git => revision(git, revisions.length > 1)).join('') : revision(null)}${unread ? '<span class="result-new">New</span>' : ''}</div><div>${code && code.changeCount !== 0 ? button('preview','Code changes',code.id,'secondary') : ''}${unread ? button('seen-batch','Mark viewed',first.id) : ''}${button('delete-batch','Delete batch',first.id,'subtle danger')}</div></header><div class="result-batch-grid">${pictures.length ? imageGroup(pictures) : ''}${files.map(card).join('')}</div>${supporting.length ? `<details class="result-supporting-data"><summary>Supporting files (${supporting.length})</summary><div class="result-batch-grid">${supporting.map(card).join('')}</div></details>` : ''}${!pictures.length && !files.length && !supporting.length ? '<p class="field-hint">No code changes or pictures saved in this turn.</p>' : ''}</section>`;
+        return `<section class="result-batch ${unread ? 'unread' : ''}"><header class="result-batch-heading"><div><strong>${e(resultTurnTitle(items))}</strong><time>${date(first.at)}</time>${unread ? '<span class="result-new">New</span>' : ''}</div><div>${code && code.changeCount !== 0 ? button('preview','Code changes',code.id,'secondary') : ''}${unread ? button('seen-batch','Mark viewed',first.id) : ''}${button('delete-batch','Delete results',first.id,'subtle danger')}</div></header><p class="result-turn-summary">${e(all.find(x => x.kind !== 'code' && x.summary)?.summary || (code?.changeCount ? `${code.changeCount} files changed` : ''))}</p><details class="result-technical"><summary>Details</summary><span>${e(projectName(first))}</span>${revisions.map(git => revision(git, revisions.length > 1)).join('')}</details><div class="result-batch-grid">${pictures.length ? imageGroup(pictures) : ''}${files.map(card).join('')}</div>${supporting.length ? `<details class="result-supporting-data"><summary>Supporting files (${supporting.length})</summary><div class="result-batch-grid">${supporting.map(card).join('')}</div></details>` : ''}${!pictures.length && !files.length && !supporting.length ? '<p class="field-hint">No code changes or pictures saved in this turn.</p>' : ''}</section>`;
       }).join('')}</section>`;
     }).join('') || empty('Screenshots, test reports and concepts will appear here.');
   };
@@ -46,7 +47,7 @@ export function workbenchUI({ call, getState, getPage, renderPage, escape: e, to
   function gallery() {
     const projects = new Map(data().results.map(x => [projectKey(x), projectName(x)]));
     const consoles = new Map(data().results.map(x => [consoleKey(x), consoleName(x)]));
-    return shell('Results', '', `<div class="wb-toolbar result-filters"><input id="result-search" type="search" aria-label="Search results" placeholder="Search results" value="${e(filter)}"><select id="result-console" aria-label="Console"><option value="">All consoles</option>${[...consoles].map(([key,name]) => `<option value="${e(key)}" ${key === consoleFilter ? 'selected' : ''}>${e(name)}</option>`).join('')}</select><select id="result-kind" aria-label="Result type"><option value="">All types</option>${['code','screenshot','test','report','review','concept','asset'].map(x => `<option value="${x}" ${x === kind ? 'selected' : ''}>${x}</option>`).join('')}</select><select id="result-project" aria-label="Project"><option value="">All projects</option>${[...projects].map(([key,name]) => `<option value="${e(key)}" ${key === project ? 'selected' : ''}>${e(name)}</option>`).join('')}</select>${button('import','Add files','','secondary')}${button('folder','Open folder')}</div><div class="wb-toolbar small">${button('select-all','Select visible')}${button('delete-selected',`Delete selected (${selected.size})`,'','subtle danger')}${button('seen-all','Mark all viewed')}</div><div class="results-grid">${resultsList()}</div><div class="wb-toolbar result-pagination">${pagination()}</div>`);
+    return shell('Results', '', `<details class="result-controls" ${controlsOpen ? 'open' : ''}><summary>Filters and actions${filter || kind || project || consoleFilter ? ' · Filter active' : ''}</summary><div class="wb-toolbar result-filters"><input id="result-search" type="search" aria-label="Search results" placeholder="Search results" value="${e(filter)}"><select id="result-console" aria-label="Console"><option value="">All consoles</option>${[...consoles].map(([key,name]) => `<option value="${e(key)}" ${key === consoleFilter ? 'selected' : ''}>${e(name)}</option>`).join('')}</select><select id="result-kind" aria-label="Result type"><option value="">All types</option>${['code','screenshot','test','report','review','concept','asset'].map(x => `<option value="${x}" ${x === kind ? 'selected' : ''}>${x}</option>`).join('')}</select><select id="result-project" aria-label="Project"><option value="">All projects</option>${[...projects].map(([key,name]) => `<option value="${e(key)}" ${key === project ? 'selected' : ''}>${e(name)}</option>`).join('')}</select>${button('import','Add files','','secondary')}${button('folder','Open folder')}</div><div class="wb-toolbar small">${button('select-all','Select visible')}${button('delete-selected',`Delete selected (${selected.size})`,'','subtle danger')}${button('seen-all','Mark all viewed')}</div></details><div class="results-grid">${resultsList()}</div><div class="wb-toolbar result-pagination">${pagination()}</div>`);
   }
   const dialog = document.createElement('dialog'); dialog.className = 'wb-dialog'; dialog.setAttribute('aria-label','Result details'); document.body.append(dialog);
   function show(html) {
@@ -59,7 +60,7 @@ export function workbenchUI({ call, getState, getPage, renderPage, escape: e, to
     detail = { type: 'result', id }; const version = ++modalVersion;
     dialog.classList.toggle('image-gallery', !!item.image);
     const code = batch(id).find(x => x.kind === 'code');
-    show(`<h2>${e(item.title)}</h2><div class="result-detail-meta">${item.kind === 'code' && resultRevision(item) ? '' : revision(resultRevision(item))}<span>${e(consoleName(item))} · ${e(item.status.replaceAll('-', ' '))} · ${date(item.at)}</span>${code && code.id !== id ? button('preview','Code changes',code.id,'secondary') : ''}</div><div id="result-preview" aria-live="polite">Loading…</div><div class="wb-toolbar">${button('export','Export',id,'secondary')}${button('delete-one','Delete saved copy',id,'subtle danger')}</div>`);
+    show(`<h2>${e(item.title)}</h2><div class="result-detail-meta"><span>${e(consoleName(item))} · ${e(item.status.replaceAll('-', ' '))} · ${date(item.at)}</span>${code && code.id !== id ? button('preview','Code changes',code.id,'secondary') : ''}</div><div id="result-preview" aria-live="polite">Loading…</div><div class="wb-toolbar">${button('export','Export',id,'secondary')}${button('delete-one','Delete saved copy',id,'subtle danger')}</div>`);
     const heading = dialog.querySelector('h2'); heading.tabIndex = -1; heading.focus({ preventScroll: true }); dialog.scrollTop = 0;
     if (item.image) { dialog.querySelector('#result-preview').insertAdjacentHTML('afterend', '<div id="image-navigation"></div>'); updateImageNavigation(id); }
     try {
@@ -96,8 +97,10 @@ export function workbenchUI({ call, getState, getPage, renderPage, escape: e, to
     target?.focus({ preventScroll: true });
   }
   function renderDiff(report) {
-    const git = report.git, before = git?.before, after = git?.after;
-    return (git ? `<div class="code-git-context">${revision(before)}${revisionLabel(before) !== revisionLabel(after) || before?.repository !== after?.repository ? `<span aria-label="to">→</span>${revision(after)}` : ''}</div>` : '') + (report.notes || []).map(note => `<p class="field-hint">${e(note)}</p>`).join('') + ((report.changes || []).length ? report.changes.map(change => `<details class="code-change" open><summary>${e(change.file)} <span>${e(change.type)}</span></summary>${change.patch ? `<pre class="result-text code-diff">${change.patch.split('\n').map(line => `<span class="${line.startsWith('+') ? 'diff-add' : line.startsWith('-') ? 'diff-remove' : line.startsWith('@@') ? 'diff-hunk' : ''}">${e(line)}\n</span>`).join('')}</pre>` : `<p class="field-hint">${e(change.omitted || 'No text preview')}</p>`}</details>`).join('') : '<p>No code changes in this turn.</p>');
+    const changes = report.changes || [], before = report.git?.before, after = report.git?.after;
+    const notes = [...new Set(report.notes || [])];
+    const context = [before, after].filter((git, i, list) => git && (git.branch || git.commit) && list.findIndex(x => JSON.stringify(x) === JSON.stringify(git)) === i);
+    return '<p>' + changes.length + (changes.length === 1 ? ' file changed</p>' : ' files changed</p>') + (context.length || notes.length ? '<details class="result-technical"><summary>Capture details</summary>' + context.map(git => revision(git)).join('') + notes.map(note => '<p class="field-hint">' + e(note) + '</p>').join('') + '</details>' : '') + (changes.length ? changes.map(change => '<details class="code-change"><summary>' + e(change.file) + ' <span>' + e(change.type) + '</span></summary>' + (change.patch ? '<pre class="result-text code-diff">' + change.patch.split('\n').map(line => '<span class="' + (line.startsWith('+') ? 'diff-add' : line.startsWith('-') ? 'diff-remove' : line.startsWith('@@') ? 'diff-hunk' : '') + '">' + e(line) + '\n</span>').join('') + '</pre>' : '<p class="field-hint">' + e(change.omitted || 'No text preview') + '</p>') + '</details>').join('') : '<p>No code changes in this turn.</p>');
   }
   async function loadImages(parent = document) {
     for (const img of parent.querySelectorAll('img[data-result-image]:not([src])')) {
@@ -121,6 +124,8 @@ export function workbenchUI({ call, getState, getPage, renderPage, escape: e, to
     resultPage = Math.min(resultPage, Math.max(0, Math.ceil(resultGroups(filtered()).length / 12) - 1));
     const pager = document.querySelector('.result-pagination'); if (pager) pager.innerHTML = pagination();
     const grid = document.querySelector('.results-grid'); if (grid) { grid.innerHTML = resultsList(); loadImages(grid); }
+    const controls = document.querySelector('.result-controls > summary');
+    if (controls) controls.textContent = `Filters and actions${filter || kind || project || consoleFilter ? ' · Filter active' : ''}`;
     const btn = document.querySelector('[data-wb="delete-selected"]'); if (btn) { btn.textContent = `Delete selected (${selected.size})`; btn.disabled = !selected.size; }
   }
   async function remove(ids) {
@@ -132,6 +137,9 @@ export function workbenchUI({ call, getState, getPage, renderPage, escape: e, to
   document.addEventListener('input', event => {
     if (event.target.id === 'result-search') { filter = event.target.value; resultPage = 0; refreshGallery(); }
   });
+  document.addEventListener('toggle', event => {
+    if (event.target.classList?.contains('result-controls')) controlsOpen = event.target.open;
+  }, true);
   document.addEventListener('change', event => {
     if (event.target.id === 'result-kind') { kind = event.target.value; resultPage = 0; refreshGallery(); }
     if (event.target.id === 'result-project') { project = event.target.value; resultPage = 0; refreshGallery(); }
@@ -178,7 +186,14 @@ export function workbenchUI({ call, getState, getPage, renderPage, escape: e, to
     if (['usage', 'tools', 'projects'].includes(item.destination)) { navigate(item.destination); return; }
     const result = data().results.find(x => x.id === item.resultId) ||
       (item.reviewId && data().results.find(x => x.reviewId === item.reviewId || x.groupId === item.reviewId));
-    if (result) { navigate('results'); await preview(result.id); }
+    const resultDestination = item.destination === 'results' || item.resultId || item.reviewId || item.turnId || item.kind === 'ready';
+    if (resultDestination) {
+      filter = ''; kind = ''; project = ''; consoleFilter = '';
+      resultPage = result ? Math.max(0, Math.floor(resultGroups(filtered()).findIndex(group => group.some(x => x.id === result.id)) / 12)) : 0;
+      navigate('results');
+      if (result) await preview(result.id);
+      else toast(item.resultId || item.reviewId ? 'These results are no longer available.' : 'No results were saved for this prompt.');
+    }
     else if (getState().sessions.some(x => x.id === item.sessionId)) await selectSession(item.sessionId);
     else { navigate('results'); toast('This console or result is no longer available.'); }
   }

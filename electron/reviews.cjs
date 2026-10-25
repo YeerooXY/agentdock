@@ -4,7 +4,10 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const { EventEmitter } = require('node:events');
 const { atomicJson, readJson } = require('./storage.cjs');
-const checklist = ['Privacy policy', 'Terms of service', 'Refund policy', 'Cookie policy', 'Cookie consent', 'Form consent', 'Data minimisation', 'Third-party tools', 'Dark patterns', 'Fees and pricing', 'Authentic reviews', 'Supported claims', 'Image descriptions', 'Colour contrast', 'Keyboard navigation', 'Business details', 'Children’s data', 'Email unsubscribe', 'Asset licences', 'Data deletion'];
+const pageChecklist = ['Privacy policy', 'Terms of service', 'Refund policy', 'Cookie policy', 'Cookie consent', 'Form consent', 'Data minimisation', 'Third-party tools', 'Dark patterns', 'Fees and pricing', 'Authentic reviews', 'Supported claims', 'Image descriptions', 'Colour contrast', 'Keyboard navigation', 'Business details', 'Children’s data', 'Email unsubscribe', 'Asset licences', 'Data deletion'];
+// Items 21–70 follow the security section of guides/web-design.md, in the same order.
+const securityChecklist = ['Exposed database credentials', 'Public .env files', 'Hardcoded API keys', 'Authentication', 'Authorization checks', 'Access to other users’ data', 'Open database permissions', 'Cloud storage configuration', 'Admin routes', 'Debug pages', 'Build logs', 'Verbose errors', 'Leaked repositories', 'Frontend secrets', 'Client-side-only checks', 'Input validation', 'SQL injection', 'NoSQL injection', 'Cross-site scripting', 'Cross-site request forgery', 'File uploads', 'Path traversal', 'Server-side request forgery', 'Password reset', 'Session management', 'JWT secrets', 'CORS', 'Rate limits', 'Test and staging environments', 'Default credentials', 'Webhook signatures', 'Server-side payment checks', 'Direct object references', 'Trusted IDs and roles', 'Sensitive logs', 'Source maps', 'Dependency vulnerabilities', 'Outdated packages', 'Prompt injection', 'AI tool permissions', 'Database user permissions', 'Audit logs', 'Monitoring and alerting', 'Backup and restore', 'Internal dashboards', 'Security headers', 'Cookie flags', 'Encryption of sensitive data', 'Tenant isolation', 'Generated code review'];
+const checklist = [...pageChecklist, ...securityChecklist];
 function pageUrl(input) {
   let url; try { url = new URL(String(input)); } catch { throw new Error('Enter a full website URL.'); }
   if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password) throw new Error('Use an HTTP or HTTPS URL without credentials.');
@@ -23,7 +26,8 @@ class Reviews extends EventEmitter {
   constructor(root, results, alerts, { BrowserWindow, session, axeSource } = {}) {
     super(); this.file = path.join(root, 'reviews.json'); this.results = results; this.alerts = alerts;
     this.BrowserWindow = BrowserWindow; this.session = session; this.axeSource = axeSource || fs.readFileSync(require.resolve('axe-core/axe.min.js'), 'utf8');
-    this.items = readJson(this.file, []).slice(0, 100).map(x => x.state === 'running' ? { ...x, state: 'interrupted', error: 'Review stopped when Dock closed. Run it again.' } : x);
+    this.items = readJson(this.file, []).slice(0, 100).map(x => x.state === 'running' ? { ...x, state: 'interrupted', error: 'Review stopped when Paddock closed. Run it again.' } : x)
+      .map(x => Array.isArray(x.checks) && x.checks.length < checklist.length ? { ...x, checks: [...x.checks, ...checklist.slice(x.checks.length).map(title => ({ title, status: 'unreviewed', note: '' }))] } : x);
     this.active = null; this.window = null; this.stopping = false;
   }
   list() { return this.items.map(({ report, ...x }) => x); }
@@ -55,7 +59,7 @@ class Reviews extends EventEmitter {
     const timeout = setTimeout(() => { if (!browser.isDestroyed()) browser.destroy(); }, 90000);
     try {
       await browser.loadURL(item.url);
-      const report = { url: item.url, at: new Date(item.at).toISOString(), scope: 'Viewport screenshots and automated checks. Manual checks remain unreviewed until you review them.', views: [], thirdPartyHosts: [], links: [] };
+      const report = { url: item.url, at: new Date(item.at).toISOString(), scope: 'Chromium desktop and narrow viewport screenshots and automated checks. Safari/WebKit, Android and iPhone device profiles are not run by this tool. Physical devices and manual checks remain unreviewed.', views: [], thirdPartyHosts: [], links: [] };
       for (const [name, width, height] of [['Desktop', 1440, 1000], ['Mobile', 390, 844]]) {
         item.stage = name + ' checks'; this.save(); browser.setContentSize(width, height);
         await browser.webContents.insertCSS('*,*::before,*::after { animation:none!important; transition:none!important; caret-color:transparent!important; }');
@@ -99,4 +103,4 @@ class Reviews extends EventEmitter {
   }
   stop() { this.stopping = true; if (this.window && !this.window.isDestroyed()) this.window.destroy(); }
 }
-module.exports = { Reviews, checklist, pageUrl };
+module.exports = { Reviews, checklist, pageChecklist, securityChecklist, pageUrl };

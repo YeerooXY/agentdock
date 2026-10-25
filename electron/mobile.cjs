@@ -9,10 +9,12 @@ const { WebSocketServer, WebSocket } = require('ws');
 const { readJson, atomicJson } = require('./storage.cjs');
 const { TerminalStream } = require('./mobile-stream.cjs');
 const { MobilePush, publicConfig, serviceAccount } = require('./mobile-push.cjs');
-const { isPrivate, isPublic, internetOptions } = require('./mobile-address.cjs');
+const { isPrivate, isPublic, isTailscale, connectionOptions } = require('./mobile-address.cjs');
 const { MobileNetwork } = require('./mobile-network.cjs');
 const { consoleChoices, mobileLaunch, consoleFiles } = require('./mobile-console.cjs');
+const { consoleModels } = require('./adapters.cjs');
 const { MobileAttachments } = require('./mobile-attachments.cjs');
+const { settingsSummary } = require('./mobile-settings.cjs');
 const token = () => crypto.randomBytes(32).toString('base64url');
 const digest = text => crypto.createHash('sha256').update(text).digest('hex');
 const match = (value, stored) => {
@@ -30,26 +32,40 @@ function deviceName(value) {
   return name;
 }
 class MobileCompanion extends EventEmitter {
-  constructor(root, safeStorage, { sessions, results, alerts, getUsage, getDefaults, getModels, getKey, networkScript, program, network, testMode = false } = {}) {
+  constructor(root, safeStorage, { sessions, results, alerts, getUsage, refreshUsage, getDefaults, getModels, getSettings, getKey, networkScript, program, network, testMode = false } = {}) {
     super(); this.file = path.join(root, 'mobile.json'); this.crypto = safeStorage;
     this.sessions = sessions; this.results = results; this.getUsage = getUsage; this.getDefaults = getDefaults; this.testMode = testMode;
     this.getModels = getModels;
+    this.refreshUsage = refreshUsage;
+    this.getSettings = getSettings;
     this.attachments = new MobileAttachments();
     this.config = readJson(this.file, { enabled: false, host: '', port: 47831 });
     this.config.mappingId ||= crypto.randomUUID();
+    // Direct internet through the router was replaced by Tailscale. Keep the
+    // Wi-Fi address working and ask the user to choose Tailscale instead.
+    if (this.config.mode === 'internet') {
+      Object.assign(this.config, { mode: 'local', publicHost: '', externalPort: 47831, routerMode: 'manual', duckKeyId: '' });
+      this.notice = 'Direct internet access was replaced by Tailscale. Your phone still connects on the same Wi-Fi. Choose Anywhere with Tailscale in Phone setup, and remove the old port forward from your router.';
+      atomicJson(this.file, this.config);
+    }
     this.network = network || new MobileNetwork({ getKey, script: networkScript, program, testMode, changed: () => this.emit('changed') });
     this.attempts = new Map(); this.attemptPeriod = Date.now(); this.attemptTotal = 0;
     this.private = { devices: [] }; this.clients = new Set(); this.streams = new Map(); this.liveAlerts = []; this.counters = { sent: 0, received: 0 }; this.error = ''; this.pairing = null; this.pendingPairing = null;
     if (this.config.encrypted) { try { this.private = JSON.parse(safeStorage.decryptString(Buffer.from(this.config.encrypted, 'base64'))); } catch { this.error = 'Mobile credentials could not be unlocked. Set up this PC again.'; this.config.enabled = false; } }
     this.push = new MobilePush({ credential: () => this.private.firebase?.credential });
     this.output = packet => {
-      const existing = this.streams.has(packet.id), stream = this.ensureStream(packet.id);
+      const previous = this.streams.get(packet.id), existing = !!previous;
+      const generationChanged = previous && packet.launchId && previous.launchId !== packet.launchId;
+      const stream = this.ensureStream(packet.id);
       // A newly created stream already includes this packet in session.buffer.
-      if (existing) stream?.write(packet);
+      if (existing && !generationChanged) stream?.write(packet);
     };
     this.resized = ({ id }) => { this.ensureStream(id); this.scheduleState(); };
     this.changed = () => {
-      for (const [id, stream] of this.streams) if (!sessions.items.has(id) || sessions.items.get(id).dismissed) { stream.dispose(); this.streams.delete(id); }
+      for (const [id, stream] of this.streams) if (!sessions.items.has(id) || sessions.items.get(id).dismissed || (sessions.items.get(id).launchId && sessions.items.get(id).launchId !== stream.launchId)) {
+        const next = sessions.items.get(id); const epoch = stream.epoch + 1; stream.dispose(); this.streams.delete(id);
+        if (next && !next.dismissed && this.server) this.streams.set(id, new TerminalStream(next, epoch));
+      }
       this.scheduleState();
     };
     this.notification = item => {
@@ -76,17 +92,18 @@ class MobileCompanion extends EventEmitter {
     if (!this.available()) throw new Error('Windows credential encryption is unavailable.');
     this.config.encrypted = this.crypto.encryptString(JSON.stringify(this.private)).toString('base64'); atomicJson(this.file, this.config); this.emit('changed');
   }
-  snapshot() { const p = this.pendingPairing; return { name: this.name, enabled: !!this.server, host: this.config.host, port: this.config.port, mode: this.config.mode || 'local', publicHost: this.config.publicHost || '', externalPort: this.config.externalPort || 47831, routerMode: this.config.routerMode || 'manual', duckKeyId: this.config.duckKeyId || '', network: this.network.snapshot(), interfaces: interfaces(), error: this.error, devices: this.private.devices.map(({ id, name, at, pushToken, lastInternetAt }) => ({ id, name, at, lastInternetAt, alerts: !!pushToken, connected: [...this.clients].some(x => x.device.id === id) })), push: { project: this.private.firebase?.public.projectId || '', configured: !!this.private.firebase?.credential, error: this.push.error, lastSent: this.push.lastSent }, pairingExpires: this.pairing?.expires || 0, pendingPairing: p && p.expires > Date.now() && ['pending', 'approved'].includes(p.state) ? { id: p.id, name: p.name, code: p.code, expires: p.expires, state: p.state } : null, bytes: this.counters }; }
+  snapshot() { const p = this.pendingPairing; return { notice: this.notice || '', name: this.name, enabled: !!this.server, host: this.config.host, port: this.config.port, mode: this.config.mode || 'local', publicHost: this.config.publicHost || '', externalPort: this.config.externalPort || 47831, routerMode: this.config.routerMode || 'manual', duckKeyId: this.config.duckKeyId || '', network: this.network.snapshot(), interfaces: interfaces(), error: this.error, devices: this.private.devices.map(({ id, name, at, pushToken, lastInternetAt }) => ({ id, name, at, lastInternetAt, alerts: !!pushToken, connected: [...this.clients].some(x => x.device.id === id) })), push: { project: this.private.firebase?.public.projectId || '', configured: !!this.private.firebase?.credential, error: this.push.error, lastSent: this.push.lastSent }, pairingExpires: this.pairing?.expires || 0, pendingPairing: p && p.expires > Date.now() && ['pending', 'approved'].includes(p.state) ? { id: p.id, name: p.name, code: p.code, expires: p.expires, state: p.state } : null, bytes: this.counters }; }
   async configure({ enabled, host, name, port = 47831, ...remote }) {
     if (!enabled) { await this.stop(); this.config.enabled = false; this.persist(); return; }
     if (!interfaces().some(x => x.address === host) || !isPrivate(host)) throw new Error('Choose this PC’s private network address.');
     if (!Number.isInteger(port) || port < 1024 || port > 65535) throw new Error('Use a port from 1024 to 65535.');
     if (!this.available()) throw new Error('Windows credential encryption is unavailable.');
-    const options = internetOptions(remote);
+    const options = connectionOptions(remote);
     if (name !== undefined) options.name = deviceName(name);
-    if (options.mode === 'internet' && (host.startsWith('127.') || /^100\./.test(host))) throw new Error('Use your Wi-Fi or Ethernet address for direct internet.');
+    if (options.mode === 'tailscale' && !isTailscale(host)) throw new Error('Choose this PC’s Tailscale address (100.x). Install Tailscale and sign in if none is listed.');
     const changed = host !== this.config.host || port !== this.config.port || ['mode', 'publicHost', 'externalPort'].some(key => options[key] !== this.config[key]);
     if (changed) { for (const device of this.private.devices) delete device.lastInternetAt; this.network.state.firewall = ''; }
+    this.notice = '';
     await this.stop(); Object.assign(this.config, { enabled: true, host, port }, options); this.persist(); await this.start();
   }
   async start() {
@@ -94,7 +111,7 @@ class MobileCompanion extends EventEmitter {
     if (!this.available()) throw new Error('Windows credential encryption is unavailable.');
     if (!interfaces().some(x => x.address === this.config.host)) { this.error = 'That network address is unavailable. Choose another address in Phone setup.'; this.emit('changed'); return; }
     if (!this.private.identity) {
-      const pems = await require('selfsigned').generate([{ name: 'commonName', value: 'Agent Dock' }], { keyType: 'ec', curve: 'P-256', algorithm: 'sha256', notBeforeDate: new Date(Date.now() - 60000), notAfterDate: new Date(Date.now() + 5 * 365 * 86400000) });
+      const pems = await require('selfsigned').generate([{ name: 'commonName', value: 'Paddock' }], { keyType: 'ec', curve: 'P-256', algorithm: 'sha256', notBeforeDate: new Date(Date.now() - 60000), notAfterDate: new Date(Date.now() + 5 * 365 * 86400000) });
       this.private.identity = { cert: pems.cert, key: pems.private }; this.persist();
     }
     const server = https.createServer({ cert: this.private.identity.cert, key: this.private.identity.key, minVersion: 'TLSv1.2' }, (req, res) => this.http(req, res));
@@ -115,7 +132,8 @@ class MobileCompanion extends EventEmitter {
   }
   acceptsPeer(req) {
     const address = req.socket.remoteAddress?.replace('::ffff:', '') || '';
-    return !req.headers.origin && (isPrivate(address) || this.config.mode === 'internet' && isPublic(address));
+    if (req.headers.origin) return false;
+    return this.config.mode === 'tailscale' ? isTailscale(address) : isPrivate(address);
   }
   allowAttempt(req) {
     const now = Date.now();
@@ -136,8 +154,7 @@ class MobileCompanion extends EventEmitter {
     this.pairing = { secret: token(), expires: Date.now() + 5 * 60000, attempts: 0 };
     const cert = new crypto.X509Certificate(this.private.identity.cert);
     const localUrl = `https://${this.config.host}:${this.config.port}`;
-    const invite = { v: this.config.mode === 'internet' ? 2 : 1, approval: true, url: localUrl, pin: digest(cert.raw), secret: this.pairing.secret, expires: this.pairing.expires };
-    if (this.config.mode === 'internet') Object.assign(invite, { mode: 'internet', url: `https://${this.config.publicHost}:${this.config.externalPort}`, localUrl });
+    const invite = { v: 1, approval: true, url: localUrl, pin: digest(cert.raw), secret: this.pairing.secret, expires: this.pairing.expires };
     this.emit('changed'); return { code: 'agentdock:' + Buffer.from(JSON.stringify(invite)).toString('base64url'), expires: invite.expires };
   }
   cancelPairing() {
@@ -200,16 +217,16 @@ class MobileCompanion extends EventEmitter {
   }
   ensureStream(id) {
     const s = this.sessions.items.get(id); if (!s || s.dismissed || !this.server) return null;
-    if (!this.streams.has(id)) this.streams.set(id, new TerminalStream(s));
+    const current = this.streams.get(id);
+    if (current && s.launchId && current.launchId !== s.launchId) { const epoch = current.epoch + 1; current.dispose(); this.streams.delete(id); this.streams.set(id, new TerminalStream(s, epoch)); }
+    else if (!current) this.streams.set(id, new TerminalStream(s));
     const stream = this.streams.get(id); stream.resize(s.cols, s.rows); return stream;
   }
   publicState() {
     const localUrl = `https://${this.config.host}:${this.config.port}`;
-    const connection = this.config.mode === 'internet'
-      ? { url: `https://${this.config.publicHost}:${this.config.externalPort}`, localUrl }
-      : { url: localUrl };
+    const connection = { url: localUrl };
     connection.name = this.name;
-    return { connection, capabilities: ['console.agents', 'console.files', 'console.close', 'console.projects', 'console.models', 'console.ssh', 'alerts.direct', 'console.attachments'], capacity: (this.sessions.grid?.columns || 3) * (this.sessions.grid?.rows || 3), sessions: this.sessions.list().filter(x => !x.dismissed).map(({ id, slot, name, provider, alive, state, cols, rows, consoleKey, projectId, remote, updatedAt }) => ({ id, slot, name, provider, alive, state, cols, rows, consoleKey, projectId, remote, updatedAt })), alerts: this.liveAlerts, unreadResults: this.results.unreadGroups(), resultVersion: digest(this.results.items.map(x => x.id + ':' + x.seenAt).join(',')).slice(0, 16) };
+    return { connection, capabilities: ['console.agents', 'console.files', 'console.close', 'console.projects', 'console.models', 'console.ssh', 'console.switch', 'console.setup', 'alerts.direct', 'console.attachments'], capacity: (this.sessions.grid?.columns || 3) * (this.sessions.grid?.rows || 3), sessions: this.sessions.list().filter(x => !x.dismissed).map(({ id, slot, name, provider, alive, state, cols, rows, consoleKey, projectId, remote, updatedAt, providerSessionId, model, modelId, effort, settingsAt, launchId, accountId, accountLabel, switchTargets, switching, purpose, draftSupported, switchOffer }) => ({ id, slot, name, provider, alive, state, cols, rows, consoleKey, projectId, remote, updatedAt, providerSessionId, model: modelId || model || null, modelName: model || null, effort: effort || null, settingsAt: settingsAt || null, launchId: launchId || null, accountId: accountId || null, accountLabel: accountLabel || null, switchTargets: switchTargets || [], switching: !!switching, purpose: purpose || 'agent', draftSupported: draftSupported === true, switchOffer: switchOffer || null })), alerts: this.liveAlerts, unreadResults: this.results.unreadGroups(), resultVersion: digest(this.results.list().map(x => x.id + ':' + x.seenAt + ':' + x.changeCount).join(',')).slice(0, 16) };
   }
   scheduleState() {
     if (!this.server || this.stateTimer) return;
@@ -265,14 +282,31 @@ class MobileCompanion extends EventEmitter {
       case 'console.create': {
         return this.sessions.create(mobileLaunch(this.sessions, this.getDefaults(), payload));
       }
+      case 'console.switch': {
+        const session = this.sessions.items.get(payload.id);
+        if (client.selected !== payload.id || !session?.alive || session.launchId !== payload.launchId || session.consoleKey !== payload.consoleKey || session.accountId !== payload.accountId) throw new Error('This console changed. Open its account menu again.');
+        return this.sessions.switchAccount({ id: payload.id, launchId: payload.launchId, targetAccountId: payload.targetAccountId });
+      }
+      case 'console.setup': {
+        const session = this.sessions.items.get(payload.id);
+        if (client.selected !== payload.id || !session?.alive || session.launchId !== payload.launchId || session.consoleKey !== payload.consoleKey || session.accountId !== payload.accountId) throw new Error('This console changed. Open its account menu again.');
+        return this.sessions.createSetupConsole({ id: payload.id, launchId: payload.launchId, targetAccountId: payload.targetAccountId });
+      }
       case 'console.agents': return consoleChoices(this.sessions, this.getDefaults());
       case 'console.models': {
-        if (payload.provider !== 'codex' || !this.getModels) return { models: [], livePicker: true };
-        const models = await this.getModels(payload.provider);
+        if (!['codex', 'claude'].includes(payload.provider)) return { models: [], livePicker: false };
+        if (payload.provider === 'claude') return { models: consoleModels('claude').map(x => ({ ...x, efforts: ['low', 'medium', 'high', 'xhigh', 'max'] })), livePicker: false };
+        if (!this.getModels) return { models: consoleModels('codex'), livePicker: false };
+        let models;
+        try { models = await this.getModels(payload.provider); } catch { models = consoleModels(payload.provider); }
         if (client.ws.readyState !== WebSocket.OPEN || !this.clients.has(client) || !this.private.devices.includes(client.device)) throw new Error('Connection changed.');
         this.sessions.mobileModels ||= new Map();
         this.sessions.mobileModels.set(payload.provider, new Set(models.map(x => x.id)));
         return { models, livePicker: true };
+      }
+      case 'settings.summary': {
+        if (!this.getSettings) throw new Error('PC settings are unavailable. Update Paddock on your PC.');
+        return settingsSummary(this.getSettings());
       }
       case 'console.files': {
         const session = this.sessions.items.get(payload.id);
@@ -306,7 +340,9 @@ class MobileCompanion extends EventEmitter {
       case 'results.preview': { const value = await this.results.preview(payload.id, payload.thumbnail !== false, payload.entry); if (JSON.stringify(value).length > 3 * 1024 * 1024) throw new Error('This preview is too large. Open it on your PC.'); return value; }
       case 'results.seen': return this.results.markSeen(payload.ids);
       case 'results.delete': return this.results.remove(payload.ids);
-      case 'usage': return this.getUsage();
+      case 'usage':
+        if (payload.refresh === true) this.refreshUsage?.().catch(() => {});
+        return this.getUsage();
       case 'alerts.mode':
         if (typeof payload.direct !== 'boolean') throw new Error('Choose a notification mode.');
         client.device.directAlerts = payload.direct; this.persist(); return true;

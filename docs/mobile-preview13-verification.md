@@ -42,8 +42,8 @@ The new PC operations use the existing authenticated, pinned connection. Agent l
 
 No new SDK, analytics, cloud service, branding assets or dependencies were added. Copying explicitly puts text on the system clipboard. Labels remain textual as well as colored; the lowest tested agent-label contrast is 7.06:1 on its tinted background. Reduced-motion settings disable the dropdown animation. These checks do not establish complete accessibility conformance.
 
-Wrap text is a readable rendering of the loaded terminal buffer, not a recovered conversation. Grid remains available for original colors, cursor positioning, tables and interactive menus. Copying covers at most the loaded 1,000 terminal lines. Command suggestions cover Dock's known shortcuts, not arbitrary CLI plugins. Claude subscription percentages remain unavailable until the CLI supplies them; the app shows a waiting state.
+Wrap text is a readable rendering of the loaded terminal buffer, not a recovered conversation. Grid remains available for original colors, cursor positioning, tables and interactive menus. Copying covers at most the loaded 1,000 terminal lines. Command suggestions cover Paddock's known shortcuts, not arbitrary CLI plugins. Claude subscription percentages remain unavailable until the CLI supplies them; the app shows a waiting state.
 
 Physical Android input/selection, installed CLI versions and access over the owner's mobile network remain manual checks. Windows smoke tests passed; macOS and iPhone interfaces were not changed or newly verified.
 
-Local screenshots and logs are in `artifacts/mobile-controls/`. Selected screenshots and this report are saved individually in Dock Results.
+Local screenshots and logs are in `artifacts/mobile-controls/`. Selected screenshots and this report are saved individually in Paddock Results.

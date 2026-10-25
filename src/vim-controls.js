@@ -1,12 +1,14 @@
-const pageKeys = { c: 'consoles', u: 'usage', a: 'api', v: 'vault', t: 'tools', i: 'instructions', s: 'settings' };
+const pageKeys = { c: 'consoles', u: 'usage', a: 'api', t: 'tools', i: 'instructions', s: 'settings' };
+// Settings scroll inside their own layer; other pages scroll #content.
+const scroller = () => document.querySelector('.settings-stage') || document.querySelector('#content');
 const editing = element => !!element?.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"]), .xterm');
 
 export function vimControls({ context, focusSlot, action, onError }) {
   let slot = 1, pending = '', timer, busy = false, helpOpener;
   const help = document.createElement('dialog');
   help.id = 'vim-help'; help.setAttribute('aria-labelledby', 'vim-help-title');
-  help.innerHTML = `<div class="dialog-heading"><div><h2 id="vim-help-title">Vim controls</h2><p>Move around Dock without the mouse.</p></div><button type="button" class="icon-button" aria-label="Close keyboard help">×</button></div>
-    <p class="vim-help-intro"><kbd>Ctrl Shift Space</kbd> returns control to Dock. <kbd>i</kbd> puts you back in the terminal.</p>
+  help.innerHTML = `<div class="dialog-heading"><div><h2 id="vim-help-title">Vim controls</h2><p>Move around Paddock without the mouse.</p></div><button type="button" class="icon-button" aria-label="Close keyboard help">×</button></div>
+    <p class="vim-help-intro"><kbd>Ctrl Shift Space</kbd> returns control to Paddock. <kbd>i</kbd> puts you back in the terminal.</p>
     <dl class="vim-shortcuts">
       <div><dt><kbd>h j k l</kbd></dt><dd>Move left, down, up, right</dd></div>
       <div><dt><kbd>1…9</kbd></dt><dd>Select a console slot</dd></div>
@@ -35,8 +37,8 @@ export function vimControls({ context, focusSlot, action, onError }) {
     for (const button of document.querySelectorAll('[data-action="vim-normal"]')) {
       button.hidden = !enabled;
       button.textContent = normal ? `NORMAL · ${pending || String(slot).padStart(2, '0')}` : 'INSERT';
-      button.title = normal ? 'Dock controls · ? for shortcuts' : 'Return to Dock controls · Ctrl+Shift+Space';
-      button.setAttribute('aria-label', normal ? `Dock controls, console ${slot}. Press ? for shortcuts.` : 'Return to Dock controls (Ctrl+Shift+Space)');
+      button.title = normal ? 'Dock controls · ? for shortcuts' : 'Return to Paddock controls · Ctrl+Shift+Space';
+      button.setAttribute('aria-label', normal ? `Dock controls, console ${slot}. Press ? for shortcuts.` : 'Return to Paddock controls (Ctrl+Shift+Space)');
     }
     for (const panel of document.querySelectorAll('.session-card, .hud-slot')) {
       panel.classList.toggle('vim-selected', normal && Number(panel.dataset.slot) === slot);
@@ -69,7 +71,7 @@ export function vimControls({ context, focusSlot, action, onError }) {
     finally { busy = false; refresh(); }
   }
   function scroll(direction, half = false) {
-    const content = document.querySelector('#content');
+    const content = scroller();
     content.scrollBy({ top: direction * (half ? content.clientHeight / 2 : 80), behavior: 'instant' });
   }
   document.addEventListener('focusin', event => { followFocus(event.target); refresh(); });
@@ -83,7 +85,7 @@ export function vimControls({ context, focusSlot, action, onError }) {
     if (event.ctrlKey && event.shiftKey && !event.altKey && !event.metaKey && event.code === 'Space') {
       consume(); if (!event.repeat && !busy && !current.busy) enterNormal(); return;
     }
-    // Capture only Dock navigation. An embedded editor owns all its own keys.
+    // Capture only Paddock navigation. An embedded editor owns all its own keys.
     if (editing(event.target) || busy || current.busy) return;
     const grid = ['consoles', 'overview', 'terminal', 'hud'].includes(current.view);
     if (event.ctrlKey && !event.shiftKey && !event.altKey && !event.metaKey && !grid && ['d', 'u'].includes(event.key)) {
@@ -95,7 +97,7 @@ export function vimControls({ context, focusSlot, action, onError }) {
       clearPending(); refresh();
       if (key === 'Escape') { consume(); return; }
       if (key === 'g') {
-        consume(); if (grid) select(1); else document.querySelector('#content').scrollTop = 0; return;
+        consume(); if (grid) select(1); else scroller().scrollTop = 0; return;
       }
       if (pageKeys[key]) { consume(); if (!event.repeat) run('page', pageKeys[key]); return; }
     }
@@ -109,7 +111,7 @@ export function vimControls({ context, focusSlot, action, onError }) {
       const { columns, rows } = current.grid || { columns: 3, rows: 3 }, col = (slot - 1) % columns;
       select(key === 'h' && col > 0 ? slot - 1 : key === 'l' && col < columns - 1 ? slot + 1 : key === 'j' && slot <= columns * (rows - 1) ? slot + columns : key === 'k' && slot > columns ? slot - columns : slot);
     } else if (/^[1-9]$/.test(key)) { consume(); select(Number(key)); }
-    else if (key === 'G') { consume(); if (grid) select((current.grid?.columns || 3) * (current.grid?.rows || 3)); else document.querySelector('#content').scrollTop = document.querySelector('#content').scrollHeight; }
+    else if (key === 'G') { consume(); if (grid) select((current.grid?.columns || 3) * (current.grid?.rows || 3)); else scroller().scrollTop = scroller().scrollHeight; }
     else if (key === '?') { consume(); if (!event.repeat) showHelp(); }
     else if (key === 'Enter') {
       const otherControl = event.target.closest('button, a, summary');

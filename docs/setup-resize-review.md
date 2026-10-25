@@ -1,11 +1,11 @@
 # Setup, resize feedback and cursor review
 
-16 October 2026, Agent Dock 0.5.0. This record supplements [the console interaction review](console-interaction-review.md) and [agent setup notes](agent-setup.md).
+16 October 2026, Paddock 0.5.0. This record supplements [the console interaction review](console-interaction-review.md) and [agent setup notes](agent-setup.md).
 
 ## Changes verified
 
 - Panel resizing highlights the active edge/corner and proposed grid footprint. A live size label follows the pointer. Invalid placements use a red patterned preview and preserve the previous layout. Release, Escape, window resize and blur clear feedback. Existing keyboard resize and reduced-motion behavior remain.
-- The cursor is steady by default. Output batching keeps delayed, fragmented hide/redraw/show sequences together, with a maximum 48 ms grace window. Intentional hiding still works and ordinary typing keeps the shorter 16 ms batch. ANSI content is unchanged. Four browser profiles sampled rendered frames during eight redraw bursts with the show command split across later packets: no hidden cursor frames were observed. This does not establish that every Codex workload is flicker-free, and it does not change CMD outside Dock.
+- The cursor is steady by default. Output batching keeps delayed, fragmented hide/redraw/show sequences together, with a maximum 48 ms grace window. Intentional hiding still works and ordinary typing keeps the shorter 16 ms batch. ANSI content is unchanged. Four browser profiles sampled rendered frames during eight redraw bursts with the show command split across later packets: no hidden cursor frames were observed. This does not establish that every Codex workload is flicker-free, and it does not change CMD outside Paddock.
 - First-run setup offers 14 optional CLI installers, a folder picker, default provider and immediate-launch checkbox. No software is preselected. Installed choices are detected; unsupported Windows versions are labeled. Installation errors preserve selected agents, folder and launch choice. Retry works. Settings can reopen setup without restarting consoles.
 - Agents can prepare tool/API settings or request direct key entry. Tools shows the actual endpoint/command and expandable configuration before Apply. Preparation makes no connection or model request. Missing keys block Apply. Keys remain encrypted in the vault and are not sent back to the agent. Grok and Z.AI presets keep a missing-key reference instead of silently treating authentication as optional.
 
@@ -36,7 +36,7 @@ This covers the first-run dialog, Settings, Tools, Keys, Consoles and fullscreen
 
 | # | Item | Status and reason |
 | --- | --- | --- |
-| 1 | Privacy information | Checked for scope. README/setup notes describe local storage, third-party installation downloads, separate CLI sign-in and provider requests. No new hosted account or telemetry collection was added by Dock. |
+| 1 | Privacy information | Checked for scope. README/setup notes describe local storage, third-party installation downloads, separate CLI sign-in and provider requests. No new hosted account or telemetry collection was added by Paddock. |
 | 2 | Terms | Not applicable to these local controls: no new hosted service or purchase contract. Provider terms remain separate. |
 | 3 | Refunds | Not applicable: no sale or checkout in setup. |
 | 4 | Cookies/storage | Checked. Preferences, installation status and prepared settings stay in local files; no web tracking cookies added. |
@@ -55,8 +55,8 @@ This covers the first-run dialog, Settings, Tools, Keys, Consoles and fullscreen
 | 17 | Children's data | Not applicable: no child-directed feature or age collection introduced. |
 | 18 | Unsubscribe | Not applicable: Inbox notifications are local; no marketing email. |
 | 19 | Licenses | Checked. Original app icons, OS fonts and retained dependency license files; no added stock art or remote fonts. |
-| 20 | Deletion | Checked for scope. Setup requests can be dismissed, connections and vault keys removed, Results deleted and Inbox cleared. CLI installations/auth remain provider-managed; uninstalling Dock retains its local data as documented. |
+| 20 | Deletion | Checked for scope. Setup requests can be dismissed, connections and vault keys removed, Results deleted and Inbox cleared. CLI installations/auth remain provider-managed; uninstalling Paddock retains its local data as documented. |
 
 ## Installer result
 
-Passed: per-user installation into a chosen folder, Windows uninstall registration, Start menu shortcut target, packaged app checks and clean uninstall. Existing development shortcuts were restored. The installed app also passed Results, Inbox, website-review and console-drag checks. The user's running Dock was not restarted.
+Passed: per-user installation into a chosen folder, Windows uninstall registration, Start menu shortcut target, packaged app checks and clean uninstall. Existing development shortcuts were restored. The installed app also passed Results, Inbox, website-review and console-drag checks. The user's running Paddock was not restarted.

@@ -15,7 +15,7 @@ function imageSettings(raw = {}) {
   value.keyId = raw.keyId ? validateKeyId(raw.keyId) : '';
   let url; try { url = new URL(presets[provider]?.url || raw.url); } catch { throw Error('Enter an image API endpoint.'); }
   if (url.username || url.password || url.search || url.hash || (url.protocol !== 'https:' && !(url.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)))) throw Error('Use HTTPS or localhost HTTP, without credentials or query parameters in the URL.');
-  if (provider !== 'compatible' && !value.keyId) throw Error('Choose a saved API key from Keys.');
+  if (provider !== 'compatible' && !value.keyId) throw Error('Choose a saved key or paste a new one.');
   value.url = url.href;
   return value;
 }
@@ -44,8 +44,8 @@ async function generateImage({ config, reference, prompt, key, signal, fetcher =
   let response;
   try {
     response = await fetcher(config.url, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(key ? gemini ? { 'x-goog-api-key': key } : { Authorization: 'Bearer ' + key } : {}) }, body: JSON.stringify(body), redirect: 'error', signal });
-  } catch { throw Error('Image request interrupted. Check provider billing before trying a new request; Dock will not retry automatically.'); }
-  if (!response.ok) { await response.body?.cancel().catch(() => {}); throw Error(`Image API returned HTTP ${response.status}. Check the model, key and account; Dock has not retried.`); }
+  } catch { throw Error('Image request interrupted. Check provider billing before trying a new request; Paddock will not retry automatically.'); }
+  if (!response.ok) { await response.body?.cancel().catch(() => {}); throw Error(`Image API returned HTTP ${response.status}. Check the model, key and account; Paddock has not retried.`); }
   const chunks = []; let bytes = 0, value;
   try {
     for await (const chunk of response.body) { bytes += chunk.length; if (bytes > 30 * 1024 * 1024) throw Error('size'); chunks.push(chunk); }

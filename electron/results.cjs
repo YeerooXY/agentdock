@@ -6,6 +6,7 @@ const { EventEmitter } = require('node:events');
 const { atomicJson, readJson } = require('./storage.cjs');
 const { previewArchive } = require('./result-archive.cjs');
 const { cleanGit } = require('./git-context.cjs');
+const { captureChanges } = require('./capture-files.cjs');
 const extensions = new Set(['.png', '.jpg', '.jpeg', '.webp', '.txt', '.md', '.json', '.log', '.html', '.pdf', '.glb', '.gltf', '.obj', '.stl', '.zip']);
 const imageExtensions = new Set(['.png', '.jpg', '.jpeg', '.webp']);
 const textExtensions = new Set(['.txt', '.md', '.json', '.log', '.html']);
@@ -18,19 +19,24 @@ class Results extends EventEmitter {
     this.items = readJson(this.file, []).filter(x => /^[a-f0-9-]{36}$/.test(x.id) && extensions.has(x.ext)).slice(0, 1000);
     // Older captures did not store the count. Read only our bounded code reports,
     // so empty snapshot diagnostics do not become prominent gallery cards.
-    for (const item of this.items) if (item.kind === 'code' && item.ext === '.json' && (item.changeCount == null || !Object.hasOwn(item, 'gitEnd')) && item.size < 2 * 1024 * 1024) {
+    for (const item of this.items) if (item.kind === 'code' && item.ext === '.json' && (item.captureFilterVersion !== 1 || !Object.hasOwn(item, 'gitEnd')) && item.size < 2 * 1024 * 1024) {
       try {
         const report = JSON.parse(fs.readFileSync(this.path(item.id), 'utf8'));
-        if (Array.isArray(report.changes)) item.changeCount = report.changes.length;
+        if (Array.isArray(report.changes)) {
+          item.changeCount = captureChanges(report.changes).length;
+          item.captureExcludedOnly = report.changes.length > 0 && item.changeCount === 0;
+          item.captureFilterVersion = 1;
+          if (/^\d+ changed files?$/.test(item.title)) item.title = `${item.changeCount} changed ${item.changeCount === 1 ? 'file' : 'files'}`;
+        }
         item.git ||= cleanGit(report.git?.before);
         item.gitEnd = cleanGit(report.git?.after);
       } catch {}
     }
     this.trash = trash; this.nativeImage = nativeImage; this.deleting = false;
   }
-  list() { return this.items.map(x => ({ ...x, image: imageExtensions.has(x.ext) })); }
+  list() { return this.items.filter(x => !x.captureExcludedOnly).map(x => ({ ...x, image: imageExtensions.has(x.ext) })); }
   groupKey(item) { return JSON.stringify([item.projectId || item.project || '', item.consoleKey || item.sessionId || item.source || 'Dock', item.groupId || item.id]); }
-  unreadGroups() { return new Set(this.items.filter(x => !x.seenAt).map(x => this.groupKey(x))).size; }
+  unreadGroups() { return new Set(this.list().filter(x => !x.seenAt).map(x => this.groupKey(x))).size; }
   markSeen(ids) {
     if (!Array.isArray(ids) || ids.length > 1000) throw new Error('Choose results to mark as seen.');
     const seen = new Set(ids), at = Date.now();
@@ -81,14 +87,17 @@ class Results extends EventEmitter {
       summary: short(raw.summary, 1500), project: short(project, 1000), sessionId, consoleKey: consoleKey || sessionId, consoleName: short(consoleName, 64), seenAt: null, reviewId: trusted ? short(raw.reviewId, 80) : null, groupId: short(turnId || raw.groupId, 80), originalFile: raw.file && project ? path.relative(project, raw.file).replaceAll('\\', '/') : null, source: short(raw.source || 'Agent', 60) };
     const dir = this.directory(item.id); fs.mkdirSync(dir); fs.writeFileSync(path.join(dir, 'result' + ext), buffer, { flag: 'wx' });
     item.projectId = projectId;
-    if (item.kind === 'code' && ext === '.json') { try { const report = JSON.parse(buffer.toString('utf8')); if (Array.isArray(report.changes)) item.changeCount = report.changes.length; item.gitEnd = cleanGit(report.git?.after); } catch {} }
+    if (item.kind === 'code' && ext === '.json') { try { const report = JSON.parse(buffer.toString('utf8')); if (Array.isArray(report.changes)) { item.changeCount = captureChanges(report.changes).length; item.captureExcludedOnly = report.changes.length > 0 && item.changeCount === 0; item.captureFilterVersion = 1; if (/^\d+ changed files?$/.test(item.title)) item.title = `${item.changeCount} changed ${item.changeCount === 1 ? 'file' : 'files'}`; } item.gitEnd = cleanGit(report.git?.after); } catch {} }
     if (git) item.git = cleanGit(git);
     this.persist([item, ...this.items]); return item;
   }
   preview(id, thumbnail = false, entry = null) {
     const item = this.items.find(x => x.id === id), file = this.path(id);
     if (item.ext === '.zip') return previewArchive(file, { entry, thumbnail, nativeImage: this.nativeImage });
-    if (item.kind === 'code' && item.ext === '.json' && item.size < 2 * 1024 * 1024) return { diff: JSON.parse(fs.readFileSync(file, 'utf8')) };
+    if (item.kind === 'code' && item.ext === '.json' && item.size < 2 * 1024 * 1024) {
+      const diff = JSON.parse(fs.readFileSync(file, 'utf8'));
+      return { diff: { ...diff, changes: captureChanges(diff.changes) } };
+    }
     if (imageExtensions.has(item.ext) && this.nativeImage) {
       const source = this.nativeImage.createFromPath(file);
       if (source.isEmpty()) throw new Error('This image could not be read.');

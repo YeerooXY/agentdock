@@ -36,11 +36,11 @@ The desktop tests cover drag contents, keyboard launching, right-click naming, 3
 
 Screenshots were inspected for icon weight, alignment, wrapping, spacing, overflow, focus and disabled states. Fixes from this inspection include narrow Inbox wrapping, the narrow Usage grid, WebKit select sizing and icon contrast on primary buttons. Browser fixtures use the real UI with mocked IPC; they do not establish native Mac or phone app support.
 
-Screenshots and machine reports are in [artifacts/console-layout](../artifacts/console-layout/), including `browser-report.json`. `desktop-grid.png`, `drag-preview.png`, `fullscreen.png` and `results.png` show the native Electron checks. Each browser profile has captures for Consoles, sizes, chooser, Results, Inbox, Website review, Usage, API, Keys, Tools, Instructions, Settings and fullscreen terminal. The evidence archive and representative images are saved together in Dock Results under one verification batch.
+Screenshots and machine reports are in [artifacts/console-layout](../artifacts/console-layout/), including `browser-report.json`. `desktop-grid.png`, `drag-preview.png`, `fullscreen.png` and `results.png` show the native Electron checks. Each browser profile has captures for Consoles, sizes, chooser, Results, Inbox, Website review, Usage, API, Keys, Tools, Instructions, Settings and fullscreen terminal. The evidence archive and representative images are saved together in Paddock Results under one verification batch.
 
 To repeat: run the build and desktop tests, then `node scripts/visual-layout-check.cjs`. Playwright Chromium and WebKit must be installed. Generated screenshots are local artifacts and excluded from Git.
 
-Remaining manual coverage: real macOS/iOS font rendering, physical Android/iPhone touch and software keyboards, and a complete assistive-technology audit. These were not claimed as passed. The running user session was left open; quit and reopen Dock when ready to load this source build.
+Remaining manual coverage: real macOS/iOS font rendering, physical Android/iPhone touch and software keyboards, and a complete assistive-technology audit. These were not claimed as passed. The running user session was left open; quit and reopen Paddock when ready to load this source build.
 
 ## Page checklist
 
@@ -66,5 +66,5 @@ Every row below was considered for **Consoles/fullscreen, Results, Inbox, Websit
 | 16 | Business details | Not applicable to these local controls: no seller identity or commercial landing page was introduced. No business facts were invented. |
 | 17 | Children's data | Not applicable to this change: no child-directed flow, age collection or child account service was added. |
 | 18 | Email unsubscribe | Not applicable: Inbox is local app notifications, not a marketing email service. |
-| 19 | Font/image licenses | Checked. The new emblem is original vector geometry in `assets/icon.svg`, reproduced by `scripts/make-icon.ps1`; existing OS fonts are retained. No third-party art was added. |
-| 20 | Data deletion | Checked for affected records. Individual/batch Results deletion and persistent Inbox clearing passed. Results deletion recycles Dock's copy; project originals remain. Provider histories are outside Dock's local deletion controls. |
+| 19 | Font/image licenses | Checked. The new emblem is original vector geometry in `assets/icon.svg`, reproduced by `scripts/make-icon.cjs` (the emblem was replaced by the "Pd" tile on 24 October 2026); existing OS fonts are retained. No third-party art was added. |
+| 20 | Data deletion | Checked for affected records. Individual/batch Results deletion and persistent Inbox clearing passed. Results deletion recycles Paddock's copy; project originals remain. Provider histories are outside Paddock's local deletion controls. |

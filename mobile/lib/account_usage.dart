@@ -79,11 +79,37 @@ class AccountUsageCard extends StatelessWidget {
     final accent = accountColor(provider);
     final now = DateTime.now(), observed = usageDate(account['observedAt']);
     final age = observed == null ? null : now.difference(observed);
-    final stale = age != null && age > const Duration(minutes: 10);
+    final check = account['usageCheck'] is Map
+        ? account['usageCheck'] as Map
+        : const {};
     final windows =
         (account['windows'] is List ? account['windows'] as List : [])
             .whereType<Map>()
             .toList();
+    final stale =
+        observed != null &&
+        (age!.isNegative ||
+            age > const Duration(minutes: 5) ||
+            windows.any(
+              (w) => usageDate(w['resetsAt'])?.isBefore(now) == true,
+            ) ||
+            (check.isNotEmpty &&
+                !['current', 'refreshing'].contains(check['status'])));
+    final status = check['status'] == 'refreshing'
+        ? 'Checking'
+        : observed != null
+        ? stale
+              ? 'Cached'
+              : 'Current'
+        : const {
+                'sign-in': 'Sign in',
+                'not-installed': 'Not installed',
+                'unsupported': 'Unavailable',
+                'limited': 'Try later',
+                'timeout': 'Timed out',
+                'unavailable': 'Unavailable',
+              }[check['status']] ??
+              'Not checked';
     return DockFrame(
       background: Color.alphaBlend(
         accent.withValues(alpha: .04),
@@ -96,9 +122,14 @@ class AccountUsageCard extends StatelessWidget {
           children: [
             AccountProviderHeader(
               provider: provider,
-              name: '${account['name'] ?? account['provider'] ?? 'Account'}',
+              name:
+                  '${account['accountLabel'] ?? account['name'] ?? account['provider'] ?? 'Account'}',
             ),
             const SizedBox(height: 4),
+            Text(
+              status,
+              style: TextStyle(fontSize: 12, color: stale ? pink : muted),
+            ),
             Text(
               observed == null
                   ? 'Last update unknown'
@@ -112,11 +143,19 @@ class AccountUsageCard extends StatelessWidget {
               style: TextStyle(fontSize: 12, color: stale ? pink : muted),
             ),
             if (windows.isEmpty)
-              const Padding(
-                padding: EdgeInsets.only(top: 16),
+              Padding(
+                padding: const EdgeInsets.only(top: 16),
                 child: Text(
-                  'No limits reported for this account.',
-                  style: TextStyle(color: muted),
+                  '${check['message'] ?? 'Refresh to check account usage.'}',
+                  style: const TextStyle(color: muted),
+                ),
+              ),
+            if (windows.isNotEmpty && '${check['message'] ?? ''}'.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 12),
+                child: Text(
+                  '${check['message']}',
+                  style: const TextStyle(color: muted),
                 ),
               ),
             for (final window in windows)
@@ -133,16 +172,22 @@ class AccountUsageCard extends StatelessWidget {
 
 class UsageWindow extends StatelessWidget {
   final Map<dynamic, dynamic> window;
-  final Color accent;
-  const UsageWindow({super.key, required this.window, this.accent = blue});
+  final Color? _accent;
+  Color get accent => _accent ?? blue;
+  const UsageWindow({super.key, required this.window, Color? accent})
+    // ignore: prefer_initializing_formals
+    : _accent = accent;
 
   @override
   Widget build(BuildContext context) {
     final used = usagePercent(window['usedPercent']);
     final remaining = used == null ? null : 100 - used;
-    final label = windowLabel(window['minutes']);
+    final label = '${window['label'] ?? windowLabel(window['minutes'])}';
     final reset = usageDate(window['resetsAt']);
-    final amount = remaining == null
+    final unlimited = window['unlimited'] == true;
+    final amount = unlimited
+        ? 'Unlimited'
+        : remaining == null
         ? 'Unknown'
         : '${percentLabel(remaining)}% left';
     final color = remaining != null && remaining <= 10
@@ -167,25 +212,27 @@ class UsageWindow extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 10),
-        Semantics(
-          label: '$label allowance remaining',
-          value: amount,
-          child: ExcludeSemantics(
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(6),
-              child: Container(
-                width: double.infinity,
-                height: 10,
-                color: const Color(0xff2b2d40),
-                alignment: AlignmentDirectional.centerStart,
-                child: FractionallySizedBox(
-                  key: const ValueKey('usage-bar'),
-                  widthFactor: (remaining ?? 0) / 100,
-                  heightFactor: 1,
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [color.withValues(alpha: .8), color],
+        if (!unlimited)
+          Semantics(
+            label: '$label allowance remaining',
+            value: amount,
+            child: ExcludeSemantics(
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(6),
+                child: Container(
+                  width: double.infinity,
+                  height: 10,
+                  color: const Color(0xff2b2d40),
+                  alignment: AlignmentDirectional.centerStart,
+                  child: FractionallySizedBox(
+                    key: const ValueKey('usage-bar'),
+                    widthFactor: (remaining ?? 0) / 100,
+                    heightFactor: 1,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [color.withValues(alpha: .8), color],
+                        ),
                       ),
                     ),
                   ),
@@ -193,16 +240,18 @@ class UsageWindow extends StatelessWidget {
               ),
             ),
           ),
-        ),
         const SizedBox(height: 8),
-        Text(
-          reset == null
-              ? 'Reset time unavailable'
-              : reset.isBefore(DateTime.now())
-              ? 'Reset time passed · refresh to check'
-              : 'Resets ${localUsageDate(context, reset)}',
-          style: const TextStyle(fontSize: 12, color: muted, height: 1.4),
-        ),
+        if (!unlimited || reset != null)
+          Text(
+            window['resetLabel'] is String
+                ? window['resetLabel'] as String
+                : reset == null
+                ? 'Reset time unavailable'
+                : reset.isBefore(DateTime.now())
+                ? 'Reset time passed · refresh to check'
+                : 'Resets ${localUsageDate(context, reset)}',
+            style: const TextStyle(fontSize: 12, color: muted, height: 1.4),
+          ),
       ],
     );
   }
@@ -222,21 +271,18 @@ class ApiUsageCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'API estimate',
-              style: TextStyle(color: blue, fontSize: 18),
-            ),
+            Text('API estimate', style: TextStyle(color: blue, fontSize: 18)),
             const SizedBox(height: 8),
             Text(
               known ? '\$${cost.toStringAsFixed(4)}' : 'Unknown',
-              style: const TextStyle(
+              style: TextStyle(
                 color: pink,
                 fontSize: 28,
                 fontWeight: FontWeight.w600,
               ),
             ),
             const Text(
-              'Last 30 days · Requests through Dock only',
+              'Last 30 days · Requests through Paddock only',
               style: TextStyle(color: muted, fontSize: 12, height: 1.5),
             ),
             const SizedBox(height: 10),

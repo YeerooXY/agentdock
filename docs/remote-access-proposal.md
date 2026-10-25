@@ -6,7 +6,7 @@ Proposal, 17 October 2026. Remote relay support is not implemented or deployed. 
 
 ## First version
 
-Use direct HTTPS/WSS on the same network. For internet access, both the PC and Android app would make outgoing connections to a small Agent Dock relay. This avoids asking users to install a VPN or change their router. Keep QR pairing and device removal inside Dock.
+Use direct HTTPS/WSS on the same network. For internet access, both the PC and Android app would make outgoing connections to a small Paddock relay. This avoids asking users to install a VPN or change their router. Keep QR pairing and device removal inside Paddock.
 
 The relay should forward an authenticated, bounded tunnel carrying the existing phone-to-PC TLS connection. The phone must still verify the PC certificate pinned during pairing. The relay must never terminate that inner connection or receive model API keys, terminal text or result content in plaintext. Use established TLS implementations; do not create a custom encryption protocol. The relay will still observe connection addresses, timing and traffic volume, which needs to be disclosed with minimal retention.
 
@@ -17,7 +17,7 @@ The first internet version would relay traffic instead of attempting to recreate
 These are rough engineering estimates, not delivery promises:
 
 - Provision one small server, DNS and HTTPS: a few hours once the hosting account/domain are available.
-- A working end-to-end prototype: a few focused development days, reusing Dock's existing session and Results protocol.
+- A working end-to-end prototype: a few focused development days, reusing Paddock's existing session and Results protocol.
 - A pilot suitable for friends: roughly another one to two weeks for reconnection, pairing/revocation, abuse controls, rollout and real-network testing.
 - A broadly available service: additional work on capacity, monitoring, updates, operating costs and support. Nine consoles on one PC do not imply nine simultaneous terminal streams; the phone currently streams one selected console.
 

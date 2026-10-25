@@ -25,7 +25,8 @@ async function until(check) { const end = Date.now() + 15000; while (Date.now() 
   const b = await call('session.create', { provider: 'shell', cwd: profile, name: 'Power check B' });
   assert.equal(await activeCount(), 0);
   async function state(id, state) {
-    atomicJson(path.join(profile, 'events', `${id}.state.json`), { session: id, state, at: Date.now() });
+    const session = (await call('state')).sessions.find(x => x.id === id);
+    atomicJson(path.join(profile, 'events', `${id}.${session.launchId}.state.json`), { session: id, launchId: session.launchId, state, at: Date.now() });
     await until(async () => (await call('state')).sessions.find(x => x.id === id)?.state === state);
   }
   await state(a.id, 'active'); await until(async () => await activeCount() === 1);

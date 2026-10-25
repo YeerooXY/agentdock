@@ -49,7 +49,7 @@ export function consoleDragging({ call, toast, motion }) {
     if (!motion.begin()) { event.preventDefault(); return; }
     const id = handle.dataset.consoleDrag, card = handle.closest('.session-card'), rect = card.getBoundingClientRect();
     drag = { id };
-    event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('application/x-agent-dock-console', id);
+    event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('application/x-paddock-console', id);
     const copy = card.cloneNode(true), scale = Math.min(1, 440 / rect.width, 280 / rect.height);
     copy.querySelectorAll('canvas').forEach((canvas, i) => canvas.getContext('2d')?.drawImage(card.querySelectorAll('canvas')[i], 0, 0));
     copy.querySelectorAll('[id]').forEach(node => {

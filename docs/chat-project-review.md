@@ -4,11 +4,11 @@
 
 ## Behavior
 
-A chat's explicit project ID determines its context. The selected project's ID, name, chat title and launch directory appear in `dock_context`, API instructions and each new console's private `AGENT_DOCK.md`. Duplicate names and shared folders do not merge project context. An unlinked chat gets explicit guidance to clarify an uncertain target. Dock does not infer a project from a message or matching title.
+A chat's explicit project ID determines its context. The selected project's ID, name, chat title and launch directory appear in `dock_context`, API instructions and each new console's private `PADDOCK.md`. Duplicate names and shared folders do not merge project context. An unlinked chat gets explicit guidance to clarify an uncertain target. Paddock does not infer a project from a message or matching title.
 
 Automatic titles follow the selected project's name, including edits and workspace restoration. Custom titles remain unchanged. **Use project name as chat title** in the console's folder menu selects automatic naming. Editing the title selects custom naming; clearing it restores automatic naming. Relinking preserves the process, buffer, working folder and exact saved provider conversation ID. Historical Results attribution remains unchanged.
 
-Live instruction files refresh on project/link/shared-instruction changes. Identical content is not rewritten. A running agent must call `dock_context` or reread its instruction file to consume updates. The app cannot rewrite information already in the model's conversation. These are Dock titles; provider-native history titles are unchanged. The recorded directory is the process's launch directory, not subsequent shell `cd` commands. This binding is context routing, not filesystem isolation.
+Live instruction files refresh on project/link/shared-instruction changes. Identical content is not rewritten. A running agent must call `dock_context` or reread its instruction file to consume updates. The app cannot rewrite information already in the model's conversation. These are Paddock titles; provider-native history titles are unchanged. The recorded directory is the process's launch directory, not subsequent shell `cd` commands. This binding is context routing, not filesystem isolation.
 
 ## Verification
 
@@ -25,7 +25,7 @@ The four profiles are Windows Chromium, Mac Safari via WebKit, Pixel 7 via Chrom
 
 Review found a delayed dialog-close handler could take focus away from the user's next control. It now preserves an already focused visible control, and restores the opener when needed. The final four-profile run passed after that fix. Targeted axe checks cover text contrast, button names, labels and dialog names; this is not a full accessibility certification.
 
-Screenshots and machine-readable records are in `artifacts/project-link/`. Representative screenshots and this report are saved separately in Dock Results. Existing consoles are left running; the updated backend loads after restarting Dock.
+Screenshots and machine-readable records are in `artifacts/project-link/`. Representative screenshots and this report are saved separately in Paddock Results. Existing consoles are left running; the updated backend loads after restarting Paddock.
 
 ## Required page review
 

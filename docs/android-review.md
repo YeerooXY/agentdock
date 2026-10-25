@@ -19,7 +19,7 @@ Reviewed 17 October 2026. Scope: desktop Phone setup, Results code/Markdown prev
 
 Mac, Android-browser and iPhone-browser checks were **emulated on Windows**. They do not establish actual macOS/iOS font rendering or physical touch behavior. The native Android app was separately inspected in the emulator, not inferred from browser screenshots. There is no iPhone app in this release.
 
-Evidence stays under `artifacts/mobile-views`, `artifacts/mobile-device`, and `artifacts/notifications`, and a curated screenshot archive/report is saved in Dock Results. Test pairing credentials and profile data are excluded from that archive and Git.
+Evidence stays under `artifacts/mobile-views`, `artifacts/mobile-device`, and `artifacts/notifications`, and a curated screenshot archive/report is saved in Paddock Results. Test pairing credentials and profile data are excluded from that archive and Git.
 
 ## Shared page checklist
 

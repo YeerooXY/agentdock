@@ -324,7 +324,7 @@ void main() {
     await chooseFile(tester);
     await tester.pumpAndSettle();
     expect(
-      find.text('Update Dock on your PC to choose files here.'),
+      find.text('Update Paddock on your PC to choose files here.'),
       findsOneWidget,
     );
     expect(c.calls.where((x) => x == 'console.files'), isEmpty);

@@ -13,7 +13,7 @@ function taskbarIcon({ projectDir, dataDir, packaged = false, executable = proce
   const hash = createHash('sha256').update(data).digest('hex').slice(0, 12);
   const directory = path.join(dataDir, 'icons');
   fs.mkdirSync(directory, { recursive: true });
-  const icon = path.join(directory, `agent-dock-${hash}.ico`);
+  const icon = path.join(directory, `paddock-${hash}.ico`);
   if (!fs.existsSync(icon)) fs.writeFileSync(icon, data);
   return icon;
 }
@@ -22,7 +22,13 @@ function developmentShortcuts({ shell, desktop, programs, projectDir, icon, exec
   const args = `"${projectDir}"`;
   const updated = [];
   for (const directory of new Set([desktop, programs])) {
-    const shortcut = path.join(directory, 'Agent Dock.lnk');
+    const shortcut = path.join(directory, 'Paddock.lnk');
+    // Rename this checkout's shortcut from the app's former name, Agent Dock.
+    const legacy = path.join(directory, 'Agent Dock.lnk');
+    if (!fs.existsSync(shortcut) && fs.existsSync(legacy)) {
+      const current = shell.readShortcutLink(legacy);
+      if (path.resolve(current.target).toLowerCase() === path.resolve(executable).toLowerCase() && current.args === args) fs.renameSync(legacy, shortcut);
+    }
     const exists = fs.existsSync(shortcut);
     if (!exists && !create) continue;
     if (exists) {
@@ -34,7 +40,7 @@ function developmentShortcuts({ shell, desktop, programs, projectDir, icon, exec
       }
       if (current.appUserModelId === APP_ID && current.icon === icon && current.iconIndex === 0) continue;
     }
-    const details = { target: executable, args, cwd: projectDir, description: 'Open Agent Dock', icon, iconIndex: 0, appUserModelId: APP_ID };
+    const details = { target: executable, args, cwd: projectDir, description: 'Open Paddock', icon, iconIndex: 0, appUserModelId: APP_ID };
     if (!shell.writeShortcutLink(shortcut, exists ? 'update' : 'create', details)) throw new Error(`Could not save shortcut: ${shortcut}`);
     updated.push(shortcut);
   }

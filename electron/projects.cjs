@@ -53,7 +53,7 @@ class Projects extends EventEmitter {
     if (item.plan) {
       const saved = structuredClone(item);
       try { saved.plan.files = { directory: planning.writeFiles(saved), revision: saved.plan.revision, error: '' }; }
-      catch (error) { saved.plan.files = { ...saved.plan.files, error: `Plan saved in Dock. Project files could not be updated: ${error.message}` }; }
+      catch (error) { saved.plan.files = { ...saved.plan.files, error: `Plan saved in Paddock. Project files could not be updated: ${error.message}` }; }
       this.commit(this.items.map(x => x.id === saved.id ? saved : x));
     }
     return this.list().find(x => x.id === item.id);
@@ -62,6 +62,34 @@ class Projects extends EventEmitter {
   review(id, raw) { return this.store(planning.review(this.get(id), raw)); }
   propose(id, raw, agent) { return this.store(planning.propose(this.get(id), raw, agent)); }
   addLater(id, raw) { return this.store(planning.later(this.get(id), raw)); }
+  // Files and images are copied into the project's planning folder so every
+  // agent working in the project can read them, even after the original moves.
+  addReference(id, raw) {
+    const p = this.get(id); if (!p?.plan) throw new Error('Project plan not found.');
+    if (raw?.kind === 'link') return this.store(planning.addReference(p, raw));
+    const source = String(raw?.value || '');
+    let stat; try { stat = fs.statSync(source); } catch { throw new Error('That file could not be found.'); }
+    if (!path.isAbsolute(source) || !stat.isFile()) throw new Error('Choose a file, not a folder.');
+    if (stat.size > 25 * 1024 * 1024) throw new Error('Reference files can be up to 25 MB.');
+    const kind = /\.(png|jpe?g|gif|webp|bmp)$/i.test(source) ? 'image' : 'file';
+    const target = path.join(planning.directory(p, true), 'references');
+    if (fs.existsSync(target) && (fs.lstatSync(target).isSymbolicLink() || !fs.statSync(target).isDirectory())) throw new Error('Project planning folder must be a regular directory.');
+    fs.mkdirSync(target, { recursive: true });
+    const copy = path.join(target, `${randomUUID().slice(0, 8)}-${path.basename(source).replace(/[^\w.() -]+/g, '_').slice(-120)}`);
+    fs.copyFileSync(source, copy, fs.constants.COPYFILE_EXCL);
+    try { return this.store(planning.addReference(p, { revision: raw.revision, kind, value: copy, title: raw.title || path.basename(source) })); }
+    catch (error) { fs.rmSync(copy, { force: true }); throw error; }
+  }
+  removeReference(id, raw) {
+    const p = this.get(id); if (!p?.plan) throw new Error('Project plan not found.');
+    const item = (p.plan.references || []).find(x => x.id === raw?.ref);
+    const next = this.store(planning.removeReference(p, raw));
+    if (item && item.kind !== 'link') {
+      const folder = path.join(planning.directory(p), 'references');
+      if (path.dirname(item.value) === folder) fs.rmSync(item.value, { force: true });
+    }
+    return next;
+  }
   beginPlan(id) {
     const before = this.get(id); if (!before) throw new Error('Project not found.');
     if (before.plan) return before;

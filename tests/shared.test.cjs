@@ -24,6 +24,20 @@ function fixture(t) {
   t.after(async () => { await hub.close(); assert.equal(path.dirname(fs.realpathSync(root)), fs.realpathSync(parent)); fs.rmSync(root, { recursive: true, force: true }); });
   return { root, hub, secret };
 }
+
+test('tool discovery is compact by default and errors keep safe actionable details', async t => {
+  const { hub, secret } = fixture(t);
+  hub.workbench = { tools: () => [{ name: 'dock/example', description: 'Read one example.', inputSchema: { type: 'object', properties: { value: { type: 'string' } }, required: ['value'], additionalProperties: false } }], invoke: async () => ({}) };
+  let result = JSON.parse((await hub.invoke('dock_tools')).content[0].text);
+  assert.equal(result[0].inputSchema, undefined); assert.deepEqual(result[0].required, ['value']);
+  result = JSON.parse((await hub.invoke('dock_tools', { tool: 'dock/example' })).content[0].text);
+  assert.equal(result[0].inputSchema.properties.value.type, 'string');
+  await hub.start(); const grant = hub.grant('fixture');
+  const response = await fetch(grant.PADDOCK_BRIDGE_URL, { method: 'POST', headers: { Authorization: 'Bearer ' + grant.PADDOCK_BRIDGE_TOKEN }, body: JSON.stringify({ name: 'dock_call', arguments: { tool: 'dock/example', arguments: {} } }) });
+  const body = await response.json(); assert.equal(body.isError, true); assert.match(body.content[0].text, /required property 'value'/);
+  const safe = hub.safeError(new Error(`Connection refused ${secret} https://example.invalid/?token=private Bearer abc password=hidden`));
+  assert.match(safe, /Connection refused/); assert.doesNotMatch(safe, /TEST_ONLY_SECRET_VALUE|token=private|Bearer abc|password=hidden/);
+});
 test('arbitrary vault IDs and multiline credentials preserve exact values; snapshots omit secrets', t => {
   const { root } = fixture(t);
   const vault = new Vault(path.join(root, 'vault.json'), { isEncryptionAvailable: () => true, encryptString: x => Buffer.from(x), decryptString: x => x.toString() });
@@ -49,16 +63,16 @@ test('MCP tool discovery, schema checking, bound credentials and invocation use 
 test('private bridge requires its session token, rejects browser origins, and revokes ended sessions', async t => {
   const { hub } = fixture(t); await hub.start();
   const env = hub.grant('session');
-  const send = headers => fetch(env.AGENT_DOCK_BRIDGE_URL, { method: 'POST', headers, body: JSON.stringify({ name: 'dock_context' }) });
+  const send = headers => fetch(env.PADDOCK_BRIDGE_URL, { method: 'POST', headers, body: JSON.stringify({ name: 'dock_context' }) });
   assert.equal((await send({})).status, 403);
-  assert.equal((await send({ Authorization: `Bearer ${env.AGENT_DOCK_BRIDGE_TOKEN}`, Origin: 'https://example.com' })).status, 403);
+  assert.equal((await send({ Authorization: `Bearer ${env.PADDOCK_BRIDGE_TOKEN}`, Origin: 'https://example.com' })).status, 403);
   const client = new Client({ name: 'bridge-test', version: '1' });
   await client.connect(new StdioClientTransport({ command: process.execPath, args: [path.resolve(__dirname, '../electron/agent-tools.cjs')], env, stderr: 'pipe' }));
   t.after(() => client.close());
   assert.equal((await client.listTools()).tools.length, 3);
   hub.instructions('Use short sentences.');
   assert.match((await client.callTool({ name: 'dock_context', arguments: {} })).content[0].text, /Use short sentences/);
-  hub.revoke('session'); assert.equal((await send({ Authorization: `Bearer ${env.AGENT_DOCK_BRIDGE_TOKEN}` })).status, 403);
+  hub.revoke('session'); assert.equal((await send({ Authorization: `Bearer ${env.PADDOCK_BRIDGE_TOKEN}` })).status, 403);
 });
 test('HTTP tools bind credentials only to their configured endpoint and reject redirects', async t => {
   const { hub, secret } = fixture(t); let seen;
@@ -74,13 +88,13 @@ test('HTTP tools bind credentials only to their configured endpoint and reject r
   assert.throws(() => validateProfile({ id: 'test', protocol: 'chat', url: 'https://key@example.com' }), /credentials/);
 });
 for (const protocol of ['responses', 'anthropic', 'chat']) test(`${protocol} API receives shared instructions, executes a tool and records every billed step`, async t => {
-  const { hub } = fixture(t); hub.instructions('Reply briefly.'); let count = 0; const saved = [];
+  const { hub } = fixture(t); hub.instructions('Reply briefly.'); hub.setGuides(['web-design']); let count = 0; const saved = [];
   const result = await runApi({ provider: 'custom', model: 'test', prompt: 'PRIVATE_PROMPT', maxOutput: 100 }, 'PRIVATE_KEY', { input: 2, output: 4 }, { profile: { id: 'custom', protocol, url: 'https://example.com/model' }, hub, onEntry: entry => saved.push(entry), fetcher: async (_, options) => {
     const body = JSON.parse(options.body); count++;
     assert.match(protocol === 'chat' ? body.messages[0].content : protocol === 'anthropic' ? body.system : body.instructions, /Reply briefly/);
     assert.match(protocol === 'chat' ? body.messages[0].content : protocol === 'anthropic' ? body.system : body.instructions, /Web design and page review/);
     assert.equal(body.tools.length, 3);
-    if (count === 2) assert.match(JSON.stringify(body), /Agent Dock shared instructions/);
+    if (count === 2) assert.match(JSON.stringify(body), /Paddock shared instructions/);
     const usage = protocol === 'chat' ? { prompt_tokens: 20, completion_tokens: 10 } : { input_tokens: 20, output_tokens: 10 };
     const data = protocol === 'responses' ? { usage, status: 'completed', output: count === 1 ? [{ type: 'function_call', name: 'dock_context', call_id: 'call1', arguments: '{}' }] : [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'Done' }] }] } : protocol === 'anthropic' ? { usage, content: count === 1 ? [{ type: 'tool_use', id: 'call1', name: 'dock_context', input: {} }] : [{ type: 'text', text: 'Done' }] } : { usage, choices: [{ finish_reason: count === 1 ? 'tool_calls' : 'stop', message: count === 1 ? { role: 'assistant', tool_calls: [{ id: 'call1', type: 'function', function: { name: 'dock_context', arguments: '{}' } }] } : { role: 'assistant', content: 'Done' } }] };
     return { ok: true, json: async () => data };
@@ -93,17 +107,17 @@ test('known CLI adapters receive the same context and MCP bridge without vault c
   await sessions.create({ provider: 'codex', cwd: root, permissions: 'unrestricted' });
   await sessions.create({ provider: 'claude', cwd: root, permissions: 'unrestricted' });
   assert.ok(launched[0].args.some(x => x.startsWith('developer_instructions=')));
-  assert.ok(launched[0].args.some(x => x.startsWith('mcp_servers.agent_dock.command=')));
+  assert.ok(launched[0].args.some(x => x.startsWith('mcp_servers.paddock.command=')));
   assert.equal(launched[1].executable, 'wsl.exe'); assert.ok(launched[1].args.includes('--append-system-prompt-file')); assert.ok(launched[1].args.includes('--mcp-config')); assert.ok(launched[1].args.includes('--dangerously-skip-permissions'));
   assert.ok(!JSON.stringify(launched).includes(secret));
-  assert.ok(!JSON.stringify(launched.map(x => x.args)).includes(launched[0].options.env.AGENT_DOCK_BRIDGE_TOKEN));
+  assert.ok(!JSON.stringify(launched.map(x => x.args)).includes(launched[0].options.env.PADDOCK_BRIDGE_TOKEN));
 });
 test('installed WSL path can reach the Windows shared MCP bridge without a model request', { timeout: 30000 }, async t => {
   const claude = findClaude(); if (claude?.kind !== 'wsl') { t.skip('No WSL Claude installation'); return; }
   const { hub } = fixture(t); await hub.start();
   const client = new Client({ name: 'wsl-test', version: '1' }); t.after(() => client.close());
-  await client.connect(new StdioClientTransport({ command: 'wsl.exe', args: ['-d', claude.distro, '--exec', wslPath(process.execPath), path.resolve(__dirname, '../electron/agent-tools.cjs')], env: { ...hub.grant('wsl-session'), WSLENV: 'AGENT_DOCK_BRIDGE_URL:AGENT_DOCK_BRIDGE_TOKEN' }, stderr: 'pipe' }));
-  const result = await client.callTool({ name: 'dock_context', arguments: {} }); assert.equal(result.isError, undefined); assert.match(result.content[0].text, /Agent Dock/);
+  await client.connect(new StdioClientTransport({ command: 'wsl.exe', args: ['-d', claude.distro, '--exec', wslPath(process.execPath), path.resolve(__dirname, '../electron/agent-tools.cjs')], env: { ...hub.grant('wsl-session'), WSLENV: 'PADDOCK_BRIDGE_URL:PADDOCK_BRIDGE_TOKEN' }, stderr: 'pipe' }));
+  const result = await client.callTool({ name: 'dock_context', arguments: {} }); assert.equal(result.isError, undefined); assert.match(result.content[0].text, /Paddock/);
 });
 for (const type of ['http', 'sse']) test(`${type} MCP authenticates discovery and calls against a real local server`, async t => {
   const { hub, secret } = fixture(t);

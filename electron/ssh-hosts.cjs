@@ -154,7 +154,7 @@ class SshHosts {
     const tmux = 'agentdock_' + consoleKey.replaceAll('-', '');
     const command = remoteCommand(provider, model);
     // The command is used only when the tmux session is new. -A reattaches the
-    // existing process, including its conversation, after Dock/SSH disconnects.
+    // existing process, including its conversation, after Paddock/SSH disconnects.
     const script = `set -eu; command -v tmux >/dev/null || { printf 'Install tmux on this Linux host.\\n'; exit 1; }; cd -- ${quote(cwd)}; exec tmux new-session -A -s ${quote(tmux)} ${quote(command)}`;
     return { executable: this.executable(), args: [...this.args(item, true), 'sh -lc ' + quote(script)],
       remote: { hostId: id, name: item.name, folder: cwd, tmux }, provider };

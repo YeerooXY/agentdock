@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="900" viewBox="0 0 1200 900">
+<rect width="1200" height="900" fill="white"/>
+<style>text{font-family:Arial,sans-serif;fill:#172033;font-size:18px}.title{font-size:25px;font-weight:700}.label{font-size:17px}.note{font-size:16px;fill:#475569}</style>
+<text x="24" y="38" class="title">Introduction with a product demonstration</text>
+<rect x="24" y="62" width="730" height="45" rx="4" fill="#F1F5F9" stroke="#94A3B8"/>
+<text x="39" y="88" style="font-size:18px">Identity and navigation</text>
+<rect x="24" y="121" width="340" height="75" rx="4" fill="#F1F5F9" stroke="#94A3B8"/>
+<text x="39" y="147" style="font-size:18px">Product and specific task</text>
+<text x="39" y="172" style="font-size:18px">Useful explanation</text>
+<rect x="24" y="210" width="190" height="48" rx="4" fill="#DBEAFE" stroke="#1D4ED8"/>
+<text x="39" y="236" style="font-size:18px">Primary action</text>
+<rect x="384" y="121" width="370" height="172" rx="4" fill="#F1F5F9" stroke="#94A3B8"/>
+<text x="399" y="147" style="font-size:18px">Product demonstration</text>
+<text x="399" y="172" style="font-size:18px">Legible interface or output</text>
+<rect x="24" y="310" width="730" height="53" rx="4" fill="#F1F5F9" stroke="#94A3B8"/>
+<text x="39" y="336" style="font-size:18px">Evidence and capability detail continue below</text>
+<rect x="824" y="62" width="350" height="45" rx="4" fill="#F1F5F9" stroke="#94A3B8"/>
+<text x="839" y="88" style="font-size:18px">Identity and navigation</text>
+<rect x="824" y="121" width="350" height="75" rx="4" fill="#F1F5F9" stroke="#94A3B8"/>
+<text x="839" y="147" style="font-size:18px">Product and specific task</text>
+<text x="839" y="172" style="font-size:18px">Useful explanation</text>
+<rect x="824" y="210" width="350" height="48" rx="4" fill="#DBEAFE" stroke="#1D4ED8"/>
+<text x="839" y="236" style="font-size:18px">Primary action</text>
+<rect x="824" y="272" width="350" height="91" rx="4" fill="#F1F5F9" stroke="#94A3B8"/>
+<text x="839" y="298" style="font-size:18px">Demonstration adapted</text>
+<text x="839" y="323" style="font-size:18px">to narrow space</text>
+<text x="24" y="395" class="note">Desktop: explanation and evidence can share a row.</text>
+<text x="824" y="395" class="note">Phone: choose a useful reading order.</text>
+<text x="24" y="454" class="title">Product evaluation and purchase</text>
+<rect x="24" y="478" width="730" height="45" rx="4" fill="#F1F5F9" stroke="#94A3B8"/>
+<text x="39" y="504" style="font-size:18px">Identity, search and shopping navigation</text>
+<rect x="24" y="537" width="350" height="199" rx="4" fill="#F1F5F9" stroke="#94A3B8"/>
+<text x="39" y="563" style="font-size:18px">Gallery</text>
+<text x="39" y="588" style="font-size:18px">Detail and scale views</text>
+<rect x="394" y="537" width="360" height="132" rx="4" fill="#F1F5F9" stroke="#94A3B8"/>
+<text x="409" y="563" style="font-size:18px">Product, variant and price</text>
+<text x="409" y="588" style="font-size:18px">Availability and delivery</text>
+<text x="409" y="613" style="font-size:18px">Quantity and configuration</text>
+<rect x="394" y="683" width="360" height="53" rx="4" fill="#DBEAFE" stroke="#1D4ED8"/>
+<text x="409" y="709" style="font-size:18px">Add configured item</text>
+<rect x="24" y="750" width="730" height="56" rx="4" fill="#F1F5F9" stroke="#94A3B8"/>
+<text x="39" y="776" style="font-size:18px">Specifications, suitability, returns and support</text>
+<rect x="824" y="478" width="350" height="45" rx="4" fill="#F1F5F9" stroke="#94A3B8"/>
+<text x="839" y="504" style="font-size:18px">Identity and search</text>
+<rect x="824" y="537" width="350" height="73" rx="4" fill="#F1F5F9" stroke="#94A3B8"/>
+<text x="839" y="563" style="font-size:18px">Product identity and image</text>
+<rect x="824" y="624" width="350" height="117" rx="4" fill="#F1F5F9" stroke="#94A3B8"/>
+<text x="839" y="650" style="font-size:18px">Selected option and price</text>
+<text x="839" y="675" style="font-size:18px">Delivery and configuration</text>
+<rect x="824" y="755" width="350" height="51" rx="4" fill="#DBEAFE" stroke="#1D4ED8"/>
+<text x="839" y="781" style="font-size:18px">Add configured item</text>
+<text x="24" y="848" class="note">Original structure diagrams. They describe relationships, not pixel specifications.</text>
+<text x="24" y="876" class="note">Image height, action position and lower-page detail depend on the real decision and content.</text>
+</svg>

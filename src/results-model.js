@@ -12,7 +12,13 @@ export function resultGroups(items) {
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(item);
   }
-  return [...groups.values()];
+  return [...groups.values()].sort((a, b) => Math.max(...b.map(x => x.at || 0)) - Math.max(...a.map(x => x.at || 0)));
+}
+
+// Display names and launch folders are not chat identities.
+export const resultChatKey = item => item.consoleKey || item.sessionId || JSON.stringify(['legacy', projectKey(item), item.source || 'Dock']);
+export function resultTurnTitle(items) {
+  return items.find(x => x.kind !== 'code' && !x.image && x.ext !== '.json')?.title || 'Completed prompt';
 }
 
 export const resultRevision = item => item?.gitEnd || item?.git || null;

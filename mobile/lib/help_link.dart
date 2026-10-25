@@ -20,7 +20,7 @@ class HelpLink extends StatelessWidget {
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Open the setup guide from Agent Dock on your PC.'),
+              content: Text('Open the setup guide from Paddock on your PC.'),
             ),
           );
         }

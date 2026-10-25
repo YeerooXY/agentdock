@@ -4,9 +4,9 @@ Reviewed 17 October 2026. Scope: the new **Settings → Desktop → Keep PC awak
 
 ## Behavior
 
-The switch defaults on for new and existing profiles. One `prevent-app-suspension` request covers all living, non-dismissed consoles marked `active` and any running Dock API request. It remains active in the HUD, minimized window and tray. It is released when the last task finishes, waits for input, errors or exits; when the setting is disabled; and during app shutdown. Re-enabling follows the current activity immediately. No Windows power-plan setting is changed, and the display may turn off.
+The switch defaults on for new and existing profiles. One `prevent-app-suspension` request covers all living, non-dismissed consoles marked `active` and any running Paddock API request. It remains active in the HUD, minimized window and tray. It is released when the last task finishes, waits for input, errors or exits; when the setting is disabled; and during app shutdown. Re-enabling follows the current activity immediately. No Windows power-plan setting is changed, and the display may turn off.
 
-Detection follows Dock's agent status, not CPU usage or whether a terminal process merely exists. Plain shells/custom commands without status reporting are not automatically classified as working. Agents must report completion to leave the Thinking state. An idle PC can still sleep and become unavailable to the phone.
+Detection follows Paddock's agent status, not CPU usage or whether a terminal process merely exists. Plain shells/custom commands without status reporting are not automatically classified as working. Agents must report completion to leave the Thinking state. An idle PC can still sleep and become unavailable to the phone.
 
 [Electron documents the request type and display behavior](https://www.electronjs.org/docs/latest/api/power-save-blocker). [Windows power-request limits](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-powersetrequest) still apply: explicit Sleep/lid actions override ordinary requests, and Modern Standby on battery can limit them. This is not a guarantee against every OS power transition.
 
@@ -20,7 +20,7 @@ Detection follows Dock's agent status, not CPU usage or whether a terminal proce
 
 Mac, Android-browser and iPhone-browser coverage was **emulated on Windows**. It does not establish physical-device behavior or actual macOS/iOS font rendering. This changes the Windows desktop setting; no native phone screen was changed. A real suspend/resume, lid or battery-drain experiment was not performed on the user's PC.
 
-Evidence is in `artifacts/power-check` and the matching Dock Results batch. Screenshots and test output exclude temporary profile data.
+Evidence is in `artifacts/power-check` and the matching Paddock Results batch. Screenshots and test output exclude temporary profile data.
 
 ## Shared page review
 

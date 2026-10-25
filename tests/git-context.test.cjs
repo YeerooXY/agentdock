@@ -18,8 +18,8 @@ function fixture(t) {
   git('config', 'user.name', 'Dock tests'); git('config', 'user.email', 'test@example.invalid');
   const write = text => fs.writeFileSync(path.join(project, 'app.txt'), text);
   const commit = () => { git('add', 'app.txt'); git('-c', 'core.hooksPath=/dev/null', 'commit', '-qm', 'fixture'); return git('rev-parse', 'HEAD'); };
-  const results = new Results(store), session = { id: 'console', cwd: project, name: 'Agent Dock', consoleKey: 'slot', alive: true };
-  const turns = new Turns(results, { getSession: () => session });
+  const results = new Results(store), session = { id: 'console', cwd: project, name: 'Paddock', consoleKey: 'slot', alive: true };
+  const turns = new Turns(results, { enabled: true, getSession: () => session });
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   return { root, project, store, git, write, commit, results, session, turns };
 }

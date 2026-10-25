@@ -28,7 +28,7 @@ const encryption = { isEncryptionAvailable: () => true, encryptString: value => 
 const active = [];
 function launch() {
   const env = { ...process.env, CODEX_HOME: home };
-  for (const key of ['OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'AGENT_DOCK_BRIDGE_URL', 'AGENT_DOCK_BRIDGE_TOKEN', 'ELECTRON_RUN_AS_NODE']) delete env[key];
+  for (const key of ['OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'PADDOCK_BRIDGE_URL', 'PADDOCK_BRIDGE_TOKEN', 'ELECTRON_RUN_AS_NODE']) delete env[key];
   const sessions = new Sessions(root, {
     nativeCodex, findProgram: () => process.execPath,
     prepareCodexSession: (exe, options) => prepareCodexSession(exe, { ...options, env: { ...options.env, ...env } }),

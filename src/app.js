@@ -1,3 +1,4 @@
+import { codePanelUI } from './code-panel-ui.js';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
@@ -12,6 +13,10 @@ import { windowDragging } from './window-drag.js';
 import { consoleDragging } from './console-drag.js';
 import { consoleLayoutUI } from './console-layout-ui.js';
 import { consoleMotion } from './console-motion.js';
+import { closeConsoleSnapshot, openConsoleEffect, playConsoleStateEffect } from './console-effects.js';
+import { consoleAppearance, frameStyles } from './console-appearance.js';
+import { terminalTheme, consoleTheme, frameStyles as themeChoices, lightingStyles, starLevels } from './console-themes.js';
+import { mountSky, refreshSky, setSkyLevel } from './console-sky.js';
 import { terminalOutput } from './terminal-output.js';
 import { workbenchUI } from './workbench-ui.js';
 import { toolFeatures, syncIntegrationJobs } from './tool-features.js';
@@ -28,6 +33,12 @@ import { shellPicker } from './shell-picker.js';
 import { projectUsage } from './project-usage.js';
 import { projectDot } from './project-colors.js';
 import './account-usage.css';
+import './usage-page.css';
+import './console-trim.css';
+import './console-themes.css';
+import { isSettingsPage, settingsShell } from './settings-ui.js';
+import { fileLinks, filePreviewDialog } from './file-links.js';
+import './theme-system.css';
 
 const $ = selector => document.querySelector(selector);
 const escape = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
@@ -54,22 +65,33 @@ const icons = {
 };
 let iconSequence = 0;
 const icon = (name, cls = '') => { const id = `accent-icon-${++iconSequence}`; return `<svg class="icon ${cls}" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="url(#${id})" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><defs><linearGradient id="${id}" x1="0" y1="0" x2="24" y2="24" gradientUnits="userSpaceOnUse"><stop class="icon-blue"/><stop offset="1" class="icon-pink"/></linearGradient></defs>${icons[name] || icons.terminal}</svg>`; };
+// The "Pd" tile. Its edge and letters follow the current theme's accents.
+const pdMark = (cls = '') => { const id = `pd-mark-${++iconSequence}`; return `<svg class="pd-mark ${cls}" viewBox="0 0 256 256" aria-hidden="true"><defs><linearGradient id="${id}" x1="20" y1="20" x2="236" y2="236" gradientUnits="userSpaceOnUse"><stop class="icon-blue"/><stop offset="1" class="icon-pink"/></linearGradient></defs><rect x="10" y="10" width="236" height="236" rx="50" fill="#0e0c1c"/><rect x="17" y="17" width="222" height="222" rx="44" fill="none" stroke="url(#${id})" stroke-width="10"/><g fill="none" stroke="url(#${id})" stroke-width="20"><path d="M70 188V76h34a29 29 0 0 1 0 58H70" stroke-linejoin="round"/><circle cx="158" cy="159" r="25"/><path d="M183 72v118"/></g></svg>`; };
 const providerName = value => ({ codex: 'Codex', claude: 'Claude Code', shell: 'PowerShell', custom: 'Custom', openai: 'OpenAI', anthropic: 'Anthropic' })[value] || state?.agents?.find(x => x.id === value)?.name || value;
 const consoleProviders = () => [...(state?.agents?.length ? state.agents.map(x => x.id) : ['codex', 'claude']), 'shell', 'custom'];
 const number = value => Number.isFinite(value) ? Intl.NumberFormat('en', { notation: value >= 10000 ? 'compact' : 'standard', maximumFractionDigits: 1 }).format(value) : '—';
-const money = value => value == null ? 'Not priced' : '$' + value.toFixed(value && value < 0.01 ? 4 : 2);
 const labels = { open: 'Open', active: 'Thinking', ready: 'Ready', attention: 'Needs attention', error: 'Error', ended: 'Ended', recent: 'Recent', interrupted: 'Interrupted' };
-let state, page = 'consoles', selectedId = null, selectedApi = 'openai', apiBusy = false, outputText = '', toastTimer;
+let state, page = 'consoles', selectedId = null, expandedId = null, expansionRequest = 0, expansionModeIntent = null, stateReceiveVersion = 0, renderedExpansion = null, renderedConsoleVisibility = false, selectedApi = 'openai', apiBusy = false, outputText = '', toastTimer;
+let accountProfileDraft = { provider: 'codex', label: '', error: '' }, accountProfileFocus = null, accountProfileBusy = false, accountProfileCreated = null, accountProfileResetOnRender = false;
+let accountRenameOpener = null, accountRenameBusy = false;
 let apiDraft = { model: '', prompt: '', maxOutput: '1024', projectId: '' }, responseMeta = 'TEXT OUTPUT', responseError = '';
 const terminals = new Map();
+const pendingConsoleOpenings = new Set();
 const gridSize = () => state?.grid || { columns: 3, rows: 3 };
+const allPanels = () => [...(state?.sessions || []), ...(state?.codePanels || [])];
 const gridCapacity = () => gridSize().columns * gridSize().rows;
 let openingConsole = false;
-let launchGesture, chooserOpener, vim, setup, workbench, layoutMotion, phone, projects, projectChats, imageGenerator, updates, usageView;
+let codePanels, launchGesture, chooserOpener, vim, setup, workbench, layoutMotion, phone, projects, projectChats, imageGenerator, updates, usageView;
 const nameSaves = new Map();
 const launchHint = 'title="Click to open. Hold or right-click to choose." aria-haspopup="dialog"';
-let renderedView = null, viewAnimation, windowMoving = false;
+let renderedView = null, viewAnimation, windowMoving = false, pageBeforeSettings = 'consoles';
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
+document.addEventListener('visibilitychange', () => { document.body.dataset.visualPaused = String(document.hidden); });
+reducedMotion.addEventListener('change', event => {
+  if (event.matches) document.querySelectorAll('.launch-burst,.console-exit').forEach(layer => layer.remove());
+  const replay = document.querySelector('[data-preview-opening]');
+  if (replay) replay.disabled = event.matches || state?.settings.launchEffect === false;
+});
 async function call(method, payload) {
   const result = await window.dock.call(method, payload);
   if (!result.ok) throw new Error(result.error);
@@ -93,7 +115,7 @@ function resetTime(at) {
 }
 function windowLabel(minutes) { return minutes === 10080 ? 'Weekly' : minutes === 300 ? '5-hour' : minutes == null ? 'Usage window' : minutes >= 60 && minutes % 60 === 0 ? `${minutes / 60}-hour` : `${minutes} min`; }
 function badge(status) { return `<span class="status ${escape(status)}"><span class="dot"></span>${escape(labels[status] || status)}</span>`; }
-const isReady = session => session.alive && ['ready', 'attention'].includes(session.state);
+const isReady = session => !session.dismissed && session.alive && ['ready', 'attention'].includes(session.state);
 const shellMark = provider => `<span class="shell-mark" data-shell="${escape(provider)}" role="img" aria-label="${escape(providerName(provider))}" title="${escape(providerName(provider))}">${['shell', 'custom'].includes(provider) ? icon('terminal') : accountMark(provider)}</span>`;
 const readyIcon = session => `<span class="notification-icon">${shellMark(session.provider)}<span class="notification-badge console-ready-badge" ${isReady(session) ? '' : 'hidden'} aria-label="Ready for you">1</span></span>`;
 function resizeHandles(slot) {
@@ -103,29 +125,26 @@ function resizeHandles(slot) {
 $('#app').innerHTML = `
 <div id="dashboard" class="app-shell">
   <aside id="sidebar" class="sidebar">
-    <button class="brand" data-page="consoles" aria-label="Agent Dock home"><span class="brand-mark">${icon('dock')}</span><span>agent<span class="brand-light">dock</span></span></button>
+    <button class="brand" data-page="consoles" aria-label="Paddock home"><span class="brand-mark">${pdMark()}</span><span>pad<span class="brand-light">dock</span></span></button>
     <nav aria-label="Main navigation">
 
       <button data-page="consoles"><span class="notification-icon">${icon('terminal')}<span id="ready-count" class="notification-badge" hidden></span></span>Consoles <span id="nav-count">0</span></button>
       <button data-page="projects">${icon('folder')}Projects</button>
       <button data-page="results"><span class="notification-icon">${icon('grid')}<span id="results-count" class="notification-badge" hidden></span></span>Results</button>
       <button data-page="usage">${icon('chart')}Usage</button>
-      <button data-page="api">${icon('api')}API</button>
-      <button data-page="vault">${icon('lock')}Keys</button>
-      <button data-page="tools">${icon('api')}Tools</button>
-      <button data-page="instructions">${icon('folder')}Instructions</button>
+      <button class="console-api-link" data-page="api">${icon('api')}API requests</button>
     </nav>
+    <span class="sidebar-edge" aria-hidden="true"></span>
     <div class="sidebar-bottom"><button data-page="settings">${icon('settings')}Settings</button></div>
   </aside>
   <div class="workspace">
-    <header class="titlebar"><button id="sidebar-toggle" class="icon-button" data-action="sidebar" aria-label="Hide sidebar" title="Hide sidebar" aria-controls="sidebar" aria-expanded="true">${icon('menu')}</button><button id="launch-folder" class="launch-folder" data-action="launch-folder" aria-label="Choose launch folder">${icon('folder')}<span></span></button><div class="window-drag-handle" data-window-drag title="Drag to move. Double-click for fullscreen." aria-label="Move window"><span></span></div><div class="window-actions"><button data-action="hud" title="Collapse to corner HUD" aria-label="Collapse to corner HUD">${icon('corner')}</button><button data-action="minimize" aria-label="Minimize">${icon('minus')}</button><button data-action="fullscreen" aria-label="Fullscreen" title="Fullscreen">${icon('expand')}</button><button data-action="tray" aria-label="Hide in system tray" title="Hide in system tray">${icon('close')}</button></div></header>
+    <header class="titlebar"><button id="sidebar-toggle" class="icon-button" data-action="sidebar" aria-label="Hide sidebar" title="Hide sidebar" aria-controls="sidebar" aria-expanded="true">${icon('menu')}</button><button id="launch-folder" class="launch-folder" data-action="launch-folder" aria-label="Choose launch folder">${icon('folder')}<span></span></button><button type="button" class="subtle code-open" data-code-action="create" title="Open a read-only code panel">${icon('api')}Code</button><div class="window-drag-handle" data-window-drag title="Drag to move. Double-click for fullscreen." aria-hidden="true"><span></span></div><div class="window-actions"><button data-action="hud" title="Collapse to corner HUD" aria-label="Collapse to corner HUD">${icon('corner')}</button><button data-action="minimize" aria-label="Minimize">${icon('minus')}</button><button data-action="fullscreen" aria-label="Fullscreen" title="Fullscreen">${icon('expand')}</button><button data-action="tray" aria-label="Hide in system tray" title="Hide in system tray">${icon('close')}</button></div></header>
     <main id="content" tabindex="-1"></main>
     <section id="consoles-page" class="console-grid-view" hidden aria-label="Consoles"><div class="consoles-only"><div class="session-grid"></div></div><button id="grid-add" class="primary" data-action="new" aria-label="Add console" title="Add console · Ctrl Shift N" hidden>${icon('plus')}</button></section>
-    <section id="terminal-page" hidden><div class="terminal-toolbar"><div id="terminal-heading"></div><div class="toolbar-actions"><button data-page="consoles" class="subtle" aria-label="Back to consoles">${icon('grid')}Consoles</button><button data-action="end-session" class="subtle danger">End console</button></div></div><div id="terminal-tabs" role="tablist" aria-label="Open consoles"></div><div id="terminal-host"></div></section>
     <div id="terminal-cache" hidden></div>
   </div>
 </div>
-<section id="hud" hidden aria-label="Agent Dock desktop HUD"></section>
+<section id="hud" hidden aria-label="Paddock desktop HUD"></section>
 <dialog id="console-chooser" aria-labelledby="console-chooser-title" aria-describedby="console-chooser-hint">
   <form id="one-off-console-form">
     <div class="dialog-heading"><div><h2 id="console-chooser-title">Open console</h2><p id="console-chooser-hint">Just for this console.</p></div><button type="button" class="icon-button" data-action="cancel-console" aria-label="Close chooser">${icon('close')}</button></div>
@@ -138,10 +157,32 @@ $('#app').innerHTML = `
     <details class="console-options"><summary>Options</summary><label id="one-off-permissions">Permissions<select name="permissions"><option value="unrestricted">Unrestricted</option><option value="default">Agent defaults</option></select></label></details>
     <p class="form-error" role="alert"></p><div class="dialog-footer"><button type="button" class="secondary" data-action="cancel-console">Cancel</button><button type="submit" class="primary">Open console</button></div>
   </form>
+</dialog>
+<dialog id="account-rename-dialog" aria-labelledby="account-rename-title">
+  <form id="account-rename-form">
+    <div class="dialog-heading"><div><h2 id="account-rename-title">Rename account</h2></div><button type="button" class="icon-button" data-action="cancel-account-rename" aria-label="Close rename dialog">${icon('close')}</button></div>
+    <label>Account name<input name="label" required maxlength="64" autocomplete="off"></label>
+    <p class="form-error" role="alert"></p>
+    <div class="dialog-footer"><button type="button" class="secondary" data-action="cancel-account-rename">Cancel</button><button type="submit" class="primary">Save name</button></div>
+  </form>
 </dialog>`;
 const oneOffShellPicker = shellPicker($('#one-off-console-form [name=provider]'), shellMark);
+$('#account-rename-dialog').addEventListener('close', () => {
+  const dialog = $('#account-rename-dialog'), active = document.activeElement;
+  const id = $('#account-rename-form').dataset.id;
+  const fallback = id ? document.querySelector(`[data-action="account-rename"][data-id="${CSS.escape(id)}"]`) : null;
+  const target = accountRenameOpener?.isConnected ? accountRenameOpener : fallback;
+  const focusReturned = active === accountRenameOpener || active === fallback;
+  const focusVacant = active === dialog || dialog.contains(active) || active === document.body || active === document.documentElement;
+  if (focusReturned || focusVacant) target?.focus({ preventScroll: true });
+  accountRenameOpener = null;
+});
 $('#sidebar-toggle').insertAdjacentHTML('afterend', `<button id="results-shortcut" class="results-shortcut" data-page="results" hidden title="New results"><span class="notification-icon">${icon('folder')}<span class="notification-badge"></span></span></button>`);
 $('#launch-folder').insertAdjacentHTML('afterend', '<button class="vim-mode" data-action="vim-normal" hidden></button>');
+$('#launch-folder').insertAdjacentHTML('afterend', '<button id="screenshot-spot" class="screenshot-spot" data-action="paste-screenshot" draggable="true" hidden><img alt="" width="48" height="27"><span>Paste screenshot</span></button>');
+const openFile = filePreviewDialog({ call, toast, icon });
+const appearance = consoleAppearance({ call, getState: () => state });
+$('#screenshot-spot').addEventListener('dragstart', e => { e.dataTransfer.setData(SCREENSHOT_DRAG, '1'); e.dataTransfer.effectAllowed = 'copy'; });
 document.querySelectorAll('.sidebar [data-page]').forEach(button => {
   if (!button.hasAttribute('aria-label')) button.setAttribute('aria-label', button.textContent.replace(/\d+$/, '').trim());
 });
@@ -149,25 +190,65 @@ document.querySelectorAll('.sidebar [data-page]').forEach(button => {
 function pageHeading(eyebrow, title, description, action = '') {
   return `<div class="page-heading"><div><div class="eyebrow">${eyebrow}</div><h1>${title}</h1><p>${description}</p></div>${action}</div>`;
 }
-function quotaCard(provider, detailed = false) {
-  const values = state.limits.filter(x => x.provider === provider);
+function quotaCard(provider, accountId, accountLabel, detailed = false) {
+  const values = state.limits.filter(x => x.provider === provider && (x.accountId || (provider === 'codex' ? 'codex:default' : provider === 'claude' && x.id === 'claude:account' ? 'claude:default' : x.id)) === accountId);
   const display = providerName(provider);
+  const check = state.usageChecks?.find(item => item.accountId === accountId);
   const card = entry => {
-    const stale = entry && Date.now() - entry.observedAt > 5 * 60000;
     const windows = Array.isArray(entry?.windows) ? entry.windows : [];
+    const stale = entry && (!Number.isFinite(entry.observedAt) || entry.observedAt > Date.now() || Date.now() - entry.observedAt > 5 * 60000 || windows.some(w => w.resetsAt && w.resetsAt <= Date.now()) || (check && !['current', 'refreshing'].includes(check.status)));
+    const status = check?.status === 'refreshing' ? 'Checking' : entry ? stale ? 'Cached' : 'Current' : ({ 'sign-in': 'Sign in', 'not-installed': 'Not installed', unsupported: 'Unavailable', limited: 'Try later', timeout: 'Timed out', unavailable: 'Unavailable' })[check?.status] || 'Not checked';
+    const message = check?.message || (provider === 'codex' && state.accountError) || 'Refresh to check account usage.';
     return `<article class="quota-card ${detailed ? 'large' : ''}" style="--provider-accent:${accountIdentity(provider).color}">
-    <div class="quota-heading">${accountMark(provider)}<strong>${escape(entry?.name || display)}</strong>${entry?.plan ? `<span class="plan">${escape(entry.plan)}</span>` : ''}<span class="connection ${entry ? 'connected' : ''}">${entry ? stale ? 'Cached' : 'Connected' : 'Not connected'}</span></div>
+    <div class="quota-heading">${accountMark(provider)}<strong>${escape(accountLabel)}${entry?.name && entry.name !== display && entry.name !== accountLabel ? ` · ${escape(entry.name)}` : ''}</strong>${entry?.plan ? `<span class="plan">${escape(entry.plan)}</span>` : ''}<span class="connection ${entry && !stale ? 'connected' : ''}" role="status">${status}</span></div>
     ${windows.length ? windows.map(w => {
       const left = remainingPercent(w.usedPercent), known = left !== null;
-      const label = known ? `${number(left)}% left` : 'Unknown';
-      return `<div class="quota-window"><div><span>${windowLabel(w.minutes)}</span><strong>${escape(label)}</strong></div><div class="meter ${known ? left <= 10 ? 'warning' : '' : 'unknown'}" role="progressbar" aria-label="${escape(display)} ${escape(windowLabel(w.minutes))} remaining" ${known ? `aria-valuenow="${left}"` : ''} aria-valuetext="${escape(label)}" aria-valuemin="0" aria-valuemax="100"><span style="width:${left ?? 0}%"></span></div><span class="reset">${resetTime(w.resetsAt)}</span></div>`;
-    }).join('') : `<div class="quota-unavailable"><span class="empty-value">—</span><p>${provider === 'codex' ? state.accountError ? escape(state.accountError) : 'Waiting for account usage.' : provider === 'claude' ? state.capabilities.claude ? 'Usage arrives after a Claude response.' : 'Install Claude Code to connect usage.' : 'No limits reported for this account.'}</p></div>`}
-    ${entry && !windows.some(w => w.minutes === 300) ? '<div class="missing-window">5-hour limit not reported</div>' : ''}
-    ${entry && !windows.some(w => w.minutes === 10080) ? '<div class="missing-window">Weekly limit not reported</div>' : ''}
+      const label = w.unlimited ? 'Unlimited' : known ? `${number(left)}% left` : 'Unknown';
+      const name = w.label || windowLabel(w.minutes);
+      return `<div class="quota-window"><div><span>${escape(name)}</span><strong>${escape(label)}</strong></div>${w.unlimited ? '' : `<div class="meter ${known ? left <= 10 ? 'warning' : '' : 'unknown'}" role="progressbar" aria-label="${escape(display)} ${escape(name)} remaining" ${known ? `aria-valuenow="${left}"` : ''} aria-valuetext="${escape(label)}" aria-valuemin="0" aria-valuemax="100"><span style="width:${left ?? 0}%"></span></div>`}<span class="reset">${Number.isFinite(w.used) && Number.isFinite(w.total) ? escape(`${w.used} of ${w.total} ${w.unit || "credits"} used`) + " ? " : ""}${w.resetLabel ? escape(w.resetLabel) : w.unlimited && !w.resetsAt ? '' : resetTime(w.resetsAt)}</span></div>`;
+    }).join('') : `<div class="quota-unavailable"><span class="empty-value">—</span><p>${escape(message)}</p></div>`}
+    ${windows.length && check?.message ? `<p class="section-note" role="status">${escape(check.message)}</p>` : ''}
+    ${entry && ['codex', 'claude'].includes(provider) && !windows.some(w => w.minutes === 300) ? '<div class="missing-window">5-hour limit not reported</div>' : ''}
+    ${entry && ['codex', 'claude'].includes(provider) && !windows.some(w => w.minutes === 10080) ? '<div class="missing-window">Weekly limit not reported</div>' : ''}
     <div class="quota-foot">${entry ? `${stale ? 'Stale snapshot · ' : ''}${age(entry.observedAt)}` : 'No estimated limits'}${detailed && entry ? `<span>${escape(entry.source)}</span>` : ''}</div>
   </article>`;
   };
   return values.length ? values.map(card).join('') : card(null);
+}
+function accountSwitchMenu(session, hostKey) {
+  if (!['codex', 'claude'].includes(session.provider) || session.purpose === 'login') return '';
+  const targets = (session.switchTargets || []).filter(target => target.ready);
+  const label = session.accountLabel || providerName(session.provider);
+  if (session.purpose === 'setup') return `<span class="console-account-label" title="Account: ${escape(label)}">${escape(label)}</span>`;
+  if (!targets.length) return `<span class="console-account-label" title="${escape(label)}">${escape(label)}</span>`;
+  const available = session.draftSupported === true && !session.switching;
+  const menuId = `account-menu-${session.id}-${hostKey}`;
+  const unavailable = session.draftSupportReason || 'The CLI composer could not be verified for switching.';
+  return `<div class="console-account-control"><button class="console-account-toggle" type="button" data-account-menu-toggle aria-haspopup="menu" aria-expanded="false" aria-controls="${menuId}" title="Account: ${escape(label)}">${escape(label)}</button><div id="${menuId}" class="account-menu-items" popover="auto" role="menu" aria-label="Switch account">${targets.map(target => `<button role="menuitem" data-action="account-switch" data-id="${session.id}" data-launch-id="${escape(session.launchId || '')}" data-target-account-id="${escape(target.id)}" ${available ? '' : 'disabled'}>${escape(`Switch to ${target.label}`)}</button><button role="menuitem" data-action="account-setup" data-id="${session.id}" data-launch-id="${escape(session.launchId || '')}" data-target-account-id="${escape(target.id)}">${escape(`Set up ${target.label}`)}</button>`).join('')}${available ? '' : `<small>${escape(unavailable)}</small>`}</div></div>`;
+}
+function switchOfferHtml(session) {
+  const offer = session.switchOffer;
+  if (!offer || session.switching) return '';
+  return `<div class="account-switch-offer" role="status"><span>Usage reached ${number(offer.usedPercent)}% in the ${escape(windowLabel(offer.minutes))} window.</span><button class="subtle" data-action="account-switch" data-id="${session.id}" data-launch-id="${escape(session.launchId || '')}" data-target-account-id="${escape(offer.targetAccountId)}">Switch to ${escape(offer.targetLabel)}</button><button class="icon-button" data-action="account-switch-dismiss" data-id="${session.id}" data-launch-id="${escape(session.launchId || '')}" data-offer-key="${escape(offer.key)}" aria-label="Dismiss account switch offer" title="Dismiss">${icon('close')}</button></div>`;
+}
+function replaceSwitchControl(host, selector, html, after) {
+  const current = host.querySelector(selector), template = document.createElement('template');
+  template.innerHTML = html; const next = template.content.firstElementChild;
+  if (current && !next) current.remove();
+  else if (!current && next) after?.after(next);
+  else if (current && next) {
+    const stableMarkup = node => {
+      const copy = node.cloneNode(true);
+      copy.querySelector('[data-account-menu-toggle]')?.setAttribute('aria-expanded', 'false');
+      copy.querySelector('.account-menu-items')?.removeAttribute('style');
+      return copy.outerHTML;
+    };
+    if (stableMarkup(current) !== stableMarkup(next)) current.replaceWith(next);
+  }
+}
+function syncConsoleSwitchUi(host, session) {
+  replaceSwitchControl(host, '.console-account-control,.console-account-label', accountSwitchMenu(session, 'panel'), host.querySelector('.panel-status'));
+  if (host.querySelector('.console-panel-header')) replaceSwitchControl(host, '.account-switch-offer', switchOfferHtml(session), host.querySelector('.console-panel-header'));
 }
 function slotNameInput(slot, session) {
   const name = session?.name || state.settings.slotNames?.[slot] || '';
@@ -177,15 +258,53 @@ function newConsoleMark() {
   return `<span class="new-console-mark" aria-hidden="true">${icon('plus')}<span class="new-console-label"><span>New console</span></span></span>`;
 }
 function syncSlotName(input, slot, session) {
+  if (!input) return;
   if (input !== document.activeElement && !nameSaves.has(slot)) input.value = session?.name || state.settings.slotNames?.[slot] || '';
 }
+const isOpenConsole = session => !!session && !session.dismissed && (session.alive || session.restoreError);
 function sessionCard(slot) {
-  const session = state.sessions.find(x => x.slot === slot && (x.alive || x.restoreError));
-  if (!session) return `<article class="session-card empty" data-slot="${slot}"><header class="empty-panel-header">${slotNameInput(slot)}</header><button class="console-launch" data-action="new" data-slot="${slot}" aria-label="Open console ${slot}" ${launchHint} ${openingConsole ? 'disabled' : ''}>${newConsoleMark()}</button></article>`;
-  return `<article class="session-card ${escape(session.state)}" data-console-id="${session.id}" data-slot="${slot}"><header class="console-panel-header"><button class="console-grip" draggable="true" data-console-drag="${session.id}" aria-label="Move console ${slot}" title="Drag to move or swap. Focus here and press Alt + 1–9 to move.">${readyIcon(session)}</button><span class="slot" title="${escape(providerName(session.provider) + ' · ' + session.cwd)}">${String(slot).padStart(2, '0')}</span>${slotNameInput(slot, session)}<span class="panel-status">${badge(session.state)}</span>${projectChats.button(session)}<button class="icon-button" data-session="${session.id}" aria-label="Expand console ${slot}" title="Expand console">${icon('expand')}</button><button class="icon-button console-close" data-action="end-session" data-id="${session.id}" aria-label="Close console ${slot}" title="End this console">${icon('close')}</button></header><div class="console-panel-body" data-terminal-mount="${session.id}"></div>${resizeHandles(slot)}</article>`;
+  const session = allPanels().find(x => x.slot === slot && isOpenConsole(x));
+  if (!session) return `<article class="session-card empty" data-slot="${slot}"><header class="empty-panel-header">${slotNameInput(slot)}${appearance.button(slot)}</header><button class="console-launch" data-action="new" data-slot="${slot}" aria-label="Open console ${slot}" ${launchHint} ${openingConsole ? 'disabled' : ''}>${newConsoleMark()}</button></article>`;
+  if (session.kind === 'code') return codePanels.card(session);
+  const expanded = expandedId === session.id;
+  const endLabel = session.restoreError ? 'Remove saved console' : 'End this console';
+  return `<article class="session-card ${escape(session.state)}${expanded ? ' console-expanded' : ''}" data-console-id="${session.id}" data-slot="${slot}"><header class="console-panel-header"><button class="console-grip" draggable="true" data-console-drag="${session.id}" aria-label="Move console ${slot}" title="Drag to move or swap. Focus here and press Alt + 1–9 to move.">${readyIcon(session)}</button><span class="slot" title="${escape(providerName(session.provider) + ' · ' + session.cwd)}">${String(slot).padStart(2, '0')}</span>${slotNameInput(slot, session)}<span class="panel-status">${badge(session.state)}</span>${accountSwitchMenu(session, 'panel')}${projectChats.button(session)}${textSizeButtons(session.id, `console ${slot}`)}${appearance.button(slot)}<button class="icon-button console-expand" data-action="toggle-console" data-id="${session.id}" aria-label="${expanded ? 'Restore console ' + slot + ' to the grid (Ctrl+Shift+Enter)' : 'Expand console ' + slot}" aria-keyshortcuts="${expanded ? 'Control+Shift+Enter' : ''}" title="${expanded ? 'Restore console · Ctrl+Shift+Enter' : 'Expand console'}">${icon(expanded ? 'restore' : 'expand')}</button><button class="icon-button console-close" data-action="end-session" data-id="${session.id}" aria-label="${endLabel} ${slot}" title="${endLabel}">${icon('close')}</button></header>${switchOfferHtml(session)}<div class="console-panel-body" data-terminal-mount="${session.id}"></div>${resizeHandles(slot)}</article>`;
 }
 function coveredSlots() {
-  return new Map(state.sessions.filter(x => x.alive || x.restoreError).flatMap(x => Array.from({ length: x.height || 1 }, (_, y) => Array.from({ length: x.width || 1 }, (_, dx) => [x.slot + y * gridSize().columns + dx, x])).flat()));
+  return new Map(allPanels().filter(isOpenConsole).flatMap(x => Array.from({ length: x.height || 1 }, (_, y) => Array.from({ length: x.width || 1 }, (_, dx) => [x.slot + y * gridSize().columns + dx, x])).flat()));
+}
+function openConsole(id) {
+  return allPanels().find(item => item.id === id && isOpenConsole(item)) || null;
+}
+function syncExpandedConsole() {
+  const expanded = !!expandedId && !!openConsole(expandedId);
+  if (!expanded) expandedId = null;
+  $('#consoles-page').classList.toggle('has-expanded-console', expanded);
+  $('#consoles-page').dataset.expandedConsole = expanded ? expandedId : '';
+  document.body.classList.toggle('console-expanded', expanded);
+  const target = expanded ? document.querySelector(`.session-card[data-console-id="${CSS.escape(expandedId)}"]`) : null;
+  for (const panel of document.querySelectorAll('.session-grid > .session-card')) {
+    const selected = panel === target;
+    panel.classList.toggle('console-expanded', selected);
+    panel.inert = !!expanded && !selected;
+    panel.setAttribute('aria-hidden', String(!!expanded && !selected));
+    if (!expanded) {
+      const grip = panel.querySelector('.console-grip');
+      if (grip) { grip.disabled = false; grip.draggable = true; }
+      panel.querySelectorAll('.console-resize').forEach(handle => { handle.disabled = false; });
+      const expand = panel.querySelector('[data-action="toggle-console"]');
+      if (expand) {
+        const slot = panel.dataset.slot || '';
+        expand.setAttribute('aria-label', `Expand console ${slot}`);
+        expand.setAttribute('aria-keyshortcuts', '');
+        expand.setAttribute('aria-expanded', 'false');
+        expand.title = 'Expand console';
+        expand.innerHTML = icon('expand');
+      }
+    }
+  }
+  applySidebar();
+  return expanded ? openConsole(expandedId) : null;
 }
 function recentSection() {
   const entries = state.recent.filter(x => !state.sessions.some(s => s.providerSessionId === x.id));
@@ -194,28 +313,47 @@ function recentSection() {
 function renderConsoles() {
   if (layoutMotion?.active) return;
   const before = layoutMotion?.capture();
-  const grid = $('.session-grid'), covered = coveredSlots();
+  const grid = $('.session-grid'), covered = coveredSlots(), expanded = syncExpandedConsole();
+  const consoleVisible = state.mode !== 'hud' && ['consoles', 'overview'].includes(page);
+  const refreshDecorations = renderedExpansion !== (expanded?.id || null) || renderedConsoleVisibility !== consoleVisible;
   grid.style.setProperty('--grid-columns', gridSize().columns); grid.style.setProperty('--grid-rows', gridSize().rows);
-  $('#grid-add').hidden = covered.size < gridCapacity();
+  $('#grid-add').hidden = !!expanded || covered.size < gridCapacity();
   while (grid.children.length > gridCapacity()) grid.lastElementChild.remove();
   for (let slot = 1; slot <= gridCapacity(); slot++) {
-    const session = state.sessions.find(x => x.slot === slot && (x.alive || x.restoreError));
+    const session = allPanels().find(x => x.slot === slot && isOpenConsole(x));
     let panel = grid.children[slot - 1];
     if (!panel || (panel.dataset.consoleId || '') !== (session?.id || '')) {
+      const returnFocus = !session && panel?.contains(document.activeElement);
       const previous = terminals.get(panel?.dataset.consoleId);
       if (previous && panel.contains(previous.node)) $('#terminal-cache').append(previous.node);
       const template = document.createElement('template'); template.innerHTML = sessionCard(slot);
-      const replacement = template.content.firstElementChild;
+      const replacement = template.content.firstElementChild, launched = session?.alive && pendingConsoleOpenings.delete(session.id);
       if (panel) panel.replaceWith(replacement); else grid.append(replacement);
       panel = replacement;
+      if (launched) requestAnimationFrame(() => launchBurst(replacement));
+      if (returnFocus) replacement.querySelector('[data-action="new"]')?.focus({ preventScroll: true });
     }
     panel.hidden = covered.has(slot) && covered.get(slot).slot !== slot;
+    const isExpanded = !!expanded && session?.id === expanded.id;
+    panel.inert = !!expanded && !isExpanded;
+    panel.setAttribute('aria-hidden', String(!!expanded && !isExpanded));
+    appearance.sync(panel, slot);
     panel.style.gridColumn = `${(slot - 1) % gridSize().columns + 1} / span ${session?.width || 1}`;
     panel.style.gridRow = `${Math.floor((slot - 1) / gridSize().columns) + 1} / span ${session?.height || 1}`;
+    if (session?.kind === 'code') {
+      panel.classList.toggle('console-expanded', isExpanded); panel.setAttribute('aria-label', 'Code panel');
+      codePanels.mount(session, panel.querySelector('.code-panel-body'));
+      const expand = panel.querySelector('[data-action="toggle-console"]'); expand.innerHTML = icon(isExpanded ? 'restore' : 'expand'); expand.setAttribute('aria-label', isExpanded ? 'Restore code panel to grid' : 'Expand code panel'); expand.setAttribute('aria-expanded', String(isExpanded));
+      panel.querySelectorAll('.console-grip,.console-resize').forEach(handle => { handle.disabled = !!expanded; });
+      continue;
+    }
     syncSlotName(panel.querySelector('.console-name'), slot, session);
     panel.tabIndex = -1;
     panel.setAttribute('aria-label', `Console ${slot}${session?.name || state.settings.slotNames?.[slot] ? ': ' + (session?.name || state.settings.slotNames[slot]) : ''}`);
-    if (!session) { panel.querySelector('[data-action="new"]').disabled = openingConsole; continue; }
+    mountSky(panel, slot);
+    if (!session) {
+      panel.querySelector('[data-action="new"]').disabled = openingConsole; continue;
+    }
     const project = state.projects?.find(p => p.id === session.projectId);
     let projectColorMark = panel.querySelector('.console-project-color');
     if (project) {
@@ -228,26 +366,50 @@ function renderConsoles() {
       panel.className = `session-card ${session.state}`; panel.dataset.state = session.state;
       panel.querySelector('.panel-status').innerHTML = badge(session.state);
     }
+    panel.classList.toggle('console-expanded', isExpanded);
+    syncConsoleSwitchUi(panel, session);
     panel.querySelector('.console-ready-badge').hidden = !isReady(session);
     panel.querySelector('[data-console-drag]').setAttribute('aria-label', `Move console ${slot}${isReady(session) ? ', ready for you' : ''}`);
     if (session.restoreError && !panel.querySelector('[data-action="retry-session"]')) {
-      panel.querySelector('.console-panel-header [data-session]').insertAdjacentHTML('beforebegin', `<button class="icon-button" data-action="retry-session" data-id="${session.id}" aria-label="Retry console ${slot}" title="Try reopening">${icon('refresh')}</button>`);
+      panel.querySelector('.console-panel-header [data-action="toggle-console"]').insertAdjacentHTML('beforebegin', `<button class="icon-button" data-action="retry-session" data-id="${session.id}" aria-label="Retry console ${slot}" title="Try reopening">${icon('refresh')}</button>`);
     }
+    const expand = panel.querySelector('[data-action="toggle-console"]');
+    const isExpandedNow = expanded?.id === session.id;
+    expand.setAttribute('aria-label', `${isExpandedNow ? 'Restore console ' + slot + ' to the grid (Ctrl+Shift+Enter)' : 'Expand console ' + slot}`);
+    expand.setAttribute('aria-keyshortcuts', isExpandedNow ? 'Control+Shift+Enter' : '');
+    expand.title = isExpandedNow ? 'Restore console · Ctrl+Shift+Enter' : 'Expand console';
+    expand.innerHTML = icon(isExpandedNow ? 'restore' : 'expand');
+    expand.setAttribute('aria-expanded', String(isExpandedNow));
+    const grip = panel.querySelector('.console-grip');
+    grip.draggable = !expanded;
+    grip.disabled = !!expanded;
+    panel.querySelectorAll('.console-resize').forEach(handle => { handle.disabled = !!expanded; });
+    const end = panel.querySelector('[data-action="end-session"]');
+    const endLabel = session.restoreError ? 'Remove saved console' : 'End this console';
+    end.title = endLabel;
+    end.setAttribute('aria-label', `${endLabel} ${slot}`);
     mountTerminal(session, panel.querySelector('.console-panel-body'), true);
   }
+  codePanels?.sync();
+  if (refreshDecorations) refreshSky();
+  renderedExpansion = expanded?.id || null;
+  renderedConsoleVisibility = consoleVisible;
   if (before) layoutMotion.animate(before);
   projectChats?.sync();
   scheduleFits();
+  lightingChanged();
 }
 function ledgerTable() {
-  return state.ledger.length ? `<div class="table-scroll"><table><thead><tr><th>Time</th><th>Provider / model</th><th>Input</th><th>Output</th><th>Est. USD</th><th>Status</th></tr></thead><tbody>${state.ledger.slice(0, 100).map(row => `<tr><td>${new Date(row.at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</td><td><strong class="ledger-provider">${accountMark(row.provider)}${escape(providerName(row.provider))}</strong><small>${escape(row.model)}</small></td><td class="mono">${number(row.usage?.input)}</td><td class="mono">${number(row.usage?.output)}</td><td class="mono">${money(row.estimatedCost)}</td><td><span class="ledger-status ${row.status}">${escape(row.status)}</span></td></tr>`).join('')}</tbody></table></div>` : `<div class="empty-ledger"><span class="empty-illustration">${icon('chart')}</span><h3>No API requests yet</h3><p>Requests made here will appear below.</p><button class="secondary" data-page="api">Open API workspace ${icon('arrow')}</button></div>`;
+  return state.ledger.length ? `<div class="table-scroll"><table><thead><tr><th>Time</th><th>Provider / model</th><th>Input</th><th>Output</th><th>Status</th></tr></thead><tbody>${state.ledger.slice(0, 100).map(row => `<tr><td>${new Date(row.at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</td><td><strong class="ledger-provider">${accountMark(row.provider)}${escape(providerName(row.provider))}</strong><small>${escape(row.model)}</small></td><td class="mono">${number(row.usage?.input)}</td><td class="mono">${number(row.usage?.output)}</td><td><span class="ledger-status ${row.status}">${escape(row.status)}</span></td></tr>`).join('')}</tbody></table></div>` : `<div class="empty-ledger"><span class="empty-illustration">${icon('chart')}</span><h3>No API requests yet</h3><p>Requests made here will appear below.</p><button class="secondary" data-page="api">Open API workspace ${icon('arrow')}</button></div>`;
 }
 function renderUsage() {
   const summary = state.summary;
-  return pageHeading('', 'Usage', '', '<button class="secondary" data-action="refresh">' + icon('refresh') + 'Refresh</button>') +
-    '<div class="stats-row usage-stats"><div class="stat"><span>API requests · 30 days</span><strong>' + summary.requests + '</strong></div><div class="stat"><span>API tokens · 30 days</span><strong>' + (summary.unknownUsage && !summary.tokens ? '—' : number(summary.tokens) + (summary.unknownUsage ? '+' : '')) + '</strong></div><div class="stat"><span>Estimated API cost · 30 days</span><strong>' + (summary.unpriced ? summary.cost ? money(summary.cost) + '+' : '—' : money(summary.cost)) + '</strong><span class="stat-description">' + (summary.unpriced ? summary.unpriced + ' requests need rates or usage' : 'USD · configured rates') + '</span></div></div>' +
-    '<div class="usage-grid">' + [...new Set(['codex', 'claude', ...state.limits.map(x => x.provider).filter(x => typeof x === 'string' && x)])].map(provider => quotaCard(provider, true)).join('') + '</div><p class="section-note">Limits are shared across each account.</p><section class="ledger-panel"><div class="section-label"><div><h2>API requests</h2><p>Requests made through Agent Dock.</p></div><button class="subtle" data-action="export">Export</button></div>' + ledgerTable() + '<div class="ledger-foot">' + (state.ledger.length > 100 ? 'Latest 100 shown. Export includes all records. ' : '') + 'Costs are estimates, not invoices. Tool steps count as separate requests.</div></section>' +
-    '<details class="surface pricing-details"><summary>Cost estimate settings</summary><form id="rates-form"><div class="form-pair"><label>API<select name="provider">' + state.shared.profiles.map(x => '<option value="' + escape(x.id) + '">' + escape(x.name) + '</option>').join('') + '</select></label><label>Model ID<input name="model" required placeholder="Model to price"></label></div><p class="field-hint">USD per million tokens. Leave unknown rates blank.</p><div class="price-grid">' + [['input', 'Input'], ['output', 'Output'], ['cached', 'Cache reads'], ['cacheWrite', 'Cache writes']].map(([key,label]) => '<label>' + label + '<input name="' + key + '" type="number" min="0" step="any" placeholder="Unknown"></label>').join('') + '</div><button type="submit" class="primary">Save rates</button><p class="form-error" role="alert"></p></form></details>';
+  const subscriptions = [...(state.usageAccounts || state.accounts || [])].sort((a,b) => Number(!!(b.hasUsage || state.limits.some(x => (x.accountId || x.id) === b.id))) - Number(!!(a.hasUsage || state.limits.some(x => (x.accountId || x.id) === a.id))));
+  const accountCards = subscriptions.map(account => quotaCard(account.provider, account.id, account.label, true)).join('') + state.limits.filter(entry => !subscriptions.some(account => account.id === (entry.accountId || (entry.provider === 'codex' ? 'codex:default' : entry.id === 'claude:account' ? 'claude:default' : entry.id)))).map(entry => quotaCard(entry.provider, entry.accountId || entry.id, entry.name || providerName(entry.provider), true)).join('');
+  const profileCards = (state.accounts || []).filter(account => account.profile).map(account => `<article class="account-profile-row"><div>${accountMark(account.provider)}<span><strong>${escape(account.label)}</strong><small>${providerName(account.provider)} · ${account.loginCompletedAt ? 'Signed in' : 'Sign-in needed'}</small></span></div><span><button class="subtle" data-action="account-login" data-id="${escape(account.id)}">${account.loginCompletedAt ? 'Sign in again' : 'Sign in'}</button><button class="subtle" data-action="account-rename" data-id="${escape(account.id)}" data-label="${escape(account.label)}">Rename</button></span></article>`).join('');
+  return pageHeading('', 'Usage', '', '<button class="secondary" data-action="refresh" ' + (state.refreshing ? 'disabled aria-busy="true"' : '') + '>' + icon('refresh') + (state.refreshing ? 'Checking accounts…' : 'Refresh') + '</button>') +
+    '<div class="stats-row usage-stats"><div class="stat"><span>API requests · 30 days</span><strong>' + summary.requests + '</strong></div><div class="stat"><span>API tokens · 30 days</span><strong>' + (summary.unknownUsage && !summary.tokens ? '—' : number(summary.tokens) + (summary.unknownUsage ? '+' : '')) + '</strong></div></div>' +
+    `<section class="surface account-switch-settings"><div class="section-label"><div><h2>Subscriptions</h2><p>Account-wide limits, checked every two minutes.</p></div></div><div class="usage-grid">${accountCards}</div><h2>Account switching</h2><form id="account-profile-form" class="account-profile-form"><label>Provider<select name="provider" ${accountProfileCreated ? 'disabled' : ''}><option value="codex" ${accountProfileDraft.provider === 'codex' ? 'selected' : ''}>Codex</option><option value="claude" ${accountProfileDraft.provider === 'claude' ? 'selected' : ''}>Claude Code</option></select></label><label>Account name<input name="label" required maxlength="64" autocomplete="off" value="${escape(accountProfileDraft.label)}" ${accountProfileCreated ? 'disabled' : ''}></label><button class="secondary" type="submit" ${accountProfileBusy ? 'disabled' : ''}>${accountProfileCreated ? 'Retry sign-in' : 'Add account'}</button>${accountProfileCreated ? '<p class="field-hint">This account is saved. Retry sign-in to open its console.</p>' : ''}<p class="form-error" role="alert">${escape(accountProfileDraft.error)}</p></form><div class="account-profile-list">${profileCards || '<p class="section-note">No additional accounts.</p>'}</div><div class="account-switch-threshold"><label>Offer a switch at <input type="number" min="50" max="100" data-setting="accountSwitchThreshold" value="${state.settings.accountSwitchThreshold ?? 90}">%</label><label><input type="checkbox" data-setting="autoSwitchAccounts" ${state.settings.autoSwitchAccounts ? 'checked' : ''}>Switch automatically while idle</label><p class="field-hint">Automatic switching is off by default. It needs fresh usage for both accounts and an idle console.</p></div><p class="section-note">Use subscriptions within provider terms. Switching accounts must respect each provider?s rate limits and restrictions.</p></section><section class="ledger-panel"><div class="section-label"><div><h2>API requests</h2><p>Requests made through Paddock.</p></div><button class="subtle" data-action="export">Export</button></div>${ledgerTable()}<div class="ledger-foot">${state.ledger.length > 100 ? 'Latest 100 shown. Export includes all records. ' : ''}Tool steps count as separate requests.</div></section>`;
 }
 function messageUsageTable() { return usageView.render(); }
 
@@ -256,9 +418,8 @@ function renderApi() {
   if (!profiles.some(x => x.id === selectedApi)) selectedApi = profiles[0]?.id || '';
   const profile = profiles.find(x => x.id === selectedApi);
   const hasKey = profile && (!profile.keyId || state.vault.entries.some(x => x.id === profile.keyId));
-  return pageHeading('', 'API', 'Your shared tools and instructions are included.') + '<div class="api-columns"><form id="api-form" class="surface api-form"><h2>New request</h2><label>Project<select name="projectId"><option value="">No project</option>' + (state.projects || []).filter(x => x.status !== 'archived').map(x => '<option value="' + escape(x.id) + '">' + escape(x.name) + '</option>').join('') + '</select></label><label>API<select name="provider">' + profiles.map(x => '<option value="' + escape(x.id) + '" ' + (x.id === selectedApi ? 'selected' : '') + '>' + escape(x.name) + '</option>').join('') + '</select></label><div class="key-state ' + (hasKey ? 'saved' : '') + '">' + icon('lock') + (hasKey ? profile.keyId ? 'Key connected' : 'No key required' : 'Add the key in Keys, or choose one in Tools.') + '</div><label>Model<input name="model" required maxlength="150" placeholder="Model ID" autocomplete="off"></label><label>Prompt<textarea name="prompt" rows="9" required maxlength="100000" placeholder="What are we working on?"></textarea></label><label>Max output tokens per step<input type="number" name="maxOutput" min="16" max="32768" value="1024" required></label><p class="field-hint">Each request starts fresh. Up to 8 model steps with tools.</p><p id="api-error" class="form-error" role="alert"></p><button type="submit" class="primary wide" ' + (!hasKey || apiBusy ? 'disabled' : '') + '>' + icon('arrow') + (apiBusy ? 'Working…' : 'Send') + '</button></form><section class="surface response-panel"><div class="section-label"><h2>Response</h2><span id="response-meta" class="small-label"></span></div><pre id="api-response">' + escape(outputText || 'Your response will appear here.') + '</pre></section></div>';
+  return pageHeading('', 'API', 'Your shared tools and instructions are included.') + '<div class="api-columns"><form id="api-form" class="surface api-form"><h2>New request</h2><label>Project<select name="projectId"><option value="">No project</option>' + (state.projects || []).filter(x => x.status !== 'archived').map(x => '<option value="' + escape(x.id) + '">' + escape(x.name) + '</option>').join('') + '</select></label><label>API<select name="provider">' + profiles.map(x => '<option value="' + escape(x.id) + '" ' + (x.id === selectedApi ? 'selected' : '') + '>' + escape(x.name) + '</option>').join('') + '</select></label><div class="key-state ' + (hasKey ? 'saved' : '') + '">' + icon('lock') + (hasKey ? profile.keyId ? 'Key connected' : 'No key required' : 'Add a profile and enter or select its key in Settings → API.') + '</div><label>Model<input name="model" required maxlength="150" placeholder="Model ID" autocomplete="off"></label><label>Prompt<textarea name="prompt" rows="9" required maxlength="100000" placeholder="What are we working on?"></textarea></label><label>Max output tokens per step<input type="number" name="maxOutput" min="16" max="32768" value="1024" required></label><p class="field-hint">Each request starts fresh. Up to 8 model steps with tools.</p><p id="api-error" class="form-error" role="alert"></p><button type="submit" class="primary wide" ' + (!hasKey || apiBusy ? 'disabled' : '') + '>' + icon('arrow') + (apiBusy ? 'Working…' : 'Send') + '</button></form><section class="surface response-panel"><div class="section-label"><h2>Response</h2><span id="response-meta" class="small-label"></span></div><pre id="api-response">' + escape(outputText || 'Your response will appear here.') + '</pre></section></div>';
 }
-function renderVault() { return sharedViews(state, { escape, icon, pageHeading }).vault(); }
 function renderTools() { return sharedViews(state, { escape, icon, pageHeading }).tools(); }
 function refreshToolSections() {
   if (page !== 'tools') return;
@@ -274,27 +435,85 @@ function renderLaunchDefaults() {
   const defaults = state.settings.consoleDefaults;
   return `<form id="console-defaults-form" class="surface"><h2>Console defaults</h2><p class="field-hint">Used when you click +.</p><div class="form-pair"><label>Agent or shell<select name="provider">${consoleProviders().map(provider => `<option value="${provider}" ${defaults.provider === provider ? 'selected' : ''}>${providerName(provider)}</option>`).join('')}</select></label><label id="default-permissions">Permissions<select name="permissions" data-setting="agentPermissions"><option value="unrestricted" ${state.settings.agentPermissions === 'unrestricted' ? 'selected' : ''}>Unrestricted</option><option value="default" ${state.settings.agentPermissions !== 'unrestricted' ? 'selected' : ''}>Agent defaults</option></select></label></div><label>Project folder<div class="folder-input"><input name="cwd" required value="${escape(defaults.cwd)}"><button type="button" data-action="pick-folder" aria-label="Choose default project folder">${icon('folder')}</button></div></label><label>Name <span class="optional">optional</span><input name="name" maxlength="64" value="${escape(defaults.name)}" placeholder="Uses the folder name"></label><label id="default-command">Custom command<textarea name="command" rows="3" maxlength="4000" spellcheck="false" placeholder="The command to run">${escape(defaults.command)}</textarea></label><p id="default-provider-hint" class="field-hint"></p><p class="form-error" role="alert"></p><button type="submit" class="primary">Save defaults</button></form>`;
 }
-function renderSettings() {
+function renderBaseSettings() {
   const installed = (state.agents || []).map(agent => '<div class="connection-row"><span>' + escape(agent.name) + '</span><span>' + (agent.installed ? 'Installed' : 'Not installed') + '</span><button class="subtle" data-docs="' + agent.id + '">Guide</button></div>').join('');
-  return pageHeading('', 'Settings', '') + '<div class="settings-layout"><section class="surface"><h2>Desktop</h2><label class="toggle-row"><span><strong>Keep HUD above other apps</strong><small>Off lets your other windows cover it.</small></span><input type="checkbox" data-setting="hudAlwaysOnTop" ' + (state.settings.hudAlwaysOnTop ? 'checked' : '') + '></label><label class="toggle-row"><span><strong>Notify when an agent needs you</strong></span><input type="checkbox" data-setting="notifications" ' + (state.settings.notifications ? 'checked' : '') + '></label><label class="toggle-row"><span><strong>Keep PC awake while agents work</strong><small>Your screen can still turn off.</small></span><input type="checkbox" data-setting="keepAwakeWhileWorking" ' + (state.settings.keepAwakeWhileWorking ? 'checked' : '') + '></label><div class="shortcut-row"><span>Show or collapse</span><kbd>Ctrl Alt Space</kbd></div><div class="shortcut-row"><span>Open a console</span><kbd>Ctrl Alt 1-9</kbd></div><p class="field-hint">Close hides Dock in the system tray. Consoles keep running. Use Quit to stop the app.</p></section><section class="surface"><div class="section-label"><h2>Agents</h2><button class="primary" data-action="agent-setup">Set up agents</button></div>' + installed + '<button class="secondary danger" data-action="quit">Quit Agent Dock</button></section></div>';
+  return pageHeading('', 'Settings', '') + '<div class="settings-layout"><section class="surface"><h2>Desktop</h2><label class="toggle-row"><span><strong>Keep HUD above other apps</strong><small>Other windows can cover the HUD when this is off.</small></span><input type="checkbox" data-setting="hudAlwaysOnTop" ' + (state.settings.hudAlwaysOnTop ? 'checked' : '') + '></label><label class="toggle-row"><span><strong>Notify when an agent needs you</strong></span><input type="checkbox" data-setting="notifications" ' + (state.settings.notifications ? 'checked' : '') + '></label><label class="toggle-row"><span><strong>Confirm before ending a console</strong><small>Turn off to end or remove the selected console without a prompt.</small></span><input type="checkbox" data-setting="confirmConsoleEnd" ' + (state.settings.confirmConsoleEnd !== false ? 'checked' : '') + '></label><label class="toggle-row"><span><strong>Keep PC awake while agents work</strong><small>Your screen can still turn off.</small></span><input type="checkbox" data-setting="keepAwakeWhileWorking" ' + (state.settings.keepAwakeWhileWorking ? 'checked' : '') + '></label></section><section class="surface"><div class="section-label"><h2>Agents</h2><button class="primary" data-action="agent-setup">Set up agents</button></div>' + installed + '<button class="secondary danger" data-action="quit">Quit Paddock</button></section></div>';
+}
+function renderShortcutSettings() {
+  return '<section class="surface"><h2>Shortcuts</h2><div class="shortcut-row"><span>Show or collapse</span><kbd>Ctrl Alt Space</kbd></div><div class="shortcut-row"><span>Open a console</span><kbd>Ctrl Alt 1-9</kbd></div><div class="shortcut-row"><span>Restore expanded console</span><kbd>Ctrl Shift Enter</kbd></div><p class="field-hint">Close hides Paddock in the system tray. Consoles keep running. Use Quit to stop the app.</p></section>';
+}
+function renderSettingsCategory() {
+  const base = document.createElement('template'); base.innerHTML = renderBaseSettings();
+  const sections = [...base.content.querySelectorAll('.settings-layout > .surface')];
+  const views = sharedViews(state, { escape, icon, pageHeading });
+  let content;
+  if (page === 'appearance') content = renderAppearanceSettings();
+  else if (page === 'console-settings') content = '<div class="settings-column">' + renderLaunchDefaults() + renderKeyboardSettings() + '</div><div class="settings-column">' + renderGridSettings() + (sections[1]?.outerHTML || '') + '</div>';
+  else if (page === 'devices') content = (remoteHosts?.html() || '') + (phone?.renderSettings() || '');
+  else if (page === 'api-settings') content = views.apis();
+  else if (page === 'tools') content = renderTools();
+  else if (page === 'instructions') content = renderInstructions();
+  else content = '<div class="settings-general-columns"><div class="settings-column">' + (sections[0]?.outerHTML || '') + renderShortcutSettings() + '</div><div class="settings-column">' + renderStartupSettings() + renderProjectSettings() + renderResultsSettings() + '</div></div>' + (updates?.render() || '');
+  return settingsShell(page, `<div class="settings-layout${page === 'console-settings' ? ' settings-console-grid' : ''}">${content}</div>`, icon('close'), state.settings.trimStyle || 'classic');
 }
 function renderStartupSettings() {
   return `<section class="surface"><h2>Startup</h2><label class="toggle-row"><span><strong>Restore previous consoles</strong><small>Reopen your panels and folders. Saved agent chats resume; shells and custom commands restart.</small></span><input type="checkbox" data-setting="restoreConsoles" ${state.settings.restoreConsoles ? 'checked' : ''}></label><p id="workspace-error" class="form-error" role="alert">${escape(state.workspaceError || '')}</p></section>`;
 }
 function renderResultsSettings() {
-  return `<section class="surface"><h2>Results</h2><label class="toggle-row"><span><strong>Automatically save results</strong><small>Capture code changes and new images after each turn.</small></span><input type="checkbox" data-setting="autoSaveResults" ${state.settings.autoSaveResults !== false ? 'checked' : ''}></label><p class="field-hint">Turning this off stops current captures. Files you add or ask an agent to save still appear here.</p></section>`;
+  return `<section class="surface"><h2>Results</h2><p class="field-hint">Agents save the documents, images, designs, reports and exports you ask them to create. Add other files from Results.</p><label class="toggle-row"><span><strong>Also capture file changes</strong><small>Copy code diffs and changed images after each turn.</small></span><input type="checkbox" data-setting="autoSaveResults" ${state.settings.autoSaveResults === true ? 'checked' : ''}></label><p class="field-hint">Optional. Turning this off stops current captures. Requested outputs and files you add are still saved.</p></section>`;
 }
 function renderProjectSettings() {
   return `<section class="surface" id="project-settings"><h2>Projects</h2><label class="toggle-row"><span><strong>Suggest project setup</strong><small>Ask when a chat has no project. “Don't ask again” turns this off.</small></span><input type="checkbox" data-setting="suggestProjects" ${state.settings.suggestProjects !== false ? 'checked' : ''}></label><button class="subtle" data-page="projects">View project progress ${icon('arrow')}</button></section>`;
 }
 function renderAppearanceSettings() {
-  return `<section class="surface"><h2>Appearance</h2><label>Accent style<select data-setting="accentStyle">${[['pink-blue', 'Pink + blue'], ['blue', 'Blue'], ['pink', 'Pink']].map(([value, label]) => `<option value="${value}" ${(state.settings.accentStyle || 'pink-blue') === value ? 'selected' : ''}>${label}</option>`).join('')}</select></label><label class="toggle-row"><span><strong>Blink cursor</strong><small>Off keeps the console cursor steady.</small></span><input type="checkbox" data-setting="cursorBlink" ${state.settings.cursorBlink ? 'checked' : ''}></label></section>`;
+  const options = (choices, selected) => choices.map(([value, label]) => `<option value="${value}" ${selected === value ? 'selected' : ''}>${label}</option>`).join('');
+  const theme = state.settings.trimStyle || 'classic', stars = starLevel();
+  return `<section class="surface"><h2>Theme</h2><p class="field-hint">Colors the sidebar, buttons, settings and every console. Each console can still use its own theme: click the color dot in its header.</p>
+    <fieldset class="theme-choices"><legend class="sr-only">Theme</legend>${themeChoices.map(([id, label]) => `<label class="theme-choice" data-frame="${id}"><input type="radio" name="theme" data-setting="trimStyle" value="${id}" ${id === theme ? 'checked' : ''}><span class="theme-chip" aria-hidden="true"></span><span><strong>${label}</strong><small>${consoleTheme(id).detail}</small></span></label>`).join('')}</fieldset>
+    <div class="settings-theme-preview">${appearance.preview(theme)}</div></section>
+  <section class="surface"><h2>Lighting</h2>
+    <label>Effect<select data-setting="lighting">${options(lightingStyles, state.settings.lighting || 'static')}</select></label>
+    <p class="field-hint">Wave sends one color wave across every console and the sidebar edge. Reactive lights a console when you type in it or it prints output.</p>
+    <label>Speed<select data-setting="lightingSpeed">${options([['slow', 'Slow'], ['normal', 'Normal'], ['fast', 'Fast']], state.settings.lightingSpeed || 'normal')}</select></label>
+    <label>Trim width<select data-setting="trimWidth">${options([1, 2, 3, 4, 6].map(value => [String(value), `${value} px`]), String(state.settings.trimWidth || 1))}</select></label>
+  </section>
+  <section class="surface"><h2>Sky</h2>
+    <label class="star-scale">Stars <output id="star-level-name">${starLevels[stars]}</output><input type="range" min="0" max="4" step="1" value="${stars}" data-setting="starDensity" aria-valuetext="${starLevels[stars]}"></label>
+    <p class="field-hint">More stars are brighter. Arctic shows snow, Inferno embers and Cyber falling data. Console apps can cover them with their own backgrounds.</p>
+    <label class="toggle-row"><span><strong>Theme textures</strong><small>Painted backgrounds behind each console, such as frost for Arctic and lava for Inferno.</small></span><input type="checkbox" data-setting="themeTextures" ${state.settings.themeTextures !== false ? 'checked' : ''}></label>
+    <label class="toggle-row"><span><strong>Ambient motion</strong><small>Drifting stars, shooting stars and lighting effects.</small></span><input type="checkbox" data-setting="ambientMotion" ${state.settings.ambientMotion !== false ? 'checked' : ''}></label>
+  </section>
+  <section class="surface"><h2>Consoles</h2>
+    <label class="toggle-row"><span><strong>Console animations</strong><small>Theme openings and session effects.</small></span><input type="checkbox" data-setting="launchEffect" ${state.settings.launchEffect !== false ? 'checked' : ''}></label>
+    <label class="toggle-row"><span><strong>Blink cursor</strong></span><input type="checkbox" data-setting="cursorBlink" ${state.settings.cursorBlink ? 'checked' : ''}></label>
+  </section>`;
+}
+function starLevel() {
+  const value = state.settings.starDensity;
+  return Number.isInteger(value) && value >= 0 && value <= 4 ? value : state.settings.panelStars === false ? 0 : 2;
+}
+function ensureBackdropSky(region, slot) {
+  region.dataset.frame = state.settings.trimStyle || 'classic';
+  if (region.id === 'content') {
+    let layer = region.querySelector(':scope > .page-background-layer');
+    if (!layer) {
+      layer = document.createElement('div');
+      layer.className = 'page-background-layer';
+      layer.setAttribute('aria-hidden', 'true');
+      layer.innerHTML = '<span class="page-backdrop"></span>';
+      region.prepend(layer);
+    }
+    mountSky(layer, slot);
+    return;
+  }
+  if (!region.querySelector(':scope > .page-backdrop')) region.insertAdjacentHTML('afterbegin', '<span class="page-backdrop" aria-hidden="true"></span>');
+  mountSky(region, slot);
 }
 function renderGridSettings() {
   return `<form id="grid-form" class="surface"><h2>Console grid</h2><div class="form-pair">${[['columns','Columns'],['rows','Rows']].map(([name,label]) => `<label>${label}<input name="${name}" type="number" min="2" max="8" value="${gridSize()[name]}" required></label>`).join('')}</div><p class="field-hint">A full grid makes room or grows when you add a console. Up to 64 panels.</p><p class="form-error" role="alert"></p><button type="submit" class="primary">Apply grid</button></form>`;
 }
 function renderKeyboardSettings() {
-  return `<section class="surface"><h2>Keyboard</h2><div class="shortcut-row"><span>New console</span><kbd>Ctrl Shift N</kbd></div><p class="field-hint">Right-click + to choose a name, agent or folder.</p><label class="toggle-row"><span><strong>Vim controls</strong><small>Use h/j/k/l to move around Dock.</small></span><input type="checkbox" data-setting="vimControls" ${state.settings.vimControls ? 'checked' : ''}></label><p class="field-hint">Ctrl+Shift+Space returns control to Dock. Press i to type in a console.</p><button class="subtle" data-action="vim-help">View shortcuts</button></section>`;
+  return `<section class="surface"><h2>Keyboard</h2><div class="shortcut-row"><span>New console</span><kbd>Ctrl Shift N</kbd></div><p class="field-hint">Right-click + to choose a name, agent or folder.</p><label class="toggle-row"><span><strong>Vim controls</strong><small>Use h/j/k/l to move around Paddock.</small></span><input type="checkbox" data-setting="vimControls" ${state.settings.vimControls ? 'checked' : ''}></label><p class="field-hint">Ctrl+Shift+Space returns control to Paddock. Press i to type in a console.</p><button class="subtle" data-action="vim-help">View shortcuts</button></section>`;
 }
 function renderPage() {
   if (!state) return;
@@ -302,35 +521,78 @@ function renderPage() {
   applySidebar();
   projectChats?.sync();
   if ($('#workspace-error')) $('#workspace-error').textContent = state.workspaceError || '';
-  const terminalView = page === 'terminal', consoleView = ['consoles', 'overview'].includes(page);
-  $('#terminal-page').hidden = !terminalView;
+  const previousProfileForm = $('#account-profile-form');
+  if (previousProfileForm) {
+    if (accountProfileResetOnRender) accountProfileResetOnRender = false;
+    else {
+      accountProfileDraft = {
+        provider: previousProfileForm.elements.provider.value,
+        label: previousProfileForm.elements.label.value,
+        error: previousProfileForm.querySelector('.form-error').textContent
+      };
+      const active = document.activeElement;
+      accountProfileFocus = previousProfileForm.contains(active)
+        ? { name: active.name || (active.type === 'submit' ? '__submit' : ''), start: active.selectionStart, end: active.selectionEnd }
+        : null;
+    }
+  }
+  const consoleView = ['consoles', 'overview'].includes(page);
+  if (page === 'vault') page = 'tools';
+  const settingsView = isSettingsPage(page), settingsOpening = settingsView && !isSettingsPage(renderedView);
+  if (!settingsView) pageBeforeSettings = page;
+  if (settingsView) { document.body.dataset.settingsOpen = ''; document.body.style.setProperty('--titlebar-h', $('.titlebar').offsetHeight + 'px'); } else delete document.body.dataset.settingsOpen;
   $('#consoles-page').hidden = !consoleView;
-  $('#content').hidden = terminalView || consoleView;
+  $('#content').hidden = consoleView;
   $('#content').dataset.view = page;
-  $('#launch-folder').hidden = !consoleView;
-  const view = page === 'terminal' ? `${page}:${selectedId}` : page === 'api' ? `${page}:${selectedApi}` : page;
+  $('#launch-folder').hidden = !consoleView || !!expandedId;
+  renderScreenshot();
+  const view = page === 'api' ? `${page}:${selectedApi}` : page;
   const changed = renderedView !== null && renderedView !== view;
+  // Moving between Settings categories keeps the heading and tabs still; only the panel fades.
+  const settingsSwitch = changed && isSettingsPage(renderedView) && isSettingsPage(page);
   renderedView = view;
-  if (changed) {
+  if (changed && !settingsSwitch) {
     viewAnimation?.cancel();
     if (!windowMoving && state.mode !== 'hud' && !reducedMotion.matches) {
-      viewAnimation = $(terminalView ? '#terminal-page' : consoleView ? '#consoles-page' : '#content').animate(
+      viewAnimation = $(consoleView ? '#consoles-page' : '#content').animate(
         [{ opacity: 0, transform: 'translateY(4px)' }, { opacity: 1, transform: 'translateY(0)' }],
         { duration: 160, easing: 'cubic-bezier(.22,1,.36,1)' }
       );
     }
   }
-  document.querySelectorAll('[data-page]').forEach(button => button.classList.toggle('selected', button.dataset.page === page));
-  if (terminalView) { renderTerminal(); return; }
+  document.querySelectorAll('[data-page]').forEach(button => button.classList.toggle('selected', button.dataset.page === page || button.closest('.sidebar-bottom') && isSettingsPage(page)));
   if (consoleView) { renderConsoles(); return; }
-  const renderer = { projects: () => projects.render(), results: () => workbench.render('results'), usage: renderUsage, api: renderApi, vault: renderVault, tools: renderTools, instructions: renderInstructions, settings: renderSettings }[page] || renderSettings;
-  $('#content').innerHTML = (state.storageError ? `<div class="error-banner" role="alert">${escape(state.storageError)}</div>` : '') + renderer();
+  const renderer = { projects: () => projects.render(), results: () => workbench.render('results'), usage: renderUsage, api: renderApi, tools: renderTools, instructions: renderInstructions, settings: renderSettingsCategory }[page] || renderSettingsCategory;
+  const content = $('#content');
+  const backgroundLayer = content.querySelector(':scope > .page-background-layer');
+  content.innerHTML = (state.storageError ? `<div class="error-banner" role="alert">${escape(state.storageError)}</div>` : '') + (isSettingsPage(page) ? renderSettingsCategory() : renderer());
+  if (page === 'usage') {
+    const form = $('#account-profile-form');
+    if (form) {
+      form.elements.provider.value = accountProfileDraft.provider;
+      form.elements.label.value = accountProfileDraft.label;
+      form.querySelector('.form-error').textContent = accountProfileDraft.error;
+      form.elements[accountProfileFocus?.name === '__submit' ? 2 : accountProfileFocus?.name]?.focus({ preventScroll: true });
+      const label = form.elements.label;
+      if (accountProfileFocus?.name === 'label' && Number.isInteger(accountProfileFocus.start)) label.setSelectionRange(accountProfileFocus.start, accountProfileFocus.end);
+    }
+    accountProfileFocus = null;
+  }
+  // #content owns one sky for its lifetime. Keep its canvas node so mountSky's
+  // seeded particles, shooting-star schedule and elapsed phase survive redraws.
+  if (backgroundLayer) content.prepend(backgroundLayer);
+  ensureBackdropSky(content, 57);
   workbench?.mount();
-  if (page === 'tools') { $('.page-heading').insertAdjacentHTML('afterend', imageGenerator.render()); imageGenerator.mount(); }
-  if (page === 'settings') $('.settings-layout').insertAdjacentHTML('afterbegin', updates?.render() || '');
+  if (settingsOpening && !windowMoving && !reducedMotion.matches) { viewAnimation?.cancel(); viewAnimation = $('.settings-overlay')?.animate([{ opacity: 0, transform: 'scale(1.03)' }, { opacity: 1, transform: 'scale(1)' }], { duration: 220, easing: 'cubic-bezier(.22,1,.36,1)' }); }
+  if (page === 'appearance') { const preview = $('.settings-content .console-theme-preview'); if (preview) mountSky(preview, 99); }
+  if ($('.settings-overlay')) mountSky($('.settings-overlay'), 77);
+  lightingChanged();
+  if (settingsSwitch && !windowMoving && !reducedMotion.matches) { viewAnimation?.cancel(); viewAnimation = $('.settings-content')?.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 120, easing: 'ease-out' }); }
+  if (page === 'tools') { $('.settings-content .page-heading').insertAdjacentHTML('afterend', imageGenerator.render()); imageGenerator.mount(); }
+
   if (page === 'usage') { $('#content').insertAdjacentHTML('beforeend', messageUsageTable()); usageView.mount(); }
   if (page === 'usage') $('#content').insertAdjacentHTML('beforeend', imageGenerator.usage());
-  if (page === 'settings') { $('.settings-layout').insertAdjacentHTML('afterbegin', (remoteHosts?.html() || '') + (phone?.renderSettings() || '') + renderGridSettings() + renderAppearanceSettings() + renderKeyboardSettings() + renderProjectSettings() + renderResultsSettings() + renderStartupSettings() + renderLaunchDefaults()); launchDefaultsFields(); }
+  if (page === 'console-settings') launchDefaultsFields();
   if (page === 'api') {
     const form = $('#api-form');
     for (const key of ['model', 'prompt', 'maxOutput', 'projectId']) form.elements[key].value = apiDraft[key];
@@ -340,11 +602,12 @@ function renderPage() {
   }
 }
 function hudHtml() {
-  const ready = state.sessions.filter(x => ['ready', 'attention'].includes(x.state)).length;
-  const active = state.sessions.filter(x => x.alive).length;
-  const selected = state.sessions.find(x => x.id === selectedId && x.alive) || state.sessions.find(x => x.alive);
+  const ready = state.sessions.filter(isReady).length;
+  const active = state.sessions.filter(x => isOpenConsole(x) && x.alive).length;
+  const selected = state.sessions.find(x => x.id === selectedId && isOpenConsole(x) && x.alive) || state.sessions.find(x => isOpenConsole(x) && x.alive);
   const quotaProvider = selected?.provider === 'claude' ? 'claude' : 'codex';
-  const quota = state.limits.find(x => x.id === `${quotaProvider}:account` || x.id === `${quotaProvider}:codex`) || state.limits.find(x => x.provider === quotaProvider);
+  const quotaAccountId = selected?.accountId || `${quotaProvider}:default`;
+  const quota = state.limits.find(x => x.provider === quotaProvider && (x.accountId || (quotaProvider === 'claude' && x.id === 'claude:account' ? 'claude:default' : quotaProvider === 'codex' ? 'codex:default' : null)) === quotaAccountId);
   const weekly = quota?.windows.find(x => x.minutes === 10080), five = quota?.windows.find(x => x.minutes === 300);
   const covered = coveredSlots();
   const slots = Array.from({ length: gridCapacity() }, (_, i) => {
@@ -354,10 +617,10 @@ function hudHtml() {
     const name = state.settings.slotNames?.[i + 1];
     return item ? `<button style="${area}" class="hud-slot ${item.state} ${item.id === selectedId ? 'current' : ''}" data-slot="${i + 1}" data-session="${item.id}" title="${escape(item.name)} · ${labels[item.state]}"><span>${i + 1}</span>${readyIcon(item)}<small>${escape(item.name)}</small></button>` : `<button style="${area}" class="hud-slot empty ${name ? 'named' : ''}" data-action="new" data-slot="${i + 1}" aria-label="Open console ${i + 1}${name ? ': ' + escape(name) : ''}" ${launchHint} ${openingConsole ? 'disabled' : ''}>${newConsoleMark()}${name ? `<small class="hud-slot-name">${escape(name)}</small>` : ''}</button>`;
   }).join('');
-  return `<div class="hud-title"><span class="hud-brand" data-window-drag title="Drag to move">${icon('dock')}agentdock</span><button class="vim-mode" data-action="vim-normal" hidden></button><button class="icon-button" data-action="dashboard" aria-label="Expand dashboard">${icon('expand')}</button><button class="icon-button" data-action="tray" aria-label="Hide in system tray">${icon('close')}</button></div><button class="hud-summary" data-action="dashboard"><div><strong>${ready ? `${ready} ready for you` : active ? `${active} console${active === 1 ? '' : 's'} open` : ''}</strong>${icon('arrow')}</div></button><div class="hud-slots">${slots}</div>${selected ? `<button class="hud-console ${selected.state}" data-session="${selected.id}"><div><span>${shellMark(selected.provider)}${escape(selected.name)}</span>${icon('expand')}</div><pre id="hud-preview">${escape(terminalPreview(selected))}</pre></button>` : `<button class="hud-console empty" data-action="new" aria-label="Open console" ${launchHint} ${openingConsole ? 'disabled' : ''}>${newConsoleMark()}</button>`}<div class="hud-usage" style="--provider-accent:${accountIdentity(quotaProvider).color}"><span class="hud-account">${accountMark(quotaProvider)}${quotaProvider === 'claude' ? 'Claude remaining' : 'Codex remaining'} <small>${quota ? age(quota.observedAt) : 'Not connected'}</small></span><div><span>5h <b>${remainingPercent(five?.usedPercent) !== null ? number(remainingPercent(five.usedPercent)) + '% left' : 'Unknown'}</b></span><span>Weekly <b>${remainingPercent(weekly?.usedPercent) !== null ? number(remainingPercent(weekly.usedPercent)) + '% left' : 'Unknown'}</b></span></div></div>`;
+  return `<div class="hud-title"><span class="hud-brand" data-window-drag title="Drag to move">${pdMark()}paddock</span><button class="vim-mode" data-action="vim-normal" hidden></button><button class="icon-button" data-action="dashboard" aria-label="Expand dashboard">${icon('expand')}</button><button class="icon-button" data-action="tray" aria-label="Hide in system tray">${icon('close')}</button></div><button class="hud-summary" data-action="dashboard"><div><strong>${ready ? `${ready} ready for you` : active ? `${active} console${active === 1 ? '' : 's'} open` : ''}</strong>${icon('arrow')}</div></button><div class="hud-slots">${slots}</div>${selected ? `<button class="hud-console ${selected.state}" data-session="${selected.id}" data-frame="${escape(state.settings.slotTrims?.[selected.slot] || state.settings.trimStyle)}"><div><span>${shellMark(selected.provider)}${escape(selected.name)}</span>${icon('expand')}</div><pre id="hud-preview">${escape(terminalPreview(selected))}</pre></button>` : `<button class="hud-console empty" data-action="new" aria-label="Open console" ${launchHint} ${openingConsole ? 'disabled' : ''}>${newConsoleMark()}</button>`}<div class="hud-usage" style="--provider-accent:${accountIdentity(quotaProvider).color}"><span class="hud-account">${accountMark(quotaProvider)}${escape(selected?.accountLabel || (quotaProvider === 'claude' ? 'Default Claude' : 'Default Codex'))} <small>${quota ? age(quota.observedAt) : 'Not connected'}</small></span><div><span>5h <b>${remainingPercent(five?.usedPercent) !== null ? number(remainingPercent(five.usedPercent)) + '% left' : 'Unknown'}</b></span><span>Weekly <b>${remainingPercent(weekly?.usedPercent) !== null ? number(remainingPercent(weekly.usedPercent)) + '% left' : 'Unknown'}</b></span></div></div>`;
 }
 function terminalPreview(session) {
-  if (!session) return '> ready when you are';
+  if (!session) return 'No console selected.';
   const buffer = terminals.get(session.id)?.term.buffer.active;
   if (buffer) {
     const lines = [];
@@ -366,21 +629,68 @@ function terminalPreview(session) {
     }
     if (lines.length) return lines.slice(-3).join('\n');
   }
-  return `${providerName(session.provider)}  /  ${labels[session.state]}\nClick to enter fullscreen.`;
+  return `${providerName(session.provider)}  /  ${labels[session.state]}\nClick to expand this console.`;
 }
 let previewTimer;
 function updatePreview() {
   if (state.mode !== 'hud' || previewTimer) return;
   previewTimer = setTimeout(() => {
     previewTimer = null;
-    const selected = state.sessions.find(x => x.id === selectedId) || state.sessions.find(x => x.alive);
+    const selected = state.sessions.find(x => x.id === selectedId && isOpenConsole(x)) || state.sessions.find(x => isOpenConsole(x));
     if ($('#hud-preview')) $('#hud-preview').textContent = terminalPreview(selected);
   }, 200);
 }
 function receive(next) {
+  ++stateReceiveVersion;
+  const sessionEffects = [];
+  if (state && next.mode !== state.mode) {
+    const intent = expansionModeIntent;
+    if (!intent || intent.request !== expansionRequest || next.mode !== intent.mode) ++expansionRequest;
+  }
+  if (state && next.settings.launchEffect !== false && !reducedMotion.matches) {
+    for (const previous of state.sessions.filter(isOpenConsole)) {
+      const current = next.sessions.find(item => item.id === previous.id);
+      if (isOpenConsole(current) && previous.state !== current.state) {
+        if (current.state === 'ready' && previous.state !== 'ready') sessionEffects.push([current.id, 'ready']);
+        else if (current.state === 'error' && previous.state !== 'error') sessionEffects.push([current.id, 'error']);
+      }
+      if (isOpenConsole(current)) continue;
+      const selector = state.mode === 'hud' ? `.hud-slot[data-session="${previous.id}"]` : `.session-grid [data-console-id="${previous.id}"]`;
+      closeConsoleSnapshot($(selector));
+    }
+  }
+  if (state) for (const session of next.sessions) {
+    if (session.alive && !session.dismissed && !state.sessions.some(previous => previous.id === session.id && isOpenConsole(previous))) pendingConsoleOpenings.add(session.id);
+  }
+  for (const id of pendingConsoleOpenings) if (!next.sessions.some(session => session.id === id && session.alive && !session.dismissed)) pendingConsoleOpenings.delete(id);
+  if (expandedId && (next.mode === 'hud' || ![...next.sessions, ...(next.codePanels || [])].some(session => session.id === expandedId && isOpenConsole(session)))) {
+    expandedId = null;
+    ++expansionRequest;
+    syncExpandedConsole();
+  }
+  if (selectedId && ![...next.sessions, ...(next.codePanels || [])].some(session => session.id === selectedId && isOpenConsole(session))) selectedId = null;
   state = next;
   document.body.style.setProperty('--grid-columns', gridSize().columns); document.body.style.setProperty('--grid-rows', gridSize().rows);
-  document.body.dataset.accent = state.settings.accentStyle || 'pink-blue';
+  document.body.dataset.trim = state.settings.trimStyle || 'classic';
+  ensureBackdropSky($('#sidebar'), 56);
+  ensureBackdropSky($('#content'), 57);
+  const consolesPage = $('#consoles-page');
+  ensureBackdropSky(consolesPage, 55);
+  const settingsOverlay = $('.settings-overlay');
+  if (settingsOverlay) settingsOverlay.dataset.frame = state.settings.trimStyle || 'classic';
+  document.body.dataset.stars = starLevel() ? 'on' : 'off';
+  document.body.dataset.lighting = state.settings.lighting || 'static';
+  document.body.dataset.textures = state.settings.themeTextures === false ? 'off' : 'on';
+  document.body.dataset.speed = state.settings.lightingSpeed || 'normal';
+  document.body.dataset.ambient = state.settings.ambientMotion === false ? 'off' : 'on';
+  setSkyLevel(starLevel(), state.settings.ambientMotion !== false);
+  document.body.dataset.openingMotion = state.settings.launchEffect === false ? 'off' : 'on';
+  appearance.syncSettings();
+  const trims = [state.settings.trimStyle, ...Object.values(state.settings.slotTrims || {})];
+  document.body.dataset.rgb = trims.includes('gamer') ? 'on' : 'off';
+  document.body.dataset.pulse = 'off';
+  lightingChanged();
+  document.body.style.setProperty('--trim-width', (state.settings.trimWidth || 1) + 'px');
   document.body.classList.toggle('is-fullscreen', state.mode === 'fullscreen');
   document.body.classList.toggle('steady-cursor', !state.settings.cursorBlink);
   for (const record of terminals.values()) if (record.term.options.cursorBlink !== !!state.settings.cursorBlink) record.term.options.cursorBlink = !!state.settings.cursorBlink;
@@ -402,16 +712,17 @@ function receive(next) {
   if ($('#workspace-error')) $('#workspace-error').textContent = state.workspaceError || '';
   windowMoving = !!state.transitioning;
   document.body.classList.toggle('window-moving', windowMoving);
-  for (const [id, record] of terminals) if (!state.sessions.some(session => session.id === id)) { record.output.dispose(); record.term.dispose(); record.node.remove(); terminals.delete(id); }
+  for (const [id, record] of terminals) if (!state.sessions.some(session => session.id === id && isOpenConsole(session))) { record.output.dispose(); record.term.dispose(); record.node.remove(); terminals.delete(id); }
   const hud = state.mode === 'hud';
   $('#dashboard').hidden = hud; $('#hud').hidden = !hud;
-  $('#nav-count').textContent = state.sessions.filter(x => x.alive).length;
+  $('#nav-count').textContent = state.sessions.filter(x => isOpenConsole(x) && x.alive).length;
   const readyCount = state.sessions.filter(isReady).length;
   $('#ready-count').textContent = readyCount; $('#ready-count').hidden = !readyCount;
   $('#ready-count').closest('button').setAttribute('aria-label', readyCount ? `Consoles, ${readyCount} ready for you` : 'Consoles');
   const launchFolder = state.settings.consoleDefaults.cwd;
   $('#launch-folder span').textContent = launchFolder.split(/[\\/]/).filter(Boolean).pop() || launchFolder;
   $('#launch-folder').title = `New consoles start in ${launchFolder}`;
+  renderScreenshot();
   applySidebar();
   if (page === 'tools') for (const connection of state.shared.connections) {
     const label = document.querySelector(`[data-tool-status="${connection.id}"]`);
@@ -424,17 +735,30 @@ function receive(next) {
     if (section && section.dataset.items !== next) { const template = document.createElement('template'); template.innerHTML = setupRequests(state, escape); template.content.firstElementChild.dataset.items = next; section.replaceWith(template.content.firstElementChild); }
   }
   if (hud && !launchGesture?.active && !$('#console-chooser').open && !document.body.classList.contains('window-dragging')) $('#hud').innerHTML = hudHtml();
-  else if (['overview', 'consoles', 'usage', 'terminal'].includes(page) && !document.activeElement?.closest('#rates-form')) renderPage();
+  else if (['overview', 'consoles', 'usage'].includes(page)) renderPage();
+  for (const [id, effect] of sessionEffects) {
+    const panel = state.mode === 'hud'
+      ? [...document.querySelectorAll('.hud-console[data-session]')].find(item => item.dataset.session === id)
+      : [...document.querySelectorAll('.session-grid .session-card[data-console-id]')].find(item => item.dataset.consoleId === id);
+    if (panel) playConsoleStateEffect(panel, effect);
+  }
   if (!windowMoving) scheduleFits();
   vim?.refresh();
 }
 function applySidebar() {
-  const collapsed = !!state.settings.sidebarCollapsed;
-  const sidebar = $('#sidebar'), toggle = $('#sidebar-toggle');
+  const collapsed = !!state.settings.sidebarCollapsed, blocked = collapsed || !!expandedId;
+  const sidebar = $('#sidebar'), toggle = $('#sidebar-toggle'), titlebar = $('.titlebar'), content = $('#content');
+  document.body.style.setProperty('--titlebar-h', titlebar.offsetHeight + 'px');
   const initialized = sidebar.hasAttribute('data-collapsed');
-  if (collapsed && sidebar.contains(document.activeElement)) toggle.focus();
-  sidebar.inert = collapsed;
-  sidebar.setAttribute('aria-hidden', String(collapsed));
+  if (expandedId && (sidebar.contains(document.activeElement) || content.contains(document.activeElement))) {
+    if (expandedId) document.querySelector(`.session-card[data-console-id="${CSS.escape(expandedId)}"] [data-action="toggle-console"]`)?.focus({ preventScroll: true });
+  }
+  sidebar.inert = blocked;
+  sidebar.setAttribute('aria-hidden', String(blocked));
+  titlebar.inert = false;
+  titlebar.removeAttribute('aria-hidden');
+  content.inert = !!expandedId;
+  toggle.disabled = !!expandedId;
   sidebar.dataset.collapsed = String(collapsed);
   if (!initialized) {
     // Apply the saved layout before enabling motion on later toggles.
@@ -454,29 +778,140 @@ async function acknowledgeSession(id) {
   finally { acknowledgments.delete(id); }
 }
 async function selectSession(id) {
+  const target = openConsole(id);
+  if (!target) return false;
+  const launchId = target.launchId || null;
+  const sameTarget = session => isOpenConsole(session) && (session.launchId || null) === launchId;
   selectedId = id;
-  if (state.mode !== 'fullscreen') await call('mode', 'fullscreen');
-  page = 'terminal';
-  renderPage();
+  const request = ++expansionRequest;
+  const modeIntent = { request, mode: 'fullscreen' };
+  expansionModeIntent = modeIntent;
+  try {
+    if (state.mode !== 'fullscreen' || state.transitioning) await call('mode', 'fullscreen');
+    const receiveVersion = stateReceiveVersion;
+    const fresh = await call('state');
+    const current = stateReceiveVersion === receiveVersion ? fresh : state;
+    const latestTarget = [...current.sessions, ...(current.codePanels || [])].find(session => session.id === id);
+    if (request !== expansionRequest || current.mode !== 'fullscreen' || current.transitioning || !sameTarget(latestTarget)) return false;
+    if (current === fresh) receive(fresh);
+    if (request !== expansionRequest || state.mode !== 'fullscreen' || state.transitioning || !sameTarget(openConsole(id))) return false;
+    selectedId = id;
+    expandedId = id;
+    page = 'consoles';
+    renderPage();
+  } finally {
+    if (expansionModeIntent === modeIntent) expansionModeIntent = null;
+  }
   await acknowledgeSession(id);
   await terminals.get(id)?.ready;
-  if (page === 'terminal' && selectedId === id) { fitVisible(); terminals.get(id)?.term.focus(); }
+  if (request === expansionRequest && expandedId === id && openConsole(id)) { fitVisible(); terminals.get(id)?.term.focus(); }
+  return true;
+}
+function restoreExpandedConsole({ focus = true } = {}) {
+  if (!expandedId) return false;
+  const id = expandedId;
+  expandedId = null;
+  ++expansionRequest;
+  renderPage();
+  const control = document.querySelector(`.session-card[data-console-id="${CSS.escape(id)}"] [data-action="toggle-console"]`);
+  if (focus && control?.isConnected) control.focus({ preventScroll: true });
+  scheduleFits();
+  return true;
+}
+function navigatePage(next) {
+  expandedId = null;
+  ++expansionRequest;
+  syncExpandedConsole();
+  page = next;
+  renderPage();
 }
 let fitTimer, fitFrame;
+// A theme-specific opening effect, independent of the running process.
+function launchBurst(panel) {
+  if (state.settings.launchEffect === false || reducedMotion.matches || !panel.isConnected) return;
+  openConsoleEffect(panel);
+}
+function keepFollowing(record) {
+  const buffer = record.term.buffer.active;
+  if (record.follow && buffer.viewportY < buffer.baseY) record.term.scrollToBottom();
+}
+function clearTerminalAnchor(record) {
+  record.anchorRestoreToken = (record.anchorRestoreToken || 0) + 1;
+  record.scrollAnchor?.marker?.dispose();
+  record.scrollAnchor = null;
+}
+function visibleTerminalAnchor(record) {
+  const buffer = record.term.buffer.active, start = buffer.viewportY;
+  for (let offset = 0; offset < record.term.rows; offset++) {
+    const text = buffer.getLine(start + offset)?.translateToString(true).trim();
+    if (text) {
+      const line = start + offset;
+      let logicalLine = line;
+      while (logicalLine > 0 && buffer.getLine(logicalLine)?.isWrapped) logicalLine--;
+      let marker = null;
+      try { marker = record.term.registerMarker(logicalLine - (buffer.baseY + buffer.cursorY)); } catch {}
+      return { text, offset, line, logicalLine, cellOffset: (line - logicalLine) * record.term.cols, marker };
+    }
+  }
+  let marker = null;
+  try { marker = record.term.registerMarker(start - (buffer.baseY + buffer.cursorY)); } catch {}
+  return { text: '', offset: 0, line: start, logicalLine: start, cellOffset: 0, marker };
+}
+function restoreTerminalAnchor(record, anchor) {
+  const buffer = record.term.buffer.active;
+  const markerLine = anchor.marker?.line ?? -1;
+  const logicalLine = markerLine >= 0 ? markerLine : anchor.logicalLine;
+  const rowOffset = Math.floor(anchor.cellOffset / Math.max(1, record.term.cols));
+  const target = logicalLine + rowOffset - anchor.offset;
+  const boundedTarget = Math.max(0, Math.min(buffer.baseY, target));
+  record.term.scrollToLine(boundedTarget);
+  return boundedTarget;
+}
+function scheduleTerminalAnchorRestore(record, anchor) {
+  // xterm synchronizes its pixel viewport after reflow; scrolling before that
+  // sync applies the line delta to the old viewport position.
+  const token = record.anchorRestoreToken = (record.anchorRestoreToken || 0) + 1;
+  const settle = (attempt, stable) => requestAnimationFrame(() => {
+    if (record.anchorRestoreToken !== token || record.scrollAnchor !== anchor || record.follow || !record.node.isConnected || !record.node.getClientRects().length) return;
+    const target = restoreTerminalAnchor(record, anchor), current = record.term.buffer.active;
+    const nextStable = current.viewportY === target ? stable + 1 : 0;
+    if (attempt < 6 && nextStable < 2) settle(attempt + 1, nextStable);
+  });
+  requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(() => settle(0, 0))));
+}
 function scheduleFits() {
   if (fitFrame) return;
   fitFrame = requestAnimationFrame(() => { fitFrame = null; fitVisible(); });
 }
 function fitVisible() {
   if (windowMoving || layoutMotion?.active || state?.mode === 'hud') return;
-  const visible = page === 'terminal' ? [terminals.get(selectedId)] : ['consoles', 'overview'].includes(page) ? [...terminals.values()].filter(record => record.node.closest('#consoles-page')) : [];
+  const visible = ['consoles', 'overview'].includes(page)
+    ? expandedId ? [terminals.get(expandedId)] : [...terminals.values()].filter(record => record.node.closest('#consoles-page'))
+    : [];
   for (const record of visible) {
     if (!record || record.loading || !record.node.getClientRects().length) continue;
     try {
       const dimensions = `${record.node.clientWidth}:${record.node.clientHeight}:${record.term.options.fontSize}:${devicePixelRatio}`;
-      if (record.dimensions === dimensions) continue;
-      record.fit.fit();
+      if (record.dimensions === dimensions && !record.repaint) continue;
+      if (record.dimensions !== dimensions) {
+        const buffer = record.term.buffer.active;
+        const wasFollowing = record.follow && buffer.viewportY >= buffer.baseY;
+        if (wasFollowing) clearTerminalAnchor(record);
+        else if (!record.scrollAnchor || (record.scrollAnchor.marker && record.scrollAnchor.marker.line < 0)) {
+          clearTerminalAnchor(record);
+          record.scrollAnchor = visibleTerminalAnchor(record);
+        }
+        const anchor = record.scrollAnchor;
+        let fitted = false;
+        try {
+          record.fit.fit();
+          if (wasFollowing) keepFollowing(record);
+          else { record.follow = false; scheduleTerminalAnchorRestore(record, anchor); }
+          fitted = true;
+        } finally { if (!fitted && anchor) clearTerminalAnchor(record); }
+      } else keepFollowing(record);
       record.dimensions = dimensions;
+      if (record.repaint) { record.repaint = false; record.term.refresh(0, record.term.rows - 1); }
       const size = `${record.term.cols}:${record.term.rows}`;
       if (record.size !== size) {
         record.size = size;
@@ -485,17 +920,107 @@ function fitVisible() {
     } catch {}
   }
 }
+const SCREENSHOT_DRAG = 'application/x-paddock-screenshot';
+function renderScreenshot() {
+  const shot = state?.screenshot, button = $('#screenshot-spot');
+  button.hidden = !shot || !['consoles', 'overview'].includes(page) || !state.sessions.some(x => isOpenConsole(x) && x.alive);
+  if (!shot) return;
+  if (button.querySelector('img').getAttribute('src') !== shot.thumb) button.querySelector('img').src = shot.thumb;
+  const minutes = shot.at ? Math.round((Date.now() - shot.at) / 60000) : null;
+  const when = minutes === null ? 'earlier' : minutes < 1 ? 'just now' : minutes < 60 ? `${minutes} min ago` : `${Math.round(minutes / 60)} h ago`;
+  button.title = `${shot.name} · ${when}\nClick to paste its path into the selected console, or drag it onto a console.`;
+  button.setAttribute('aria-label', `Paste latest screenshot (${when}) into the selected console`);
+}
+function imageConsole(id) {
+  const session = state.sessions.find(x => x.id === id);
+  return !!session && !session.remoteHostId && (['codex', 'claude', 'custom'].includes(session.provider) || !!state.agents?.some(x => x.id === session.provider));
+}
+async function pasteScreenshot(id) {
+  const record = terminals.get(id);
+  if (!record || !state.sessions.some(x => x.id === id && isOpenConsole(x) && x.alive)) { toast('Click a console first, then paste the screenshot.', true); return; }
+  record.term.paste(await call('screenshot.path', { id }));
+  record.term.focus();
+}
+// Per-console text size, changed with the A− / A+ buttons in its header.
+// A viewer preference: kept in this window's storage, never sent to the PC.
+const textSteps = (() => { try { return JSON.parse(localStorage.getItem('console-text-steps') || '{}'); } catch { return {}; } })();
+const textSize = (id, compact) => (compact ? 11 : 14) + (textSteps[id] || 0);
+function textSizeButtons(id, name) {
+  const step = textSteps[id] || 0;
+  return `<span class="text-size-buttons" role="group" aria-label="Text size for ${escape(name)}"><button class="icon-button text-size" data-text-size="-1" data-id="${id}" aria-label="Smaller text" title="Smaller text" ${step <= -4 ? 'disabled' : ''}>A<small>−</small></button><button class="icon-button text-size" data-text-size="1" data-id="${id}" aria-label="Larger text" title="Larger text" ${step >= 10 ? 'disabled' : ''}>A<small>+</small></button></span>`;
+}
+function changeTextSize(id, delta) {
+  const step = Math.max(-4, Math.min(10, (textSteps[id] || 0) + delta));
+  if (step) textSteps[id] = step; else delete textSteps[id];
+  try { localStorage.setItem('console-text-steps', JSON.stringify(textSteps)); } catch { /* keep the size for this session only */ }
+  const record = terminals.get(id);
+  if (record) { record.term.options.fontSize = textSize(id, record.compact); record.dimensions = null; scheduleFits(); }
+  document.querySelectorAll(`[data-text-size][data-id="${id}"]`).forEach(button => { button.disabled = button.dataset.textSize === '1' ? step >= 10 : step <= -4; });
+}
+function queueTerminalWrite(record, data) {
+  const previous = record.writeChain || Promise.resolve();
+  const operation = previous.then(() => new Promise(resolve => record.term.write(data, resolve)));
+  record.writeChain = operation.catch(() => {});
+  return operation;
+}
+function resetTerminal(record, packet) {
+  clearTerminalAnchor(record);
+  record.follow = true;
+  record.output?.dispose();
+  record.launchId = packet.launchId || null;
+  const previous = record.writeChain || Promise.resolve();
+  const operation = previous.then(() => new Promise(resolve => {
+    record.term.reset(); record.launchId = packet.launchId || null;
+    if (packet.data) record.term.write(packet.data, () => { keepFollowing(record); resolve(); });
+    else resolve();
+  }));
+  record.writeChain = operation.catch(() => {});
+  record.output = terminalOutput((data, done) => queueTerminalWrite(record, data).then(() => { keepFollowing(record); done?.(); }), updatePreview);
+  return operation;
+}
 function mountTerminal(session, host, compact) {
   let record = terminals.get(session.id);
   if (!record) {
     const id = session.id, node = document.createElement('div');
     node.className = 'terminal-instance'; node.dataset.terminalId = id; host.append(node);
-    const term = new Terminal({ cols: session.cols || 110, rows: session.rows || 30, fontFamily: 'Cascadia Code, Consolas, monospace', fontSize: compact ? 11 : 14, lineHeight: 1.22, cursorBlink: !!state.settings.cursorBlink, scrollback: 3000, theme: { background: '#010103', foreground: '#e5e7ef', cursor: '#f58ac8', selectionBackground: '#293550', black: '#1b2126', red: '#ef8a86', green: '#b9e888', yellow: '#e8c57e', blue: '#8daef2', magenta: '#c0a2f5', cyan: '#89ccc4', white: '#e1e8e3', brightBlack: '#81908d' } });
+    const themeId = state.settings.slotTrims?.[session.slot] || state.settings.trimStyle || 'classic';
+    const term = new Terminal({ cols: session.cols || 110, rows: session.rows || 30, fontFamily: 'Cascadia Code, Consolas, monospace', fontSize: textSize(session.id, compact), lineHeight: 1.22, cursorBlink: !!state.settings.cursorBlink, scrollback: 3000, allowTransparency: true, disableStdin: !!session.switching, theme: terminalTheme(themeId) });
     const fit = new FitAddon(); term.loadAddon(fit); term.open(node);
-    record = { id, term, fit, node, compact, loading: true, queued: [] }; terminals.set(id, record);
-    record.output = terminalOutput((data, done) => term.write(data, done), updatePreview);
+    record = { id, term, fit, node, compact, themeId, loading: true, queued: [], follow: true, scrollAnchor: null, launchId: session.launchId || null, writeChain: Promise.resolve() }; terminals.set(id, record);
+    record.output = terminalOutput((data, done) => queueTerminalWrite(record, data).then(() => { keepFollowing(record); done?.(); }), updatePreview);
+    // Only the user's own scrolling stops a console following new output. Moves,
+    // resizes and hidden periods can leave xterm's viewport behind otherwise.
+    for (const event of ['wheel', 'keyup', 'pointerup']) node.addEventListener(event, () => requestAnimationFrame(() => {
+      const buffer = term.buffer.active; record.follow = buffer.viewportY >= buffer.baseY;
+      if (record.follow) clearTerminalAnchor(record);
+      else {
+        const anchor = visibleTerminalAnchor(record);
+        clearTerminalAnchor(record);
+        record.scrollAnchor = anchor;
+      }
+    }), { passive: true });
     term.onData(data => call('session.input', { id, data }).catch(error => toast(error.message, true)));
+    fileLinks(term, value => openFile(id, value));
+    // Ctrl+V in a local agent console also pastes clipboard images as a file path.
+    term.attachCustomKeyEventHandler(e => {
+      if (e.type === 'keydown' && (e.ctrlKey || e.metaKey) && !e.altKey && e.code === 'KeyC' && (term.hasSelection() || e.shiftKey)) {
+        e.preventDefault(); e.stopPropagation();
+        if (term.hasSelection()) call('clipboard.write', term.getSelection()).catch(error => toast(error.message, true));
+        return false;
+      }
+      if (e.type !== 'keydown' || e.code !== 'KeyV' || !e.ctrlKey || e.shiftKey || e.altKey || e.metaKey || !imageConsole(id)) return true;
+      e.preventDefault();
+      call('screenshot.clipboard', { id }).then(text => { if (text) term.paste(text); }).catch(error => toast(error.message, true));
+      return false;
+    });
+    node.addEventListener('contextmenu', e => {
+      if (!term.hasSelection()) return;
+      e.preventDefault();
+      call('clipboard.menu', term.getSelection()).catch(error => toast(error.message, true));
+    });
     node.addEventListener('focusin', () => { selectedId = id; projectChats?.sync(); });
+    node.addEventListener('dragover', e => { if (e.dataTransfer.types.includes(SCREENSHOT_DRAG)) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; } });
+    node.addEventListener('drop', e => { if (!e.dataTransfer.types.includes(SCREENSHOT_DRAG)) return; e.preventDefault(); e.stopPropagation(); selectedId = id; pasteScreenshot(id).catch(error => toast(error.message, true)); });
     // A focused console can finish while the user is reading. Wait for their
     // next interaction; terminal output and automatic protocol replies do not count.
     for (const event of ['pointerdown', 'keydown', 'input', 'paste']) node.addEventListener(event, e => {
@@ -504,39 +1029,66 @@ function mountTerminal(session, host, compact) {
     }, { capture: true });
     record.ready = call('session.buffer', id).then(buffer => {
       if (terminals.get(id) !== record) return;
-      term.write(buffer.data + record.queued.filter(packet => packet.sequence > buffer.sequence).map(packet => packet.data).join(''));
+      const expectedLaunchId = state.sessions.find(item => item.id === id)?.launchId || null;
+      const queued = record.queued.filter(packet => (packet.launchId || null) === expectedLaunchId);
+      const resetIndex = queued.findLastIndex(packet => packet.reset);
+      let baseline = '', launchId, tail;
+      if (resetIndex >= 0) {
+        const resetPacket = queued[resetIndex]; launchId = resetPacket.launchId; baseline = resetPacket.data || '';
+        tail = queued.slice(resetIndex + 1).filter(packet => packet.launchId === launchId && packet.sequence > resetPacket.sequence);
+      } else {
+        launchId = expectedLaunchId;
+        baseline = (buffer.launchId || null) === expectedLaunchId ? buffer.data : '';
+        tail = queued.filter(packet => (!packet.launchId || packet.launchId === launchId) && packet.sequence > (buffer.sequence || 0));
+      }
+      record.launchId = launchId || null;
+      const text = baseline + tail.map(packet => packet.data).join('');
       record.queued = []; record.loading = false;
-      return new Promise(resolve => term.write('', () => { scheduleFits(); resolve(); }));
+      if (resetIndex >= 0) resetTerminal(record, { launchId, data: text });
+      else queueTerminalWrite(record, text);
+      return record.writeChain.then(() => { scheduleFits(); });
     }).catch(error => { record.loading = false; toast(error.message, true); });
   }
-  if (record.node.parentElement !== host) host.append(record.node);
+  // xterm can pause painting while its node is detached or hidden and miss the
+  // resume, leaving a moved console blank. Repaint it on the next fit.
+  if (record.node.parentElement !== host) { host.append(record.node); record.repaint = true; scheduleFits(); }
+  const themeId = state.settings.slotTrims?.[session.slot] || state.settings.trimStyle || 'classic';
+  if (record.themeId !== themeId) { record.term.options.theme = terminalTheme(themeId); record.themeId = themeId; }
   if (record.compact !== compact) {
     record.compact = compact;
-    record.term.options.fontSize = compact ? 11 : 14;
+    record.term.options.fontSize = textSize(session.id, compact);
     record.dimensions = null;
   }
+  record.term.options.disableStdin = !!session.switching;
   record.node.classList.toggle('compact', compact); record.node.hidden = false;
   return record;
 }
-function renderTerminal() {
-  const session = state.sessions.find(x => x.id === selectedId);
-  if (!session) { page = 'consoles'; renderPage(); return; }
-  $('#terminal-host').dataset.state = session.state;
-  if (!$('#terminal-heading').contains(document.activeElement) && !nameSaves.has(session.slot)) {
-    $('#terminal-heading').innerHTML = `${shellMark(session.provider)}<span class="slot">${String(session.slot).padStart(2, '0')}</span><div>${slotNameInput(session.slot, session)}<small>${escape(session.cwd)}</small></div>${projectChats.button(session)}${badge(session.state)}`;
-    if (session.permissions === 'unrestricted') $('#terminal-heading').insertAdjacentHTML('beforeend', '<span class="permission-tag">Full access</span>');
-    if (session.restoreError) $('#terminal-heading').insertAdjacentHTML('beforeend', `<button class="secondary" data-action="retry-session" data-id="${session.id}">Try reopening</button>`);
-  }
-  $('#terminal-tabs').innerHTML = state.sessions.map(x => `<button role="tab" aria-selected="${x.id === selectedId}" data-session="${x.id}" class="${x.id === selectedId ? 'active' : ''}">${readyIcon(x)}${x.slot}. ${escape(x.name)}</button>`).join('');
-  $('#terminal-page [data-action="end-session"]').disabled = !session.alive && !session.restoreError;
-  $('#terminal-page [data-action="end-session"]').textContent = session.restoreError ? 'Remove saved console' : 'End console';
-  mountTerminal(session, $('#terminal-host'), false);
-  for (const [id, record] of terminals) if (record.node.parentElement === $('#terminal-host')) record.node.hidden = id !== selectedId;
-  scheduleFits();
-}
 const terminalResize = new ResizeObserver(() => { clearTimeout(fitTimer); fitTimer = setTimeout(scheduleFits, 80); });
-terminalResize.observe($('#terminal-host')); terminalResize.observe($('.session-grid'));
-window.dock.onOutput(packet => { const record = terminals.get(packet.id); if (!record) return; if (record.loading) record.queued.push(packet); else record.output.push(packet.data); });
+terminalResize.observe($('#consoles-page')); terminalResize.observe($('.session-grid'));
+window.dock.onOutput(packet => {
+  const record = terminals.get(packet.id); if (!record) return;
+  const expectedLaunchId = state?.sessions.find(session => session.id === packet.id)?.launchId || null;
+  if ((packet.launchId || null) !== expectedLaunchId) return;
+  if (packet.reset) {
+    if (record.loading) {
+      record.queued.push(packet);
+      record.queued = record.queued.filter((item, index, all) => item.reset ? index === all.findLastIndex(candidate => candidate.reset) : true);
+      record.launchId = packet.launchId || null;
+    } else resetTerminal(record, packet);
+    return;
+  }
+  if ((record.launchId || null) !== (packet.launchId || null)) return;
+  const now = performance.now();
+  if (state?.settings.launchEffect !== false && (record.lastOutputAt == null || now - record.lastOutputAt > 900) && (record.lastOutputFxAt == null || now - record.lastOutputFxAt > 1500)) {
+    const panel = state.mode === 'hud'
+      ? [...document.querySelectorAll('.hud-console[data-session]')].find(item => item.dataset.session === packet.id)
+      : record.node.closest('.session-card[data-console-id]');
+    if ((panel?.dataset.frame || panel?.closest('[data-frame]')?.dataset.frame) === 'cyber') { record.lastOutputFxAt = now; playConsoleStateEffect(panel, 'output'); }
+  }
+  record.lastOutputAt = now;
+  if (document.body.dataset.lighting === 'reactive' && Date.now() - (record.litAt || 0) > 700) { record.litAt = Date.now(); lightUp(record.node.closest('.session-card')); }
+  if (record.loading) record.queued.push(packet); else record.output.push(packet.data);
+});
 document.fonts.ready.then(() => { for (const record of terminals.values()) record.dimensions = null; scheduleFits(); });
 window.dock.onSelect(id => selectSession(id).catch(error => toast(error.message, true)));
 window.dock.onNotice?.(item => {
@@ -661,16 +1213,16 @@ async function openNew(slot, overrides = null) {
     await Promise.all(nameSaves.values());
     const session = await call('session.create', { ...overrides, ...(slot ? { slot: Number(slot) } : {}) });
     if (overrides) $('#console-chooser').close();
-    if (state.mode === 'hud') await selectSession(session.id);
+    if (state.mode === 'hud' || expandedId) await selectSession(session.id);
     else {
-      selectedId = session.id; page = 'consoles'; renderPage();
+      selectedId = session.id; navigatePage('consoles');
       await terminals.get(session.id)?.ready;
       fitVisible(); terminals.get(session.id)?.term.focus();
     }
     return session;
   } catch (error) {
     if (overrides) throw error;
-    page = 'settings';
+    navigatePage('settings');
     if (state.mode !== 'dashboard') await call('mode', 'dashboard');
     renderPage(); toast(error.message, true);
   } finally {
@@ -700,7 +1252,7 @@ document.addEventListener('focusout', async event => {
   } finally {
     nameSaves.delete(slot); input.readOnly = false;
     if (!input.hasAttribute('aria-invalid')) {
-      const session = state.sessions.find(x => x.slot === slot && (x.alive || x.restoreError));
+    const session = state.sessions.find(x => x.slot === slot && isOpenConsole(x));
       document.querySelectorAll(`.console-name[data-name-slot="${slot}"]`).forEach(field => syncSlotName(field, slot, session));
     }
   }
@@ -714,10 +1266,105 @@ document.addEventListener('keydown', event => {
     input.blur();
   }
 });
+function placeAccountPopover(toggle, menu) {
+  const rect = toggle.getBoundingClientRect(), gutter = 8;
+  const width = menu.getBoundingClientRect().width || 220;
+  const height = menu.getBoundingClientRect().height || 140;
+  const left = Math.max(gutter, Math.min(rect.left, window.innerWidth - width - gutter));
+  const top = rect.bottom + height + gutter <= window.innerHeight
+    ? rect.bottom + gutter
+    : Math.max(gutter, rect.top - height - gutter);
+  menu.style.left = `${left}px`; menu.style.top = `${top}px`;
+  menu.style.maxHeight = `${Math.max(96, window.innerHeight - gutter * 2)}px`;
+}
+function repositionAccountPopovers() {
+  for (const menu of document.querySelectorAll('.account-menu-items[popover]:popover-open')) {
+    const toggle = menu.parentElement?.querySelector('[data-account-menu-toggle]');
+    if (toggle?.isConnected) placeAccountPopover(toggle, menu); else menu.hidePopover();
+  }
+}
+const accountMenuPointerGestures = new Map();
+const accountMenuHasPointerGesture = menu => [...accountMenuPointerGestures.values()].includes(menu);
+function closeAccountMenuIfUnfocused(menu) {
+  setTimeout(() => {
+    if (menu.matches(':popover-open') && !menu.contains(document.activeElement) && !accountMenuHasPointerGesture(menu)) menu.hidePopover();
+  }, 0);
+}
+document.addEventListener('pointerdown', event => {
+  const menu = event.target.closest?.('.account-menu-items[popover]');
+  if (!menu) return;
+  accountMenuPointerGestures.set(event.pointerId, menu);
+}, true);
+document.addEventListener('pointerup', event => {
+  const menu = accountMenuPointerGestures.get(event.pointerId);
+  if (!menu) return;
+  setTimeout(() => {
+    if (accountMenuPointerGestures.get(event.pointerId) !== menu) return;
+    accountMenuPointerGestures.delete(event.pointerId);
+    closeAccountMenuIfUnfocused(menu);
+  }, 500);
+}, true);
+document.addEventListener('pointercancel', event => {
+  const menu = accountMenuPointerGestures.get(event.pointerId);
+  if (!menu) return;
+  accountMenuPointerGestures.delete(event.pointerId);
+  closeAccountMenuIfUnfocused(menu);
+}, true);
+document.addEventListener('click', event => {
+  const clickedMenu = event.target.closest?.('.account-menu-items[popover]');
+  for (const [pointerId, menu] of accountMenuPointerGestures) if (!clickedMenu || clickedMenu === menu) accountMenuPointerGestures.delete(pointerId);
+}, true);
+window.addEventListener('blur', () => {
+  const menus = new Set(accountMenuPointerGestures.values());
+  accountMenuPointerGestures.clear();
+  for (const menu of menus) if (menu.matches(':popover-open')) menu.hidePopover();
+});
+window.addEventListener('resize', repositionAccountPopovers);
+document.addEventListener('scroll', repositionAccountPopovers, true);
+document.addEventListener('click', event => {
+  const toggle = event.target.closest('[data-account-menu-toggle]');
+  if (!toggle) return;
+  const menu = toggle.parentElement?.querySelector('.account-menu-items');
+  if (!menu?.showPopover) { toast('This window cannot open the account menu. Update the Paddock web runtime.'); return; }
+  event.preventDefault();
+  if (menu.matches(':popover-open')) { menu.hidePopover(); return; }
+  try {
+    menu.showPopover(); placeAccountPopover(toggle, menu);
+    toggle.setAttribute('aria-expanded', 'true');
+    menu.querySelector('[role="menuitem"]:not(:disabled)')?.focus({ preventScroll: true });
+  } catch { toast('The account menu could not be opened.'); }
+}, true);
+document.addEventListener('toggle', event => {
+  const menu = event.target;
+  if (!menu.matches?.('.account-menu-items[popover]')) return;
+  const toggle = menu.parentElement?.querySelector('[data-account-menu-toggle]');
+  toggle?.setAttribute('aria-expanded', String(menu.matches(':popover-open')));
+}, true);
+document.addEventListener('focusout', event => {
+  const menu = event.target.closest?.('.account-menu-items[popover]');
+  if (!menu) return;
+  closeAccountMenuIfUnfocused(menu);
+}, true);
+document.addEventListener('keydown', event => {
+  const menu = event.target.closest?.('.account-menu-items[popover]');
+  if (!menu) return;
+  if (event.key === 'Escape') {
+    event.preventDefault(); event.stopPropagation();
+    const toggle = menu.parentElement?.querySelector('[data-account-menu-toggle]');
+    menu.hidePopover(); toggle?.focus({ preventScroll: true }); return;
+  }
+  if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
+  const items = [...menu.querySelectorAll('[role="menuitem"]:not(:disabled)')];
+  if (!items.length) return;
+  const current = items.indexOf(document.activeElement);
+  const index = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1 :
+    (current + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
+  event.preventDefault(); items[index].focus({ preventScroll: true });
+}, true);
 document.addEventListener('click', async event => {
   const button = event.target.closest('button'); if (!button) return;
   try {
-    if (button.dataset.page) { page = button.dataset.page; renderPage(); $('#content').scrollTop = 0; return; }
+    if (button.dataset.page) { navigatePage(button.dataset.page); $('#content').scrollTop = 0; return; }
     if (button.dataset.session) return await selectSession(button.dataset.session);
     if (button.dataset.docs) return await call('docs', button.dataset.docs);
     if (button.dataset.setupApply) {
@@ -729,12 +1376,15 @@ document.addEventListener('click', async event => {
     if (button.dataset.setupDismiss) { await call('workbench.setup.dismiss', button.dataset.setupDismiss); return; }
     if (button.dataset.setupKey) {
       const item = state.workbench.setupRequests.find(x => x.id === button.dataset.setupKey); if (!item) return;
-      page = 'vault'; renderPage(); const form = $('#vault-form'); form.elements.provider.value = item.config.id; form.elements.label.value = item.config.name; form.elements.key.focus(); return;
+      const field = button.closest('.setup-request').querySelector('[name=newKey]');
+      if (!field.value.trim()) { field.focus(); toast('Paste the key first.', true); return; }
+      await call('vault.save', { provider: item.config.id, key: field.value.trim(), label: item.config.name || item.config.id }); field.value = '';
+      await call('workbench.setup.dismiss', item.id); toast('Key saved and encrypted.'); return;
     }
     if (button.dataset.apiPreset) {
       const preset = apiPresets[button.dataset.apiPreset], form = $('#profile-form');
       form.reset(); form.elements.id.readOnly = false;
-      if (!form.elements.keyId.querySelector(`[value="${preset.keyId}"]`)) form.elements.keyId.add(new Option(preset.keyId + ' (add in Keys)', preset.keyId));
+      if (!form.elements.keyId.querySelector(`[value="${preset.keyId}"]`)) form.elements.keyId.add(new Option(preset.keyId + ' (paste the key beside this)', preset.keyId));
       for (const [key, value] of Object.entries(preset)) form.elements[key].value = value;
       $('#profile-editor').open = true; form.elements.keyId.focus(); return;
     }
@@ -753,7 +1403,14 @@ document.addEventListener('click', async event => {
       for (const key of ['id','name','protocol','url','keyId']) form.elements[key].value = profile[key];
       form.elements.id.readOnly = true; $('#profile-editor').open = true; form.scrollIntoView(); return;
     }
+    if (button.dataset.textSize) { changeTextSize(button.dataset.id, Number(button.dataset.textSize)); return; }
+    if (button.matches('[data-settings-replay]')) { const preview = $('.settings-content .console-theme-preview'); if (preview && state.settings.launchEffect !== false) openConsoleEffect(preview); return; }
     switch (button.dataset.action) {
+      case 'close-settings': closeSettings(); break;
+      case 'toggle-console':
+        if (expandedId === button.dataset.id) restoreExpandedConsole();
+        else await selectSession(button.dataset.id);
+        break;
       case 'new': await openNew(button.dataset.slot); break;
       case 'cancel-console': if (!openingConsole) $('#console-chooser').close(); break;
       case 'vim-normal': vim.enterNormal(); break;
@@ -778,19 +1435,46 @@ document.addEventListener('click', async event => {
       }
       case 'agent-setup': setup.open(); break;
       case 'hud': await call('mode', 'hud'); break;
-      case 'dashboard': page = 'consoles'; await call('mode', 'dashboard'); renderPage(); break;
+      case 'dashboard': navigatePage('consoles'); await call('mode', 'dashboard'); renderPage(); break;
       case 'fullscreen': await call('mode', state.mode === 'fullscreen' ? 'dashboard' : 'fullscreen'); break;
       case 'minimize': await call('minimize'); break;
       case 'tray': await call('tray'); break;
       case 'refresh': await call('refresh'); break;
       case 'quit': await call('quit'); break;
       case 'end-session': await call('session.end', button.dataset.id || selectedId); break;
+      case 'paste-screenshot': await pasteScreenshot(selectedId); break;
       case 'retry-session': {
         button.disabled = true;
-        try { const restored = await call('session.retry', button.dataset.id); if (page === 'terminal') selectedId = restored.id; renderPage(); }
+        try { const restored = await call('session.retry', button.dataset.id); if (expandedId === button.dataset.id) { expandedId = restored.id; selectedId = restored.id; } renderPage(); }
         finally { button.disabled = false; }
         break;
       }
+      case 'account-switch': {
+        const label = button.textContent.trim().replace(/^Switch to\s+/, ''); button.disabled = true;
+        await call('session.switch', { id: button.dataset.id, launchId: button.dataset.launchId, targetAccountId: button.dataset.targetAccountId });
+        toast(`Switched to ${label}.`); break;
+      }
+      case 'account-setup': {
+        const setup = await call('accounts.setup', { id: button.dataset.id, launchId: button.dataset.launchId, targetAccountId: button.dataset.targetAccountId });
+        const menu = button.closest('.account-menu-items[popover]'), toggle = menu?.parentElement?.querySelector('[data-account-menu-toggle]');
+        menu?.hidePopover(); toggle?.focus({ preventScroll: true });
+        if (setup?.cwd) toast(`Setup console opened in ${setup.cwd}.`);
+        break;
+      }
+      case 'account-switch-dismiss':
+        await call('session.switch-dismiss', { id: button.dataset.id, launchId: button.dataset.launchId, offerKey: button.dataset.offerKey }); break;
+      case 'account-login': await call('accounts.login', { id: button.dataset.id }); toast('Sign-in console opened.'); break;
+      case 'account-rename': {
+        accountRenameOpener = button;
+        const form = $('#account-rename-form');
+        form.dataset.id = button.dataset.id;
+        form.elements.label.value = button.dataset.label || '';
+        form.querySelector('.form-error').textContent = '';
+        $('#account-rename-dialog').showModal();
+        form.elements.label.focus(); form.elements.label.select();
+        break;
+      }
+      case 'cancel-account-rename': $('#account-rename-dialog').close(); break;
       case 'export': await call('ledger.export'); break;
 
     }
@@ -814,23 +1498,63 @@ document.addEventListener('change', async event => {
   }
   if (input.form?.getAttribute('id') === 'api-form' && input.name === 'provider') { selectedApi = input.value; renderPage(); }
   if (input.form?.getAttribute('id') === 'tool-form' && input.name === 'type') toolFields();
-  if (input.dataset.setting) { try { await call('settings', { [input.dataset.setting]: input.type === 'checkbox' ? input.checked : input.value }); } catch (error) { toast(error.message, true); } }
-  if (input.form?.getAttribute('id') === 'rates-form' && ['model','provider'].includes(input.name)) loadRates(input.form);
+  if (input.dataset.setting) {
+    const checkbox = input.type === 'checkbox', key = input.dataset.setting, wasFocused = document.activeElement === input;
+    const previous = state.settings[key] ?? (checkbox ? !input.checked : input.value);
+    input.disabled = true;
+    try { await call('settings', { [key]: checkbox ? input.checked : input.value }); }
+    catch (error) { if (checkbox) input.checked = previous; else input.value = previous; toast(error.message, true); }
+    finally {
+      input.disabled = false;
+      if (wasFocused && input.isConnected && document.activeElement === document.body) input.focus({ preventScroll: true });
+    }
+  }
 });
-function loadRates(form) {
-  const rates = state.settings.rates[`${form.elements.provider.value}:${form.elements.model.value.trim()}`];
-  for (const field of ['input', 'output', 'cached', 'cacheWrite']) form.elements[field].value = rates?.[field] ?? '';
-}
 document.addEventListener('input', event => {
   const input = event.target;
+  if (input.dataset.setting === 'starDensity') { const name = starLevels[Number(input.value)] || ''; $('#star-level-name').textContent = name; input.setAttribute('aria-valuetext', name); }
+  if (input.form?.id === 'account-profile-form' && input.name === 'label') { accountProfileDraft.label = input.value; accountProfileDraft.error = ''; }
+  if (input.form?.id === 'account-rename-form') input.form.querySelector('.form-error').textContent = '';
   if (input.form?.getAttribute('id') === 'api-form' && ['model', 'prompt', 'maxOutput', 'projectId'].includes(input.name)) apiDraft[input.name] = input.value;
+});
+document.addEventListener('change', event => {
+  const input = event.target;
+  if (input.form?.id === 'account-profile-form' && input.name === 'provider') { accountProfileDraft.provider = input.value; accountProfileDraft.error = ''; }
 });
 document.addEventListener('submit', async event => {
   if (['project-form', 'console-project-form', 'image-generation-form'].includes(event.target.id)) return;
   event.preventDefault(); const form = event.target, data = Object.fromEntries(new FormData(form)); const submit = form.querySelector('[type="submit"]');
+  if (form.id === 'account-profile-form') {
+    if (accountProfileBusy) return;
+    accountProfileBusy = true;
+    accountProfileDraft = { provider: data.provider || accountProfileCreated?.provider || 'codex', label: data.label ?? accountProfileCreated?.label ?? '', error: '' };
+  }
+  if (form.id === 'account-rename-form') {
+    if (accountRenameBusy) return;
+    accountRenameBusy = true;
+  }
   if (submit) submit.disabled = true;
   try {
-    if (form.getAttribute('id') === 'one-off-console-form') {
+    if (form.getAttribute('id') === 'account-profile-form') {
+      form.querySelector('.form-error').textContent = '';
+      if (!accountProfileCreated) {
+        const created = await call('accounts.create', { provider: data.provider, label: data.label });
+        accountProfileCreated = { id: created.id, provider: data.provider, label: data.label };
+      }
+      await call('accounts.login', { id: accountProfileCreated.id });
+      accountProfileCreated = null;
+      accountProfileDraft = { provider: 'codex', label: '', error: '' }; accountProfileFocus = null;
+      accountProfileResetOnRender = page === 'usage' && !!$('#account-profile-form');
+      toast('Account added. Sign in from the new console.');
+    } else if (form.id === 'account-rename-form') {
+      await call('accounts.rename', { id: form.dataset.id, label: data.label });
+      $('#account-rename-dialog').close();
+      toast('Account name updated.');
+      const renamed = document.querySelector(`[data-action="account-rename"][data-id="${CSS.escape(form.dataset.id)}"]`);
+      if (renamed) renamed.focus({ preventScroll: true });
+      else if (accountRenameOpener?.isConnected) accountRenameOpener.focus({ preventScroll: true });
+      accountRenameOpener = null;
+    } else if (form.getAttribute('id') === 'one-off-console-form') {
       form.querySelector('.form-error').textContent = '';
       const { customModel, projectFolder, ...overrides } = data;
       if (overrides.model === '__custom__') overrides.model = customModel;
@@ -842,16 +1566,14 @@ document.addEventListener('submit', async event => {
       form.querySelector('.form-error').textContent = '';
       const { permissions, ...consoleDefaults } = data;
       await call('settings', { consoleDefaults, agentPermissions: permissions }); toast('Defaults saved.');
-    } else if (form.getAttribute('id') === 'vault-form') {
-      $('#vault-error').textContent = ''; await call('vault.save', data); form.elements.key.value = ''; renderPage(); toast('Key encrypted and saved.'); document.dispatchEvent(new CustomEvent('dock-key-saved', { detail: { id: data.provider } }));
     } else if (form.getAttribute('id') === 'instructions-form') {
       await call('shared.instructions', data.instructions); renderPage(); toast('Instructions saved.');
     } else if (form.getAttribute('id') === 'tool-form') {
       await call('tools.save', toolPayload(form, data)); renderPage(); toast('Tool saved.');
     } else if (form.getAttribute('id') === 'profile-form') {
-      await call('profiles.save', data); renderPage(); toast('API saved.');
-    } else if (form.getAttribute('id') === 'rates-form') {
-      await call('rates.save', data); toast('Rates saved.');
+      const { newKey, ...profile } = data;
+      if (newKey?.trim()) { await call('vault.save', { provider: profile.id, key: newKey.trim(), label: profile.name || profile.id }); profile.keyId = profile.id; }
+      await call('profiles.save', profile); renderPage(); toast('API saved.');
     } else if (form.getAttribute('id') === 'api-form') {
       if (apiBusy) return;
       apiBusy = true; responseError = ''; $('#api-error').textContent = ''; $('#response-meta').textContent = 'IN PROGRESS';
@@ -860,15 +1582,33 @@ document.addEventListener('submit', async event => {
       responseError = result.error || '';
     }
   } catch (error) {
-    const target = form.getAttribute('id') === 'vault-form' ? '#vault-error' : form.getAttribute('id') === 'api-form' ? '#api-error' : `#${form.getAttribute('id')} .form-error`;
+    const target = form.getAttribute('id') === 'api-form' ? '#api-error' : `#${form.getAttribute('id')} .form-error`;
     if (form.getAttribute('id') === 'api-form') { responseError = error.message; responseMeta = 'REQUEST NOT SENT'; }
+    if (form.getAttribute('id') === 'account-profile-form') accountProfileDraft.error = error.message;
+    if (form.id === 'account-rename-form') form.querySelector('.form-error').textContent = error.message;
     if ($(target)) $(target).textContent = error.message; else toast(error.message, true);
   } finally {
+    if (form.id === 'account-profile-form') { accountProfileBusy = false; if (page === 'usage') renderPage(); }
+    if (form.id === 'account-rename-form') { accountRenameBusy = false; if (submit?.isConnected) submit.disabled = false; }
     if (submit?.isConnected) submit.disabled = false;
     if (form.getAttribute('id') === 'api-form') { apiBusy = false; if (page === 'api') renderPage(); }
   }
 });
 document.addEventListener('keydown', event => {
+  const terminalFocus = !!event.target.closest?.('.xterm');
+  const editableFocus = !terminalFocus && !!event.target.closest?.('input,textarea,select,[contenteditable="true"]');
+  const returnFromTerminal = event.ctrlKey && event.shiftKey && event.code === 'Enter';
+  if (expandedId && event.key === 'Escape' && !editableFocus && !event.defaultPrevented && !document.querySelector('dialog[open], [popover]:popover-open') && (!terminalFocus || returnFromTerminal)) {
+    event.preventDefault(); event.stopImmediatePropagation();
+    restoreExpandedConsole(); return;
+  }
+  if (expandedId && returnFromTerminal && !editableFocus && !event.defaultPrevented && !document.querySelector('dialog[open], [popover]:popover-open')) {
+    event.preventDefault(); event.stopImmediatePropagation();
+    restoreExpandedConsole(); return;
+  }
+  if (event.key === 'Escape' && isSettingsPage(page) && !event.defaultPrevented && !document.querySelector('dialog[open]') && state?.mode !== 'hud') {
+    event.preventDefault(); closeSettings(); return;
+  }
   if (event.ctrlKey && event.shiftKey && !event.altKey && event.code === 'KeyN') {
     if (document.querySelector('dialog[open]')) return;
     event.preventDefault(); event.stopImmediatePropagation();
@@ -877,17 +1617,72 @@ document.addEventListener('keydown', event => {
   if (event.key === 'F11') { event.preventDefault(); call('mode', state.mode === 'fullscreen' ? 'dashboard' : 'fullscreen'); }
 }, true);
 
+function closeSettings() {
+  navigatePage(isSettingsPage(pageBeforeSettings) ? 'consoles' : pageBeforeSettings);
+  if (!reducedMotion.matches) $('.workspace')?.animate([{ opacity: .6, transform: 'scale(.985)' }, { opacity: 1, transform: 'none' }], { duration: 200, easing: 'cubic-bezier(.22,1,.36,1)' });
+  $('.sidebar-bottom [data-page=settings]')?.focus({ preventScroll: true });
+}
+// Lighting runs on one clock: every frame's wave reads its own window position
+// and new continuous animations join the existing phase, including its pauses.
+let lightingFrame = 0;
+const lightingTiming = new WeakMap();
+const lightingPaused = new WeakMap();
+function lightingChanged() {
+  if (lightingFrame) return;
+  lightingFrame = requestAnimationFrame(() => {
+    lightingFrame = 0;
+    for (const node of document.querySelectorAll('.console-skin,.sidebar-edge')) node.style.setProperty('--panel-x', Math.round(node.getBoundingClientRect().left) + 'px');
+    const groups = new Map();
+    for (const animation of document.getAnimations()) {
+      if (!/^light-(wave|breathe|spectrum)$/.test(animation.animationName || '')) continue;
+      const group = groups.get(animation.animationName) || [];
+      group.push(animation); groups.set(animation.animationName, group);
+    }
+    for (const group of groups.values()) {
+      // Preserve progress when speed changes; ordinary publications leave existing clocks alone.
+      for (const animation of group) {
+        const previous = lightingTiming.get(animation), duration = animation.effect.getComputedTiming().duration;
+        if (previous && previous !== duration && animation.currentTime != null) animation.currentTime *= duration / previous;
+      }
+      const reference = group.find(animation => lightingTiming.has(animation) && lightingPaused.get(animation) !== true && animation.playState === 'running')
+        || group.find(animation => lightingTiming.has(animation) && animation.playState === 'running')
+        || group[0];
+      for (const animation of group) {
+        const resumed = lightingPaused.get(animation) === true && animation.playState === 'running';
+        if ((!lightingTiming.has(animation) || resumed) && animation !== reference) {
+          const align = () => {
+            if (animation.playState === 'idle' || reference.playState === 'idle') return;
+            if (reference.startTime != null && reference.playState === 'running' && animation.playState === 'running') animation.startTime = reference.startTime;
+            else animation.currentTime = reference.currentTime;
+          };
+          // Pending animations acquire their start times on the next browser paint.
+          if (animation.pending || reference.pending) Promise.all([animation.ready, reference.ready]).then(align, () => {});
+          else align();
+        }
+        lightingTiming.set(animation, animation.effect.getComputedTiming().duration);
+        lightingPaused.set(animation, animation.playState === 'paused');
+      }
+    }
+  });
+}
+addEventListener('resize', lightingChanged);
+// Reactive lighting: typing in a console or new output lights its frame.
+function lightUp(node) {
+  if (!node || document.body.dataset.lighting !== 'reactive') return;
+  node.classList.remove('lit'); void node.offsetWidth; node.classList.add('lit');
+  clearTimeout(node.litTimer); node.litTimer = setTimeout(() => node.classList.remove('lit'), 1000);
+}
+document.addEventListener('keydown', event => lightUp(event.target.closest?.('.session-card')), true);
 function focusVimSlot(slot) {
   slot = coveredSlots().get(slot)?.slot || slot;
-  if (state.mode !== 'hud' && !['consoles', 'overview'].includes(page)) { page = 'consoles'; renderPage(); }
+  if (state.mode !== 'hud' && !['consoles', 'overview'].includes(page)) navigatePage('consoles');
   const panel = document.querySelector(state.mode === 'hud' ? `.hud-slot[data-slot="${slot}"]` : `.session-card[data-slot="${slot}"]`);
   panel?.focus({ preventScroll: true });
 }
 async function vimAction(action, value) {
   if (action === 'page') {
-    page = value;
+    navigatePage(value);
     if (state.mode === 'hud') await call('mode', 'dashboard');
-    renderPage();
     if (page === 'consoles') focusVimSlot(vim.slot); else $('#content').focus({ preventScroll: true });
     return;
   }
@@ -901,11 +1696,11 @@ async function vimAction(action, value) {
     const button = document.querySelector(`${state.mode === 'hud' ? '#hud' : '#consoles-page'} [data-action="new"][data-slot="${value}"]`);
     if (button) chooseConsole(button);
   } else if (action === 'rename') {
-    if (state.mode === 'hud') { page = 'consoles'; await call('mode', 'dashboard'); renderPage(); }
+    if (state.mode === 'hud') { navigatePage('consoles'); await call('mode', 'dashboard'); renderPage(); }
     else focusVimSlot(value);
     document.querySelector(`#consoles-page .console-name[data-name-slot="${value}"]`)?.focus();
   } else if (action === 'type') {
-    if (!session?.alive) { toast('Press n to open a console here.'); return; }
+    if (!isOpenConsole(session) || !session.alive) { toast('Press n to open a console here.'); return; }
     if (state.mode === 'hud') { await selectSession(session.id); return; }
     focusVimSlot(value); selectedId = session.id;
     await terminals.get(session.id)?.ready;
@@ -913,21 +1708,30 @@ async function vimAction(action, value) {
   }
 }
 vim = vimControls({
-  context: () => ({ enabled: state?.settings.vimControls === true, view: state?.mode === 'hud' ? 'hud' : page, sessions: state?.sessions || [], grid: gridSize(), busy: windowMoving || openingConsole }),
+  context: () => ({ enabled: state?.settings.vimControls === true, view: state?.mode === 'hud' ? 'hud' : expandedId ? 'terminal' : page, sessions: state?.sessions || [], grid: gridSize(), busy: windowMoving || openingConsole }),
   focusSlot: focusVimSlot, action: vimAction, onError: message => toast(message, true)
 });
-phone = mobileUI({ call, escape, icon, getState: () => state, toast });
-projects = projectsUI({ call, getState: () => state, escape, icon, toast, renderPage, openNew });
-projectChats = consoleProjects({ call, getState: () => state, getView: () => ({ page, selectedId }), projects, navigate: next => { page = next; renderPage(); }, escape, icon, toast });
+codePanels = codePanelUI({ call, getState: () => state, selectedConsole: () => selectedId, escape, icon, resizeHandles, toast, navigate: navigatePage,
+  pasteContext: async (id, text) => {
+    const session = state.sessions.find(x => x.id === id && x.alive && !x.switching);
+    const record = terminals.get(id);
+    if (!session || !record) throw new Error('Open this agent console before adding context.');
+    if (!record.term.modes.bracketedPasteMode) { await call('clipboard.write', text); toast('Context copied. Paste it into the console when its prompt is ready.'); return; }
+    record.term.paste(text); toast('Context added to the console draft.');
+  }
+});
+phone = mobileUI({ call, escape, icon, getState: () => state, toast, navigate: navigatePage });
+projects = projectsUI({ call, getState: () => state, escape, icon, toast, renderPage, openNew, preview: value => openFile(null, value) });
+projectChats = consoleProjects({ call, getState: () => state, getView: () => ({ page, selectedId }), projects, navigate: navigatePage, escape, icon, toast });
 imageGenerator = imageGenerationUI({ call, getState: () => state, escape, toast });
 remoteHosts = sshUI({ call, escape, getState: () => state, toast, render: renderPage });
 updates = updatesUI({ call, getState: () => state, escape, icon, toast });
-usageView = projectUsage({ getState: () => state, escape, providerName, number, money, mark: shellMark });
-setup = firstRun({ call, escape, icon, getState: () => state });
+usageView = projectUsage({ getState: () => state, escape, providerName, number, mark: shellMark });
+setup = firstRun({ call, escape, icon, pdMark, getState: () => state });
 windowDragging(call, () => state);
 layoutMotion = consoleMotion({ render: renderConsoles, fit: scheduleFits });
 consoleDragging({ call, toast, motion: layoutMotion });
 consoleLayoutUI({ call, getState: () => state, motion: layoutMotion, toast });
-workbench = workbenchUI({ call, getState: () => state, getPage: () => page, renderPage, escape, toast, selectSession, navigate: next => { page = next; renderPage(); } });
-toolFeatures({ call, getState: () => state, navigate: next => { page = next; renderPage(); }, render: refreshToolSections, toast, escape });
+workbench = workbenchUI({ call, getState: () => state, getPage: () => page, renderPage, escape, toast, selectSession, navigate: navigatePage });
+toolFeatures({ call, getState: () => state, navigate: navigatePage, render: refreshToolSections, toast, escape });
 try { state = await call('state'); receive(state); renderPage(); } catch (error) { $('#content').textContent = error.message; }

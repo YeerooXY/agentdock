@@ -52,7 +52,7 @@ class ResultRevision extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.commit, color: pink, size: 18),
+            Icon(Icons.commit, color: pink, size: 18),
             const SizedBox(width: 8),
             Flexible(
               child: Text(

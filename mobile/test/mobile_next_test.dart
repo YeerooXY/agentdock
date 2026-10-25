@@ -52,6 +52,28 @@ class ProjectDock extends ActionsDock {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  test('full-width rules read as one short rule and text is kept', () {
+    final terminal = Terminal()..resize(80, 10);
+    final rule = '─' * 80;
+    terminal.write(
+      'Answer line\r\n\x1b[2m$rule\x1b[0m\r\n${'━' * 80}\r\n> prompt\r\n  ${'-' * 60}\r\nSee --help ---- or ==\r\n',
+    );
+    final lines = terminalReadingSpan(
+      terminal,
+      terminalTheme,
+    ).toPlainText().split('\n');
+    expect(lines, [
+      'Answer line',
+      '─' * ruleWidth,
+      '> prompt',
+      '  ${'-' * ruleWidth}',
+      'See --help ---- or ==',
+    ]);
+    expect(terminalRule('╭${'─' * 20}╮'), isTrue);
+    expect(terminalRule('--------'), isTrue);
+    expect(terminalRule('-------'), isFalse);
+    expect(terminalRule('── Tools ──────────'), isFalse);
+  });
   test(
     'wrapped cells retain ANSI colors, emphasis, Unicode and soft wraps',
     () {
@@ -208,17 +230,15 @@ void main() {
     await tester.pumpWidget(DockApp(client: c));
     await enterChat(tester);
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Model'));
+    await tester.tap(find.text('Model unknown'));
     await tester.pumpAndSettle();
     c.generation++;
     c.notifyListeners();
     await tester.pumpAndSettle();
     expect(
-      find.text('Connection changed. Reopen the chooser.'),
+      find.text('Connection or chat changed. Reopen the chooser.'),
       findsOneWidget,
     );
-    await tester.tap(find.text('Open model'));
-    await tester.pumpAndSettle();
     expect(c.inputs, isEmpty);
   });
 
@@ -236,12 +256,9 @@ void main() {
     await tester.pumpWidget(DockApp(client: c));
     await enterChat(tester);
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Model'));
+    await tester.tap(find.text('Model unknown'));
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
-    await tester.ensureVisible(find.text('Open model'));
-    await tester.tap(find.text('Open model'));
-    await tester.pump(const Duration(milliseconds: 200));
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
     await tester.ensureVisible(find.byTooltip('Close chooser'));

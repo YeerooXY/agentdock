@@ -62,9 +62,9 @@ void main() {
       'prerelease': v.contains('-'),
       'assets': [
         {
-          'name': 'Agent-Dock-$v-Android-$arch.apk',
+          'name': 'Paddock-$v-Android-$arch.apk',
           'browser_download_url':
-              'https://github.com/YeerooXY/agentdock/releases/download/v$v/Agent-Dock-$v-Android-$arch.apk',
+              'https://github.com/YeerooXY/agentdock/releases/download/v$v/Paddock-$v-Android-$arch.apk',
           'size': 20000,
         },
       ],

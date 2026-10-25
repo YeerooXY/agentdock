@@ -1,6 +1,6 @@
 # Preview 4 verification
 
-Checked on 2026-10-18. Scope: Projects and its editor, console project chooser, API project selection, larger console grids, per-message Usage, Windows update controls and the native Android update panel. All model requests in tests were mocked. Temporary profiles and test consoles were used; the owner's running Dock was left open.
+Checked on 2026-10-18. Scope: Projects and its editor, console project chooser, API project selection, larger console grids, per-message Usage, Windows update controls and the native Android update panel. All model requests in tests were mocked. Temporary profiles and test consoles were used; the owner's running Paddock was left open.
 
 ## Results
 
@@ -13,7 +13,7 @@ Checked on 2026-10-18. Scope: Projects and its editor, console project chooser, 
 - Windows installer and all three Android APK architectures built. Packaged smoke checks cover bundled Node/MCP helpers, real terminal startup and workspace restoration.
 - The native Android emulator upgraded from preview 3 to preview 4 with `adb install -r`; its pairing remained valid. Usage displayed the installed version and the manual live GitHub check returned **You're up to date**. The newer-release/download path uses controlled test metadata; no installer was launched automatically.
 
-Latest desktop build screenshots and machine-readable findings are under ignored `artifacts/projects/`. The native screenshots are `artifacts/mobile-device/updates-native.png` and `updates-native-check.png`. Selected captures and this report are also saved individually in Dock Results. Demo project names and a synthetic future update in browser screenshots are test fixtures.
+Latest desktop build screenshots and machine-readable findings are under ignored `artifacts/projects/`. The native screenshots are `artifacts/mobile-device/updates-native.png` and `updates-native-check.png`. Selected captures and this report are also saved individually in Paddock Results. Demo project names and a synthetic future update in browser screenshots are test fixtures.
 
 | Profile | Coverage | Limitation |
 | --- | --- | --- |
@@ -57,4 +57,4 @@ Physical Android retesting of the latest Send/resize fix, internet access from o
 
 CLI token formats can change; missing/truncated counts remain unknown. Claude delegated-agent usage is not aggregated. No-Firebase background alerts were discussed but are not implemented: Android currently closes its private connection in the background. A future persistent-connection mode needs its own foreground-service/battery design; [Android Doze restrictions](https://developer.android.com/training/monitoring-device-state/doze-standby) prevent promising instant delivery from an ordinary background socket.
 
-Windows signing and a durable Android production signing key remain release work. The updater does not silently restart a running Dock or update Windows itself.
+Windows signing and a durable Android production signing key remain release work. The updater does not silently restart a running Paddock or update Windows itself.

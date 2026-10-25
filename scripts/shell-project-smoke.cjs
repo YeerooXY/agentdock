@@ -1,4 +1,5 @@
 'use strict';
+const { openPage } = require('./ui-navigation.cjs');
 const { _electron: electron, chromium, webkit, devices } = require('playwright');
 const fs = require('node:fs'), path = require('node:path'), http = require('node:http'), assert = require('node:assert/strict');
 const { Projects } = require('../electron/projects.cjs');
@@ -94,19 +95,19 @@ async function screenshot(page, name) {
       await chooser.locator('.shell-picker>summary').press('ArrowUp');await page.keyboard.press('End');await page.keyboard.press('Enter');
       assert.equal(await chooser.locator('[name=provider]').inputValue(),'custom');
       await chooser.getByRole('button',{name:'Cancel',exact:true}).click();
-      await page.locator('#sidebar-toggle').click();await page.locator('.sidebar [data-page=projects]').click();
+      await page.locator('#sidebar-toggle').click();await openPage(page, 'projects');
       await page.locator(`[data-project-edit="${game.id}"]`).click();
       const color=page.locator('#project-form [name=color]');assert.equal(await color.inputValue(),'#f19cda');
       await color.fill('#44bbcc');await screenshot(page,name+'-project-color');
       await page.locator('#project-form [type=submit]').click();
-      await page.locator('.sidebar [data-page=usage]').click();
+      await openPage(page, 'usage');
       await page.locator('[data-usage-project]').selectOption(game.id);
       assert.equal(await page.locator('[data-usage-group]').count(),1);assert.equal(await page.locator('[data-usage-group] tbody tr').count(),2);
       assert.ok((await page.locator('.message-usage').innerText()).includes('~2%'));
       assert.ok((await page.locator('.message-usage').innerText()).includes('No reported change'));
       assert.equal(await page.locator('[data-usage-group] .project-color-dot').evaluate(el=>getComputedStyle(el).backgroundColor),'rgb(68, 187, 204)');
       await screenshot(page,name+'-usage');
-      await page.locator('.sidebar [data-page=tools]').click();
+      await openPage(page, 'tools');
       const auth=page.locator('.image-auth summary'); await auth.focus(); await auth.press('Enter');
       assert.equal(await page.locator('[data-image-auth=connect]').isVisible(),true);
       await page.keyboard.press('Tab'); assert.equal(await page.locator('[data-image-auth=auth-status]').evaluate(el=>el===document.activeElement),true);

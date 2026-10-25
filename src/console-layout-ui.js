@@ -75,7 +75,7 @@ export function consoleLayoutUI({ call, getState, motion, toast }) {
     }
   }
   function start(handle) {
-    const session = getState().sessions.find(x => x.id === handle.closest('.session-card').dataset.consoleId);
+    const session = [...getState().sessions, ...(getState().codePanels || [])].find(x => x.id === handle.closest('.session-card').dataset.consoleId);
     if (!session || !motion.begin()) return null;
     gesture = { session: { ...session }, edge: handle.dataset.resizeEdge, handle, metrics: motion.metrics() };
     guide.querySelector('.resize-guide-cells').innerHTML = '<i></i>'.repeat(gesture.metrics.columns * gesture.metrics.rows);

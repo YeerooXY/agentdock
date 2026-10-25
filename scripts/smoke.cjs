@@ -1,4 +1,5 @@
 'use strict';
+const { openPage } = require('./ui-navigation.cjs');
 const { _electron: electron } = require('playwright');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -8,6 +9,7 @@ const { checkVimControls } = require('./vim-check.cjs');
 const { checkFirstRun } = require('./first-run-check.cjs');
 const { checkToolsAndWindow } = require('./tool-window-check.cjs');
 const { checkWindowsIdentity } = require('./windows-identity-check.cjs');
+const { checkUserData } = require('./user-data-check.cjs');
 const root = path.resolve(__dirname, '..');
 const testParent = path.join(root, 'test-data');
 fs.mkdirSync(testParent, { recursive: true });
@@ -21,6 +23,8 @@ async function eventually(predicate, message) {
 }
 (async () => {
   const problems = [], checks = [];
+  await checkUserData({ root });
+  checks.push('Rename startup restores the existing profile, preserves an established Paddock profile and isolates explicit test data');
   let page;
   const launch = async () => {
     app = await electron.launch({ args: [root, '--smoke-test', `--data-dir=${dataDir}`], env: { ...process.env, NO_COLOR: '1', TERM: 'dumb' }, timeout: 30000 });
@@ -32,10 +36,10 @@ async function eventually(predicate, message) {
   fs.writeFileSync(path.join(dataDir, 'limits.json'), damagedLimits);
   await launch();
   await checkWindowsIdentity({ app, dataDir });
-  if (process.platform === 'win32') checks.push('Native taskbar properties and real shortcuts share Dock identity and icon; old shortcuts migrate and other installations are preserved');
+  if (process.platform === 'win32') checks.push('Native taskbar properties and real shortcuts share Paddock identity and icon; old shortcuts migrate and other installations are preserved');
   const capture = async options => {
     await page.waitForFunction(() => getComputedStyle(document.querySelector('#app')).opacity === '1' &&
-      ['#content', '#consoles-page', '#terminal-page', '#sidebar', '#console-chooser'].every(selector => document.querySelector(selector).getAnimations().length === 0));
+      ['#content', '#consoles-page', '#sidebar', '#console-chooser'].every(selector => document.querySelector(selector).getAnimations().length === 0));
     await page.screenshot(options);
   };
   const invoke = (method, payload) => page.evaluate(async ([m, p]) => {
@@ -109,6 +113,7 @@ async function eventually(predicate, message) {
   assert.equal(badName.ok, false);
   checks.push('Empty slot names save without launching, survive reload, prefill the chooser, and support Escape; hover reveals the label and respects reduced motion');
   await page.locator('[data-page=settings]').click();
+  await openPage(page, 'console-settings');
   await page.locator('#console-defaults-form select[name=provider]').selectOption('codex');
   await page.locator('[data-setting=agentPermissions]').selectOption('unrestricted');
   await eventually(async () => (await invoke('state')).settings.agentPermissions === 'unrestricted');
@@ -126,7 +131,7 @@ async function eventually(predicate, message) {
   const defaults = JSON.parse(fs.readFileSync(path.join(dataDir, 'settings.json'), 'utf8')).consoleDefaults;
   assert.equal(defaults.cwd, root); assert.equal(defaults.name, 'Terminal check');
   await capture({ path: path.join(artifacts, 'test-console-defaults.png') });
-  await page.locator('nav [data-page=consoles]').click();
+  await openPage(page, 'consoles');
   await page.locator('.session-card.empty[data-slot="1"]').click();
   await page.waitForSelector('.xterm-helper-textarea');
   const session = (await invoke('state')).sessions[0]; assert.equal(session.alive, true);
@@ -137,16 +142,16 @@ async function eventually(predicate, message) {
   checks.push('Saved console defaults launch with one click; invalid folders do not overwrite defaults');
   await eventually(async () => (await invoke('session.buffer', session.id)).data.includes('PS '), 'PowerShell prompt did not appear');
   await page.locator('.xterm-helper-textarea').focus();
-  await page.keyboard.type("Write-Output ('AGENT_' + 'DOCK_SMOKE_OK')"); await page.keyboard.press('Enter');
-  await eventually(async () => (await invoke('session.buffer', session.id)).data.includes('AGENT_DOCK_SMOKE_OK'), 'Terminal command did not produce its expected output');
-  await eventually(async () => (await page.locator('.session-card .xterm-rows').innerText()).includes('AGENT_DOCK_SMOKE_OK'));
+  await page.keyboard.type("Write-Output ('PAD' + 'DOCK_SMOKE_OK')"); await page.keyboard.press('Enter');
+  await eventually(async () => (await invoke('session.buffer', session.id)).data.includes('PADDOCK_SMOKE_OK'), 'Terminal command did not produce its expected output');
+  await eventually(async () => (await page.locator('.session-card .xterm-rows').innerText()).includes('PADDOCK_SMOKE_OK'));
   const colorCommand = `& '${process.execPath.replaceAll("'", "''")}' -e "console.log(require('node:util').styleText('green','DOCK_COLOR_OK'))"\r`;
   await invoke('session.input', { id: session.id, data: colorCommand });
   await eventually(async () => page.locator('.session-card .xterm-rows span').evaluateAll(spans =>
     spans.some(span => span.textContent === 'DOCK_COLOR_OK' && getComputedStyle(span).color === 'rgb(185, 232, 136)')),
-  'A color-aware command must render green even if Dock inherited NO_COLOR=1');
+  'A color-aware command must render green even if Paddock inherited NO_COLOR=1');
   await capture({ path: path.join(artifacts, 'console-color-check.png') });
-  checks.push('Interactive commands render ANSI colors even when Dock starts with NO_COLOR=1 and TERM=dumb');
+  checks.push('Interactive commands render ANSI colors even when Paddock starts with NO_COLOR=1 and TERM=dumb');
   await page.evaluate(() => { window.smokeTerminalNode = document.querySelector('.terminal-instance'); });
   const liveName = page.locator('.session-card[data-slot="1"] .console-name');
   await liveName.fill('Robonslaught');
@@ -162,19 +167,21 @@ async function eventually(predicate, message) {
   assert.equal(await page.evaluate(() => window.smokeTerminalNode.contains(document.activeElement)), true);
   await capture({ path: path.join(artifacts, 'test-live-console-grid.png') });
   await page.getByRole('button', { name: 'Expand console 1', exact: true }).click();
-  await eventually(async () => (await invoke('state')).mode === 'fullscreen' && !(await invoke('state')).transitioning && await page.locator('#terminal-page').isVisible());
+  await eventually(async () => (await invoke('state')).mode === 'fullscreen' && !(await invoke('state')).transitioning && await page.locator(`.session-card.console-expanded[data-console-id="${session.id}"]`).isVisible());
   const fullscreenBounds = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].getBounds());
-  assert.equal(await page.locator('#terminal-heading .console-name').inputValue(), 'Robonslaught');
-  await page.locator('#terminal-heading .console-name').fill('Robonslaught dev');
+  const expandedCard = page.locator(`.session-card[data-console-id="${session.id}"]`);
+  assert.equal(await expandedCard.locator('.console-name').inputValue(), 'Robonslaught');
+  await expandedCard.locator('.console-name').fill('Robonslaught dev');
   await invoke('settings', { notifications: false });
-  assert.equal(await page.locator('#terminal-heading .console-name').inputValue(), 'Robonslaught dev');
-  await page.locator('#terminal-heading .console-name').press('Enter');
+  assert.equal(await expandedCard.locator('.console-name').inputValue(), 'Robonslaught dev');
+  await expandedCard.locator('.console-name').press('Enter');
   await eventually(async () => (await invoke('state')).sessions.find(x => x.id === session.id).name === 'Robonslaught dev');
-  assert.equal(await page.evaluate(() => document.querySelector('#terminal-host .terminal-instance') === window.smokeTerminalNode), true);
-  await page.getByRole('button', { name: 'Back to consoles', exact: true }).click();
+  assert.equal(await page.evaluate(id => document.querySelector(`.session-card[data-console-id="${id}"] .terminal-instance`) === window.smokeTerminalNode, session.id), true);
+  await expandedCard.locator('[data-action="toggle-console"]').click();
   assert.equal(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isFullScreen()), true);
   assert.deepEqual(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].getBounds()), fullscreenBounds);
-  assert.equal(await page.evaluate(() => document.querySelector('.session-card .terminal-instance') === window.smokeTerminalNode), true);
+  assert.equal(await page.evaluate(id => document.querySelector(`.session-card[data-console-id="${id}"] .terminal-instance`) === window.smokeTerminalNode, session.id), true);
+  assert.equal(await page.locator('.session-card.console-expanded').count(), 0);
   assert.equal(await liveName.inputValue(), 'Robonslaught dev');
   await page.locator('.session-card .xterm-helper-textarea').focus();
   await page.keyboard.type("Write-Output ('GRID_' + 'STILL_LIVE')"); await page.keyboard.press('Enter');
@@ -199,36 +206,37 @@ async function eventually(predicate, message) {
   assert.equal((await invoke('state')).sessions[0].alive, true);
   assert.equal(await page.locator(`.hud-slot[data-session="${session.id}"] small`).innerText(), 'Robonslaught dev');
   assert.equal(await page.locator('.hud-slot[data-slot="3"] .hud-slot-name').innerText(), 'Trader');
-  assert.ok((await invoke('session.buffer', session.id)).data.includes('AGENT_DOCK_SMOKE_OK'));
+  assert.ok((await invoke('session.buffer', session.id)).data.includes('PADDOCK_SMOKE_OK'));
   await capture({ path: path.join(artifacts, 'test-hud.png') });
   await page.locator('.hud-console').click();
-  await eventually(async () => (await invoke('state')).mode === 'fullscreen' && !(await invoke('state')).transitioning && await page.locator('#terminal-page').isVisible());
+  await eventually(async () => (await invoke('state')).mode === 'fullscreen' && !(await invoke('state')).transitioning && await page.locator(`.session-card.console-expanded[data-console-id="${session.id}"]`).isVisible());
   assert.equal(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isFullScreen()), true);
   assert.ok((await invoke('session.buffer', session.id)).sequence >= before.sequence);
   checks.push('Collapse keeps the process and buffer; HUD expands the same console fullscreen');
   await invoke('mode', 'dashboard');
   await checkVimControls({ page, app, invoke, eventually, capture: file => capture({ path: path.join(artifacts, file) }) });
   checks.push('Optional Vim controls navigate grid and HUD, rename and launch consoles, switch pages and show help; terminals and forms retain their keys, and the preference survives reload');
-  await page.locator('nav [data-page=vault]').click();
+  // Keys are pasted where they are used: here, on the OpenAI API connection.
+  await openPage(page, 'api-settings');
   assert.equal((await invoke('state')).vault.available, true);
+  assert.equal(await page.locator('.settings-navigation [data-page=vault]').count(), 0, 'no separate Keys page');
   const fakeKey = 'sk-TEST_ONLY_NOT_A_REAL_KEY_123456789';
-  await page.locator('#vault-form input[name=key]').fill(fakeKey);
-  await page.locator('#vault-form input[name=label]').fill('Encryption test');
-  await page.locator('#vault-form button[type=submit]').click();
+  await page.locator('[data-edit-profile=openai]').click();
+  await page.locator('#profile-form input[name=newKey]').fill(fakeKey);
+  await page.locator('#profile-form button[type=submit]').click();
   await eventually(async () => (await invoke('state')).vault.entries.length === 1, 'Vault save did not complete');
   const vaultFile = fs.readFileSync(path.join(dataDir, 'vault.json'), 'utf8');
   assert.ok(!vaultFile.includes(fakeKey));
   const decrypted = await app.evaluate(({ safeStorage }, encrypted) => safeStorage.decryptString(Buffer.from(encrypted, 'base64')), JSON.parse(vaultFile).openai.encrypted);
   assert.equal(decrypted, fakeKey);
   assert.ok(!JSON.stringify(await invoke('state')).includes(fakeKey));
-  assert.equal(await page.locator('#vault-form input[name=key]').inputValue(), '');
   checks.push('Actual Windows DPAPI round trip; saved key is absent from disk plaintext and renderer state');
-  await capture({ path: path.join(artifacts, 'test-vault.png') });
-  await page.locator('nav [data-page=api]').click();
+  await capture({ path: path.join(artifacts, 'test-api-key.png') });
+  await openPage(page, 'api');
   await page.locator('#api-form input[name=model]').fill('test-model');
   await page.locator('#api-form textarea[name=prompt]').fill('Keep this draft while switching views.');
-  await page.locator('nav [data-page=usage]').click();
-  await page.locator('nav [data-page=api]').click();
+  await openPage(page, 'usage');
+  await openPage(page, 'api');
   assert.equal(await page.locator('#api-form textarea[name=prompt]').inputValue(), 'Keep this draft while switching views.');
   await page.locator('#api-form select[name=provider]').selectOption('anthropic');
   assert.equal(await page.locator('#api-form textarea[name=prompt]').inputValue(), 'Keep this draft while switching views.');
@@ -237,19 +245,15 @@ async function eventually(predicate, message) {
   const blocked = await page.evaluate(() => window.dock.call('api.send', { provider: 'openai', model: 'test', prompt: 'Never sent' }));
   assert.equal(blocked.ok, false); assert.match(blocked.error, /disabled during tests/);
   checks.push('Drafts survive view/provider switches; paid requests cannot run in tests');
-  await page.locator('nav [data-page=instructions]').click();
+  await openPage(page, 'instructions');
   await page.locator('#shared-instructions').fill('Keep replies short and human. Follow project instructions.');
   await page.locator('#instructions-form button[type=submit]').click();
   await eventually(async () => (await invoke('state')).shared.instructions.startsWith('Keep replies short'));
-  assert.match(fs.readFileSync(path.join(dataDir, 'shared', 'AGENT_DOCK.md'), 'utf8'), /Keep replies short/);
+  assert.match(fs.readFileSync(path.join(dataDir, 'shared', 'PADDOCK.md'), 'utf8'), /Keep replies short/);
   await capture({ path: path.join(artifacts, 'test-instructions.png') });
-  await page.locator('nav [data-page=vault]').click();
-  await page.locator('#vault-form input[name=provider]').fill('any_service');
-  await page.locator('#vault-form input[name=label]').fill('Any service');
-  await page.locator('#vault-form input[name=key]').fill('TEST_TOOL_KEY_123456789');
-  await page.locator('#vault-form button[type=submit]').click();
+  await invoke('vault.save', { provider: 'any_service', label: 'Any service', key: 'TEST_TOOL_KEY_123456789' });
   await eventually(async () => (await invoke('state')).vault.entries.length === 2);
-  await page.locator('nav [data-page=tools]').click();
+  await openPage(page, 'tools');
   await page.locator('#tool-form input[name=id]').fill('local_tools');
   await page.locator('#tool-form input[name=name]').fill('Test tools');
   await page.locator('#tool-form input[name=description]').fill('A local test connection');
@@ -270,6 +274,7 @@ async function eventually(predicate, message) {
   assert.match(await page.locator('#tool-form .form-error').textContent(), /valid JSON/);
   assert.equal((await invoke('state')).shared.connections.length, 1);
   await page.locator('[data-action=reset-tool]').click();
+  await openPage(page, 'api-settings');
   await page.locator('#profile-editor summary').click();
   await page.locator('#profile-form input[name=id]').fill('custom_api');
   await page.locator('#profile-form input[name=name]').fill('My model API');
@@ -277,23 +282,17 @@ async function eventually(predicate, message) {
   await page.locator('#profile-form select[name=keyId]').selectOption('any_service');
   await page.locator('#profile-form button[type=submit]').click();
   await eventually(async () => (await invoke('state')).shared.profiles.length === 3);
-  await page.locator('nav [data-page=api]').click();
+  await openPage(page, 'api');
   await page.locator('#api-form select[name=provider]').selectOption('custom_api');
   assert.equal(await page.locator('#api-form button[type=submit]').isDisabled(), false);
-  await page.locator('nav [data-page=usage]').click();
-  await page.locator('.pricing-details summary').click();
-  await page.locator('#rates-form select[name=provider]').selectOption('custom_api');
-  await page.locator('#rates-form input[name=model]').fill('custom-model');
-  await page.locator('#rates-form input[name=input]').fill('2');
-  await page.locator('#rates-form input[name=output]').fill('4');
-  await page.locator('#rates-form button[type=submit]').click();
-  await eventually(async () => (await invoke('state')).settings.rates['custom_api:custom-model']?.input === 2);
+  await openPage(page, 'usage');
+  assert.equal(await page.locator('#rates-form, .pricing-details').count(), 0, 'Usage has no cost estimate settings');
   await capture({ path: path.join(artifacts, 'test-usage.png') });
-  await page.locator('nav [data-page=consoles]').click();
+  await openPage(page, 'consoles');
   assert.equal(await page.locator('#consoles-page .quota-card, #consoles-page .stats-row, #consoles-page .ledger-panel').count(), 0);
   assert.ok(!/cost|tokens|usage|billing/i.test(await page.locator('#consoles-page').innerText()));
   assert.ok(!JSON.stringify(await invoke('state')).includes('TEST_TOOL_KEY_123456789'));
-  checks.push('Shared instructions persist; arbitrary keys bind to tested MCP tools and custom model APIs; pricing lives only in Usage');
+  checks.push('Shared instructions persist; arbitrary keys bind to tested MCP tools and custom model APIs; Usage shows no cost estimate settings');
   await invoke('vault.remove', 'openai');
   const launchDefaultsBefore = (await invoke('state')).settings.consoleDefaults;
   const permissionsBefore = (await invoke('state')).settings.agentPermissions;
@@ -385,14 +384,17 @@ async function eventually(predicate, message) {
     assert.equal(launched.sessions.find(x => x.id === codex.id).alive, true);
     const output = (await invoke('session.buffer', codex.id)).data;
     assert.ok(!/unexpected argument|Error parsing config/i.test(output));
-    await page.locator('nav [data-page=consoles]').click();
-    await page.locator(`[data-session="${codex.id}"]`).click();
-    assert.equal(await page.locator('.permission-tag').textContent(), 'Full access');
+    await openPage(page, 'consoles');
+    const codexPanel = page.locator(`.session-card[data-console-id="${codex.id}"]`), codexToggle = codexPanel.locator('[data-action="toggle-console"]');
+    await codexToggle.click();
+    const codexExpanded = page.locator(`.session-card.console-expanded[data-console-id="${codex.id}"]`);
+    await codexExpanded.waitFor();
+    assert.equal(await codexExpanded.locator('.console-name').inputValue(), codex.name);
     for (let repeat = 0; repeat < 3; repeat++) {
-      await page.getByRole('button', { name: 'Back to consoles', exact: true }).click();
+      await codexToggle.click(); await codexExpanded.waitFor({ state: 'detached' });
       assert.equal(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isFullScreen()), true);
-      await page.locator(`#consoles-page [data-session="${codex.id}"]`).click();
-      await page.waitForSelector(`#terminal-host [data-terminal-id="${codex.id}"]`);
+      await codexToggle.click();
+      await page.waitForSelector(`.session-card.console-expanded[data-console-id="${codex.id}"] [data-terminal-id="${codex.id}"]`);
       assert.equal(await page.locator(`[data-terminal-id="${codex.id}"]`).count(), 1);
     }
     await capture({ path: path.join(artifacts, 'test-unrestricted-codex.png') });
@@ -402,7 +404,7 @@ async function eventually(predicate, message) {
     checks.push('Right-click chooser launches installed Codex with the selected model and saved permissions, without changing defaults or submitting a prompt');
   }
   if ((await invoke('state')).capabilities.claude) {
-    await page.locator('nav [data-page=consoles]').click();
+    await openPage(page, 'consoles');
     await page.locator('.session-card.empty[data-slot="2"]').click({ button: 'right' });
     await chooser.waitFor({ state: 'visible' }); await oneOff.locator('[name=provider]').selectOption('claude');
     await oneOff.locator('[name=model]').selectOption('__custom__'); await oneOff.locator('[name=customModel]').fill('sonnet');
@@ -414,15 +416,16 @@ async function eventually(predicate, message) {
     await eventually(async () => /Claude|Welcome|theme|sign.in|login/i.test((await invoke('session.buffer', claude.id)).data), 'Claude startup did not render');
     assert.equal((await invoke('state')).sessions.find(x => x.id === claude.id).alive, true);
     assert.ok(!/unknown option|No such file or directory|Failed to parse/i.test((await invoke('session.buffer', claude.id)).data));
-    await page.locator('nav [data-page=consoles]').click();
-    await page.locator(`[data-session="${claude.id}"]`).click();
+    await openPage(page, 'consoles');
+    await page.locator(`.session-card[data-console-id="${claude.id}"] [data-action="toggle-console"]`).click();
+    await page.locator(`.session-card.console-expanded[data-console-id="${claude.id}"]`).waitFor();
     await capture({ path: path.join(artifacts, 'test-claude-wsl.png') });
     await invoke('session.end', claude.id);
     await eventually(async () => !(await invoke('state')).sessions.find(x => x.id === claude.id).alive);
     await invoke('mode', 'dashboard');
     checks.push('Installed Claude opens from the chooser with a custom model alias, shared tools and saved permissions; no prompt submitted');
   }
-  await page.locator('nav [data-page=consoles]').click();
+  await openPage(page, 'consoles');
   await page.locator('.session-card[data-slot="8"] .console-name').fill('Trader two');
   await page.locator('.session-card.empty[data-slot="8"]').click();
   const eighth = (await invoke('state')).sessions.find(x => x.alive && x.slot === 8);
@@ -433,20 +436,20 @@ async function eventually(predicate, message) {
   await invoke('session.end', eighth.id);
   await eventually(async () => !(await invoke('state')).sessions.find(x => x.id === eighth.id).alive);
   await invoke('mode', 'dashboard');
-  await page.locator('nav [data-page=consoles]').click();
+  await openPage(page, 'consoles');
   assert.equal(await page.locator('.session-card.empty[data-slot="8"]').count(), 1);
   const eighthTitle = page.locator('.session-card[data-slot="8"] .console-name');
-  assert.equal(await eighthTitle.inputValue(), 'Trader two');
-  await eighthTitle.fill(''); await eighthTitle.press('Enter');
-  await eventually(async () => !(await invoke('state')).settings.slotNames[8]);
-  checks.push('Plus opens the exact panel clicked; occupied panels cannot be replaced; ended panels return to plus');
+  await eventually(async () => !(await invoke('state')).settings.slotNames[8], 'Ending a console clears its slot name');
+  assert.equal(await eighthTitle.inputValue(), '');
+  checks.push('Plus opens the exact panel clicked; occupied panels cannot be replaced; ended panels return to an unnamed plus');
   for (let i = 2; i <= 9; i++) await invoke('session.create', { provider: 'shell', cwd: root, name: `Console ${i}` });
   const full = await invoke('state'); assert.equal(full.sessions.filter(x => x.alive).length, 9);
   await eventually(async () => await page.locator('#consoles-page .xterm').count() === 9);
   for (const live of full.sessions.filter(x => x.alive)) await invoke('session.input', { id: live.id, data: `Write-Output ('PANEL_' + '${live.slot}_LIVE')\r` });
   await eventually(async () => {
-    const contents = await page.locator('#consoles-page .session-card .xterm-rows').allTextContents();
-    return contents.length === 9 && contents.every((text, i) => text.includes(`PANEL_${i + 1}_LIVE`));
+    const contents = await page.locator('#consoles-page .session-card[data-console-id]').evaluateAll(cards => cards.map(card => ({ id: card.dataset.consoleId, text: card.querySelector('.xterm-rows')?.textContent || '' })));
+    const live = full.sessions.filter(x => x.alive);
+    return contents.length === 9 && live.every(session => contents.find(card => card.id === session.id)?.text.includes(`PANEL_${session.slot}_LIVE`));
   }, 'All nine terminals should display their own live output');
   checks.push('All nine panels show independent live terminal output');
   await checkToolsAndWindow({ app, page, invoke, eventually, capture: file => capture({ path: path.join(artifacts, file) }), dataDir });
@@ -455,22 +458,54 @@ async function eventually(predicate, message) {
   const tenth = await page.evaluate(cwd => window.dock.call('session.create', { provider: 'shell', cwd }), root);
   assert.equal(tenth.ok, true); assert.equal(tenth.value.slot, 10); assert.equal((await invoke('state')).grid.rows, 4);
   await invoke('session.end', tenth.value.id); await eventually(async () => !(await invoke('state')).sessions.find(x => x.id === tenth.value.id)?.alive); await invoke('grid.configure', { columns: 3, rows: 3 });
-  const workingHook = spawnSync(process.execPath, [path.join(root, 'electron', 'agent-event.cjs'), 'UserPromptSubmit'], { input: JSON.stringify({ session_id: 'test-thread' }), windowsHide: true, env: { ...process.env, AGENT_DOCK_DATA_DIR: dataDir, AGENT_DOCK_SESSION_ID: session.id } });
+  const workingHook = spawnSync(process.execPath, [path.join(root, 'electron', 'agent-event.cjs'), 'UserPromptSubmit'], { input: JSON.stringify({ session_id: 'test-thread' }), windowsHide: true, env: { ...process.env, PADDOCK_DATA_DIR: dataDir, PADDOCK_SESSION_ID: session.id, PADDOCK_LAUNCH_ID: session.launchId } });
   assert.equal(workingHook.status, 0);
   await page.waitForSelector(`.session-card.active[data-console-id="${session.id}"]`);
-  const thinkingOutline = await page.locator(`.session-card[data-console-id="${session.id}"]`).evaluate(el => getComputedStyle(el).backgroundImage);
-  assert.match(thinkingOutline, /101, 155, 255/); assert.match(thinkingOutline, /170, 118, 243/);
+  const thinkingOutline = await page.locator(`.session-card[data-console-id="${session.id}"]`).evaluate(el => {
+    const style = getComputedStyle(el);
+    return { background: getComputedStyle(el.querySelector('.console-skin'), '::before').backgroundImage, color: style.getPropertyValue('--frame-a').trim(), accent: getComputedStyle(document.body).getPropertyValue('--accent-blue').trim(), edge: style.getPropertyValue('--frame-edge').trim() };
+  });
+  assert.match(thinkingOutline.background, /gradient/);
+  assert.equal(thinkingOutline.color, thinkingOutline.accent, 'active consoles inherit the selected accent');
+  assert.equal(thinkingOutline.edge, '100%', 'active frame has a stronger edge');
   await capture({ path: path.join(artifacts, 'test-thinking-grid.png') });
   // A synthetic CLI completion tests integration without sending a prompt to an agent.
-  const hook = spawnSync(process.execPath, [path.join(root, 'electron', 'agent-event.cjs'), 'codex-notify', JSON.stringify({ type: 'agent-turn-complete', 'thread-id': 'test-thread', 'last-assistant-message': 'NOT_PERSISTED' })], { windowsHide: true, env: { ...process.env, AGENT_DOCK_DATA_DIR: dataDir, AGENT_DOCK_SESSION_ID: session.id } });
+  const hook = spawnSync(process.execPath, [path.join(root, 'electron', 'agent-event.cjs'), 'codex-notify', JSON.stringify({ type: 'agent-turn-complete', 'thread-id': 'test-thread', 'last-assistant-message': 'NOT_PERSISTED' })], { windowsHide: true, env: { ...process.env, PADDOCK_DATA_DIR: dataDir, PADDOCK_SESSION_ID: session.id, PADDOCK_LAUNCH_ID: session.launchId } });
   assert.equal(hook.status, 0);
   await eventually(async () => (await invoke('state')).sessions.find(x => x.id === session.id)?.state === 'ready', 'Completion callback did not reach the dashboard');
-  await page.locator('nav [data-page=consoles]').click();
-  await eventually(async () => await page.locator(`.session-card.ready[data-console-id="${session.id}"]`).evaluate(el => getComputedStyle(el).borderTopColor) === 'rgb(98, 217, 154)');
-  assert.equal(await page.locator(`.session-card.ready[data-console-id="${session.id}"]`).evaluate(el => getComputedStyle(el).borderTopColor), 'rgb(98, 217, 154)');
+  await openPage(page, 'consoles');
+  await eventually(async () => await page.locator(`.session-card.ready[data-console-id="${session.id}"]`).evaluate(el => getComputedStyle(el).getPropertyValue('--frame-state').trim()) === '#62d99a');
+  assert.match(await page.locator(`.session-card.ready[data-console-id="${session.id}"] .console-skin`).evaluate(el => getComputedStyle(el, '::before').backgroundImage), /rgb\(98, 217, 154\)/);
   await capture({ path: path.join(artifacts, 'test-nine-sessions.png') });
   await invoke('mode', 'fullscreen');
-  await page.waitForFunction(() => { const gap = innerHeight - document.querySelector('.session-grid').getBoundingClientRect().bottom; return gap >= 24 && gap <= 32; });
+  await page.waitForFunction(() => document.body.classList.contains('is-fullscreen') && !document.body.classList.contains('window-moving'));
+  const fullscreenGridBounds = await page.evaluate(() => {
+    const bounds = element => {
+      if (!element) return null;
+      const rect = element.getBoundingClientRect();
+      return { top: Math.round(rect.top), right: Math.round(rect.right), bottom: Math.round(rect.bottom), left: Math.round(rect.left), height: Math.round(rect.height) };
+    };
+    const suggestion = document.querySelector('#project-suggestion');
+    const page = document.querySelector('#consoles-page'), grid = document.querySelector('.session-grid');
+    return {
+      viewport: { width: innerWidth, height: innerHeight }, titlebar: bounds(document.querySelector('.titlebar')),
+      suggestion: { visible: !!suggestion && !suggestion.hidden, bounds: bounds(suggestion) },
+      dashboard: bounds(document.querySelector('#dashboard')), page: bounds(page), grid: bounds(grid),
+      pagePadding: { top: parseFloat(getComputedStyle(page).paddingTop), bottom: parseFloat(getComputedStyle(page).paddingBottom) },
+      pageScroll: { height: page.scrollHeight, clientHeight: page.clientHeight },
+    };
+  });
+  const boundsOut = path.join(root, '.build', 'prompt7-console-expansion'); fs.mkdirSync(boundsOut, { recursive: true });
+  fs.writeFileSync(path.join(boundsOut, 'desktop-grid-bounds.json'), JSON.stringify(fullscreenGridBounds, null, 2));
+  assert.ok(fullscreenGridBounds.grid.bottom <= fullscreenGridBounds.viewport.height, 'the grid fits the fullscreen viewport');
+  assert.ok(fullscreenGridBounds.grid.bottom <= fullscreenGridBounds.page.bottom, 'the grid fits inside the console page');
+  assert.ok(Math.abs((fullscreenGridBounds.grid.top - fullscreenGridBounds.page.top) - fullscreenGridBounds.pagePadding.top) <= 1, 'the grid starts at the console page padding');
+  assert.ok(Math.abs((fullscreenGridBounds.page.bottom - fullscreenGridBounds.grid.bottom) - fullscreenGridBounds.pagePadding.bottom) <= 1, 'the grid ends at the console page padding');
+  assert.ok(fullscreenGridBounds.pageScroll.height <= fullscreenGridBounds.pageScroll.clientHeight, 'the console page does not scroll at fullscreen size');
+  if (fullscreenGridBounds.suggestion.visible) {
+    assert.ok(fullscreenGridBounds.suggestion.bounds.top >= fullscreenGridBounds.titlebar.bottom, 'the suggestion starts below the titlebar');
+    assert.ok(fullscreenGridBounds.suggestion.bounds.bottom <= fullscreenGridBounds.page.top, 'the suggestion sits above the console page');
+  }
   assert.equal(await page.evaluate(() => document.querySelector('#consoles-page').scrollHeight <= document.querySelector('#consoles-page').clientHeight), true);
   await capture({ path: path.join(artifacts, 'test-fullscreen-grid.png') });
   await invoke('mode', 'dashboard');
@@ -485,14 +520,14 @@ async function eventually(predicate, message) {
   const gridGeometry = await page.locator('.session-grid').evaluate(el => ({ bottom: el.getBoundingClientRect().bottom, screen: innerHeight, rows: [...el.children].map(child => child.getBoundingClientRect().height) }));
   assert.ok(gridGeometry.bottom >= gridGeometry.screen - 24 && gridGeometry.bottom <= gridGeometry.screen - 16);
   assert.ok(Math.max(...gridGeometry.rows) - Math.min(...gridGeometry.rows) < 2);
-  for (const view of ['tools', 'instructions', 'vault', 'usage', 'api']) {
-    await page.locator(`nav [data-page=${view}]`).click();
+  for (const view of ['tools', 'instructions', 'usage', 'api']) {
+    await openPage(page, view);
     assert.equal(await page.evaluate(() => document.querySelector('#content').scrollWidth <= document.querySelector('#content').clientWidth), true, view + ' overflows');
     await capture({ path: path.join(artifacts, `test-${view}-narrow.png`) });
   }
-  checks.push('Nine panels fill the window at desktop, fullscreen and narrow sizes; thinking has a blue-purple outline, ready is green');
+  checks.push('Nine panels fill the window at desktop, fullscreen and narrow sizes; thinking uses the selected accent, ready is green');
   await page.locator('[data-page=consoles]').first().click();
-  await page.getByRole('button', { name: `Close console ${session.slot}`, exact: true }).click();
+  await page.getByRole('button', { name: `End this console ${session.slot}`, exact: true }).click();
   await eventually(async () => !(await invoke('state')).sessions.find(x => x.id === session.id).alive, 'Console did not exit');
   const replacement = await invoke('session.create', { provider: 'shell', cwd: root, name: 'Reused slot' });
   assert.equal(replacement.slot, 1); assert.notEqual(replacement.id, session.id);

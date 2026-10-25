@@ -1,36 +1,33 @@
 'use strict';
+const { openPage } = require('./ui-navigation.cjs');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 async function checkToolsAndWindow({ app, page, invoke, eventually, capture, dataDir }) {
   await invoke('mode', 'dashboard');
-  await page.locator('nav [data-page=instructions]').click();
+  await openPage(page, 'instructions');
   const guide = page.locator('[data-working-guide=web-design]');
-  assert.equal(await guide.isChecked(), true);
+  if (!(await guide.isChecked())) { await guide.check(); await eventually(async () => (await invoke('state')).shared.guideIds.includes('web-design')); }
   const original = (await invoke('state')).shared.instructions;
   await page.locator('#shared-instructions').fill('Unsaved instruction draft');
   await guide.uncheck(); await eventually(async () => !(await invoke('state')).shared.guideIds.length);
   assert.equal(await page.locator('#shared-instructions').inputValue(), 'Unsaved instruction draft');
   assert.doesNotMatch((await invoke('state')).shared.summary, /Web design and page review/);
   await guide.check(); await eventually(async () => (await invoke('state')).shared.guideIds.includes('web-design'));
-  assert.match((await invoke('state')).shared.summary, /Data deletion requests/);
+  assert.match((await invoke('state')).shared.summary, /website_guide/);
+  assert.match(require('../electron/website-guide.cjs').websiteGuide('checklist').content, /Data deletion requests/);
   await page.locator('#shared-instructions').fill(original);
   await capture('test-working-guides.png');
-  await page.locator('nav [data-page=tools]').click();
-  assert.equal(await page.locator('.integration-card').count(), 3);
+  await openPage(page, 'tools');
+  assert.equal(await page.locator('.integrations [data-integration]').count(), 5, 'Blender, Unity, Meshy, REA and MiroFish');
   assert.equal(await page.locator('[name=projectPath]').inputValue(), '');
   await app.evaluate(({ dialog }, folder) => { globalThis.toolFolderDialog = dialog.showOpenDialog; dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [folder] }); }, dataDir);
   await page.locator('[data-unity-folder]').click();
   assert.equal(await page.locator('[name=projectPath]').inputValue(), dataDir);
   await app.evaluate(({ dialog }) => { dialog.showOpenDialog = globalThis.toolFolderDialog; });
   await page.locator('[data-integration-setup=meshy]').click();
-  await page.locator('[data-integration=meshy] [data-integration-status]').filter({ hasText: 'Save a Meshy API key' }).waitFor();
-  await page.locator('[data-meshy-key]').click();
-  assert.equal(await page.locator('#vault-form [name=provider]').inputValue(), 'meshy');
-  await page.locator('#vault-form [name=key]').fill('TEST_ONLY_MESHY_KEY');
-  await page.locator('#vault-form [type=submit]').click();
-  await eventually(async () => (await invoke('state')).vault.entries.some(x => x.id === 'meshy'));
-  await page.locator('nav [data-page=tools]').click();
-  await page.locator('[name=meshyKey]').selectOption('meshy');
+  await page.locator('[data-integration=meshy] [data-integration-status]').filter({ hasText: 'Paste your Meshy API key' }).waitFor();
+  // The key is pasted on the card; connecting saves it and connects in one step.
+  await page.locator('[data-integration=meshy] [name=newKey]').fill('TEST_ONLY_MESHY_KEY');
   await page.locator('#tool-form [name=name]').fill('Unfinished custom tool');
   await page.locator('[data-integration-setup=meshy]').click();
   await eventually(async () => (await invoke('state')).shared.connections.some(x => x.integration === 'meshy'));
@@ -43,7 +40,7 @@ async function checkToolsAndWindow({ app, page, invoke, eventually, capture, dat
   assert.equal(await page.locator('[data-browse-tool=meshy]').evaluate(x => document.activeElement === x), true);
   await capture('test-integrations.png');
   await invoke('tools.remove', 'meshy'); await invoke('vault.remove', 'meshy');
-  await page.locator('nav [data-page=consoles]').click();
+  await openPage(page, 'consoles');
 
   const before = (await invoke('state')).sessions.filter(x => x.alive).map(x => x.id);
   assert.ok(before.length > 0);

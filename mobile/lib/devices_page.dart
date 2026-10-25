@@ -117,17 +117,17 @@ class _DevicesPageState extends State<DevicesPage> {
           children: [
             ListTile(
               contentPadding: EdgeInsets.zero,
-              leading: const Icon(Icons.smartphone, color: pink),
+              leading: Icon(Icons.smartphone, color: pink),
               title: Text(c.phoneName),
               subtitle: const Text('This phone'),
               trailing: IconButton(
                 tooltip: 'Rename this phone',
                 onPressed: busy ? null : () => rename(),
-                icon: const Icon(Icons.edit_outlined, color: blue),
+                icon: Icon(Icons.edit_outlined, color: blue),
               ),
             ),
             const Divider(height: 32),
-            const Text(
+            Text(
               'Computers',
               style: TextStyle(
                 fontSize: 22,
@@ -201,7 +201,7 @@ class _DevicesPageState extends State<DevicesPage> {
             if (error.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.only(top: 16),
-                child: Text(error, style: const TextStyle(color: pink)),
+                child: Text(error, style: TextStyle(color: pink)),
               ),
           ],
         ),

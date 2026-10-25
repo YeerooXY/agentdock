@@ -12,11 +12,11 @@ Earlier verification on 16 October 2026. See [the 0.5.0 setup and resize review]
 
 ## Cursor investigation and limits
 
-The installed Codex is 0.156.1. Local xterm source confirms that terminal programs can request cursor blinking independently of the initial terminal option; Dock previously also enabled blinking when expanding a console. The new steady style handles both sources of blink animation. Tests include an explicit CLI blink request and fragmented hide/show sequences.
+The installed Codex is 0.156.1. Local xterm source confirms that terminal programs can request cursor blinking independently of the initial terminal option; Paddock previously also enabled blinking when expanding a console. The new steady style handles both sources of blink animation. Tests include an explicit CLI blink request and fragmented hide/show sequences.
 
 The reported intermittent flicker in a separate CMD window was not reproduced under the user's exact workload. This update does not change CMD or Codex's global configuration, and it does not suppress deliberate cursor hide/show commands. No paid model request was made to reproduce it.
 
-For comparison outside Dock, `codex -c tui.animations=false` disables Codex's ASCII animations and shimmer for that run. `--no-alt-screen` changes its screen mode. These are documented troubleshooting controls, not a verified cure for this report: [Codex TUI options](https://learn.chatgpt.com/docs/config-file/config-advanced#tui-options), [CLI options](https://learn.chatgpt.com/docs/cli/reference).
+For comparison outside Paddock, `codex -c tui.animations=false` disables Codex's ASCII animations and shimmer for that run. `--no-alt-screen` changes its screen mode. These are documented troubleshooting controls, not a verified cure for this report: [Codex TUI options](https://learn.chatgpt.com/docs/config-file/config-advanced#tui-options), [CLI options](https://learn.chatgpt.com/docs/cli/reference).
 
 ## Verification
 

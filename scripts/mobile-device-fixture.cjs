@@ -1,5 +1,5 @@
 'use strict';
-// Isolated, unpaid Windows + Android integration fixture. Never attaches to the user's Dock.
+// Isolated, unpaid Windows + Android integration fixture. Never attaches to the user's Paddock.
 const { _electron: electron } = require('playwright');
 const { Results } = require('../electron/results.cjs');
 const fs = require('node:fs'), path = require('node:path'), net = require('node:net');

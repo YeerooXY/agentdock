@@ -2,11 +2,11 @@
 
 Verified on Windows, 18 October 2026.
 
-The source launch assigned `electron.exe`'s path as its application identity. The desktop and Start menu shortcuts had no identity. The running window already contained the Dock artwork, but Windows could group it under Electron.
+The source launch assigned `electron.exe`'s path as its application identity. The desktop and Start menu shortcuts had no identity. The running window already contained the Paddock artwork, but Windows could group it under Electron.
 
 Source launches now use `com.yeeroo.agentdock`, matching installed builds. Existing shortcuts for that checkout are upgraded automatically. The shortcut command creates matching shortcuts through Electron's Shell API. Other installations and custom launch arguments are preserved. Source windows use the multi-size ICO; installed builds retain their executable icon and existing window image.
 
-The currently running Dock window and both local shortcuts were updated without restarting Dock, Explorer, or any console. Its small and large native window icons were extracted and visually checked: both contain the blue-pink Dock mark. The taskbar itself was covered by another fullscreen application, so its final visible appearance still needs a user check. The extracted icon is evidence of the window resource, not a screenshot of the taskbar.
+The currently running Paddock window and both local shortcuts were updated without restarting Paddock, Explorer, or any console. Its small and large native window icons were extracted and visually checked: both contain the blue-pink Paddock mark. The taskbar itself was covered by another fullscreen application, so its final visible appearance still needs a user check. The extracted icon is evidence of the window resource, not a screenshot of the taskbar.
 
 Checks:
 

@@ -14,9 +14,13 @@ import 'package:xterm/xterm.dart';
 import 'pairing_request.dart';
 import 'saved_devices.dart';
 import 'console_drafts.dart';
+import 'agent_selection.dart';
+import 'agent_menu.dart';
+import 'console_theme.dart';
+import 'dock_style.dart';
 
 class ConsoleScreen {
-  final Terminal terminal = Terminal(maxLines: 1000);
+  final Terminal terminal = Terminal(maxLines: 3000);
   int sequence = -1, epoch = 0, cols = 110, rows = 30;
   bool receiving = false;
 }
@@ -36,26 +40,81 @@ class _FrameBytes implements Sink<List<int>> {
 }
 
 class DockClient extends ChangeNotifier {
+  final Map<String, AgentSelection> _agentSelections = {};
+  final Map<String, String> _selectionConfirmations = {};
+  String _selectionKey(String id) {
+    final session = sessions.where((s) => s['id'] == id).firstOrNull;
+    return '$activePC:$generation:$id:${session?['providerSessionId']}';
+  }
+
+  AgentSelection agentSelection(String id) {
+    final session =
+        sessions.where((s) => s['id'] == id).firstOrNull ?? <String, dynamic>{};
+    final reported = AgentSelection.fromSession(session),
+        key = _selectionKey(id);
+    final terminal = screens[id]?.terminal;
+    final observed = terminal == null
+        ? null
+        : selectionConfirmation(activeTerminalText(terminal));
+    if (observed != null) {
+      final signature = '${observed.model}:${observed.effort}';
+      if (_selectionConfirmations[key] != signature) {
+        final wasObserved = _selectionConfirmations.containsKey(key);
+        _selectionConfirmations[key] = signature;
+        if (wasObserved || reported.model == null) {
+          _agentSelections[key] = AgentSelection(
+            model: observed.model,
+            effort: observed.effort,
+            at: DateTime.now().millisecondsSinceEpoch,
+          );
+        }
+      }
+    }
+    final saved = _agentSelections[key];
+    return saved != null && saved.at >= reported.at ? saved : reported;
+  }
+
+  void rememberAgentSelection(String id, AgentSelection selection) {
+    if (_agentSelections.length > 64) {
+      _agentSelections.clear();
+      _selectionConfirmations.clear();
+    }
+    _agentSelections[_selectionKey(id)] = selection;
+    notifyListeners();
+  }
+
   static const storage = FlutterSecureStorage();
   static const nativePush = MethodChannel('agentdock/push');
   static const background = MethodChannel('agentdock/background');
   final SavedDevices devices;
   final ConsoleDrafts drafts;
-  DockClient({SavedDevices? savedDevices, ConsoleDrafts? consoleDrafts})
-    : devices =
-          savedDevices ??
-          SavedDevices(
-            read: (key) => storage.read(key: key),
-            write: (key, value) => storage.write(key: key, value: value),
-            delete: (key) => storage.delete(key: key),
-          ),
-      drafts =
-          consoleDrafts ??
-          ConsoleDrafts(
-            read: () => storage.read(key: 'consoleDrafts.v1'),
-            write: (value) =>
-                storage.write(key: 'consoleDrafts.v1', value: value),
-          ) {
+  final ConsoleAppearanceStore appearanceStore;
+  ConsoleAppearance appearance = const ConsoleAppearance();
+  DockClient({
+    SavedDevices? savedDevices,
+    ConsoleDrafts? consoleDrafts,
+    ConsoleAppearanceStore? consoleAppearanceStore,
+  }) : appearanceStore =
+           consoleAppearanceStore ??
+           ConsoleAppearanceStore(
+             read: () => storage.read(key: 'consoleAppearance.v1'),
+             write: (value) =>
+                 storage.write(key: 'consoleAppearance.v1', value: value),
+           ),
+       devices =
+           savedDevices ??
+           SavedDevices(
+             read: (key) => storage.read(key: key),
+             write: (key, value) => storage.write(key: key, value: value),
+             delete: (key) => storage.delete(key: key),
+           ),
+       drafts =
+           consoleDrafts ??
+           ConsoleDrafts(
+             read: () => storage.read(key: 'consoleDrafts.v1'),
+             write: (value) =>
+                 storage.write(key: 'consoleDrafts.v1', value: value),
+           ) {
     drafts.addListener(notifyListeners);
     background.setMethodCallHandler((call) async {
       if (_disposed) return;
@@ -77,6 +136,15 @@ class DockClient extends ChangeNotifier {
   bool get connectionAllowed => foreground || stayConnected;
   String deviceStoreError = '';
   final Map<String, String> _selections = {};
+  final Set<String> _pendingConsoleOpenings = {};
+  final Map<String, int> _consoleStateEffectSequences = {};
+  final Map<String, String> _consoleStateEffectKinds = {};
+  final Map<String, int> _consoleOutputBurstSequences = {};
+  final Map<String, int> _consoleOutputSequences = {};
+  final Map<String, DateTime> _consoleOutputLastPackets = {};
+  final Map<String, int> _consoleOutputGenerations = {};
+  final Set<String> _pendingConsoleOutputBaselines = {};
+  int _consoleBaselineGeneration = -1;
   Map<String, dynamic>? pairing;
   Map<String, dynamic> state = {'sessions': <dynamic>[], 'unreadResults': 0};
   final Map<String, ConsoleScreen> screens = {};
@@ -102,7 +170,28 @@ class DockClient extends ChangeNotifier {
       (state['sessions'] as List? ?? []).cast<Map<String, dynamic>>();
   ConsoleScreen? get screen => screens[selected];
 
+  /// Claims the one-shot opening produced by a live session-list addition.
+  /// Initial snapshots and the first state after reconnect never add entries.
+  bool claimConsoleOpening(String id) =>
+      _pendingConsoleOpenings.remove('$activePC:$id');
+  int consoleStateEffectSequence(String id) =>
+      _consoleStateEffectSequences['$activePC:$id'] ?? 0;
+  String? consoleStateEffectKind(String id) =>
+      _consoleStateEffectKinds['$activePC:$id'];
+  int consoleOutputBurstSequence(String id) =>
+      _consoleOutputBurstSequences['$activePC:$id'] ?? 0;
+  int consoleOutputSequence(String id) =>
+      _consoleOutputSequences['$activePC:$id'] ?? 0;
+
   Future<void> restore() async {
+    // A damaged appearance preference must not prevent pairing restoration.
+    try {
+      appearance = await appearanceStore.load();
+      DockAccent.theme = appearance.theme;
+      notifyListeners();
+    } catch (_) {
+      /* Keep the default appearance if storage is unavailable. */
+    }
     try {
       await drafts.load();
       await devices.load();
@@ -124,7 +213,8 @@ class DockClient extends ChangeNotifier {
       }
       if (pairing != null) await connect();
     } catch (_) {
-      status = 'Saved devices could not be opened. Restart Dock to try again.';
+      status =
+          'Saved devices could not be opened. Restart Paddock to try again.';
       deviceStoreError = status;
       notifyListeners();
     }
@@ -136,10 +226,18 @@ class DockClient extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> setConsoleAppearance(ConsoleAppearance value) async {
+    await appearanceStore.save(value);
+    if (_disposed) return;
+    appearance = value;
+    DockAccent.theme = value.theme;
+    notifyListeners();
+  }
+
   static Map<String, dynamic> parseInvite(String code, {DateTime? now}) {
     if (!code.trim().startsWith('agentdock:') || code.length > 4000) {
       throw const FormatException(
-        'Use a pairing code from Agent Dock on your PC.',
+        'Use a pairing code from Paddock on your PC.',
       );
     }
     final invite = jsonDecode(
@@ -230,10 +328,20 @@ class DockClient extends ChangeNotifier {
     }
     final url = config['manualUrl'] ?? config['url'];
     final uri = url is String ? Uri.tryParse(url) : null;
-    if (uri != null && validEndpoint(uri, internet: true)) {
-      return 'PC unreachable. Check its internet address, router forwarding and that Dock is running. Home IP addresses can change.';
+    final ip = uri == null ? null : InternetAddress.tryParse(uri.host);
+    final tailnet =
+        ip != null &&
+        ip.type == InternetAddressType.IPv4 &&
+        ip.rawAddress[0] == 100 &&
+        ip.rawAddress[1] >= 64 &&
+        ip.rawAddress[1] <= 127;
+    if (tailnet) {
+      return 'PC unreachable. Turn on Tailscale on this phone, signed in to the same account as your PC, and check that Paddock is running.';
     }
-    return 'PC unreachable. This pairing uses a private address. Use the same Wi-Fi or configure direct internet in PC Phone setup.';
+    if (uri != null && validEndpoint(uri, internet: true)) {
+      return 'PC unreachable. Direct internet was replaced by Tailscale. On your PC, open Phone setup, choose Anywhere · Tailscale and pair again.';
+    }
+    return 'PC unreachable. Use the same Wi-Fi as your PC, or set up Tailscale in PC Phone setup to connect from anywhere.';
   }
 
   Future<void> updateAddress(String value) async {
@@ -567,6 +675,7 @@ class DockClient extends ChangeNotifier {
 
   void disconnected(int current, {String? reason}) {
     if (current != generation) return;
+    _pendingConsoleOpenings.clear();
     ++generation; // Ignore late events from the socket that just failed.
     connected = false;
     connecting = false;
@@ -638,7 +747,66 @@ class DockClient extends ChangeNotifier {
         }
       } else if (data['type'] == 'state') {
         final previous = {for (final s in sessions) s['id']: s['state']};
-        state = data['state'] as Map<String, dynamic>;
+        final nextState = data['state'] as Map<String, dynamic>;
+        final nextSessions = (nextState['sessions'] as List? ?? [])
+            .whereType<Map>()
+            .cast<Map<String, dynamic>>()
+            .toList();
+        if (_consoleBaselineGeneration != generation) {
+          _consoleBaselineGeneration = generation;
+          _pendingConsoleOpenings.clear();
+          _pendingConsoleOutputBaselines.addAll(
+            nextSessions.map((session) => '$activePC:${session['id']}'),
+          );
+        } else {
+          for (final session in nextSessions) {
+            if (session['alive'] == true &&
+                !previous.containsKey(session['id'])) {
+              _pendingConsoleOpenings.add('$activePC:${session['id']}');
+              _pendingConsoleOutputBaselines.add('$activePC:${session['id']}');
+            }
+            final key = '$activePC:${session['id']}',
+                oldState = previous[session['id']],
+                nextStateValue = session['state'];
+            final effect = nextStateValue == 'ready' && oldState != 'ready'
+                ? 'ready'
+                : nextStateValue == 'error' && oldState != 'error'
+                ? 'error'
+                : null;
+            if (effect != null) {
+              _consoleStateEffectSequences.update(
+                key,
+                (value) => value + 1,
+                ifAbsent: () => 1,
+              );
+              _consoleStateEffectKinds[key] = effect;
+            }
+          }
+        }
+        final nextIds = nextSessions
+            .map((session) => '$activePC:${session['id']}')
+            .toSet();
+        _pendingConsoleOpenings.removeWhere((key) => !nextIds.contains(key));
+        _consoleStateEffectSequences.removeWhere(
+          (key, _) => !nextIds.contains(key),
+        );
+        _consoleStateEffectKinds.removeWhere(
+          (key, _) => !nextIds.contains(key),
+        );
+        _consoleOutputBurstSequences.removeWhere(
+          (key, _) => !nextIds.contains(key),
+        );
+        _consoleOutputSequences.removeWhere((key, _) => !nextIds.contains(key));
+        _consoleOutputLastPackets.removeWhere(
+          (key, _) => !nextIds.contains(key),
+        );
+        _consoleOutputGenerations.removeWhere(
+          (key, _) => !nextIds.contains(key),
+        );
+        _pendingConsoleOutputBaselines.removeWhere(
+          (key) => !nextIds.contains(key),
+        );
+        state = nextState;
         if (_alertModeGeneration != generation &&
             (state['capabilities'] as List? ?? []).contains('alerts.direct')) {
           _alertModeGeneration = generation;
@@ -699,6 +867,37 @@ class DockClient extends ChangeNotifier {
         final view = data['reset'] == true
             ? (screens[id] = makeScreen(id))
             : screens.putIfAbsent(id, () => makeScreen(id));
+        final now = DateTime.now(), key = '$activePC:$id';
+        final previousGeneration = _consoleOutputGenerations[key];
+        if (data['reset'] == true ||
+            _pendingConsoleOutputBaselines.contains(key) ||
+            previousGeneration != generation) {
+          final reconnectBaseline =
+              _pendingConsoleOutputBaselines.remove(key) ||
+              (previousGeneration != null && previousGeneration != generation);
+          _consoleOutputGenerations[key] = generation;
+          if (reconnectBaseline && _consoleOutputLastPackets.containsKey(key)) {
+            _consoleOutputLastPackets[key] = now;
+          }
+        } else {
+          final previousPacket = _consoleOutputLastPackets[key];
+          _consoleOutputSequences.update(
+            key,
+            (value) => value + 1,
+            ifAbsent: () => 1,
+          );
+          if (previousPacket == null ||
+              now.difference(previousPacket) >
+                  const Duration(milliseconds: 900)) {
+            _consoleOutputBurstSequences.update(
+              key,
+              (value) => value + 1,
+              ifAbsent: () => 1,
+            );
+          }
+          _consoleOutputGenerations[key] = generation;
+          _consoleOutputLastPackets[key] = now;
+        }
         view.receiving = true;
         try {
           view.cols = (data['cols'] as num).toInt();
@@ -795,9 +994,20 @@ class DockClient extends ChangeNotifier {
     inputError = '';
   }
 
-  Future<void> submit(String text, {bool command = false}) async {
+  Future<void> submit(
+    String text, {
+    bool command = false,
+    bool Function()? canContinue,
+  }) async {
     final id = selected, connection = socket, current = generation;
-    if (id.isEmpty || !connected || !foreground) {
+    final targetPC = activePC;
+    final targetSession = sessions.where((s) => s['id'] == id).firstOrNull;
+    final targetProvider = targetSession?['provider'];
+    final targetChat = targetSession?['providerSessionId'];
+    if (id.isEmpty ||
+        !connected ||
+        !foreground ||
+        canContinue?.call() == false) {
       throw StateError('Select a connected console first.');
     }
     if (text.trim().isEmpty) return;
@@ -813,7 +1023,15 @@ class DockClient extends ChangeNotifier {
     await Future<void>.delayed(const Duration(milliseconds: 150));
     if (!connected ||
         !foreground ||
+        canContinue?.call() == false ||
         current != generation ||
+        activePC != targetPC ||
+        sessions.where((s) => s['id'] == id).firstOrNull?['provider'] !=
+            targetProvider ||
+        sessions
+                .where((s) => s['id'] == id)
+                .firstOrNull?['providerSessionId'] !=
+            targetChat ||
         !identical(connection, socket) ||
         selected != id) {
       throw StateError(
@@ -928,6 +1146,7 @@ class DockClient extends ChangeNotifier {
   }
 
   void disconnectTransport() {
+    _pendingConsoleOpenings.clear();
     generation++;
     retry?.cancel();
     socket?.close();

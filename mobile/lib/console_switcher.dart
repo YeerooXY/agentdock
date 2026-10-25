@@ -88,13 +88,13 @@ class _ConsoleSwitcherState extends State<ConsoleSwitcher> {
                   ),
                 ),
                 if (session['id'] == widget.client.selected)
-                  const Icon(Icons.check, size: 20, color: pink),
+                  Icon(Icons.check, size: 20, color: pink),
               ],
             ),
           ),
         ),
       const PopupMenuDivider(),
-      const PopupMenuItem(
+      PopupMenuItem(
         value: '+',
         child: Row(
           children: [
@@ -123,7 +123,7 @@ class _ConsoleSwitcherState extends State<ConsoleSwitcher> {
               widget.name,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 18,
                 color: pink,
                 fontWeight: FontWeight.w600,
@@ -136,7 +136,7 @@ class _ConsoleSwitcherState extends State<ConsoleSwitcher> {
             duration: MediaQuery.disableAnimationsOf(context)
                 ? Duration.zero
                 : const Duration(milliseconds: 180),
-            child: const Icon(Icons.expand_more, size: 19, color: pink),
+            child: Icon(Icons.expand_more, size: 19, color: pink),
           ),
         ],
       ),

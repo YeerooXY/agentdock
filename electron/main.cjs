@@ -1,5 +1,5 @@
 'use strict';
-const { app, BrowserWindow, ipcMain, dialog, screen, systemPreferences, globalShortcut, safeStorage, Tray, Menu, nativeImage, Notification, shell, powerSaveBlocker } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, screen, systemPreferences, globalShortcut, safeStorage, Tray, Menu, nativeImage, Notification, shell, powerSaveBlocker, clipboard } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -9,6 +9,7 @@ const { SshHosts } = require('./ssh-hosts.cjs');
 const { CodexAccount, RecentCodex, findProgram, nativeCodex, findClaude, consoleModels } = require('./adapters.cjs');
 const { runtimeFiles } = require('./runtime.cjs');
 const { initialSettings } = require('./settings.cjs');
+const { frameStyles, lightingStyles, updatedSlotTrims, moveSlotTrims } = require('./console-appearance.cjs');
 const { CliSetup } = require('./cli-setup.cjs');
 const { catalog: cliCatalog, byId: cliAgents } = require('./cli-catalog.cjs');
 const { cells: consoleCells, occupied: occupiedCells, planLayout } = require('./console-layout.cjs');
@@ -18,37 +19,65 @@ const { Projects } = require('./projects.cjs');
 const { MessageUsage, apiMessages } = require('./message-usage.cjs');
 const { Updates } = require('./updates.cjs');
 const { Workbench } = require('./workbench.cjs');
+const { creativeTools } = require('./creative-tools.cjs');
 const { Turns } = require('./turns.cjs');
 const { MobileCompanion } = require('./mobile.cjs');
 const { DockNotifications } = require('./notifications.cjs');
+const { completionNotice } = require('./completion-notice.cjs');
 const { WorkPower } = require('./power.cjs');
 const { runApi } = require('./api-run.cjs');
 const { SharedHub } = require('./shared.cjs');
-const { ToolIntegrations, definitions: integrationDefinitions } = require('./integrations.cjs');
+const { ToolIntegrations, definitions: integrationDefinitions, runProgram } = require('./integrations.cjs');
+const { McpCatalog, catalog: recommendedTools } = require('./mcp-catalog.cjs');
+const { known: policyLimits, budgetUnit } = require('./tool-policy.cjs');
+const { ManagedDownloads } = require('./managed-downloads.cjs');
+const { SkillPacks } = require('./skill-packs.cjs');
 const { validateProvider, validateRequest, ledgerSummary, number } = require('./domain.cjs');
 const { APP_ID, taskbarIcon, developmentShortcuts } = require('./windows-identity.cjs');
-app.setName('Agent Dock');
+const { CodePanel } = require('./code-panel.cjs');
+const { Screenshots, clipboardReader } = require('./screenshots.cjs');
+const { endSession } = require('./session-end.cjs');
+const filePreview = require('./file-preview.cjs');
+const { userDataPath } = require('./user-data.cjs');
+const { AccountProfiles, defaultId } = require('./account-profiles.cjs');
+const { DraftBridge } = require('./draft-bridge.cjs');
+const { accountIdForLimit, thresholdCandidate, automaticSwitchEligible } = require('./account-switching-policy.cjs');
+const { SubscriptionUsage, readClaudeUsage, readCopilotUsage, readKiroUsage, readKimiUsage, copilotExecutable, usageEnvironment, stopUsageReaders } = require('./subscription-usage.cjs');
+app.setName('Paddock');
 const appModelId = APP_ID;
 if (process.platform === 'win32') app.setAppUserModelId(appModelId);
 const testMode = process.argv.includes('--smoke-test');
 const testDir = process.argv.find(x => x.startsWith('--data-dir='))?.slice(11);
 if (testMode && testDir) app.setPath('userData', testDir);
+else app.setPath('userData', userDataPath(app.getPath('appData'), app.getPath('userData')));
 if (!app.requestSingleInstanceLock() && !testMode) app.quit();
-let window, tray, vault, sessions, workspace, projects, messageUsage, updates, account, root, settings, ledger, notifications, hub, integrations, workbench, cliSetup, turns, mobile, workPower, ssh;
-let mode = 'dashboard', quitting = false, refreshing = false, lastRefresh = 0, apiBusy = false;
+let window, tray, vault, sessions, workspace, projects, messageUsage, updates, account, root, settings, ledger, notifications, hub, integrations, mcpCatalog, workbench, cliSetup, skillPacks, turns, mobile, workPower, ssh, screenshots, accounts, draftBridge;
+let codePanel;
+let mode = 'dashboard', quitting = false, refreshing = false, lastRefresh = 0, apiBusy = false, subscriptionUsage, usageRefresh;
 let modeTarget = null, modeTask, modeSequence = 0, transitioning = false;
 let trayHidden = false, windowDrag = null;
 let limits = [], recent = [], accountError = null, capabilities = {}, storageError = null, workspaceError = null, shortcutAvailable = false;
+const codexAccounts = new Map(), dismissedThresholdOffers = new Set(), automaticSwitchAttempts = new Set();
 const recentReader = new RecentCodex();
 const entryFile = path.join(__dirname, '..', 'dist', 'index.html');
 const entryUrl = pathToFileURL(entryFile).href;
 const projectsFolder = path.join(os.homedir(), 'Projects');
 const defaultFolder = fs.existsSync(projectsFolder) && fs.statSync(projectsFolder).isDirectory() ? projectsFolder : os.homedir();
 function snapshot() {
-  return { mode, transitioning, trayHidden, sessions: sessions?.list() || [], limits, recent, accountError, refreshing, lastRefresh, agents: cliSetup?.snapshot() || [], agentSetupBusy: !!cliSetup?.running,
+  return { mode, transitioning, trayHidden, sessions: sessions?.list() || [], codePanels: sessions?.codePanels() || [], codeRevision: codePanel?.revision || 0, limits, accounts: ['codex', 'claude'].flatMap(provider => accounts?.choices(provider) || []), recent, accountError, refreshing, lastRefresh, agents: cliSetup?.snapshot() || [], agentSetupBusy: !!cliSetup?.running, skills: skillPacks?.snapshot() || { packs: [], busy: false },
+    usageAccounts: usageAccounts(), usageChecks: subscriptionUsage?.snapshot() || [],
     sshHosts: ssh?.list() || [], capabilities, projects: projects?.list() || [], messages: [...(messageUsage?.items || []), ...apiMessages(ledger || [])].sort((a,b) => b.at - a.at).slice(0, 200), mobile: mobile?.snapshot(), workbench: workbench?.snapshot(), vault: { available: vault?.available() || false, entries: vault?.list() || [] },
     ledger: ledger || [], summary: ledgerSummary(ledger || []), shared: hub?.snapshot(), updates: updates?.snapshot(), grid: sessions?.grid || settings?.grid, settings, storageError, workspaceError, shortcutAvailable,
-    integrations: integrations?.snapshot(hub?.config.connections || [], vault?.list() || []), defaultFolder, version: app.getVersion() };
+    integrations: integrations?.snapshot(hub?.config.connections || [], vault?.list() || []), toolCatalog: mcpCatalog?.snapshot(hub?.config.connections || []) || [],
+    toolLimits: Object.fromEntries((hub?.config.connections || []).map(x => [x.id, { models: policyLimits[x.id]?.models?.order || [], unit: budgetUnit(x.id) }])), defaultFolder, version: app.getVersion(), screenshot: screenshots?.snapshot() || null };
+}
+// Tools set to Ask me first: the user approves each call. Tests always deny.
+async function confirmToolCall({ connection, tool, args }) {
+  if (testMode || !window) return false;
+  if (!window.isVisible()) window.show();
+  const preview = JSON.stringify(args, null, 1);
+  const { response } = await dialog.showMessageBox(window, { type: 'question', buttons: ['Allow once', 'Deny'], defaultId: 1, cancelId: 1, noLink: true, title: 'Allow tool call?', message: `An agent wants to use ${connection}: ${tool}`, detail: preview.length > 1500 ? preview.slice(0, 1500) + '…' : preview });
+  return response === 0;
 }
 function publish() { if (window && !window.isDestroyed()) window.webContents.send('dock:state', snapshot()); }
 function updatePower() { workPower?.update({ enabled: settings?.keepAwakeWhileWorking === true, sessions: sessions?.list() || [], apiBusy }); }
@@ -140,12 +169,92 @@ async function moveWindow(next, sequence) {
   window.setAlwaysOnTop(next === 'hud' && settings.hudAlwaysOnTop);
   revealWindow();
 }
-async function refreshLimits() {
-  if (refreshing || testMode) return;
+function usageAccounts() {
+  const choices = ['codex', 'claude'].flatMap(provider => accounts?.choices(provider) || []);
+  for (const agent of cliSetup?.snapshot() || []) {
+    if (!['codex', 'claude'].includes(agent.id) && agent.installed) choices.push({ id: `${agent.id}:default`, provider: agent.id, label: agent.name });
+  }
+  for (const value of limits) {
+    const id = limitAccountId(value);
+    if (id && !choices.some(choice => choice.id === id)) choices.push({ id, provider: value.provider, label: value.name || value.provider });
+  }
+  const checks = subscriptionUsage?.snapshot() || [];
+  const known = choice => limits.some(value => limitAccountId(value) === choice.id && value.windows?.length)
+    || checks.some(check => check.accountId === choice.id && check.observedAt)
+    || !!choice.loginCompletedAt;
+  const active = choice => sessions?.list().some(item => item.alive && (item.accountId || `${item.provider}:default`) === choice.id);
+  return choices.map(choice => ({ ...choice, hasUsage: !!known(choice), inUse: !!active(choice) }))
+    .sort((a, b) => Number(b.hasUsage) - Number(a.hasUsage) || Number(b.inUse) - Number(a.inUse));
+}
+function saveUsage(account, values) {
+  limits = [...limits.filter(item => limitAccountId(item) !== account.id), ...values];
+  try { atomicJson(path.join(root, 'limits.json'), limits); } catch (error) { storageError = error.message; }
+  refreshSwitchOffers(); publish(); mobile?.scheduleState();
+}
+function refreshLimits() {
+  if (testMode || !subscriptionUsage) return Promise.resolve();
+  if (usageRefresh) return usageRefresh;
   refreshing = true; publish();
-  try { await account.refresh(); accountError = null; lastRefresh = Date.now(); }
-  catch (error) { accountError = error.message; }
-  finally { refreshing = false; publish(); }
+  usageRefresh = subscriptionUsage.refresh(usageAccounts()).then(checks => {
+    accountError = checks.find(check => check.accountId === defaultId('codex'))?.message || null;
+    if (checks.some(check => check.status === 'current')) lastRefresh = Date.now();
+    refreshSwitchOffers();
+  }).finally(() => { refreshing = false; usageRefresh = null; publish(); mobile?.scheduleState(); });
+  return usageRefresh;
+}
+function usageSnapshot() {
+  const choices = usageAccounts(), checks = subscriptionUsage?.snapshot() || [];
+  return {
+    limits: limits.map(item => ({ ...item, accountLabel: choices.find(choice => choice.id === limitAccountId(item))?.label || item.name, usageCheck: checks.find(check => check.accountId === limitAccountId(item)) })),
+    accounts: choices.map(choice => ({ ...choice, usageCheck: checks.find(check => check.accountId === choice.id) })),
+    usageChecks: checks, refreshing, threshold: settings.accountSwitchThreshold, autoSwitch: settings.autoSwitchAccounts, summary: ledgerSummary(ledger || []),
+  };
+}
+function getCodexAccount(id = defaultId('codex')) {
+  if (codexAccounts.has(id)) return codexAccounts.get(id);
+  const profile = accounts.getAccount(id, 'codex');
+  const env = accounts.environment(id, 'codex', { baseEnv: process.env });
+  for (const key of Object.keys(env)) if (/^(?:OPENAI_API_KEY|CODEX_API_KEY|CODEX_ACCESS_TOKEN|ANTHROPIC_API_KEY|ANTHROPIC_AUTH_TOKEN|CLAUDE_CODE_OAUTH_TOKEN|GOOGLE_API_KEY|GEMINI_API_KEY)$/i.test(key) || key.toLowerCase() === 'electron_run_as_node') delete env[key];
+  const reader = new CodexAccount(values => {
+    limits = [...limits.filter(item => (item.accountId || (item.provider === 'codex' ? defaultId('codex') : item.accountId)) !== id), ...values];
+    try { atomicJson(path.join(root, 'limits.json'), limits); } catch (error) { storageError = error.message; }
+    refreshSwitchOffers(); publish();
+  }, { env, accountId: id, sqliteHome: profile.profile ? path.join(profile.configDir, 'sqlite') : null });
+  codexAccounts.set(id, reader);
+  if (id === defaultId('codex')) account = reader;
+  return reader;
+}
+const limitAccountId = accountIdForLimit;
+function refreshSwitchOffers() {
+  if (!sessions || !accounts || !settings) return;
+  const threshold = settings.accountSwitchThreshold ?? 90, now = Date.now();
+  let changed = false;
+  for (const item of sessions.items.values()) {
+    if (item.purpose !== 'agent' || !['codex', 'claude'].includes(item.provider) || item.dismissed) continue;
+    const accountId = item.accountId || defaultId(item.provider);
+    const candidate = thresholdCandidate(limits, accountId, item.provider, threshold, now);
+    const target = candidate && item.draftSupported ? (accounts.choices(item.provider) || []).find(choice => choice.id !== accountId && (!choice.profile || !!choice.loginCompletedAt)) : null;
+    if (!candidate || !target) {
+      if (item.switchOffer) { delete item.switchOffer; changed = true; }
+      continue;
+    }
+    const key = `${accountId}:${item.consoleKey}:${item.providerSessionId}:${candidate.minutes}:${candidate.resetsAt}:${threshold}`;
+    if (dismissedThresholdOffers.has(key)) {
+      if (item.switchOffer) { delete item.switchOffer; changed = true; }
+      continue;
+    }
+    const nextOffer = target ? { key, targetAccountId: target.id, targetLabel: target.label, usedPercent: candidate.usedPercent, minutes: candidate.minutes, resetsAt: candidate.resetsAt } : null;
+    if (JSON.stringify(item.switchOffer || null) !== JSON.stringify(nextOffer)) { if (nextOffer) item.switchOffer = nextOffer; else delete item.switchOffer; changed = true; }
+    if (!target) continue;
+    const automaticKey = `${accountId}:${item.consoleKey}:${item.providerSessionId}:${candidate.minutes}:${candidate.resetsAt}`;
+    if (automaticSwitchAttempts.has(automaticKey)) continue;
+    if (!automaticSwitchEligible({ limits, sourceAccountId: accountId, targetAccountId: target.id, provider: item.provider, candidate, threshold, now, enabled: settings.autoSwitchAccounts, state: item.state, busy: item.switching || sessions.isBusy(item.id), draftSupported: item.draftSupported })) continue;
+    automaticSwitchAttempts.add(automaticKey);
+    sessions.switchAccount({ id: item.id, launchId: item.launchId, targetAccountId: target.id }).catch(error => {
+      workbench?.alerts.send({ key: `account-switch-failed:${automaticKey}`, title: 'Account switch failed', message: error?.message || 'The current console is still running.', sessionId: item.id, kind: 'error' });
+    });
+  }
+  if (changed) { publish(); mobile?.scheduleState(); }
 }
 async function quit() {
   const active = sessions.list().filter(x => x.alive).length;
@@ -160,27 +269,47 @@ app.whenReady().then(async () => {
   // otherwise take editor keys such as Ctrl+W, Ctrl+R and Ctrl+A from terminals.
   Menu.setApplicationMenu(null);
   root = app.getPath('userData'); fs.mkdirSync(root, { recursive: true });
+  accounts = new AccountProfiles(root);
+  draftBridge = new DraftBridge(); await draftBridge.start();
   const runtime = runtimeFiles({ isPackaged: app.isPackaged, resourcesPath: process.resourcesPath, findProgram });
   cliSetup = new CliSetup(root, runtime, { testMode, onChange: publish });
+  skillPacks = new SkillPacks(root, { home: process.env.PADDOCK_SKILLS_HOME || os.homedir(), getAgents: () => cliSetup.snapshot(), downloads: new ManagedDownloads(root), onChange: publish });
   const claude = findClaude();
+  const usageDirectory = path.join(root, 'usage-reader'); fs.mkdirSync(usageDirectory, { recursive: true });
+  subscriptionUsage = new SubscriptionUsage({
+    readers: {
+      codex: choice => getCodexAccount(choice.id).refresh(),
+      claude: choice => readClaudeUsage({ executable: cliSetup.executable('claude'), accountId: choice.id, cwd: usageDirectory, env: accounts.environment(choice.id, 'claude', { baseEnv: process.env }) }),
+      copilot: choice => readCopilotUsage({ executable: copilotExecutable(cliSetup.executable('copilot')), accountId: choice.id, cwd: usageDirectory, env: usageEnvironment() }),
+      kiro: choice => readKiroUsage({ executable: cliSetup.executable('kiro'), accountId: choice.id, cwd: path.join(usageDirectory, 'kiro'), env: usageEnvironment() }),
+      kimi: choice => readKimiUsage({ executable: cliSetup.executable('kimi'), accountId: choice.id, cwd: usageDirectory, env: usageEnvironment() }),
+    },
+    onReading: saveUsage, onChange: () => { publish(); mobile?.scheduleState(); },
+  });
   capabilities = { codex: !!nativeCodex(), claude: !!claude, claudeLocation: claude?.label, node: !!runtime.node, shell: true };
   const savedSettings = readJson(path.join(root, 'settings.json'), {});
   settings = initialSettings(savedSettings, defaultFolder, capabilities);
+  if (savedSettings.resultsPolicyVersion !== settings.resultsPolicyVersion) persistSettings(settings);
   ledger = readJson(path.join(root, 'ledger.json'), []);
   messageUsage = new MessageUsage(root);
   updates = new Updates(root, app.getVersion(), { onChange: publish });
   vault = new Vault(path.join(root, 'vault.json'), safeStorage);
   integrations = new ToolIntegrations(root, runtime, { onChange: publish });
+  mcpCatalog = new McpCatalog(root, runtime, { run: runProgram, downloads: new ManagedDownloads(root), onChange: publish });
   workbench = new Workbench(root, runtime, require('electron'), { testMode, onChange: publish, getSessions: () => sessions, getProject: () => settings.consoleDefaults.cwd, getWindow: () => window, getHub: () => hub, getAgents: () => cliSetup.snapshot() });
   projects = new Projects(root); projects.on('changed', publish); workbench.projects = projects;
   projects.on('tracking-error', message => { storageError = message; publish(); });
-  hub = new SharedHub(root, vault, { integrations, workbench }); await hub.start();
+  hub = new SharedHub(root, vault, { integrations, workbench, skills: () => skillPacks.snapshot().packs, confirm: confirmToolCall, isLaunchCurrent: owner => {
+    const item = sessions?.items.get(owner?.sessionId);
+    return !!item?.alive && !item.switching && item.launchId === owner.launchId;
+  } }); await hub.start();
   ssh = new SshHosts(root);
-  sessions = new Sessions(root, { ssh, hub, claude, runtime, cliSetup, projects, grid: settings.grid, onLayout: ({ grid, plan }) => {
+  sessions = new Sessions(root, { ssh, hub, claude, runtime, cliSetup, projects, accounts, draftBridge, grid: settings.grid,
+    isBusy: id => !!turns?.active.has(id), getThreadModel: (accountId, threadId) => getCodexAccount(accountId).threadModel(threadId), onLayout: ({ grid, plan }) => {
     const slotNames = { ...settings.slotNames };
     for (const item of plan) delete slotNames[sessions.items.get(item.id)?.slot];
     for (const item of plan) slotNames[item.slot] = sessions.items.get(item.id)?.name || '';
-    persistSettings({ ...settings, grid, slotNames });
+    persistSettings({ ...settings, grid, slotNames, slotTrims: moveSlotTrims(settings.slotTrims, plan, sessions.items) });
   } });
   workPower = new WorkPower(powerSaveBlocker);
   sessions.on('changed', updatePower);
@@ -190,10 +319,12 @@ app.whenReady().then(async () => {
   });
   sessions.on('context-error', message => { storageError = message; publish(); });
   sessions.on('message-usage', ({ session, messages }) => { try { messageUsage.record({ ...session, projectName: projects.get(session.projectId)?.name || '' }, messages); } catch { storageError = 'Message usage could not be saved.'; } });
-  turns = new Turns(workbench.results, { enabled: settings.autoSaveResults !== false, getSession: id => sessions.items.get(id), getSecrets: () => vault.list().flatMap(x => { try { return [vault.get(x.id)]; } catch { return []; } }) });
+  turns = new Turns(workbench.results, { enabled: settings.autoSaveResults === true, getSession: id => sessions.items.get(id), getSecrets: () => vault.list().flatMap(x => { try { return [vault.get(x.id)]; } catch { return []; } }) });
   workbench.turns = turns;
+  codePanel = new CodePanel(sessions, { onChange: publish, getSecrets: () => vault.list().flatMap(x => { try { return [vault.get(x.id)]; } catch { return []; } }) });
+  turns.codePanel = codePanel;
   turns.on('tracking-error', ({ owner, message }) => workbench.alerts.send({ title: 'Code capture needs attention', message, sessionId: owner, kind: 'error' }));
-  mobile = new MobileCompanion(root, safeStorage, { sessions, results: workbench.results, alerts: workbench.alerts, getUsage: () => ({ limits, summary: ledgerSummary(ledger || []) }), getDefaults: () => ({ ...settings.consoleDefaults, permissions: settings.agentPermissions }), getModels: () => account.models(), getKey: id => vault.get(id), networkScript: app.isPackaged ? path.join(process.resourcesPath, 'mobile-network.ps1') : path.join(__dirname, 'mobile-network.ps1'), program: process.execPath, testMode });
+  mobile = new MobileCompanion(root, safeStorage, { sessions, results: workbench.results, alerts: workbench.alerts, getUsage: usageSnapshot, refreshUsage: refreshLimits, getDefaults: () => ({ ...settings.consoleDefaults, permissions: settings.agentPermissions }), getModels: () => getCodexAccount(defaultId('codex')).models(), getSettings: () => ({ shared: hub.snapshot(), keys: vault.list() }), getKey: id => vault.get(id), networkScript: app.isPackaged ? path.join(process.resourcesPath, 'mobile-network.ps1') : path.join(__dirname, 'mobile-network.ps1'), program: process.execPath, testMode });
   mobile.on('changed', publish);
   mobile.on('pairing-requested', () => { if (settings.notifications && !testMode) notifications?.show({ title: 'Approve a phone?', message: 'Compare the codes on your PC and phone before allowing access.', destination: 'phone-pairing' }); });
   if (!testMode) mobile.start().catch(() => publish());
@@ -201,43 +332,43 @@ app.whenReady().then(async () => {
     recoverCorrupt: true,
     onRecovery: () => { storageError = 'Cached usage limits were damaged. The original file was kept with a .corrupt suffix. Limits will refresh when available.'; }
   });
-  limits = Array.isArray(savedLimits) ? savedLimits : [];
-  account = new CodexAccount(values => {
-    limits = [...limits.filter(x => x.provider !== 'codex'), ...values];
-    try { atomicJson(path.join(root, 'limits.json'), limits); } catch (error) { storageError = error.message; }
-    publish();
-  });
+  limits = Array.isArray(savedLimits) ? savedLimits.map(item => item?.provider === 'codex' && !item.accountId ? { ...item, accountId: defaultId('codex') } : item) : [];
+  getCodexAccount(defaultId('codex'));
   sessions.on('changed', publish);
+  sessions.on('changed', refreshSwitchOffers);
   sessions.on('changed', () => { for (const item of sessions.items.values()) if (!item.alive && turns.active.has(item.id)) turns.finish(item.id).catch(() => {}); });
   sessions.on('output', data => { if (window && !window.isDestroyed()) window.webContents.send('dock:output', data); });
   sessions.on('limits', value => {
-    limits = [...limits.filter(x => x.id !== value.id), value];
-    try { atomicJson(path.join(root, 'limits.json'), limits); } catch (error) { storageError = error.message; }
-    publish();
+    const id = limitAccountId(value);
+    if (id) saveUsage({ id }, [{ ...value, accountId: id }]);
   });
   sessions.on('attention', session => {
-    workbench.alerts.send({ key: `${session.id}:${session.updatedAt}:${session.state}`, title: session.name + (session.state === 'ready' ? ' is ready' : ' needs you'), sessionId: session.id, kind: session.state === 'ready' ? 'ready' : 'question' });
+    workbench.alerts.send(completionNotice({ key: `${session.id}:${session.updatedAt}:${session.state}`, title: session.name + (session.state === 'ready' ? ' is ready' : ' needs you'), kind: session.state === 'ready' ? 'ready' : 'question' }, { sessionId: session.id, consoleKey: session.consoleKey || session.id, turnId: session.turnId }, workbench.results.list()));
   });
   const seenExits = new Set();
   sessions.on('changed', () => {
-    for (const item of sessions.list()) if (!item.alive && !item.dismissed && (item.restoreError || item.exitCode) && !seenExits.has(item.id)) {
+    for (const item of sessions.list()) if (item.purpose !== 'login' && !item.alive && !item.dismissed && (item.restoreError || item.exitCode) && !seenExits.has(item.id)) {
       seenExits.add(item.id); workbench.alerts.send({ key: 'exit:' + item.id, title: item.name + ' stopped', message: item.restoreError || `Exit code ${item.exitCode}`, sessionId: item.id, kind: 'error' });
     }
   });
+  // Smoke tests use an empty folder and no clipboard so results do not depend on the user's screenshots.
+  screenshots = new Screenshots(root, testMode ? { nativeImage, folders: [path.join(root, 'test-screenshots')] } : { clipboard: clipboardReader(clipboard, nativeImage), nativeImage });
+  screenshots.on('changed', publish);
+  screenshots.start();
   workspace = new Workspace(root, sessions, safeStorage, { enabled: settings.restoreConsoles, onError: message => { workspaceError = message; publish(); } });
   await workspace.restore();
   const windowIcon = path.join(__dirname, '..', 'assets', process.platform === 'win32' && !app.isPackaged ? 'icon.ico' : 'icon.png');
-  window = new BrowserWindow({ width: 1240, height: 840, minWidth: 720, minHeight: 520, frame: false, show: false, backgroundColor: '#010103', title: 'Agent Dock', icon: windowIcon,
+  window = new BrowserWindow({ width: 1240, height: 840, minWidth: 720, minHeight: 520, frame: false, show: false, backgroundColor: '#010103', title: 'Paddock', icon: windowIcon,
     webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true, webSecurity: true, spellcheck: false } });
   if (process.platform === 'win32') {
     const icon = taskbarIcon({ projectDir: app.getAppPath(), dataDir: root, packaged: app.isPackaged });
     if (!app.isPackaged && !testMode) {
       try {
         developmentShortcuts({ shell, desktop: app.getPath('desktop'), programs: path.join(app.getPath('appData'), 'Microsoft', 'Windows', 'Start Menu', 'Programs'), projectDir: app.getAppPath(), icon });
-      } catch (error) { console.warn('Could not update Agent Dock shortcuts:', error.message); }
+      } catch (error) { console.warn('Could not update Paddock shortcuts:', error.message); }
     }
     window.setAppDetails({ appIconPath: icon, appIconIndex: 0,
-      relaunchCommand: `"${process.execPath}"${app.isPackaged ? '' : ` "${app.getAppPath()}"`}`, relaunchDisplayName: 'Agent Dock' });
+      relaunchCommand: `"${process.execPath}"${app.isPackaged ? '' : ` "${app.getAppPath()}"`}`, relaunchDisplayName: 'Paddock' });
     // Set the identity after its relaunch properties, before the window is shown.
     window.setAppDetails({ appId: appModelId });
   }
@@ -247,12 +378,13 @@ app.whenReady().then(async () => {
   window.webContents.session.setPermissionCheckHandler(() => false);
   window.webContents.on('render-process-gone', () => { if (!quitting) window.loadFile(entryFile); });
   window.on('close', event => { if (!quitting) { event.preventDefault(); hideToTray(); } });
+  window.on('focus', () => screenshots.refresh());
   window.loadFile(entryFile);
   window.once('ready-to-show', () => setMode(process.argv.includes('--hud') ? 'hud' : 'dashboard'));
   const iconFile = path.join(__dirname, '..', 'assets', 'icon.png');
   if (fs.existsSync(iconFile)) {
-    tray = new Tray(nativeImage.createFromPath(iconFile)); tray.setToolTip('Agent Dock');
-    tray.setContextMenu(Menu.buildFromTemplate([{ label: 'Open Agent Dock', click: revealWindow }, { label: 'Corner HUD', click: () => setMode('hud') }, { type: 'separator' }, { label: 'Quit Agent Dock', click: quit }]));
+    tray = new Tray(nativeImage.createFromPath(iconFile)); tray.setToolTip('Paddock');
+    tray.setContextMenu(Menu.buildFromTemplate([{ label: 'Open Paddock', click: revealWindow }, { label: 'Corner HUD', click: () => setMode('hud') }, { type: 'separator' }, { label: 'Quit Paddock', click: quit }]));
     tray.on('click', revealWindow); tray.on('double-click', revealWindow);
     tray.on('balloon-click', () => notifications?.balloonClick?.());
   }
@@ -270,6 +402,7 @@ app.whenReady().then(async () => {
     setInterval(() => { recent = recentReader.scan(); sessions.updateUsage(recent); publish(); }, 12000).unref();
     setInterval(refreshLimits, 120000).unref();
   }
+  setInterval(refreshSwitchOffers, 60000).unref();
   ipcMain.handle('dock:call', async (event, method, payload) => {
     if (event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame || event.senderFrame.url !== entryUrl) throw new Error('Untrusted client.');
     try {
@@ -325,14 +458,17 @@ app.whenReady().then(async () => {
         case 'window.drag': dragWindow(payload?.action, payload); break;
         case 'quit': await quit(); break;
         case 'refresh': await refreshLimits(); break;
+        case 'skills.refresh': { const value = skillPacks.list(); publish(); return { ok: true, value }; }
+        case 'skills.install': { if (testMode && !process.env.PADDOCK_SKILLS_HOME) throw new Error('Skill installs need a temporary home in tests.'); const value = await skillPacks.install(payload); hub.writeSummary(); return { ok: true, value }; }
+        case 'skills.uninstall': { if (testMode && !process.env.PADDOCK_SKILLS_HOME) throw new Error('Skill installs need a temporary home in tests.'); const value = await skillPacks.uninstall(payload); hub.writeSummary(); return { ok: true, value }; }
         case 'agents.refresh': {
-          cliSetup.refresh();
+          cliSetup.refresh(); skillPacks.list();
           sessions.claude = findClaude();
           capabilities = { ...capabilities, codex: !!nativeCodex(), claude: !!sessions.claude, claudeLocation: sessions.claude?.label };
           publish(); return { ok: true, value: capabilities };
         }
         case 'agents.install': {
-          const result = await cliSetup.install(payload);
+          const result = await cliSetup.install(payload); skillPacks.list();
           sessions.claude = findClaude();
           capabilities = { ...capabilities, codex: !!nativeCodex(), claude: !!sessions.claude, claudeLocation: sessions.claude?.label };
           publish(); return { ok: true, value: result };
@@ -362,6 +498,27 @@ app.whenReady().then(async () => {
           const result = await dialog.showOpenDialog(window, { properties: ['openDirectory'], title: 'Choose a launch folder', defaultPath: suggested });
           return { ok: true, value: result.filePaths[0] || null };
         }
+        case 'code.create': {
+          const source = sessions.items.get(payload?.sourceId);
+          if (source?.remote || source?.kind === 'code') throw new Error('Choose a local agent console.');
+          const cwd = source?.cwd || settings.consoleDefaults.cwd;
+          const panel = sessions.createCodePanel({ cwd, codeSourceKey: source ? source.consoleKey || source.id : null, slot: payload?.slot });
+          publish(); return { ok: true, value: panel };
+        }
+        case 'code.source': {
+          const panel = codePanel.panel(payload?.id), source = sessions.items.get(payload?.sourceId);
+          if (!source || source.remote || source.kind === 'code') throw new Error('Choose a local console.');
+          panel.codeSourceKey = source.consoleKey || source.id; panel.cwd = source.cwd;
+          sessions.emit('changed'); return { ok: true, value: panel };
+        }
+        case 'code.report': return { ok: true, value: await codePanel.report(payload?.id, payload?.refresh === true) };
+        case 'code.browse': return { ok: true, value: await codePanel.browse(payload?.id, payload?.path) };
+        case 'code.file': return { ok: true, value: await codePanel.file(payload?.id, payload?.path, payload?.reportId) };
+        case 'code.close': {
+          const panel = codePanel.panel(payload), slotNames = { ...settings.slotNames };
+          delete slotNames[panel.slot]; persistSettings({ ...settings, slotNames });
+          sessions.end(payload); break;
+        }
         case 'session.create': {
           payload = payload?.projectId ? projects.launch(payload) : payload;
           const occupied = occupiedCells(sessions.items.values(), sessions.grid);
@@ -369,6 +526,28 @@ app.whenReady().then(async () => {
           const session = await sessions.create({ ...settings.consoleDefaults, ...(settings.slotNames?.[slot] ? { name: settings.slotNames[slot] } : {}), ...payload, permissions: payload?.permissions ?? settings.agentPermissions });
           persistSettings({ ...settings, slotNames: { ...settings.slotNames, [session.slot]: session.name } }); publish();
           return { ok: true, value: session };
+        }
+        case 'accounts.create': {
+          const profile = accounts.create(payload?.provider, payload?.label);
+          publish();
+          return { ok: true, value: accounts.choices(profile.provider).find(item => item.id === profile.id) };
+        }
+        case 'accounts.rename': {
+          const renamed = accounts.rename(payload?.id, payload?.label);
+          for (const session of sessions.items.values()) if (session.accountId === renamed.id) session.accountLabel = renamed.label;
+          publish(); return { ok: true, value: renamed };
+        }
+        case 'accounts.login': {
+          const session = await sessions.createLoginConsole(payload?.id, settings.consoleDefaults.cwd);
+          publish(); return { ok: true, value: session };
+        }
+        case 'accounts.setup': {
+          const session = await sessions.createSetupConsole(payload);
+          publish(); return { ok: true, value: session };
+        }
+        case 'slot.trim': {
+          const slotTrims = updatedSlotTrims(settings.slotTrims, payload, sessions.list(), sessions.grid);
+          persistSettings({ ...settings, slotTrims }); publish(); break;
         }
         case 'slot.name': {
           const slot = payload?.slot;
@@ -387,6 +566,26 @@ app.whenReady().then(async () => {
         case 'projects.plan.review': return { ok: true, value: projects.review(payload.id, payload) };
         case 'projects.plan.later': return { ok: true, value: projects.addLater(payload.id, payload) };
         case 'projects.plan.sync': return { ok: true, value: projects.syncPlan(payload.id) };
+        case 'projects.plan.reference.add': {
+          const raw = payload?.kind === 'screenshot' ? { ...payload, kind: 'file', value: screenshots.file(), title: 'Screenshot ' + new Date().toLocaleString() } : payload;
+          return { ok: true, value: projects.addReference(payload.id, raw) };
+        }
+        case 'projects.plan.reference.remove': return { ok: true, value: projects.removeReference(payload.id, payload) };
+        case 'projects.plan.thumb': {
+          const item = projects.get(payload?.id)?.plan?.references?.find(x => x.id === payload?.ref && x.kind === 'image');
+          if (!item) return { ok: true, value: '' };
+          const image = nativeImage.createFromPath(item.value);
+          return { ok: true, value: image.isEmpty() ? '' : image.resize({ width: 240, quality: 'good' }).toDataURL() };
+        }
+        case 'projects.plan.pick': {
+          const result = await dialog.showOpenDialog(window, { properties: ['openFile', 'multiSelections'] });
+          return { ok: true, value: result.canceled ? [] : result.filePaths.slice(0, 20) };
+        }
+        case 'open.link': {
+          let url; try { url = new URL(String(payload)); } catch { throw new Error('That link is not valid.'); }
+          if (!['https:', 'http:'].includes(url.protocol)) throw new Error('Only web links can be opened.');
+          await shell.openExternal(url.href); break;
+        }
         case 'projects.folder': {
           const target = projects.folderPath(payload.id, payload.index ?? 0, payload.planFiles === true);
           const error = await shell.openPath(target); if (error) throw new Error('The project folder could not be opened.');
@@ -412,20 +611,45 @@ app.whenReady().then(async () => {
             for (const placed of plan) delete slotNames[sessions.items.get(placed.id).slot];
             for (let i = 0; i < displaced.length && i < freed.length; i++) slotNames[freed[i]] = displaced[i];
             for (const placed of plan) slotNames[placed.slot] = sessions.items.get(placed.id).name;
-            persistSettings({ ...settings, slotNames });
+            persistSettings({ ...settings, slotNames, slotTrims: moveSlotTrims(settings.slotTrims, plan, sessions.items) });
           });
           break;
         }
         case 'session.retry': return { ok: true, value: await sessions.retry(payload) };
         case 'session.input': sessions.write(payload?.id, payload?.data); break;
+        case 'clipboard.write': {
+          if (typeof payload !== 'string' || payload.length > 1024 * 1024) throw new Error('Select up to 1 MB of text to copy.');
+          clipboard.writeText(payload); break;
+        }
+        case 'clipboard.menu': {
+          if (typeof payload !== 'string' || payload.length > 1024 * 1024) throw new Error('Select up to 1 MB of text to copy.');
+          Menu.buildFromTemplate([{ label: 'Copy', enabled: !!payload, click: () => clipboard.writeText(payload) }]).popup({ window }); break;
+        }
+        case 'session.switch': return { ok: true, value: await sessions.switchAccount(payload) };
+        case 'session.switch-dismiss': {
+          const session = sessions.items.get(payload?.id);
+          if (!session || session.launchId !== payload?.launchId || session.switchOffer?.key !== payload?.offerKey) throw new Error('This account switch offer has changed.');
+          dismissedThresholdOffers.add(payload.offerKey); delete session.switchOffer; publish(); break;
+        }
+        case 'screenshot.path': return { ok: true, value: screenshots.pathFor(sessions.items.get(payload?.id)) };
+        case 'screenshot.clipboard': return { ok: true, value: await screenshots.paste(sessions.items.get(payload?.id)) };
+        case 'file.preview': {
+          const item = sessions.items.get(payload?.id);
+          if (item?.remote) throw new Error('This file is on the Linux machine. View it from that console, for example with cat.');
+          return { ok: true, value: filePreview.preview(payload?.path, item?.cwd) };
+        }
+        case 'file.open': case 'file.reveal': {
+          const file = filePreview.resolve(payload?.path);
+          if (!fs.existsSync(file)) throw new Error(`File not found: ${file}`);
+          if (method === 'file.reveal') { shell.showItemInFolder(file); break; }
+          const error = await shell.openPath(file); if (error) throw new Error('Windows could not open this file: ' + error);
+          break;
+        }
         case 'session.resize': sessions.resize(payload?.id, payload?.cols, payload?.rows); break;
         case 'session.buffer': return { ok: true, value: sessions.buffer(payload) };
         case 'session.acknowledge': sessions.acknowledge(payload); break;
         case 'session.end': {
-          const item = sessions.list().find(x => x.id === payload);
-          if (!item) throw new Error('Console not found.');
-          const result = testMode ? { response: 1 } : await dialog.showMessageBox(window, { type: 'question', buttons: ['Keep running', 'End console'], defaultId: 0, cancelId: 0, message: `End “${item.name}”?`, detail: 'This stops the console and any agent running inside it.' });
-          if (result.response === 1) { persistSettings({ ...settings, slotNames: { ...settings.slotNames, [item.slot]: item.name } }); await sessions.end(payload); } break;
+          return { ok: true, value: await endSession(payload, { sessions, getSettings: () => settings, persistSettings, dialog, window, testMode }) };
         }
         case 'vault.save': vault.set(payload?.provider, payload?.key, payload?.label); hub.writeSummary(); await Promise.allSettled([...hub.clients.keys()].map(id => hub.disconnect(id))); publish(); break;
         case 'vault.remove': {
@@ -440,13 +664,26 @@ app.whenReady().then(async () => {
         case 'integrations.refresh': integrations.refresh(); publish(); break;
         case 'integrations.setup': {
           if (testMode && payload?.id !== 'meshy') throw new Error('Software installation is disabled during tests.');
-          if (payload?.id === 'meshy' && !vault.list().some(x => x.id === payload.keyId)) throw new Error('Save a Meshy API key in Keys, then choose it here.');
+          if (payload?.id === 'meshy' && !vault.list().some(x => x.id === payload.keyId)) throw new Error('Paste your Meshy API key, then connect.');
           const previous = hub.config.connections.find(x => x.id === payload?.id);
           if (previous && previous.integration !== payload.id) throw new Error('A custom tool already uses this ID. Rename it before setting up this integration.');
           const connection = await integrations.prepare(payload?.id, payload);
           await hub.saveConnection(connection); publish(); break;
         }
         case 'tools.save': await hub.saveConnection(payload); publish(); break;
+        case 'catalog.add': {
+          if (testMode) throw new Error('Software installation is disabled during tests.');
+          const existing = hub.config.connections.find(x => x.id === payload?.id);
+          if (existing && existing.catalog !== payload?.id) throw new Error('A custom tool already uses this ID. Rename it before adding this one.');
+          if (payload?.keyId && !vault.list().some(x => x.id === payload.keyId)) throw new Error('Paste the key on this card, then save.');
+          await hub.saveConnection(await mcpCatalog.add(payload?.id, { keyId: payload?.keyId })); publish(); break;
+        }
+        case 'tools.policy': {
+          const connection = hub.config.connections.find(x => x.id === payload?.id);
+          if (!connection) throw new Error('That tool is no longer connected.');
+          const { access, ...limits } = payload.policy || {};
+          await hub.saveConnection({ ...connection, enabled: access !== 'off', policy: { ...limits, access: access === 'off' ? connection.policy?.access : access } }); publish(); break;
+        }
         case 'tools.remove': await hub.removeConnection(payload); publish(); break;
         case 'tools.test': { try { const result = await hub.test(payload); return { ok: true, value: result }; } finally { publish(); } }
         case 'tools.catalog': { try { return { ok: true, value: await hub.list(payload) }; } finally { publish(); } }
@@ -456,16 +693,44 @@ app.whenReady().then(async () => {
           const next = { ...settings };
           if (typeof payload?.hudAlwaysOnTop === 'boolean') next.hudAlwaysOnTop = payload.hudAlwaysOnTop;
           if (typeof payload?.notifications === 'boolean') next.notifications = payload.notifications;
+          if (typeof payload?.confirmConsoleEnd === 'boolean') next.confirmConsoleEnd = payload.confirmConsoleEnd;
           if (typeof payload?.keepAwakeWhileWorking === 'boolean') next.keepAwakeWhileWorking = payload.keepAwakeWhileWorking;
           if (typeof payload?.restoreConsoles === 'boolean') next.restoreConsoles = payload.restoreConsoles;
           if (typeof payload?.autoSaveResults === 'boolean') next.autoSaveResults = payload.autoSaveResults;
+          if (payload?.accountSwitchThreshold !== undefined) {
+            const threshold = Number(payload.accountSwitchThreshold);
+            if (!Number.isInteger(threshold) || threshold < 50 || threshold > 100) throw new Error('Choose a switch threshold from 50% to 100%.');
+            next.accountSwitchThreshold = threshold;
+          }
+          if (typeof payload?.autoSwitchAccounts === 'boolean') next.autoSwitchAccounts = payload.autoSwitchAccounts;
           if (typeof payload?.suggestProjects === 'boolean') next.suggestProjects = payload.suggestProjects;
           if (typeof payload?.sidebarCollapsed === 'boolean') next.sidebarCollapsed = payload.sidebarCollapsed;
           if (typeof payload?.vimControls === 'boolean') next.vimControls = payload.vimControls;
           if (typeof payload?.cursorBlink === 'boolean') next.cursorBlink = payload.cursorBlink;
-          if (payload?.accentStyle !== undefined) {
-            if (!['pink-blue', 'blue', 'pink'].includes(payload.accentStyle)) throw new Error('Choose an available accent style.');
-            next.accentStyle = payload.accentStyle;
+          if (payload?.lighting !== undefined) {
+            if (!lightingStyles.includes(payload.lighting)) throw new Error('Choose an available lighting effect.');
+            next.lighting = payload.lighting;
+          }
+          if (payload?.lightingSpeed !== undefined) {
+            if (!['slow', 'normal', 'fast'].includes(payload.lightingSpeed)) throw new Error('Choose slow, normal or fast lighting.');
+            next.lightingSpeed = payload.lightingSpeed;
+          }
+          if (payload?.starDensity !== undefined) {
+            const level = Number(payload.starDensity);
+            if (!Number.isInteger(level) || level < 0 || level > 4) throw new Error('Choose a star level from Off to Galaxy.');
+            next.starDensity = level;
+          }
+          if (typeof payload?.ambientMotion === 'boolean') next.ambientMotion = payload.ambientMotion;
+          if (typeof payload?.themeTextures === 'boolean') next.themeTextures = payload.themeTextures;
+          if (typeof payload?.launchEffect === 'boolean') next.launchEffect = payload.launchEffect;
+          if (payload?.trimStyle !== undefined) {
+            if (!frameStyles.includes(payload.trimStyle)) throw new Error('Choose an available console trim.');
+            next.trimStyle = payload.trimStyle;
+          }
+          if (payload?.trimWidth !== undefined) {
+            const width = Number(payload.trimWidth);
+            if (![1, 2, 3, 4, 6].includes(width)) throw new Error('Choose an available trim width.');
+            next.trimWidth = width;
           }
           if (payload?.consoleDefaults !== undefined) next.consoleDefaults = validateConsoleDefaults(payload.consoleDefaults);
           if (payload?.agentPermissions !== undefined) {
@@ -473,7 +738,7 @@ app.whenReady().then(async () => {
             next.agentPermissions = payload.agentPermissions;
           }
           workspace.setEnabled(next.restoreConsoles);
-          persistSettings(next); turns.setEnabled(settings.autoSaveResults !== false); if (mode === 'hud') window.setAlwaysOnTop(settings.hudAlwaysOnTop); publish(); break;
+          persistSettings(next); turns.setEnabled(settings.autoSaveResults === true); refreshSwitchOffers(); if (mode === 'hud') window.setAlwaysOnTop(settings.hudAlwaysOnTop); publish(); break;
         }
         case 'rates.save': {
           if (!hub.config.profiles.some(x => x.id === payload?.provider)) throw new Error('Choose an API connection.');
@@ -511,8 +776,8 @@ app.whenReady().then(async () => {
           publish(); return { ok: true, value: result };
         }
         case 'ledger.export': {
-          const result = await dialog.showSaveDialog(window, { defaultPath: 'agent-dock-usage.json', filters: [{ name: 'JSON', extensions: ['json'] }] });
-          if (!result.canceled && result.filePath) atomicJson(result.filePath, { scope: 'API requests made through Agent Dock', currency: 'USD', costs: 'estimates', entries: ledger }); break;
+          const result = await dialog.showSaveDialog(window, { defaultPath: 'paddock-usage.json', filters: [{ name: 'JSON', extensions: ['json'] }] });
+          if (!result.canceled && result.filePath) atomicJson(result.filePath, { scope: 'API requests made through Paddock', currency: 'USD', costs: 'estimates', entries: ledger }); break;
         }
         case 'external.open': {
           if (typeof payload !== 'string' || payload.length > 4096) throw new Error('Invalid web link.');
@@ -524,8 +789,11 @@ app.whenReady().then(async () => {
           const urls = { codex: 'https://learn.chatgpt.com/docs/codex/cli', claude: 'https://code.claude.com/docs/en/overview', openai: 'https://developers.openai.com/api/docs/pricing', anthropic: 'https://platform.claude.com/docs/en/about-claude/pricing' };
           Object.assign(urls, { tailscale: 'https://tailscale.com/download', duckdns: 'https://www.duckdns.org/', firebase: 'https://console.firebase.google.com/', 'mobile-guide': 'https://github.com/YeerooXY/agentdock/blob/main/docs/android-setup.md', 'android-download': 'https://github.com/YeerooXY/agentdock/releases' });
           for (const item of integrationDefinitions) urls[item.id] = item.docs;
+          for (const item of creativeTools) urls[item.id] = item.docs;
+          for (const item of recommendedTools) urls[item.id] = item.docs;
           for (const item of cliCatalog) urls[item.id] = item.docs;
           urls.zai = 'https://docs.z.ai/devpack/tool/opencode';
+          Object.assign(urls, { 'key-notion': 'https://www.notion.so/profile/integrations', 'key-stripe': 'https://dashboard.stripe.com/apikeys', 'key-github': 'https://github.com/settings/personal-access-tokens/new' });
           if (!urls[payload]) throw new Error('Unknown documentation link.'); await shell.openExternal(urls[payload]); break;
         }
         default: throw new Error('Unknown action.');
@@ -533,7 +801,7 @@ app.whenReady().then(async () => {
       return { ok: true };
     } catch (error) { return { ok: false, error: error.message || 'This action could not be completed.' }; }
   });
-}).catch(error => { dialog.showErrorBox('Agent Dock could not start', error.message); app.quit(); });
+}).catch(error => { dialog.showErrorBox('Paddock could not start', error.message); app.quit(); });
 app.on('second-instance', () => setMode('dashboard'));
 let cleanupStarted = false, cleanupDone = false;
 app.on('before-quit', event => {
@@ -548,8 +816,10 @@ app.on('before-quit', event => {
   (async () => {
     await mobile?.stop();
     await sessions?.stop();
+    await draftBridge?.close();
     await hub?.close();
-    account?.stop();
+    for (const reader of codexAccounts.values()) reader.stop();
+    stopUsageReaders();
     globalShortcut.unregisterAll();
   })().finally(() => { cleanupDone = true; app.quit(); });
 });

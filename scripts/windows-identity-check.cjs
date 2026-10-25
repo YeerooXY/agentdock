@@ -11,10 +11,10 @@ async function checkWindowsIdentity({ app, dataDir }) {
     executable: process.execPath, projectDir: app.getAppPath(),
   }));
   const details = JSON.parse(execFileSync('powershell.exe', ['-NoProfile', '-File', path.join(__dirname, 'window-app-details.ps1'), '-WindowHandle', String(running.window)], { encoding: 'utf8', windowsHide: true, timeout: 15000 }));
-  assert.equal(details.appId, 'com.yeeroo.agentdock', 'A real window must identify as Dock, never electron.exe');
-  assert.equal(details.displayName, 'Agent Dock');
+  assert.equal(details.appId, 'com.yeeroo.agentdock', 'A real window must identify as Paddock, never electron.exe');
+  assert.equal(details.displayName, 'Paddock');
   assert.equal(details.command, `"${running.executable}" "${running.projectDir}"`);
-  assert.match(details.icon, /agent-dock-[a-f0-9]{12}\.ico,0$/);
+  assert.match(details.icon, /paddock-[a-f0-9]{12}\.ico,0$/);
   const icon = details.icon.slice(0, -2);
   assert.deepEqual(fs.readFileSync(icon), fs.readFileSync(path.join(running.projectDir, 'assets', 'icon.ico')));
   const desktop = path.join(dataDir, 'Shortcut desktop'), programs = path.join(dataDir, 'Shortcut programs');
@@ -25,7 +25,7 @@ async function checkWindowsIdentity({ app, dataDir }) {
     const { developmentShortcuts } = requireModule('./electron/windows-identity.cjs');
     const args = { shell, ...options, create: true };
     developmentShortcuts(args);
-    const files = [args.desktop, args.programs].map(folder => path.join(folder, 'Agent Dock.lnk'));
+    const files = [args.desktop, args.programs].map(folder => path.join(folder, 'Paddock.lnk'));
     const first = files.map(file => shell.readShortcutLink(file));
     // Simulate an old WScript shortcut and a separately installed copy.
     shell.writeShortcutLink(files[0], 'update', { appUserModelId: '' });

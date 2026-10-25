@@ -62,19 +62,19 @@ test('project colors survive edits and reloads; invalid CSS is rejected; legacy 
 });
 
 test('Claude hooks compare fresh readings for the same user turn and discard stale baselines', t => {
-  const root = temporary(t), session = crypto.randomUUID(), conversation = crypto.randomUUID(), helper = path.resolve(__dirname,'../electron/agent-event.cjs');
-  const env = { ...process.env, AGENT_DOCK_DATA_DIR:root, AGENT_DOCK_SESSION_ID:session };
-  delete env.AGENT_DOCK_BRIDGE_URL; delete env.AGENT_DOCK_BRIDGE_TOKEN;
+  const root = temporary(t), session = crypto.randomUUID(), launchId = crypto.randomUUID(), conversation = crypto.randomUUID(), helper = path.resolve(__dirname,'../electron/agent-event.cjs');
+  const env = { ...process.env, PADDOCK_DATA_DIR:root, PADDOCK_SESSION_ID:session, PADDOCK_LAUNCH_ID:launchId };
+  delete env.PADDOCK_BRIDGE_URL; delete env.PADDOCK_BRIDGE_TOKEN;
   const run = (mode,input) => { const child=spawnSync(process.execPath,[helper,mode],{env,input:JSON.stringify(input),windowsHide:true}); assert.equal(child.status,0,child.stderr?.toString()); };
   const status = used => run('statusline',{session_id:conversation,rate_limits:{five_hour:{used_percentage:used,resets_at:1800100000}}});
   status(10); run('UserPromptSubmit',{session_id:conversation,hook_event_name:'UserPromptSubmit'});
   const file = path.join(root,'transcript.jsonl');
   fs.writeFileSync(file,[{type:'user',uuid:'turn',timestamp:new Date().toISOString(),message:{role:'user',content:'PRIVATE_PROMPT'}},{type:'assistant',message:{id:'a',model:'test',usage:{input_tokens:10,output_tokens:5},content:'PRIVATE_RESPONSE'}}].map(x=>JSON.stringify(x)).join('\n'));
   status(12); run('Stop',{session_id:conversation,hook_event_name:'Stop',transcript_path:file});
-  const stateFile = path.join(root,'events',`${session}.state.json`);
+  const stateFile = path.join(root,'events',`${session}.${launchId}.state.json`);
   const state = JSON.parse(fs.readFileSync(stateFile));
   assert.equal(state.messageUsage.quota[0].changePercent,2); assert.ok(!JSON.stringify(state).includes('PRIVATE_'));
-  const startFile=path.join(root,'events',`${session}.quota-start.json`), start=JSON.parse(fs.readFileSync(startFile));
+  const startFile=path.join(root,'events',`${session}.${launchId}.quota-start.json`), start=JSON.parse(fs.readFileSync(startFile));
   start.at -= 600000; fs.writeFileSync(startFile,JSON.stringify(start));
   run('Stop',{session_id:conversation,hook_event_name:'Stop',transcript_path:file});
   assert.deepEqual(JSON.parse(fs.readFileSync(stateFile)).messageUsage.quota,[]);

@@ -1,4 +1,5 @@
 'use strict';
+const { openPage } = require('./ui-navigation.cjs');
 // Real IPC, vault and MCP bridge; generation stays blocked in this isolated profile.
 const { _electron: electron } = require('playwright');
 const fs = require('node:fs'), path = require('node:path'), http = require('node:http'), assert = require('node:assert/strict');
@@ -15,7 +16,7 @@ async function start() { app = await electron.launch({ ...(executablePath ? { ex
 async function stop() { await call('quit'); await app.close(); app = null; }
 (async () => {
   await start(); await call('vault.save', { provider: 'image-test', key: secret, label: 'Image test account' });
-  await page.locator('[data-page=tools]').click(); const form = page.locator('#image-generation-form'); await form.waitFor();
+  await openPage(page, 'tools'); const form = page.locator('#image-generation-form'); await form.waitFor();
   assert.equal(await form.locator('[name=provider]').inputValue(), 'agent'); assert.equal(await form.locator('[name=previewFirst]').isChecked(), true);
   await form.locator('[name=provider]').selectOption('openai'); await form.locator('[name=keyId]').selectOption('image-test'); await form.locator('[type=submit]').click();
   await until(async () => (await call('state')).shared.imageGeneration.provider === 'openai');
@@ -32,7 +33,7 @@ async function stop() { await call('quit'); await app.close(); app = null; }
   checks.push('invalid endpoint rejected without overwriting settings; local endpoint and preview switch survive restart');
   const session = await call('session.create', { provider: 'shell', cwd: project });
   const bridgeFile = path.join(profile, 'bridge.json');
-  await call('session.input', { id: session.id, data: `@{url=$env:AGENT_DOCK_BRIDGE_URL;token=$env:AGENT_DOCK_BRIDGE_TOKEN} | ConvertTo-Json -Compress | Set-Content -LiteralPath '${bridgeFile.replaceAll("'", "''")}'\r` });
+  await call('session.input', { id: session.id, data: `@{url=$env:PADDOCK_BRIDGE_URL;token=$env:PADDOCK_BRIDGE_TOKEN} | ConvertTo-Json -Compress | Set-Content -LiteralPath '${bridgeFile.replaceAll("'", "''")}'\r` });
   await until(() => fs.existsSync(bridgeFile));
   const grant = JSON.parse(fs.readFileSync(bridgeFile, 'utf8').replace(/^\uFEFF/, ''));
   async function bridge(name, args = {}) {
@@ -43,7 +44,7 @@ async function stop() { await call('quit'); await app.close(); app = null; }
   const context = JSON.stringify(await bridge('dock_context')); assert.match(context, /user selected compatible/); assert.doesNotMatch(context, /try to generate one flat/);
   await bridge('dock_call', { tool: 'dock/prepare_setup', arguments: { kind: 'image', config: { provider: 'gemini', keyId: 'image-test', previewFirst: true } } });
   assert.equal((await call('state')).shared.imageGeneration.provider, 'compatible', 'agent preparation must not change the selected provider');
-  await page.locator('[data-page=tools]').click(); await page.locator('[data-setup-apply]').click();
+  await openPage(page, 'tools'); await page.locator('[data-setup-apply]').click();
   await until(async () => (await call('state')).shared.imageGeneration.provider === 'gemini');
   assert.equal((await call('state')).workbench.setupRequests.length, 0);
   assert.match(JSON.stringify(await bridge('dock_context')), /user selected gemini/);
@@ -55,9 +56,9 @@ async function stop() { await call('quit'); await app.close(); app = null; }
   const review = await tool('dock/review_page', { url: 'http://127.0.0.1:' + server.address().port, brief: 'Improve this screen' });
   await until(async () => { const r = await tool('dock/review_details', { id: review.id }); if (r.state === 'failed') throw Error(r.error); return r.state === 'complete'; });
   const reviewed = await tool('dock/review_details', { id: review.id }); assert.equal(reviewed.screenshots.length, 2);
-  await assert.rejects(tool('dock/generate_preview', { reviewId: review.id, requestId: 'smoke-review-preview' }), /Shared tool request failed/);
+  await assert.rejects(tool('dock/generate_preview', { reviewId: review.id, requestId: 'smoke-review-preview' }), /Paid generation is disabled during tests/);
   assert.equal((await call('state')).workbench.concepts.length, 0);
-  await page.locator('[data-page=tools]').click(); await page.locator('#image-generation-form').waitFor();
+  await openPage(page, 'tools'); await page.locator('#image-generation-form').waitFor();
   await page.locator('.image-auth summary').click(); assert.equal(await page.locator('[data-image-auth=connect]').isVisible(), true);
   assert.equal(await page.locator('#image-generation-form [name=provider]').inputValue(), 'gemini');
   checks.push('agent-only website review; screenshot evidence; selected provider retained; paid generation blocked; Meshy sign-in available in Tools');

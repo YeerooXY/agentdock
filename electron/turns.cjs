@@ -7,27 +7,37 @@ const { randomUUID, createHash } = require('node:crypto');
 const { createTwoFilesPatch } = require('diff');
 const { EventEmitter } = require('node:events');
 const { gitInfo } = require('./git-context.cjs');
+const { ignoredCaptureFile, sameSnapshotFile } = require('./capture-files.cjs');
 const exec = promisify(execFile);
 const IMAGE = /\.(png|jpe?g|webp)$/i;
-const SKIP = /(^|\/)(\.git|node_modules|\.dart_tool|\.build|build|dist|release|vendor|\.gradle|\.idea|\.next|coverage|\.venv|venv)(\/|$)/i;
 const SECRET = /(^|\/)(\.env(?:\..*)?|\.npmrc|\.pypirc|credentials?[^/]*|secrets?[^/]*|vault[^/]*|id_rsa|id_ed25519|google-services\.json|[^/]*\.(?:pem|p12|pfx|key|keystore|jks))$/i;
 const inside = (root, target) => { const r = path.relative(root, target); return r && !r.startsWith('..' + path.sep) && r !== '..' && !path.isAbsolute(r); };
 const hash = value => createHash('sha256').update(value).digest('hex');
 // Bound snapshots without touching Git's index, HEAD, or the user's working tree.
-async function snapshot(project, { maxFiles = 10000, maxBytes = 32 * 1024 * 1024 } = {}) {
+async function snapshot(project, { maxFiles = 10000, maxBytes = 32 * 1024 * 1024, exclude = () => false } = {}) {
   const root = await fs.realpath(project), files = new Map(), notes = [], git = await gitInfo(root); const deadline = Date.now() + 9000; let complete = true;
   let names;
   try { names = (await exec('git', ['-C', root, 'ls-files', '-z', '--cached', '--others', '--exclude-standard', '--', '.'], { windowsHide: true, maxBuffer: 4 * 1024 * 1024, timeout: 8000 })).stdout.split('\0').filter(Boolean); }
   catch {
     notes.push('No Git inventory. Common build and credential folders are excluded.');
     names = [];
+    // A parent workspace may also contain projects without Git. Capturing those
+    // recursively assigns their changes to whichever console finishes first.
+    const entries = await fs.readdir(root, { withFileTypes: true });
+    let workspace = false;
+    for (const entry of entries) {
+      if (!entry.isDirectory() || entry.isSymbolicLink() || ignoredCaptureFile(entry.name)) continue;
+      try { await fs.lstat(path.join(root, entry.name, '.git')); workspace = true; break; } catch (error) { if (error.code !== 'ENOENT') complete = false; }
+    }
+    if (workspace) notes.push('Shared workspace: only files directly in this folder are captured. Open a console in the project folder to capture its files.');
     let visited = 0;
     async function walk(dir, prefix = '') {
       for (const entry of await fs.readdir(dir, { withFileTypes: true })) {
         if (++visited >= maxFiles * 2 || names.length >= maxFiles || Date.now() > deadline) { complete = false; return; }
         const name = prefix + entry.name;
-        if (SKIP.test(name) || SECRET.test(name) || entry.isSymbolicLink()) continue;
+        if (ignoredCaptureFile(name) || SECRET.test(name) || exclude(name) || entry.isSymbolicLink()) continue;
         if (entry.isDirectory()) {
+          if (workspace) continue;
           // A workspace containing several repositories is not one project.
           // Never automatically attribute sibling repository work to this turn.
           const child = path.join(dir, entry.name);
@@ -45,30 +55,33 @@ async function snapshot(project, { maxFiles = 10000, maxBytes = 32 * 1024 * 1024
   for (const name of names.slice(0, maxFiles)) {
     if (Date.now() > deadline) { complete = false; notes.push('Snapshot time limit reached; remaining files were not captured.'); break; }
     const relative = name.replaceAll('\\', '/');
-    if (SKIP.test(relative) || SECRET.test(relative)) continue;
+    if (ignoredCaptureFile(relative) || SECRET.test(relative) || exclude(relative)) continue;
     const target = path.resolve(root, name);
     if (!inside(root, target)) continue;
     try {
       const stat = await fs.lstat(target);
-      if (!stat.isFile() || stat.isSymbolicLink() || !inside(root, await fs.realpath(target))) continue;
+      if (!stat.isFile() || stat.isSymbolicLink()) continue;
+      const real = await fs.realpath(target), realName = path.relative(root, real).replaceAll('\\', '/');
+      if (!inside(root, real) || ignoredCaptureFile(realName) || SECRET.test(realName) || exclude(realName)) continue;
+      const metadata = `${stat.size}:${stat.mtimeMs}`;
       // The metadata of large/budget-excluded files is reported, never silently called unchanged.
       if (stat.size > 1024 * 1024 || bytes + stat.size > maxBytes) {
-        files.set(relative, { signature: `${stat.size}:${stat.mtimeMs}`, omitted: 'Large file or snapshot limit', image: IMAGE.test(relative) }); continue;
+        files.set(relative, { signature: null, metadata, omitted: 'Large file or snapshot limit', image: IMAGE.test(relative) }); continue;
       }
       const buffer = await fs.readFile(target); bytes += buffer.length;
       const text = !buffer.includes(0) && !IMAGE.test(relative) ? buffer.toString('utf8') : null;
       // Do not turn credentials accidentally embedded in code into gallery copies.
       if (text && /-----BEGIN [A-Z ]*PRIVATE KEY-----|\b(?:sk-[a-zA-Z0-9_-]{24,}|AKIA[A-Z0-9]{16}|gh[pousr]_[a-zA-Z0-9]{30,})/.test(text)) {
-        files.set(relative, { signature: hash(buffer), omitted: 'Possible credential content excluded' }); continue;
+        files.set(relative, { signature: hash(buffer), metadata, omitted: 'Possible credential content excluded' }); continue;
       }
-      files.set(relative, { signature: hash(buffer), text, image: IMAGE.test(relative), omitted: text === null ? 'Binary file' : null });
+      files.set(relative, { signature: hash(buffer), metadata, text, image: IMAGE.test(relative), omitted: text === null ? 'Binary file' : null });
     } catch (error) { if (error.code !== 'ENOENT') notes.push(`Could not read ${relative}.`); }
   }
   if (!complete) notes.push('Partial snapshot. Changes outside the captured files are not included.');
   return { root, files, notes, complete, git };
 }
 class Turns extends EventEmitter {
-  constructor(results, { getSession, getSecrets = () => [], enabled = true } = {}) {
+  constructor(results, { getSession, getSecrets = () => [], enabled = false } = {}) {
     super(); this.results = results; this.getSession = getSession; this.getSecrets = getSecrets;
     this.enabled = enabled;
     this.active = new Map(); this.latest = new Map(); this.queues = new Map(); this.virtual = new Map();
@@ -106,6 +119,7 @@ class Turns extends EventEmitter {
         if (turn.capture && this.enabled) { turn.baseline = baseline; turn.git = baseline.git; }
       } catch { if (turn.capture && this.enabled) turn.error = 'The project baseline could not be read.'; }
     } else turn.git = await gitInfo(session.cwd);
+    await this.codePanel?.begin(session, turn);
     this.emit('started', { owner, id: turn.id }); return turn.id;
   }); }
   finish(owner, status = 'needs-review') { return this.serial(owner, async () => {
@@ -128,7 +142,7 @@ class Turns extends EventEmitter {
         for (const file of new Set([...baseline.files.keys(), ...after.files.keys()])) {
           const before = baseline.files.get(file), next = after.files.get(file);
           if (!before && !baseline.complete || !next && !after.complete) continue;
-          if (before?.signature === next?.signature) continue;
+          if (sameSnapshotFile(before, next)) continue;
           if (changes.length >= 1000) { notes.push('Only the first 1,000 changed files are listed. Review the remaining changes in your project.'); break; }
           const change = { file, type: !before ? 'added' : !next ? 'deleted' : 'modified', patch: null, omitted: before?.omitted || next?.omitted || null };
           if (!change.omitted && patchBytes < 1200000 && Date.now() < diffDeadline) {
@@ -160,6 +174,7 @@ class Turns extends EventEmitter {
           if (ending) this.results.finishGit(turn.id, context.consoleKey, repository, ending);
         }
       } catch { this.emit('tracking-error', { owner, message: 'The final Git revision could not be saved.' }); }
+      await this.codePanel?.finish(this.session(owner), turn);
       this.active.delete(owner); delete turn.baseline; this.latest.set(owner, turn); if (this.latest.size > 100) this.latest.delete(this.latest.keys().next().value); this.emit('finished', { owner, id: turn.id });
     }
     return turn.id;

@@ -8,7 +8,7 @@ Code reports retain the revisions at the beginning and end of a turn. Explicitly
 
 Manual saves now find the repository containing the source file, including when the console starts in a parent workspace or automatic capture is disabled. The original project access boundary remains enforced. Git metadata capture uses read-only commands with optional index locking disabled; it creates no commits or branches. Shared agent instructions default to the current branch and require a user request before creating or switching branches. This is an agent instruction, not a shell permission restriction.
 
-Historical code reports can supply their originally recorded revisions. Missing history remains unavailable; Dock never assigns today’s HEAD to an old result. Unborn branches, detached HEAD and missing commit data have distinct labels. A parent workspace with no repository remains unbound unless a saved source file identifies its repository.
+Historical code reports can supply their originally recorded revisions. Missing history remains unavailable; Paddock never assigns today’s HEAD to an old result. Unborn branches, detached HEAD and missing commit data have distinct labels. A parent workspace with no repository remains unbound unless a saved source file identifies its repository.
 
 Tools uses the official Blender, Unity and Meshy assets, including the shared connection list. Files are bundled locally without recoloring or stretching. [Asset sources and notices](../src/assets/tool-logos/README.md) record attribution and usage references. The redundant Tools subtitle was removed. The unrelated Website review tagline, “Check the page. Keep the evidence. Explore a new direction.”, is flagged for a later wording pass.
 

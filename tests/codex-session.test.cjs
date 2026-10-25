@@ -4,8 +4,8 @@ const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
 const { PassThrough } = require('node:stream');
 const { prepareCodexSession, startupHook } = require('../electron/codex-session.cjs');
-const options = { node: 'C:\\Program Files\\node.exe', helper: "C:\\User's Apps\\event.cjs", root: 'C:\\Dock', session: 'a'.repeat(36), cwd: 'C:\\Project', env: {} };
-function fixture(entries, { stall = false, timeout = 200 } = {}) {
+const options = { node: 'C:\\Program Files\\node.exe', helper: "C:\\User's Apps\\event.cjs", root: 'C:\\Paddock', session: 'a'.repeat(36), launchId: 'b'.repeat(36), cwd: 'C:\\Project', env: {} };
+function fixture(entries, { stall = false, timeout = 200, sqliteHome = null } = {}) {
   const calls = [], sent = []; let killed = false;
   const spawnProcess = (...args) => {
     calls.push(args); const child = new EventEmitter(); child.stdout = new PassThrough(); child.stderr = new PassThrough(); child.stdin = new PassThrough();
@@ -17,10 +17,10 @@ function fixture(entries, { stall = false, timeout = 200 } = {}) {
       queueMicrotask(() => { const line = JSON.stringify(response) + '\n'; child.stdout.write(line.slice(0, 17)); child.stdout.write(line.slice(17)); });
     }); return child;
   };
-  return { promise: prepareCodexSession('codex.exe', options, { spawnProcess, timeout }), calls, sent, killed: () => killed };
+  return { promise: prepareCodexSession('codex.exe', { ...options, sqliteHome }, { spawnProcess, timeout }), calls, sent, killed: () => killed };
 }
-const hook = () => ({ source: 'sessionFlags', eventName: 'sessionStart', handlerType: 'command', command: startupHook(options.node, options.helper, options.root, options.session), enabled: true, async: false, matcher: null, timeoutSec: 10, key: 'C:\\<session-flags>\\config.toml:session_start:0:0', currentHash: 'sha256:' + 'a'.repeat(64) });
-test('Codex startup config trusts only Dock’s exact metadata hook, with no global config writes or bypass', async () => {
+const hook = () => ({ source: 'sessionFlags', eventName: 'sessionStart', handlerType: 'command', command: startupHook(options.node, options.helper, options.root, options.session, options.launchId), enabled: true, async: false, matcher: null, timeoutSec: 10, key: 'C:\\<session-flags>\\config.toml:session_start:0:0', currentHash: 'sha256:' + 'a'.repeat(64) });
+test('Codex startup config trusts only Paddock’s exact metadata hook, with no global config writes or bypass', async () => {
   const f = fixture([hook(), { ...hook(), source: 'project', key: 'other-hook', currentHash: 'sha256:' + 'b'.repeat(64) }]);
   const args = await f.promise;
   assert.ok(args.some(x => x.startsWith('hooks.SessionStart='))); assert.ok(args.some(x => x.includes(hook().currentHash)));
@@ -34,6 +34,13 @@ test('missing, disabled, changed, or ambiguous hook definitions fail closed', as
   for (const entries of [[], [null], [{ ...hook(), enabled: false }], [{ ...hook(), command: 'another-command' }], [hook(), hook()]]) {
     const f = fixture(entries); await assert.rejects(f.promise, /Update Codex/); assert.equal(f.killed(), true);
   }
+});
+test('managed-profile metadata reads override a conflicting configured SQLite location', async () => {
+  const sqliteHome = 'C:\\Paddock\\agent-accounts\\fixture\\sqlite';
+  const f = fixture([hook()], { sqliteHome });
+  await f.promise;
+  assert.deepEqual(f.calls[0][1].slice(0, 3), ['-c', `sqlite_home=${JSON.stringify(sqliteHome)}`, 'app-server']);
+  assert.equal(f.calls[0][2].env.CODEX_HOME, undefined, 'the test process does not need an account or credential file');
 });
 test('a stalled Codex metadata process is stopped after the setup timeout', async () => {
   const f = fixture([], { stall: true, timeout: 15 }); await assert.rejects(f.promise, /timed out/); assert.equal(f.killed(), true);

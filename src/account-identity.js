@@ -3,6 +3,13 @@ import cursor from '../mobile/assets/providers/cursor.png';
 import opencode from '../mobile/assets/providers/opencode.png';
 import cline from '../mobile/assets/providers/cline.png';
 import claude from '../mobile/assets/providers/claude.png';
+import gemini from '../mobile/assets/providers/gemini.png';
+import antigravity from '../mobile/assets/providers/antigravity.png';
+import kiro from '../mobile/assets/providers/kiro.png';
+import droid from '../mobile/assets/providers/droid.png';
+import pi from '../mobile/assets/providers/pi.png';
+import zai from '../mobile/assets/providers/zai.png';
+import ollama from '../mobile/assets/providers/ollama.png';
 
 // Local assets only. Unknown/restricted logos use a plain initial and name.
 // See docs/provider-brand-assets.md for sources and permission boundaries.
@@ -11,20 +18,20 @@ const identities = {
   openai: ['OpenAI', '#9cbfff', openai],
   claude: ['Claude', '#e6a187', claude],
   anthropic: ['Claude', '#e6a187', claude],
-  gemini: ['Gemini', '#8aafff'],
-  antigravity: ['Antigravity', '#90bdff'],
+  gemini: ['Gemini', '#8aafff', gemini],
+  antigravity: ['Antigravity', '#90bdff', antigravity],
   copilot: ['Copilot', '#bb9aff'],
   opencode: ['OpenCode', '#c9c8c5', opencode],
   cursor: ['Cursor', '#e4e4e4', cursor],
   grok: ['Grok', '#dedee5'],
-  kiro: ['Kiro', '#c398ff'],
+  kiro: ['Kiro', '#c398ff', kiro],
   qwen: ['Qwen', '#a59aff'],
   kimi: ['Kimi', '#91a7ff'],
   cline: ['Cline', '#c8c8d0', cline],
-  droid: ['Droid', '#ffa684'],
-  pi: ['Pi', '#ffb08b'],
-  zai: ['Z.AI', '#b9c1ff'],
-  ollama: ['Ollama', '#e4e4e4'],
+  droid: ['Droid', '#ffa684', droid],
+  pi: ['Pi', '#ffb08b', pi],
+  zai: ['Z.AI', '#b9c1ff', zai],
+  ollama: ['Ollama', '#e4e4e4', ollama],
   deepseek: ['DeepSeek', '#8aafff'],
 };
 identities['z.ai'] = identities.zai;

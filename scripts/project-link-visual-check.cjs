@@ -1,7 +1,7 @@
 'use strict';
 const { chromium, webkit, devices } = require('playwright');
 const fs = require('node:fs'), path = require('node:path'), http = require('node:http'), assert = require('node:assert/strict');
-const root = path.resolve(__dirname, '..'), out = path.join(root, 'artifacts', 'project-link'), dist = path.join(root, 'dist');
+const root = path.resolve(__dirname, '..'), out = path.join(root, '.build', 'prompt7-project-link'), dist = path.join(root, 'dist');
 const fixture = JSON.parse(fs.readFileSync(path.join(out, 'fixture.json'))); // Run project-link-smoke.cjs first.
 const server = http.createServer((req, res) => {
   const name = req.url.split('?')[0], file = name === '/_axe.js' ? require.resolve('axe-core/axe.min.js') : path.join(dist, name === '/' ? 'index.html' : name);
@@ -22,7 +22,10 @@ let browser; const reports = [];
     await context.exposeFunction('fixtureCall', async (method, payload) => {
       let value;
       if (method === 'state') return { ok: true, value: state };
-      if (method === 'session.buffer') return { ok: true, value: { data: 'PS C:\\Projects\\Robonslaught>\r\n\r\nProject linking preview\r\nThis console keeps its running session.\r\n', sequence: 0 } };
+      if (method === 'session.buffer') {
+        const session = state.sessions.find(item => item.id === payload);
+        return { ok: true, value: { data: 'PS C:\\Projects\\Robonslaught>\r\n\r\nProject linking preview\r\nThis console keeps its running session.\r\n', sequence: 0, launchId: session?.launchId || null } };
+      }
       if (method === 'session.models') return { ok: true, value: [] };
       if (method === 'settings') Object.assign(state.settings, payload);
       else if (method === 'mode') state.mode = payload;
@@ -46,7 +49,7 @@ let browser; const reports = [];
     async function nav(view) {
       if (state.settings.sidebarCollapsed) await page.locator('#sidebar-toggle').click();
       await page.locator(`[data-page=${view}]`).first().click();
-      if (small && !state.settings.sidebarCollapsed) await page.locator('#sidebar-toggle').click();
+      if (small && !state.settings.sidebarCollapsed && await page.locator('#sidebar-toggle').isVisible()) await page.locator('#sidebar-toggle').click();
     }
     await capture('suggestion');
     await page.locator('[data-project-setup]').focus(); await page.keyboard.press('Enter'); await page.locator('#console-project-picker').waitFor();
@@ -67,8 +70,9 @@ let browser; const reports = [];
     await page.locator('#console-project-form [type=submit]').click(); await page.locator('#console-project-picker').waitFor({ state: 'hidden' });
     assert.equal(await page.locator('#project-suggestion').isVisible(), false);
     assert.equal(state.sessions[0].nameMode, 'project');
-    await page.locator('.session-card [data-session]').click(); await page.locator('#terminal-page').waitFor(); await capture('linked-console');
-    await page.locator('#terminal-heading .console-project').click(); await page.locator('[data-project-view]').click();
+    const linkedPanel = page.locator(`.session-card[data-console-id="${state.sessions[0].id}"]`);
+    await linkedPanel.locator('[data-action="toggle-console"]').click(); await linkedPanel.locator('.console-expand[aria-expanded=true]').waitFor(); await capture('linked-console');
+    await linkedPanel.locator('.console-project').click(); await page.locator('[data-project-view]').click();
     await page.locator('.project-card').waitFor(); await page.locator('.project-milestones summary').click(); await capture('progress');
     await nav('settings'); const toggle = page.locator('[data-setting=suggestProjects]');
     assert.equal(await toggle.isChecked(), false); await toggle.focus(); await page.keyboard.press('Space');

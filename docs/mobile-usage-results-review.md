@@ -5,7 +5,7 @@ Reviewed 18 October 2026. Native Android Usage/Console and the desktop Settings 
 ## What changed
 
 - Usage opens with separate account cards and pink-blue bars for each reported window. Percentages are not added across consoles or accounts. Unknown, invalid, stale and expired-reset readings remain explicit; a passed reset does not manufacture a fresh quota.
-- Refresh works by button, pull gesture and after reconnection. Failed refreshes keep the last readings and show an error. API estimates remain separate, limited to Dock requests over the last 30 days.
+- Refresh works by button, pull gesture and after reconnection. Failed refreshes keep the last readings and show an error. API estimates remain separate, limited to Paddock requests over the last 30 days.
 - Console borders, focused inputs and Send follow the existing pink-blue palette. The scrolling/focus behavior from preview 5 is preserved.
 - Settings → Results → **Automatically save results** defaults on and persists locally. Off prevents new automatic snapshots, diffs and image copies, discards unfinished captures, and leaves explicitly saved/imported files available. Re-enabling applies to the next turn. MCP context reports when capture is off. Logical turn IDs and ready notifications still work.
 - Firebase remains the implemented optional background-alert transport. The [Android guide](android-setup.md#can-alerts-work-without-firebase) explains direct connections and UnifiedPush as possible future options, not shipped features.
@@ -32,7 +32,7 @@ The initial desktop visual fixture omitted terminal-buffer data and showed a fix
 
 ## Visual evidence
 
-Local screenshots were inspected and saved individually to Dock Results:
+Local screenshots were inspected and saved individually to Paddock Results:
 
 - `artifacts/mobile-device/usage-bars-preview6.png`: sample accounts, real native rendering, independent limits, stale and unknown states.
 - `artifacts/mobile-device/usage-console-preview6.png`: console border, input and Send styling.

@@ -47,7 +47,7 @@ object BackgroundConnection {
                             val manager = context.getSystemService(NotificationManager::class.java)
                             if (!manager.areNotificationsEnabled() ||
                                 Build.VERSION.SDK_INT >= 33 && context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-                                result.error("permission", "Allow Agent Dock notifications in Android settings, then try again.", null)
+                                result.error("permission", "Allow Paddock notifications in Android settings, then try again.", null)
                             } else {
                                 label = (call.argument<String>("name") ?: "Dock connection").take(100)
                                 val intent = Intent(context, DockConnectionService::class.java)
@@ -64,11 +64,11 @@ object BackgroundConnection {
                         "notify" -> {
                             if (running) {
                                 val key = call.argument<String>("key") ?: ""
-                                val title = (call.argument<String>("title") ?: "Agent Dock").take(140)
+                                val title = (call.argument<String>("title") ?: "Paddock").take(140)
                                 val open = launch(context)
                                 val builder = if (Build.VERSION.SDK_INT >= 26) Notification.Builder(context, "agent_dock_ready") else Notification.Builder(context)
                                 val notification = builder.setSmallIcon(R.drawable.ic_notification)
-                                    .setContentTitle(title).setContentText("Open Agent Dock to review.")
+                                    .setContentTitle(title).setContentText("Open Paddock to review.")
                                     .setContentIntent(open).setAutoCancel(true)
                                     .setVisibility(Notification.VISIBILITY_PRIVATE).build()
                                 context.getSystemService(NotificationManager::class.java).notify("dock-ready", key.hashCode(), notification)
@@ -99,7 +99,7 @@ object BackgroundConnection {
             Intent(context, DockConnectionService::class.java).setAction("stop"),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val builder = if (Build.VERSION.SDK_INT >= 26) Notification.Builder(context, "dock_connection") else Notification.Builder(context)
-        return builder.setSmallIcon(R.drawable.ic_notification).setContentTitle("Agent Dock")
+        return builder.setSmallIcon(R.drawable.ic_notification).setContentTitle("Paddock")
             .setContentText(label).setOngoing(true).setContentIntent(launch(context))
             .setVisibility(Notification.VISIBILITY_PRIVATE)
             .addAction(Notification.Action.Builder(null, "Stop alerts", stop).build()).build()

@@ -29,7 +29,7 @@ Active is green, with blue/amber/violet/gray labels for the other states. Folder
 | `node scripts/planning-visual-check.cjs` | Passed across four browser profiles: forms, validation, approval, step drafts, folder link, keyboard Tab/Escape/focus return and horizontal overflow checks |
 | Focused planning unit coverage | Approval order, required milestones/checks, revision conflict, owner-scoped tools, separate proposals, downstream invalidation, legacy opt-in, local copies/restart, redirected directories and Codex/Claude native/PowerShell/WSL prompt arguments |
 
-Screenshots and records are in `artifacts/planning/`; representative screenshots and this report are saved individually in Dock Results. The profiles are Windows Chromium (1440×1000), Mac Safari via WebKit, Pixel 7 via Chromium and iPhone 13 via WebKit. A 720×500 desktop and 320px layout with a long unbroken project name were also checked. Screenshots were inspected for spacing, text wrapping, icon alignment, visible close controls, scroll behavior and colored states. Targeted axe text-contrast, button-name, form-label and dialog-name rules passed. These are targeted checks, not a complete accessibility certification.
+Screenshots and records are in `artifacts/planning/`; representative screenshots and this report are saved individually in Paddock Results. The profiles are Windows Chromium (1440×1000), Mac Safari via WebKit, Pixel 7 via Chromium and iPhone 13 via WebKit. A 720×500 desktop and 320px layout with a long unbroken project name were also checked. Screenshots were inspected for spacing, text wrapping, icon alignment, visible close controls, scroll behavior and colored states. Targeted axe text-contrast, button-name, form-label and dialog-name rules passed. These are targeted checks, not a complete accessibility certification.
 
 Mac, Android and iPhone coverage is emulated on Windows. Actual macOS/iOS fonts, physical touch, virtual keyboards and screen-reader use remain unverified. These checks exercise the existing desktop HTML renderer; they do not add a hosted browser app or native mobile roadmap editor. The paired Android terminal can continue a planning conversation. Its native project-management UI is unchanged.
 
@@ -41,7 +41,7 @@ These outcomes apply to the affected Projects page and its dialogs. Existing unr
 
 | Item | Status | Evidence and applicability |
 | --- | --- | --- |
-| 1. Privacy policy | Checked | The [project data guide](projects-and-updates.md) documents local metadata/copies and selected-agent context. Planning adds no hosted Dock account or telemetry. Provider data practices still apply when the user opens an agent discussion. |
+| 1. Privacy policy | Checked | The [project data guide](projects-and-updates.md) documents local metadata/copies and selected-agent context. Planning adds no hosted Paddock account or telemetry. Provider data practices still apply when the user opens an agent discussion. |
 | 2. Terms | Not applicable | No new hosted service, account or contractual checkout. Existing agent/provider terms continue to apply. |
 | 3. Refund policy | Not applicable | No payments or credits sold by these screens. |
 | 4. Cookies/storage | Checked | Local JSON, generated Markdown and in-memory unsaved drafts are documented. No tracking cookies introduced. |

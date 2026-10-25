@@ -9,21 +9,21 @@ function rateWindow(raw, fallbackMinutes) {
   const seconds = number(raw.resetsAt ?? raw.resets_at);
   return { usedPercent: used, minutes, resetsAt: seconds === null ? null : seconds * 1000 };
 }
-function codexLimits(result, at = Date.now()) {
+function codexLimits(result, at = Date.now(), accountId = 'codex:default') {
   const map = result?.rateLimitsByLimitId;
   const items = map && Object.keys(map).length ? Object.entries(map) : [['codex', result?.rateLimits]];
   return items.filter(([, v]) => v).map(([id, raw]) => ({
-    id: `codex:${id}`, provider: 'codex', name: raw.limitName || (id === 'codex' ? 'Codex' : id),
+    id: `${accountId}:${id}`, accountId, provider: 'codex', name: raw.limitName || (id === 'codex' ? 'Codex' : id),
     plan: raw.planType || null, source: 'Codex account service', observedAt: at,
     windows: [rateWindow(raw.primary, null), rateWindow(raw.secondary, null)].filter(Boolean)
   }));
 }
-function claudeLimits(raw, at = Date.now()) {
+function claudeLimits(raw, at = Date.now(), accountId = 'claude:default') {
   const limits = raw?.rate_limits;
   if (!limits) return null;
   const windows = [rateWindow(limits.five_hour, 300), rateWindow(limits.seven_day, 10080)].filter(Boolean);
   if (!windows.length) return null;
-  return { id: 'claude:account', provider: 'claude', name: 'Claude Code', source: 'Claude status line', observedAt: at, windows };
+  return { id: accountId, accountId, provider: 'claude', name: 'Claude Code', source: 'Claude status line', observedAt: at, windows };
 }
 function normalizeUsage(provider, raw) {
   if (!raw) return null;

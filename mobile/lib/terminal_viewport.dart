@@ -180,6 +180,7 @@ class _TerminalViewportState extends State<TerminalViewport> {
                   textScaler: scaler,
                   padding: _padding,
                   theme: widget.theme,
+                  backgroundOpacity: 0,
                 ),
               ),
             );

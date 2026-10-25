@@ -9,7 +9,8 @@ function newer(a,b) { const x=version(a),y=version(b); if(!x||!y)return false; f
 function selectRelease(releases,current,platform='Setup-x64.exe') {
   const preview=current.includes('-');
   return releases.filter(r=>!r.draft && (preview || !r.prerelease) && version(r.tag_name) && newer(r.tag_name,current)).sort((a,b)=>newer(a.tag_name,b.tag_name)?-1:1).map(r=>{
-    const v=r.tag_name.replace(/^v/,''), name=`Agent-Dock-${v}-${platform}`, asset=r.assets?.find(a=>a.name===name);
+    // Releases before the rename were named Agent-Dock-*.
+    const v=r.tag_name.replace(/^v/,''), asset=['Paddock','Agent-Dock'].map(p=>r.assets?.find(a=>a.name===`${p}-${v}-${platform}`)).find(Boolean), name=asset?.name || `Paddock-${v}-${platform}`;
     const url=`https://github.com/${repo}/releases/download/${r.tag_name}/${name}`;
     if(!asset || asset.browser_download_url!==url || !/^sha256:[a-f0-9]{64}$/.test(asset.digest || '') || !Number.isSafeInteger(asset.size) || asset.size<1 || asset.size>500*1024*1024)return null;
     return {version:v,url:`https://github.com/${repo}/releases/tag/${r.tag_name}`,downloadUrl:url,name,size:asset.size,sha256:asset.digest.slice(7),publishedAt:r.published_at};

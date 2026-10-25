@@ -90,7 +90,7 @@ class TerminalLinksSheet extends StatelessWidget {
       children: [
         ListTile(
           contentPadding: EdgeInsets.zero,
-          title: const Text(
+          title: Text(
             'Console links',
             style: TextStyle(color: pink, fontSize: 22),
           ),
@@ -98,14 +98,11 @@ class TerminalLinksSheet extends StatelessWidget {
           trailing: IconButton(
             tooltip: 'Close links',
             onPressed: () => Navigator.pop(context),
-            icon: const Icon(Icons.close, color: blue),
+            icon: Icon(Icons.close, color: blue),
           ),
         ),
         if (!enabled)
-          const Text(
-            'Console changed. Reopen Links.',
-            style: TextStyle(color: pink),
-          )
+          Text('Console changed. Reopen Links.', style: TextStyle(color: pink))
         else if (links.isEmpty)
           const Text(
             'No web links in this console’s loaded output.',
@@ -190,7 +187,7 @@ class _LinkCardState extends State<_LinkCard> {
           children: [
             Text(
               uri?.authority ?? 'Web link',
-              style: const TextStyle(color: blue, fontWeight: FontWeight.w600),
+              style: TextStyle(color: blue, fontWeight: FontWeight.w600),
             ),
             const SizedBox(height: 8),
             Text(
@@ -213,7 +210,7 @@ class _LinkCardState extends State<_LinkCard> {
                   onPressed: widget.enabled && !busy && uri != null
                       ? () => act(false)
                       : null,
-                  icon: const Icon(Icons.copy, color: pink),
+                  icon: Icon(Icons.copy, color: pink),
                   label: const Text('Copy'),
                 ),
                 TextButton(
@@ -223,7 +220,7 @@ class _LinkCardState extends State<_LinkCard> {
               ],
             ),
             if (message.isNotEmpty)
-              Text(message, style: const TextStyle(color: pink)),
+              Text(message, style: TextStyle(color: pink)),
           ],
         ),
       ),

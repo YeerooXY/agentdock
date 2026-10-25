@@ -6,7 +6,7 @@ Reviewed 17 October 2026 on branch `main`. These changes are in source after `v0
 
 Codex now records the exact chat ID through its SessionStart hook before the first reply finishes. Quitting during that first task can therefore reopen the same conversation. Two consoles in the same project keep separate IDs. Resuming does not resubmit the last prompt or continue an interrupted job automatically. Previously unrecorded chats cannot be recovered by this change alone.
 
-Dock obtains the exact hook key and hash from the installed Codex app-server, and trusts only its own metadata hook for that invocation. An isolated real-CLI check confirmed that an existing user hook stays enabled and trusted and its configuration file stays unchanged. Older versions without the hook API retain completion-based tracking and display an update message. References: [Codex hooks](https://learn.chatgpt.com/docs/hooks), [configuration schema](https://learn.chatgpt.com/docs/config-schema.json), [resume command](https://learn.chatgpt.com/docs/cli/reference).
+Paddock obtains the exact hook key and hash from the installed Codex app-server, and trusts only its own metadata hook for that invocation. An isolated real-CLI check confirmed that an existing user hook stays enabled and trusted and its configuration file stays unchanged. Older versions without the hook API retain completion-based tracking and display an update message. References: [Codex hooks](https://learn.chatgpt.com/docs/hooks), [configuration schema](https://learn.chatgpt.com/docs/config-schema.json), [resume command](https://learn.chatgpt.com/docs/cli/reference).
 
 Results now previews images, Markdown and text inside saved ZIPs with a file chooser. Previewing reads bounded entries without extracting or executing them. Agents are instructed to save viewable files individually, with ZIPs only as optional downloads. Each tracked turn records its Git branch and commit; the gallery and preview link to that turn's code changes. Branch switches show both names. Older results without recorded metadata say **Branch not recorded**. A console launched outside a Git repository has no branch to record.
 
@@ -27,7 +27,7 @@ Deleting an individual result or batch removes its saved directory through Windo
 
 Mac and phone browser checks were **emulated on Windows**. Actual macOS/iOS font rendering and physical-device behavior still need real-device checks. The affected screen is the desktop Results view; this does not certify the native Android app. Archive previews cover up to 400 files/1,000 entries, with 10 MB image and 1 MB text limits; unsupported files can be exported.
 
-Evidence is in `artifacts/results-check`, the isolated Codex restore verification record, and the matching Dock Results batch. Screenshots and the report are saved individually for immediate previews.
+Evidence is in `artifacts/results-check`, the isolated Codex restore verification record, and the matching Paddock Results batch. Screenshots and the report are saved individually for immediate previews.
 
 ## Shared page review
 

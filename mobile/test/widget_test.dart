@@ -7,20 +7,35 @@ import 'package:agent_dock_mobile/main.dart';
 import 'package:agent_dock_mobile/dock_client.dart';
 import 'package:agent_dock_mobile/results_page.dart';
 import 'package:agent_dock_mobile/console_drafts.dart';
+import 'package:agent_dock_mobile/console_theme.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:xterm/xterm.dart';
 
 class FakeDock extends DockClient {
   bool markdown = false;
   final calls = <String>[];
+  final payloads = <Map<String, dynamic>>[];
   final inputs = <Map<String, dynamic>>[];
   Future<void> Function(Map<String, dynamic>)? onInput;
-  FakeDock({bool paired = true, ConsoleDrafts? drafts})
-    : super(
-        consoleDrafts:
-            drafts ??
-            ConsoleDrafts(read: () async => null, write: (_) async {}),
-      ) {
+  Future<void> Function(String, Map<String, dynamic>)? onRequest;
+  FakeDock({
+    bool paired = true,
+    ConsoleDrafts? drafts,
+    ConsoleAppearanceStore? appearanceStore,
+  }) : super(
+         consoleAppearanceStore:
+             appearanceStore ??
+             ConsoleAppearanceStore(
+               read: () async => null,
+               write: (_) async {},
+             ),
+         consoleDrafts:
+             drafts ??
+             ConsoleDrafts(read: () async => null, write: (_) async {}),
+       ) {
+    // Interaction tests settle after finite animations; motion has its own
+    // deterministic lifecycle tests in console_appearance_test.dart.
+    appearance = const ConsoleAppearance(ambientMotion: false);
     if (!paired) return;
     pairing = {'name': 'Test PC'};
     connected = true;
@@ -45,9 +60,35 @@ class FakeDock extends DockClient {
     Map<String, dynamic> payload = const {},
   ]) async {
     calls.add(method);
+    payloads.add(Map.of(payload));
+    await onRequest?.call(method, payload);
     if (method == 'input') {
       inputs.add(Map.of(payload));
       await onInput?.call(payload);
+    }
+    if (method == 'console.models') {
+      return {
+        'models': [
+          {
+            'id': 'test-model-a',
+            'name': 'Test Model A',
+            'efforts': ['low', 'high'],
+            'defaultEffort': 'low',
+          },
+          {
+            'id': 'test-model-b',
+            'name': 'Test Model B',
+            'efforts': ['low', 'high'],
+            'defaultEffort': 'low',
+          },
+        ],
+      };
+    }
+    if (method == 'console.setup') {
+      return {'id': 'setup-console', 'cwd': r'C:\Projects\Test'};
+    }
+    if (method == 'settings.summary') {
+      return {'apis': [], 'keys': [], 'tools': [], 'instructions': ''};
     }
     if (method == 'results.list') {
       return [
@@ -561,6 +602,10 @@ void main() {
       await tester.tap(find.text('Changed code'));
       await tester.pumpAndSettle();
       expect(find.text('app.js'), findsOneWidget);
+      expect(find.text('Revision unavailable'), findsNothing);
+      expect(find.text('+new'), findsNothing);
+      await tester.tap(find.text('app.js'));
+      await tester.pumpAndSettle();
       expect(find.text('+new'), findsOneWidget);
       expect(c.calls.contains('results.seen'), true);
       await tester.pageBack();
@@ -571,4 +616,230 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  testWidgets(
+    'account switch stays pinned through rebuild and keeps the phone draft',
+    (tester) async {
+      final stored = <String>[];
+      final drafts = ConsoleDrafts(
+        read: () async => null,
+        write: (value) async {
+          stored.add(value);
+        },
+      );
+      final c = FakeDock(drafts: drafts);
+      c.pairing = {'name': 'Test PC', 'pin': 'pc-cert'};
+      c.state['sessions'] = [
+        {
+          'id': 'one',
+          'name': 'Trader',
+          'provider': 'codex',
+          'slot': 1,
+          'state': 'ready',
+          'consoleKey': 'stable-console',
+          'launchId': 'launch-a',
+          'accountId': 'codex:alpha',
+          'accountLabel': 'Alpha',
+          'draftSupported': true,
+          'switchTargets': [
+            {'id': 'codex:beta', 'label': 'Beta', 'ready': true},
+          ],
+          'switchOffer': {
+            'usedPercent': 91,
+            'targetAccountId': 'codex:beta',
+            'targetLabel': 'Beta',
+          },
+        },
+      ];
+      c.screens['one'] = c.makeScreen('one')..terminal.write('Ready');
+      c.onRequest = (method, _) async {
+        if (method == 'console.switch') {
+          c.state['sessions'] = [
+            {
+              ...c.sessions.single,
+              'launchId': 'launch-b',
+              'accountId': 'codex:beta',
+            },
+          ];
+          c.notifyListeners();
+        }
+      };
+      addTearDown(c.dispose);
+      await tester.pumpWidget(DockApp(client: c));
+      await enterChat(tester);
+      const draft = 'First line\nUnicode: café — 🧪\n';
+      await tester.enterText(find.byType(TextField).last, draft);
+      await tester.pump(const Duration(milliseconds: 250));
+      await drafts.flush();
+      expect(find.text('Usage reached 91%.'), findsOneWidget);
+
+      await tester.tap(find.byTooltip('More options'));
+      await tester.pumpAndSettle();
+      c.notifyListeners(); // A usage refresh arrives while the menu is open.
+      await tester.pumpAndSettle();
+      expect(
+        find.widgetWithText(PopupMenuItem<String>, 'Switch to Beta'),
+        findsOneWidget,
+      );
+      await tester.tap(find.text('Switch to Beta').last);
+      await tester.pumpAndSettle();
+      expect(c.payloads.last, {
+        'id': 'one',
+        'launchId': 'launch-a',
+        'consoleKey': 'stable-console',
+        'accountId': 'codex:alpha',
+        'targetAccountId': 'codex:beta',
+      });
+      expect(
+        tester.widget<TextField>(find.byType(TextField).last).controller!.text,
+        draft,
+      );
+      expect(
+        jsonDecode(stored.last)[ConsoleDrafts.key('pc-cert', 'stable-console')],
+        draft,
+      );
+      expect(
+        c.inputs,
+        isEmpty,
+        reason: 'account switching does not submit the phone composer',
+      );
+
+      c.generation++; // Simulate a phone reconnect after the switch.
+      c.notifyListeners();
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<TextField>(find.byType(TextField).last).controller!.text,
+        draft,
+      );
+      expect(c.inputs, isEmpty);
+    },
+  );
+
+  testWidgets('account switch rejects a menu target after its launch changes', (
+    tester,
+  ) async {
+    final c = FakeDock();
+    c.pairing = {'name': 'Test PC', 'pin': 'pc-cert'};
+    c.state['sessions'] = [
+      {
+        'id': 'one',
+        'name': 'Trader',
+        'provider': 'codex',
+        'slot': 1,
+        'state': 'ready',
+        'consoleKey': 'stable-console',
+        'launchId': 'launch-a',
+        'accountId': 'codex:alpha',
+        'accountLabel': 'Alpha',
+        'draftSupported': true,
+        'switchTargets': [
+          {'id': 'codex:beta', 'label': 'Beta', 'ready': true},
+        ],
+      },
+    ];
+    c.screens['one'] = c.makeScreen('one')..terminal.write('Ready');
+    addTearDown(c.dispose);
+    await tester.pumpWidget(DockApp(client: c));
+    await tester.tap(find.byTooltip('More options'));
+    await tester.pumpAndSettle();
+    c.state['sessions'] = [
+      {...c.sessions.single, 'launchId': 'launch-c'},
+    ];
+    c.notifyListeners();
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Switch to Beta').last);
+    await tester.pumpAndSettle();
+    expect(c.calls, isNot(contains('console.switch')));
+  });
+
+  testWidgets('account setup action stays pinned to the phone console', (
+    tester,
+  ) async {
+    final c = FakeDock();
+    c.pairing = {'name': 'Test PC', 'pin': 'pc-cert'};
+    c.state['sessions'] = [
+      {
+        'id': 'one',
+        'name': 'Trader',
+        'provider': 'codex',
+        'slot': 1,
+        'state': 'ready',
+        'consoleKey': 'stable-console',
+        'launchId': 'launch-a',
+        'accountId': 'codex:alpha',
+        'accountLabel': 'Alpha',
+        'draftSupported': true,
+        'switchTargets': [
+          {'id': 'codex:beta', 'label': 'Beta', 'ready': true},
+        ],
+      },
+    ];
+    c.screens['one'] = c.makeScreen('one')..terminal.write('Ready');
+    addTearDown(c.dispose);
+    await tester.pumpWidget(DockApp(client: c));
+    await tester.tap(find.byTooltip('More options'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Set up Beta').last);
+    await tester.pumpAndSettle();
+    expect(c.calls, contains('console.setup'));
+    expect(c.payloads.last, {
+      'id': 'one',
+      'launchId': 'launch-a',
+      'consoleKey': 'stable-console',
+      'accountId': 'codex:alpha',
+      'targetAccountId': 'codex:beta',
+    });
+    expect(
+      c.inputs,
+      isEmpty,
+      reason: 'setup opens a provider console without submitting phone text',
+    );
+  });
+
+  for (final width in [320.0, 393.0, 800.0]) {
+    testWidgets(
+      'account offer and menu wrap long labels at ${width.toInt()}px',
+      (tester) async {
+        tester.view.physicalSize = Size(width, 1000);
+        tester.view.devicePixelRatio = 1;
+        tester.platformDispatcher.textScaleFactorTestValue = 2;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+        final c = FakeDock();
+        addTearDown(c.dispose);
+        const label = 'Personal Codex subscription for development and review';
+        c.state['sessions'] = [
+          {
+            ...c.sessions.single,
+            'provider': 'codex',
+            'accountId': 'codex:alpha',
+            'accountLabel': 'Alpha',
+            'launchId': 'launch-a',
+            'consoleKey': 'stable-console',
+            'draftSupported': true,
+            'switchTargets': [
+              {'id': 'codex:beta', 'label': label, 'ready': true},
+            ],
+            'switchOffer': {
+              'usedPercent': 91,
+              'targetAccountId': 'codex:beta',
+              'targetLabel': label,
+            },
+          },
+        ];
+        await tester.pumpWidget(DockApp(client: c));
+        await tester.pumpAndSettle();
+        expect(find.text('Usage reached 91%.'), findsOneWidget);
+        expect(tester.takeException(), isNull);
+        await tester.tap(find.byTooltip('More options'));
+        await tester.pumpAndSettle();
+        expect(
+          find.widgetWithText(PopupMenuItem<String>, 'Switch to $label'),
+          findsOneWidget,
+        );
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
 }

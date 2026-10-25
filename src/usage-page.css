@@ -1,0 +1,55 @@
+/* Usage page: larger, higher-contrast text. Scoped so other pages keep their sizes. */
+#content[data-view=usage]{--usage-muted:#b3bad0;--usage-soft:#d5daea}
+#content[data-view=usage] .usage-stats{grid-template-columns:repeat(2,minmax(0,1fr))}
+#content[data-view=usage] .usage-stats .stat>span:first-child{font-size:14px;color:var(--usage-muted);letter-spacing:0}
+#content[data-view=usage] .usage-stats .stat>strong{font-size:36px}
+#content[data-view=usage] .quota-card.large{padding:24px 26px}
+#content[data-view=usage] .quota-heading{gap:10px}
+#content[data-view=usage] .quota-heading strong{font-size:18px}
+#content[data-view=usage] .quota-heading .account-mark{width:32px;height:32px}
+#content[data-view=usage] .quota-heading .connection,#content[data-view=usage] .plan{font-size:13px;color:var(--usage-muted)}
+#content[data-view=usage] .quota-window>div:first-child{font-size:15px;color:var(--usage-soft)}
+#content[data-view=usage] .quota-window strong{font-size:26px}
+#content[data-view=usage] .quota-card.large .meter{height:8px}
+#content[data-view=usage] .reset,#content[data-view=usage] .missing-window,#content[data-view=usage] .quota-unavailable p{font-size:14px;color:var(--usage-muted)}
+#content[data-view=usage] .quota-foot{font-size:13px;color:var(--usage-muted)}
+#content[data-view=usage] .section-note,#content[data-view=usage] .ledger-foot,#content[data-view=usage] .field-hint{font-size:14px;color:var(--usage-muted);line-height:1.6}
+#content[data-view=usage] h2{font-size:20px}
+#content[data-view=usage] .section-label p,#content[data-view=usage] .section-label>span{font-size:14px;color:var(--usage-muted)}
+#content[data-view=usage] .subtle{font-size:14px}
+#content[data-view=usage] table{font-size:14px}
+#content[data-view=usage] th{font-size:13px;color:var(--usage-muted)}
+#content[data-view=usage] td{color:var(--usage-soft)}
+#content[data-view=usage] td small{font-size:13px;color:var(--usage-muted)}
+#content[data-view=usage] .empty-ledger h3{font-size:18px}
+#content[data-view=usage] .empty-ledger p{font-size:15px}
+#content[data-view=usage] .usage-project>summary{font-size:15px}
+#content[data-view=usage] .usage-project>summary>span:last-of-type{font-size:14px}
+#content[data-view=usage] .usage-project-filter,#content[data-view=usage] .usage-project-filter select{font-size:14px}
+@media(max-width:850px){
+  #content[data-view=usage] .usage-grid{grid-template-columns:1fr}
+  #content[data-view=usage] .usage-stats .stat>strong{font-size:30px}
+  #content[data-view=usage] .usage-stats .stat>span:first-child{font-size:13px;white-space:normal}
+}
+#content[data-view=usage] .account-switch-settings{display:grid;gap:16px}
+#content[data-view=usage] .account-switch-settings>.section-label{margin:0}
+#content[data-view=usage] .account-profile-form{display:grid;grid-template-columns:minmax(150px,.7fr) minmax(180px,1fr) auto;gap:12px;align-items:end}
+#content[data-view=usage] .account-profile-form label{display:grid;gap:7px;color:var(--usage-muted);font-size:13px}
+#content[data-view=usage] .account-profile-form input,#content[data-view=usage] .account-profile-form select{min-width:0;border:1px solid #30364b;border-radius:6px;background:#080a10;color:#e1e5f1;padding:10px;font:inherit}
+#content[data-view=usage] .account-profile-form .form-error{grid-column:1/-1;margin:0}
+#content[data-view=usage] .account-profile-list{display:grid;gap:8px}
+#content[data-view=usage] .account-profile-row{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:10px 12px;background:#090b11;border:1px solid #272c3b;border-radius:6px}
+#content[data-view=usage] .account-profile-row>div,#content[data-view=usage] .account-profile-row>span{display:flex;align-items:center;gap:8px;min-width:0}
+#content[data-view=usage] .account-profile-row>div>span{display:grid;gap:3px}
+#content[data-view=usage] .account-profile-row small{color:var(--usage-muted)}
+#content[data-view=usage] .account-profile-row>span{flex-wrap:wrap;justify-content:flex-end}
+#content[data-view=usage] .account-switch-threshold{display:flex;align-items:center;gap:18px;flex-wrap:wrap;padding-top:4px}
+#content[data-view=usage] .account-switch-threshold label{display:flex;align-items:center;gap:8px;color:var(--usage-soft);font-size:14px}
+#content[data-view=usage] .account-switch-threshold input[type=number]{width:76px;padding:7px;border:1px solid #30364b;border-radius:5px;background:#080a10;color:#e1e5f1;font:inherit}
+#content[data-view=usage] .account-switch-threshold input[type=checkbox]{accent-color:#9cbfff;width:16px;height:16px}
+#content[data-view=usage] .account-switch-threshold .field-hint{flex-basis:100%;margin:0}
+@media(max-width:700px){
+  #content[data-view=usage] .account-profile-form{grid-template-columns:1fr}
+  #content[data-view=usage] .account-profile-row{align-items:flex-start;flex-direction:column}
+  #content[data-view=usage] .account-profile-row>span{justify-content:flex-start}
+}

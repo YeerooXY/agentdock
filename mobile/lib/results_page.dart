@@ -95,10 +95,10 @@ class _ResultsPageState extends State<ResultsPage> {
     final viewed = pictures.where((x) => x['seenAt'] != null).length;
     return ListTile(
       contentPadding: EdgeInsets.zero,
-      leading: const Icon(Icons.photo_library_outlined, color: blue),
+      leading: Icon(Icons.photo_library_outlined, color: blue),
       title: Text('${pictures.length} pictures'),
       subtitle: Text('$viewed of ${pictures.length} viewed'),
-      trailing: const Icon(Icons.chevron_right, color: pink),
+      trailing: Icon(Icons.chevron_right, color: pink),
       onTap: () async {
         await Navigator.push(
           context,
@@ -129,13 +129,26 @@ class _ResultsPageState extends State<ResultsPage> {
       ]);
       groups.putIfAbsent(key, () => []).add(item);
     }
+    final chats = <String, List<List<dynamic>>>{};
+    for (final group in groups.values) {
+      final first = group.first;
+      final key =
+          (first['consoleKey'] ??
+                  first['sessionId'] ??
+                  jsonEncode([
+                    'legacy',
+                    first['projectId'] ?? first['project'],
+                    first['source'] ?? 'Dock',
+                  ]))
+              .toString();
+      chats.putIfAbsent(key, () => []).add(group);
+    }
     return RefreshIndicator(
       onRefresh: load,
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          if (error.isNotEmpty)
-            Text(error, style: const TextStyle(color: pink)),
+          if (error.isNotEmpty) Text(error, style: TextStyle(color: pink)),
           if (items == null && error.isEmpty)
             const Center(child: CircularProgressIndicator()),
           if (items?.isEmpty == true)
@@ -143,90 +156,133 @@ class _ResultsPageState extends State<ResultsPage> {
               padding: EdgeInsets.all(32),
               child: Text('Finished work will appear here.'),
             ),
-          for (final group in groups.values)
-            Card(
-              margin: const EdgeInsets.only(bottom: 18),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(18),
-                side: const BorderSide(color: Color(0xff494061)),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.all(14),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            projectLabel(group.first),
-                            style: const TextStyle(
-                              color: pink,
-                              fontWeight: FontWeight.w600,
-                              fontSize: 18,
-                            ),
-                          ),
-                        ),
-                        if (group.any((x) => x['seenAt'] == null))
-                          const Padding(
-                            padding: EdgeInsets.all(8),
-                            child: Badge(label: Text('New')),
-                          ),
-                        IconButton(
-                          onPressed: () => remove(group),
-                          icon: const Icon(Icons.delete_outline, color: blue),
-                          tooltip: 'Delete this turn’s results',
-                        ),
-                      ],
-                    ),
-                    Text(
-                      "${group.first['consoleName'] ?? 'Console'} · ${DateTime.fromMillisecondsSinceEpoch((group.first['at'] as num).toInt()).toLocal().toString().substring(0, 16)}",
-                      style: const TextStyle(
-                        color: Color(0xffafb7cd),
-                        fontSize: 12,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    for (final git in turnRevisions(group)) ResultRevision(git),
-                    if (group.any((x) => x['image'] == true)) imageGroup(group),
-                    for (final item in group.where(
-                      (x) =>
-                          x['image'] != true &&
-                          !(x['kind'] == 'code' && x['changeCount'] == 0),
-                    ))
-                      ListTile(
-                        contentPadding: EdgeInsets.zero,
-                        leading: Icon(
-                          item['kind'] == 'code'
-                              ? Icons.code
-                              : item['image'] == true
-                              ? Icons.image_outlined
-                              : Icons.description_outlined,
-                          color: blue,
-                        ),
-                        title: Text(item['title'] as String),
-                        subtitle: Text(
-                          '${item['kind']} · ${formatBytes((item['size'] as num).toInt())}',
-                        ),
-                        trailing: const Icon(Icons.chevron_right, color: pink),
-                        onTap: () async {
-                          await Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => ResultDetail(
-                                client: widget.client,
-                                item: item as Map<String, dynamic>,
-                                ids: group.map((x) => x['id']).toList(),
-                              ),
-                            ),
-                          );
-                          load();
-                        },
-                      ),
-                  ],
-                ),
+          for (final chat in chats.values) ...[
+            Padding(
+              padding: const EdgeInsets.only(top: 8, bottom: 12),
+              child: Text(
+                chat.first.first['consoleName'] as String? ?? 'Earlier console',
+                style: TextStyle(fontSize: 22, color: pink),
               ),
             ),
+            for (final group in chat)
+              Card(
+                margin: const EdgeInsets.only(bottom: 18),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(18),
+                  side: const BorderSide(color: Color(0xff494061)),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(14),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              group
+                                          .where(
+                                            (x) =>
+                                                x['kind'] != 'code' &&
+                                                x['image'] != true &&
+                                                x['ext'] != '.json',
+                                          )
+                                          .firstOrNull?['title']
+                                      as String? ??
+                                  'Completed prompt',
+                              style: TextStyle(
+                                color: pink,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 18,
+                              ),
+                            ),
+                          ),
+                          if (group.any((x) => x['seenAt'] == null))
+                            const Padding(
+                              padding: EdgeInsets.all(8),
+                              child: Badge(label: Text('New')),
+                            ),
+                          IconButton(
+                            onPressed: () => remove(group),
+                            icon: Icon(Icons.delete_outline, color: blue),
+                            tooltip: 'Delete this turn’s results',
+                          ),
+                        ],
+                      ),
+                      Text(
+                        DateTime.fromMillisecondsSinceEpoch(
+                          (group.first['at'] as num).toInt(),
+                        ).toLocal().toString().substring(0, 16),
+                        style: const TextStyle(
+                          color: Color(0xffafb7cd),
+                          fontSize: 12,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      if (group.any(
+                        (x) =>
+                            (x['summary'] as String? ?? '').isNotEmpty &&
+                            x['kind'] != 'code',
+                      ))
+                        Text(
+                          group.firstWhere(
+                                (x) =>
+                                    (x['summary'] as String? ?? '')
+                                        .isNotEmpty &&
+                                    x['kind'] != 'code',
+                              )['summary']
+                              as String,
+                        ),
+                      ExpansionTile(
+                        tilePadding: EdgeInsets.zero,
+                        title: const Text('Details'),
+                        children: [
+                          Text(projectLabel(group.first)),
+                          for (final git in turnRevisions(group))
+                            ResultRevision(git),
+                        ],
+                      ),
+                      if (group.any((x) => x['image'] == true))
+                        imageGroup(group),
+                      for (final item in group.where(
+                        (x) =>
+                            x['image'] != true &&
+                            !(x['kind'] == 'code' && x['changeCount'] == 0),
+                      ))
+                        ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: Icon(
+                            item['kind'] == 'code'
+                                ? Icons.code
+                                : item['image'] == true
+                                ? Icons.image_outlined
+                                : Icons.description_outlined,
+                            color: blue,
+                          ),
+                          title: Text(item['title'] as String),
+                          subtitle: Text(
+                            '${item['kind']} · ${formatBytes((item['size'] as num).toInt())}',
+                          ),
+                          trailing: Icon(Icons.chevron_right, color: pink),
+                          onTap: () async {
+                            await Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => ResultDetail(
+                                  client: widget.client,
+                                  item: item as Map<String, dynamic>,
+                                  ids: group.map((x) => x['id']).toList(),
+                                ),
+                              ),
+                            );
+                            load();
+                          },
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+          ],
         ],
       ),
     );
@@ -358,9 +414,13 @@ class _ResultDetailState extends State<ResultDetail> {
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          ResultRevision(resultRevision(item)),
-          if (error.isNotEmpty)
-            Text(error, style: const TextStyle(color: pink)),
+          if (resultRevision(item) != null)
+            ExpansionTile(
+              tilePadding: EdgeInsets.zero,
+              title: const Text('Details'),
+              children: [ResultRevision(resultRevision(item))],
+            ),
+          if (error.isNotEmpty) Text(error, style: TextStyle(color: pink)),
           if (content == null && error.isEmpty)
             const Center(child: CircularProgressIndicator()),
           if (content?['image'] != null) ...[
@@ -423,17 +483,17 @@ class _ResultDetailState extends State<ResultDetail> {
               },
               styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context))
                   .copyWith(
-                    h1: const TextStyle(
+                    h1: TextStyle(
                       color: blue,
                       fontSize: 28,
                       fontWeight: FontWeight.w600,
                     ),
-                    h2: const TextStyle(
+                    h2: TextStyle(
                       color: pink,
                       fontSize: 23,
                       fontWeight: FontWeight.w600,
                     ),
-                    h3: const TextStyle(
+                    h3: TextStyle(
                       color: blue,
                       fontSize: 19,
                       fontWeight: FontWeight.w600,
@@ -443,7 +503,7 @@ class _ResultDetailState extends State<ResultDetail> {
                       fontSize: 15,
                       height: 1.65,
                     ),
-                    a: const TextStyle(
+                    a: TextStyle(
                       color: blue,
                       decoration: TextDecoration.underline,
                     ),
@@ -456,7 +516,7 @@ class _ResultDetailState extends State<ResultDetail> {
                       color: const Color(0xff080911),
                       borderRadius: BorderRadius.circular(10),
                     ),
-                    blockquoteDecoration: const BoxDecoration(
+                    blockquoteDecoration: BoxDecoration(
                       color: Color(0xff181528),
                       border: Border(left: BorderSide(color: pink, width: 3)),
                     ),
@@ -478,28 +538,31 @@ class _ResultDetailState extends State<ResultDetail> {
           if (content?['truncated'] == true)
             const Text('Preview shortened. Open the full file on your PC.'),
           if (content?['diff'] != null) ...[
-            if (content!['diff']['git']?['before'] != null)
-              Text(
-                'Started at ${revisionLabel(content!['diff']['git']['before'] as Map)}',
-                style: const TextStyle(color: blue, fontSize: 12),
-              ),
-            if (content!['diff']['git']?['after'] != null)
-              ResultRevision(content!['diff']['git']['after'] as Map),
-            for (final note in (content!['diff']['notes'] as List? ?? []))
-              Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: Text(
-                  note as String,
-                  style: const TextStyle(color: pink),
-                ),
-              ),
+            ExpansionTile(
+              tilePadding: EdgeInsets.zero,
+              title: const Text('Capture details'),
+              children: [
+                if (content!['diff']['git']?['before'] != null)
+                  Text(
+                    'Started at ${revisionLabel(content!['diff']['git']['before'] as Map)}',
+                    style: TextStyle(color: blue, fontSize: 12),
+                  ),
+                if (content!['diff']['git']?['after'] != null)
+                  ResultRevision(content!['diff']['git']['after'] as Map),
+                for (final note in (content!['diff']['notes'] as List? ?? []))
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: Text(note as String, style: TextStyle(color: pink)),
+                  ),
+              ],
+            ),
             for (final file in content!['diff']['changes'] as List)
               ExpansionTile(
-                initiallyExpanded: true,
+                initiallyExpanded: false,
                 tilePadding: EdgeInsets.zero,
                 title: Text(
                   file['file'] as String,
-                  style: const TextStyle(color: blue),
+                  style: TextStyle(color: blue),
                 ),
                 subtitle: Text(file['type'] as String),
                 children: [

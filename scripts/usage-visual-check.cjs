@@ -2,7 +2,7 @@
 // Isolated renderer checks. Run test:desktop first to create the synthetic base.
 const { chromium, webkit, devices } = require('playwright');
 const fs = require('node:fs'), path = require('node:path'), http = require('node:http'), assert = require('node:assert/strict');
-const root = path.resolve(__dirname, '..'), out = path.join(root, 'artifacts/usage-remaining');
+const root = path.resolve(__dirname, '..'), out = path.join(root, '.build/subscription-usage-20261025');
 fs.mkdirSync(out, { recursive: true });
 const base = JSON.parse(fs.readFileSync(path.join(root, 'artifacts/console-layout/fixture.json')));
 const server = http.createServer((req, res) => {
@@ -34,6 +34,7 @@ const reports = []; let browser;
         { minutes:10080, usedPercent:null, resetsAt:null },
       ]},
     ];
+    state.usageAccounts = ['codex', 'claude'].map(provider => ({ id: provider + ':default', provider, label: provider === 'codex' ? 'Codex' : 'Claude Code' }));
     state.ledger = [];
     await context.exposeFunction('fixtureCall', method => ({ ok:true, value: method === 'state' ? state : method === 'session.buffer' ? { data:'', sequence:0 } : [] }));
     await context.addInitScript(() => { window.dock = { call:(m,p)=>window.fixtureCall(m,p), onState:fn=>window.fixtureState=fn, onOutput:()=>{}, onSelect:()=>{} }; });
@@ -43,8 +44,11 @@ const reports = []; let browser;
     await page.locator('.quota-card').first().waitFor();
     assert.deepEqual(await page.locator('.quota-window strong').allTextContents(), ['62% left','100% left','0% left','Unknown']);
     assert.deepEqual(await page.locator('.meter').evaluateAll(nodes=>nodes.map(x=>x.getAttribute('aria-valuenow'))), ['62','100','0',null]);
-    assert.equal(await page.locator('.quota-heading img').count(), 1);
-    assert.ok(await page.locator('.quota-heading img').evaluate(img=>img.complete&&img.naturalWidth>0));
+    assert.equal(await page.locator('.quota-heading img').count(), 2);
+    assert.ok((await page.locator('.quota-heading img').evaluateAll(imgs=>imgs.map(img=>img.complete&&img.naturalWidth>0))).every(Boolean));
+    assert.equal(await page.locator('#rates-form, .pricing-details').count(), 0, 'cost estimate settings removed');
+    assert.ok(await page.locator('.quota-window strong').first().evaluate(x=>parseFloat(getComputedStyle(x).fontSize)>=24));
+    assert.ok(await page.locator('.reset').first().evaluate(x=>parseFloat(getComputedStyle(x).fontSize)>=13));
     await page.evaluate(async()=>{await document.fonts.ready;document.getAnimations().filter(a=>a.effect?.getTiming().iterations!==Infinity).forEach(a=>a.finish());await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));});
     await page.addScriptTag({ url:'/_axe.js' });
     const axe = await page.evaluate(async()=> (await window.axe.run(document,{runOnly:['color-contrast','button-name','image-alt','aria-progressbar-name']})).violations.map(x=>({id:x.id,targets:x.nodes.map(n=>n.target)})));
@@ -60,13 +64,29 @@ const reports = []; let browser;
     await page.evaluate(s=>window.fixtureState(s),state);
     assert.deepEqual(await page.locator('.quota-window strong').allTextContents(),['9.5% left','Unknown','Unknown','Unknown']);
     const providers = require('../electron/cli-catalog.cjs').catalog.map(x=>x.id);
-    state.limits = providers.map(provider=>({id:provider,provider,name:provider,observedAt:Date.now(),source:'Synthetic fixture',windows:[{minutes:300,usedPercent:25}]}));
+    state.usageAccounts = providers.map(provider => ({ id: provider + ':default', provider, label: provider }));
+    state.limits = providers.map(provider=>({id:provider,accountId:provider+':default',provider,name:provider,observedAt:Date.now(),source:'Synthetic fixture',windows:[{minutes:300,usedPercent:25}]}));
     await page.evaluate(s=>window.fixtureState(s),state);
     assert.equal(await page.locator('.quota-card').count(),providers.length);
-    assert.equal(await page.locator('.quota-heading img').count(),4);
+    assert.equal(await page.locator('.quota-heading img').count(),10, 'every catalog harness except Copilot, Grok, Qwen and Kimi shows its logo');
     await page.waitForFunction(()=>[...document.querySelectorAll('.quota-heading img')].every(i=>i.complete&&i.naturalWidth>0));
     await page.evaluate(()=>document.getAnimations().filter(a=>a.effect?.getTiming().iterations!==Infinity).forEach(a=>a.finish()));
     await page.screenshot({ path:path.join(out,name+'-providers.png') });
+    state.limits = state.limits.slice(0, 2);
+    state.usageChecks = providers.map((provider, i) => ({ accountId: provider + ':default', provider, status: i === 0 ? 'current' : i === 1 ? 'unavailable' : i === 2 ? 'sign-in' : 'unsupported', message: i === 0 ? '' : i === 1 ? 'The provider could not return current usage. Try again.' : i === 2 ? 'Sign in through this CLI, then refresh.' : 'This CLI has no connected background quota reader.' }));
+    await page.evaluate(s=>window.fixtureState(s),state);
+    assert.equal(await page.locator('.quota-card').count(), providers.length);
+    assert.deepEqual((await page.locator('.quota-heading .connection').allTextContents()).slice(0,4), ['Current','Cached','Sign in','Unavailable']);
+    assert.equal(await page.locator('.quota-card').nth(1).locator('.meter').getAttribute('aria-valuenow'), '75');
+    assert.match(await page.locator('.quota-card').nth(1).innerText(), /could not return current usage/);
+    state.refreshing = true; state.usageChecks[0].status = 'refreshing';
+    await page.evaluate(s=>window.fixtureState(s),state);
+    assert.equal(await page.locator('[data-action=refresh]').first().isDisabled(), true);
+    assert.equal(await page.locator('.quota-heading .connection').first().innerText(), 'Checking');
+    state.refreshing = false; state.usageChecks[0].status = 'current';
+    await page.evaluate(s=>window.fixtureState(s),state);
+    await page.screenshot({ path:path.join(out,name+'-refresh-states.png') });
+    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1||document.querySelector('#content').scrollWidth>document.querySelector('#content').clientWidth+1), false, name+' refresh state overflow');
     state.limits=[]; await page.evaluate(s=>window.fixtureState(s),state);
     assert.equal(await page.locator('.meter').count(),0);
     if (name === 'pc' || name === 'mac') {

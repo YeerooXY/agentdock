@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "product": "Paddock",
+  "method": "Single-evaluator cognitive walkthrough using hypothetical user perspectives and recorded UI actions. These are test scenarios, not research-validated customer personas or independent participants.",
+  "target": "Latest Windows development build and Android companion",
+  "guardrails": [
+    "Use disposable profiles, projects and synthetic results.",
+    "Do not submit paid AI work, install agents, expose credentials, contact users or change production data.",
+    "Record actual UI behavior separately from predicted confusion or desired features.",
+    "Do not report adoption rates, willingness to pay, fictional customer quotes or participant success percentages."
+  ],
+  "scenarios": [
+    {
+      "id": "first-use",
+      "perspective": "First-time coding-agent user on Windows",
+      "assumptions": ["Understands chat applications", "Has not used an agent CLI", "Has a folder they want help with"],
+      "task": "Explain what Paddock does, identify the account/software requirements and start one useful conversation in the chosen folder.",
+      "checkpoints": ["Purpose and prerequisites are visible", "Agent choice is understandable", "Sign-in route is explained", "First action is discoverable", "Saved work can be found"],
+      "real_user_question": "Without using the guide, show where you would begin and explain what you expect the next screen to do."
+    },
+    {
+      "id": "several-projects",
+      "perspective": "Existing CLI user working on several projects",
+      "assumptions": ["Already knows Claude Code or Codex", "Uses multiple terminals", "Wants to resume the correct work without losing context"],
+      "task": "Open and distinguish two consoles, associate an existing folder with a project, and find the files from an older completed prompt.",
+      "checkpoints": ["One-time launch options are findable", "Existing projects do not require unnecessary setup", "Chat/folder identity stays visible", "Results keep prompt attribution", "Hide and resume preserve sessions"],
+      "real_user_question": "Use your existing repository. What would make you switch from your current terminal setup?"
+    },
+    {
+      "id": "phone-continuation",
+      "perspective": "PC user checking work from an Android phone",
+      "assumptions": ["Has a Windows PC running Paddock", "Wants to read an answer, reply and handle a permission request", "May be unfamiliar with router configuration"],
+      "task": "Pair the phone, identify the active PC/chat, send a message, answer a folder prompt and find the completed result.",
+      "checkpoints": ["PC dependency is clear", "Pairing/approval steps are understandable", "Message entry is visibly discoverable", "Permission controls are usable", "Connection failure has a recovery path"],
+      "real_user_question": "Show how you would reply to this console. What do you expect to work when you leave your Wi-Fi?"
+    },
+    {
+      "id": "privacy-and-cost",
+      "perspective": "User evaluating access, privacy and provider costs",
+      "assumptions": ["Uses their own provider account", "Wants to understand local storage, phone access and billable requests", "Does not want optional tools configured automatically"],
+      "task": "Distinguish subscription access from API billing, inspect where keys/tools are configured, understand phone access and find removal/update controls.",
+      "checkpoints": ["Provider account versus API key is clear", "Usage is distinguished from estimated spending", "Optional integrations remain optional", "Permission defaults are visible", "Removal and update consequences are explained"],
+      "real_user_question": "Explain which actions could cost money and which computer/files the phone can access. Show where you would check your answer."
+    }
+  ]
+}

@@ -10,12 +10,12 @@ export function consoleProjects({ call, getState, getView, projects, navigate, e
     <label>Project<select name="projectId"><option value="">No project</option></select></label>
     <label class="toggle-row" data-project-title-choice hidden><span>Use project name as chat title</span><input type="checkbox" name="useProjectName"></label>
     <div class="project-picker-links"><button type="button" class="secondary" data-project-create>${icon('plus')}New project</button><button type="button" class="subtle" data-project-view hidden>View project</button></div>
-    <p class="field-hint">Your agent can read this project’s goals and progress on its next turn.</p>
+    <p class="field-hint" data-project-help></p>
     <p class="form-error" role="alert"></p><div class="project-dialog-actions"><button type="button" class="secondary" data-project-picker-close>Cancel</button><button type="submit" class="primary">Save</button></div></form>`;
   document.body.append(dialog);
   const form = dialog.querySelector('form');
   let targetId, opener, busy = false;
-  const session = id => getState()?.sessions.find(x => x.id === id && (x.alive || x.restoreError));
+  const session = id => getState()?.sessions.find(x => x.id === id && !x.dismissed && (x.alive || x.restoreError));
   const project = id => getState()?.projects?.find(x => x.id === id);
   function button(s) {
     const p = project(s.projectId), label = p ? `Project: ${p.name}` : 'Add to project';
@@ -27,8 +27,8 @@ export function consoleProjects({ call, getState, getView, projects, navigate, e
       const p = project(session(b.dataset.consoleProject)?.projectId), label = p ? `Project: ${p.name}` : 'Add to project';
       b.classList.toggle('linked', !!p); b.title = label; b.setAttribute('aria-label', label);
     }
-    const view = getView(), selected = session(view.selectedId) || state.sessions.find(x => x.alive || x.restoreError);
-    const visible = state.settings.suggestProjects !== false && state.settings.setupComplete && state.mode !== 'hud' && ['consoles', 'terminal', 'overview'].includes(view.page) && selected && !project(selected.projectId);
+    const view = getView(), selected = session(view.selectedId) || state.sessions.find(x => !x.dismissed && (x.alive || x.restoreError));
+    const visible = state.settings.suggestProjects !== false && state.settings.setupComplete && state.mode !== 'hud' && ['consoles', 'overview'].includes(view.page) && selected && !project(selected.projectId);
     if (!visible && !prompt.hidden && prompt.contains(document.activeElement)) document.querySelector(`[data-console-project="${prompt.dataset.sessionId}"]`)?.focus({ preventScroll: true });
     prompt.hidden = !visible;
     if (visible) {
@@ -41,6 +41,9 @@ export function consoleProjects({ call, getState, getView, projects, navigate, e
     form.elements.projectId.value = project(value) ? value : '';
     form.querySelector('[data-project-view]').hidden = !form.elements.projectId.value;
     form.querySelector('[data-project-title-choice]').hidden = !form.elements.projectId.value;
+    form.querySelector('[data-project-help]').textContent = form.elements.projectId.value
+      ? 'This chat can read the project’s goals and progress on its next turn. Its console folder stays the same.'
+      : 'No project is linked. Choose a saved project to share its goals and progress with this chat.';
   }
   function open(id, trigger = document.activeElement, selectedProject) {
     const s = session(id); if (!s) { toast('This console is no longer open.', true); return; }
@@ -48,7 +51,7 @@ export function consoleProjects({ call, getState, getView, projects, navigate, e
     form.querySelector('[data-project-chat]').textContent = s.name;
     form.querySelector('[data-project-cwd]').textContent = s.cwd;
     form.querySelector('.form-error').textContent = '';
-    options(selectedProject || s.projectId);
+    options(selectedProject !== undefined ? selectedProject : s.projectId);
     form.elements.useProjectName.checked = s.nameMode === 'project' || s.nameMode === 'folder' || (!s.nameMode && s.name === project(s.projectId)?.name);
     dialog.showModal(); form.elements.projectId.focus();
   }
@@ -65,7 +68,13 @@ export function consoleProjects({ call, getState, getView, projects, navigate, e
     if (opener?.isConnected && opener.getClientRects().length) opener.focus({ preventScroll: true });
     else [...document.querySelectorAll('[data-console-project]')].find(b => b.dataset.consoleProject === targetId && b.getClientRects().length)?.focus({ preventScroll: true });
   });
-  form.addEventListener('change', () => { form.querySelector('[data-project-view]').hidden = !form.elements.projectId.value; form.querySelector('[data-project-title-choice]').hidden = !form.elements.projectId.value; });
+  form.addEventListener('change', () => {
+    form.querySelector('[data-project-view]').hidden = !form.elements.projectId.value;
+    form.querySelector('[data-project-title-choice]').hidden = !form.elements.projectId.value;
+    form.querySelector('[data-project-help]').textContent = form.elements.projectId.value
+      ? 'This chat can read the project’s goals and progress on its next turn. Its console folder stays the same.'
+      : 'No project is linked. Choose a saved project to share its goals and progress with this chat.';
+  });
   form.addEventListener('submit', async event => {
     event.preventDefault(); if (busy) return;
     const id = targetId, projectId = form.elements.projectId.value;

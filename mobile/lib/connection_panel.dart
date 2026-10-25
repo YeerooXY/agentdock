@@ -66,7 +66,7 @@ class _ConnectionPageState extends State<ConnectionPage> {
             children: [
               Text(
                 widget.client.pcName,
-                style: const TextStyle(color: pink, fontSize: 22),
+                style: TextStyle(color: pink, fontSize: 22),
               ),
               const SizedBox(height: 12),
               Semantics(liveRegion: true, child: Text(widget.client.status)),
@@ -78,12 +78,12 @@ class _ConnectionPageState extends State<ConnectionPage> {
                 enableSuggestions: false,
                 decoration: const InputDecoration(
                   labelText: 'PC address',
-                  hintText: 'https://my-dock.duckdns.org:47831',
+                  hintText: 'https://100.101.102.103:47831',
                 ),
               ),
               const SizedBox(height: 12),
               const Text(
-                'If your home IP changed, enter its new address or hostname with the port. Your saved PC identity still has to match.',
+                'Away from home, turn on Tailscale on this phone and use the PC’s Tailscale address (100.x) with the port. Your saved PC identity still has to match.',
                 style: TextStyle(height: 1.5, color: muted),
               ),
               const SizedBox(height: 16),
@@ -97,12 +97,12 @@ class _ConnectionPageState extends State<ConnectionPage> {
                   padding: const EdgeInsets.only(top: 12),
                   child: Semantics(
                     liveRegion: true,
-                    child: Text(error, style: const TextStyle(color: pink)),
+                    child: Text(error, style: TextStyle(color: pink)),
                   ),
                 ),
               const SizedBox(height: 24),
               const Text(
-                'For a stable address, configure a dynamic DNS hostname in PC → Phone setup. Keep Dock running and your router forwarding rules active.',
+                'Tailscale keeps the same 100.x address for your PC. Keep Paddock running and Tailscale on, on both devices.',
                 style: TextStyle(height: 1.5, color: muted),
               ),
             ],

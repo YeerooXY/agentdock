@@ -16,7 +16,7 @@ const report = []; let browser;
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   for (const [name, engine, options] of profiles) {
     browser = await engine.launch(); const context = await browser.newContext(options), state = structuredClone(fixture);
-    state.mode = 'dashboard'; state.settings.setupComplete = true; state.settings.autoSaveResults = true;
+    state.mode = 'dashboard'; state.settings.setupComplete = true; state.settings.autoSaveResults = false;
     await context.exposeFunction('fixtureCall', async (method, payload) => {
       if (method === 'state') return { ok: true, value: state };
       if (method === 'session.buffer') return { ok: true, value: { data: '', sequence: 0 } };
@@ -28,11 +28,11 @@ const report = []; let browser;
     const page = await context.newPage(), errors = []; page.on('pageerror', e => errors.push(e.message));
     await page.goto(`http://127.0.0.1:${server.address().port}`); await page.locator('.session-grid').waitFor();
     await page.locator('[data-page=settings]').click();
-    const toggle = page.getByRole('checkbox', { name: 'Automatically save results Capture code changes and new images after each turn.' });
-    assert.equal(await toggle.isChecked(), true);
-    await toggle.focus(); await page.keyboard.press('Space'); await page.waitForFunction(() => !document.querySelector('[data-setting=autoSaveResults]').checked);
-    assert.equal(state.settings.autoSaveResults, false); await toggle.check();
-    await toggle.locator('xpath=ancestor::section').evaluate(el => el.scrollIntoView({ block: 'start' }));
+    const toggle = page.getByRole('checkbox', { name: 'Also capture file changes Copy code diffs and changed images after each turn.' });
+    assert.equal(await toggle.isChecked(), false);
+    await toggle.focus(); await page.keyboard.press('Space'); await page.waitForFunction(() => document.querySelector('[data-setting=autoSaveResults]').checked);
+    assert.equal(state.settings.autoSaveResults, true); await toggle.uncheck();
+    await toggle.locator('xpath=ancestor::section[1]').evaluate(el => el.scrollIntoView({ block: 'start' }));
     await page.evaluate(async () => { await document.fonts.ready; document.getAnimations().filter(x => x.effect?.getTiming().iterations !== Infinity).forEach(x => x.finish()); });
     await page.addScriptTag({ url: '/_axe.js' });
     const findings = await page.evaluate(async () => (await axe.run(document, { runOnly: ['color-contrast','button-name','label'] })).violations.map(x => ({ id: x.id, targets: x.nodes.map(n => n.target) })));
