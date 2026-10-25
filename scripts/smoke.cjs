@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
+const shellCommand = require('./shell-commands.cjs');
 const { checkVimControls } = require('./vim-check.cjs');
 const { checkFirstRun } = require('./first-run-check.cjs');
 const { checkToolsAndWindow } = require('./tool-window-check.cjs');
@@ -140,12 +141,12 @@ async function eventually(predicate, message) {
   assert.equal(await page.locator(`.session-card[data-console-id="${session.id}"] .xterm`).count(), 1);
   assert.equal(await page.locator('dialog[open]').count(), 0);
   checks.push('Saved console defaults launch with one click; invalid folders do not overwrite defaults');
-  await eventually(async () => (await invoke('session.buffer', session.id)).data.includes('PS '), 'PowerShell prompt did not appear');
+  await eventually(async () => shellCommand.prompt((await invoke('session.buffer', session.id)).data), 'Shell prompt did not appear');
   await page.locator('.xterm-helper-textarea').focus();
-  await page.keyboard.type("Write-Output ('PAD' + 'DOCK_SMOKE_OK')"); await page.keyboard.press('Enter');
+  await page.keyboard.type(shellCommand.join('PAD', 'DOCK_SMOKE_OK')); await page.keyboard.press('Enter');
   await eventually(async () => (await invoke('session.buffer', session.id)).data.includes('PADDOCK_SMOKE_OK'), 'Terminal command did not produce its expected output');
   await eventually(async () => (await page.locator('.session-card .xterm-rows').innerText()).includes('PADDOCK_SMOKE_OK'));
-  const colorCommand = `& '${process.execPath.replaceAll("'", "''")}' -e "console.log(require('node:util').styleText('green','DOCK_COLOR_OK'))"\r`;
+  const colorCommand = shellCommand.run(process.execPath, '-e', "console.log(require('node:util').styleText('green','DOCK_COLOR_OK'))") + '\r';
   await invoke('session.input', { id: session.id, data: colorCommand });
   await eventually(async () => page.locator('.session-card .xterm-rows span').evaluateAll(spans =>
     spans.some(span => span.textContent === 'DOCK_COLOR_OK' && getComputedStyle(span).color === 'rgb(185, 232, 136)')),
@@ -184,7 +185,7 @@ async function eventually(predicate, message) {
   assert.equal(await page.locator('.session-card.console-expanded').count(), 0);
   assert.equal(await liveName.inputValue(), 'Robonslaught dev');
   await page.locator('.session-card .xterm-helper-textarea').focus();
-  await page.keyboard.type("Write-Output ('GRID_' + 'STILL_LIVE')"); await page.keyboard.press('Enter');
+  await page.keyboard.type(shellCommand.join('GRID_', 'STILL_LIVE')); await page.keyboard.press('Enter');
   await eventually(async () => (await page.locator('.session-card .xterm-rows').innerText()).includes('GRID_STILL_LIVE'));
   assert.equal((await invoke('state')).sessions.filter(x => x.alive).length, 1);
   checks.push('Live grid terminal accepts input, keeps focus during updates, and reuses the same terminal fullscreen; returning to Consoles stays fullscreen');
@@ -305,9 +306,12 @@ async function eventually(predicate, message) {
   const activeBeforeChooser = (await invoke('state')).sessions.filter(x => x.alive).length;
   await holdPlus(page.locator('.session-card.empty[data-slot="6"]'));
   await chooser.locator('.shell-picker-trigger').click();
-  await chooser.locator('.shell-picker-options button').filter({ hasText: 'Claude Code' }).click();
-  assert.equal(await oneOff.locator('[name=provider]').inputValue(), 'claude');
-  assert.equal(await chooser.locator('.shell-picker-trigger [data-shell=claude] img').evaluate(img => img.complete && img.naturalWidth > 0), true);
+  // The list shows only installed agents; pick an agent with a logo when one is installed.
+  const pick = (await chooser.locator('.shell-picker-options [data-choice] .shell-mark img').count()) ? chooser.locator('.shell-picker-options [data-choice]').filter({ has: page.locator('.shell-mark img') }).first() : chooser.locator('.shell-picker-options [data-choice]').first();
+  const picked = await pick.locator('.shell-mark').getAttribute('data-shell');
+  await pick.click();
+  assert.equal(await oneOff.locator('[name=provider]').inputValue(), picked);
+  if (await chooser.locator('.shell-picker-trigger .shell-mark img').count()) assert.equal(await chooser.locator('.shell-picker-trigger .shell-mark img').evaluate(img => img.complete && img.naturalWidth > 0), true);
   await chooser.locator('.shell-picker-trigger').press('ArrowDown');
   await page.keyboard.press('Escape');
   assert.equal(await chooser.isVisible(), true, 'Escape closes the shell list before the console chooser');
@@ -319,7 +323,7 @@ async function eventually(predicate, message) {
   await capture({ path: path.join(artifacts, 'test-console-chooser.png') });
   await oneOff.locator('[name=provider]').selectOption('custom');
   assert.equal(await page.locator('#one-off-model').isVisible(), false);
-  await oneOff.locator('[name=command]').fill("Write-Output ('ONE_OFF_' + 'CONSOLE')");
+  await oneOff.locator('[name=command]').fill(shellCommand.join('ONE_OFF_', 'CONSOLE'));
   await oneOff.locator('[name=cwd]').fill(path.join(dataDir, 'not-a-folder'));
   await oneOff.locator('[type=submit]').click();
   await oneOff.locator('.form-error').filter({ hasText: 'existing project folder' }).waitFor();
@@ -338,6 +342,7 @@ async function eventually(predicate, message) {
   await oneOff.locator('[type=submit]').click();
   await chooser.waitFor({ state: 'hidden' });
   const customConsole = (await invoke('state')).sessions.find(x => x.slot === 6 && x.alive);
+  assert.ok(customConsole, 'custom console is open in slot 6: ' + JSON.stringify((await invoke('state')).sessions.map(({ slot, provider, alive, restoreError, exitCode }) => ({ slot, provider, alive, restoreError, exitCode }))));
   assert.equal(customConsole.provider, 'custom'); assert.equal(customConsole.cwd, oneOffFolder); assert.equal(customConsole.name, 'One-time command');
   await eventually(async () => (await invoke('session.buffer', customConsole.id)).data.includes('ONE_OFF_CONSOLE'));
   assert.deepEqual((await invoke('state')).settings.consoleDefaults, launchDefaultsBefore);
@@ -445,7 +450,7 @@ async function eventually(predicate, message) {
   for (let i = 2; i <= 9; i++) await invoke('session.create', { provider: 'shell', cwd: root, name: `Console ${i}` });
   const full = await invoke('state'); assert.equal(full.sessions.filter(x => x.alive).length, 9);
   await eventually(async () => await page.locator('#consoles-page .xterm').count() === 9);
-  for (const live of full.sessions.filter(x => x.alive)) await invoke('session.input', { id: live.id, data: `Write-Output ('PANEL_' + '${live.slot}_LIVE')\r` });
+  for (const live of full.sessions.filter(x => x.alive)) await invoke('session.input', { id: live.id, data: shellCommand.join('PANEL_', `${live.slot}_LIVE`) + '\r' });
   await eventually(async () => {
     const contents = await page.locator('#consoles-page .session-card[data-console-id]').evaluateAll(cards => cards.map(card => ({ id: card.dataset.consoleId, text: card.querySelector('.xterm-rows')?.textContent || '' })));
     const live = full.sessions.filter(x => x.alive);
@@ -543,7 +548,7 @@ async function eventually(predicate, message) {
   assert.deepEqual(restored.map(x => [x.slot, x.provider, x.cwd, x.name]), previous.map(x => [x.slot, x.provider, x.cwd, x.name]));
   assert.ok(restored.every(x => !previous.some(old => old.id === x.id)), 'Restored terminals are fresh processes');
   assert.equal((await invoke('state')).workspaceError, null);
-  await invoke('session.input', { id: restored[0].id, data: "Write-Output ('RESTORE_' + 'WORKS')\r" });
+  await invoke('session.input', { id: restored[0].id, data: shellCommand.join('RESTORE_', 'WORKS') + '\r' });
   await eventually(async () => (await invoke('session.buffer', restored[0].id)).data.includes('RESTORE_WORKS'));
   await capture({ path: path.join(artifacts, 'test-restored-consoles.png') });
   await invoke('session.end', restored[4].id);

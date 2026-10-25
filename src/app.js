@@ -67,7 +67,7 @@ let iconSequence = 0;
 const icon = (name, cls = '') => { const id = `accent-icon-${++iconSequence}`; return `<svg class="icon ${cls}" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="url(#${id})" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><defs><linearGradient id="${id}" x1="0" y1="0" x2="24" y2="24" gradientUnits="userSpaceOnUse"><stop class="icon-blue"/><stop offset="1" class="icon-pink"/></linearGradient></defs>${icons[name] || icons.terminal}</svg>`; };
 // The "Pd" tile. Its edge and letters follow the current theme's accents.
 const pdMark = (cls = '') => { const id = `pd-mark-${++iconSequence}`; return `<svg class="pd-mark ${cls}" viewBox="0 0 256 256" aria-hidden="true"><defs><linearGradient id="${id}" x1="20" y1="20" x2="236" y2="236" gradientUnits="userSpaceOnUse"><stop class="icon-blue"/><stop offset="1" class="icon-pink"/></linearGradient></defs><rect x="10" y="10" width="236" height="236" rx="50" fill="#0e0c1c"/><rect x="17" y="17" width="222" height="222" rx="44" fill="none" stroke="url(#${id})" stroke-width="10"/><g fill="none" stroke="url(#${id})" stroke-width="20"><path d="M70 188V76h34a29 29 0 0 1 0 58H70" stroke-linejoin="round"/><circle cx="158" cy="159" r="25"/><path d="M183 72v118"/></g></svg>`; };
-const providerName = value => ({ codex: 'Codex', claude: 'Claude Code', shell: 'PowerShell', custom: 'Custom', openai: 'OpenAI', anthropic: 'Anthropic' })[value] || state?.agents?.find(x => x.id === value)?.name || value;
+const providerName = value => ({ codex: 'Codex', claude: 'Claude Code', shell: state?.platform && state.platform !== 'win32' ? 'Shell' : 'PowerShell', custom: 'Custom', openai: 'OpenAI', anthropic: 'Anthropic' })[value] || state?.agents?.find(x => x.id === value)?.name || value;
 const consoleProviders = () => [...(state?.agents?.length ? state.agents.map(x => x.id) : ['codex', 'claude']), 'shell', 'custom'];
 const number = value => Number.isFinite(value) ? Intl.NumberFormat('en', { notation: value >= 10000 ? 'compact' : 'standard', maximumFractionDigits: 1 }).format(value) : '—';
 const labels = { open: 'Open', active: 'Thinking', ready: 'Ready', attention: 'Needs attention', error: 'Error', ended: 'Ended', recent: 'Recent', interrupted: 'Interrupted' };
@@ -766,6 +766,7 @@ function receive(next) {
   const providerSelect = $('#one-off-console-form [name=provider]');
   if (providerSelect && !$('#console-chooser').open) for (const provider of consoleProviders()) if (!providerSelect.querySelector(`[value="${provider}"]`)) providerSelect.add(new Option(providerName(provider), provider));
   if ($('#workspace-error')) $('#workspace-error').textContent = state.workspaceError || '';
+  document.body.dataset.platform = state.platform || 'win32';
   windowMoving = !!state.transitioning;
   document.body.classList.toggle('window-moving', windowMoving);
   for (const [id, record] of terminals) if (!state.sessions.some(session => session.id === id && isOpenConsole(session))) { record.output.dispose(); record.term.dispose(); record.node.remove(); terminals.delete(id); }

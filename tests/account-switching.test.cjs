@@ -654,7 +654,8 @@ test('phone terminal stream orders queued output before reset and rejects a dela
 
 test('packaged runtime resolves the external draft helper without installation', t => {
   const root = tempRoot('paddock-runtime-fixture-'), runtime = path.join(root, 'resources', 'runtime'); fs.mkdirSync(runtime, { recursive: true });
-  fs.writeFileSync(path.join(runtime, 'node.exe'), 'fixture'); fs.copyFileSync(draftEditor, path.join(runtime, 'draft-editor.cjs')); fs.copyFileSync(path.join(__dirname, '..', 'electron', 'draft-policy.cjs'), path.join(runtime, 'draft-policy.cjs'));
+  const { nodeName } = require('../electron/runtime.cjs');
+  fs.mkdirSync(path.dirname(path.join(runtime, nodeName)), { recursive: true }); fs.writeFileSync(path.join(runtime, nodeName), 'fixture'); fs.copyFileSync(draftEditor, path.join(runtime, 'draft-editor.cjs')); fs.copyFileSync(path.join(__dirname, '..', 'electron', 'draft-policy.cjs'), path.join(runtime, 'draft-policy.cjs'));
   const files = runtimeFiles({ isPackaged: true, resourcesPath: path.join(root, 'resources'), findProgram: () => null });
   assert.equal(files.draftEditor, path.join(runtime, 'draft-editor.cjs'));
   assert.equal(fs.existsSync(files.draftEditor), true);

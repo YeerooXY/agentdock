@@ -51,7 +51,7 @@ class SshHosts {
   save() { atomicJson(this.file, this.items); }
   executable() {
     const file = this.find('ssh');
-    if (!file) throw new Error('Install the OpenSSH Client in Windows optional features.');
+    if (!file) throw new Error(process.platform === 'win32' ? 'Install the OpenSSH Client in Windows optional features.' : 'Install the OpenSSH client (ssh) with your system package manager.');
     return file;
   }
   async scan(raw) {
@@ -61,7 +61,7 @@ class SshHosts {
     const gitScanner = path.join(process.env.ProgramFiles || 'C:\\Program Files', 'Git', 'usr', 'bin', 'ssh-keyscan.exe');
     const program = process.platform === 'win32' && this.find === findProgram && fs.existsSync(gitScanner)
       ? gitScanner : this.find('ssh-keyscan');
-    if (!program) throw new Error('Install the OpenSSH Client in Windows optional features.');
+    if (!program) throw new Error(process.platform === 'win32' ? 'Install the OpenSSH Client in Windows optional features.' : 'Install the OpenSSH client (ssh-keyscan) with your system package manager.');
     let stdout;
     try { ({ stdout } = await this.exec(program, ['-T', '5', '-p', String(value.port), '-t', 'ed25519,ecdsa,rsa', value.host], { windowsHide: true, timeout: 18000, maxBuffer: 64000 })); }
     catch (error) {

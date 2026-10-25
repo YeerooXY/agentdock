@@ -10,7 +10,7 @@
 
 Current previews: **Android 0.6.0-preview.20**, **Windows 0.6.0-preview.21**. Reading, copying, saved drafts and adjustable text size work with older PC hosts. Project/folder selection, current Codex model choices, image attachments and SSH hosts require Windows preview 15. Older hosts retain basic terminal controls. [Android release notes](https://github.com/YeerooXY/agentdock/releases/tag/v0.6.0-preview.20) · [Windows release notes](https://github.com/YeerooXY/agentdock/releases/tag/v0.6.0-preview.21) · [All releases](https://github.com/YeerooXY/agentdock/releases) · [Previous stable desktop-only release](https://github.com/YeerooXY/agentdock/releases/tag/v0.5.0).
 
-A Windows desktop app for agent consoles, projects, shared tools and usage tracking.
+A desktop app for Windows, Linux and macOS: agent consoles, projects, shared tools and usage tracking. Linux and macOS installers come from the next release; until then, run Paddock from source on those systems.
 
 ## Updates
 
@@ -32,6 +32,16 @@ Updates are manual. Preview builds can see newer previews; stable builds only of
 Paddock includes Node.js and its package installer; you do not need a separate Node installation. PowerShell works immediately. Optional agents download from their official installers or npm packages and use your own accounts or API billing. Some agents have newer Windows requirements, shown in setup. Git and other project tools may still be needed by your chosen agent. Additional MCP servers may need their own software.
 
 The wizard offers Codex, Claude Code, Google Antigravity, GitHub Copilot, OpenCode, Cursor, Grok Build, Kiro, Qwen Code, Kimi Code, Cline, Factory Droid, Pi and Gemini CLI. Z.AI/GLM can be connected through OpenCode. Grok and Z.AI also have model API presets in Settings → API. See the [agent setup notes](docs/agent-setup.md) for sources, sign-in and integration details. Other CLIs can use **Custom command**.
+
+### Linux
+
+Download the AppImage, make it executable (`chmod +x Paddock-*-Linux-x64.AppImage`) and run it, or install the `.deb` with `sudo apt install ./Paddock-*-Linux-x64.deb`. Paddock stores keys through your system keyring (GNOME Keyring or KWallet), which most desktop sessions already run. Without one, Paddock refuses to store keys rather than saving them as plain text. Consoles open your login shell. The setup wizard installs agents with each vendor's own Linux installer or npm.
+
+### macOS
+
+Open the `.dmg` for your Mac (`Mac-arm64` for Apple silicon, `Mac-x64` for Intel) and drag Paddock to Applications. The app is not signed yet, so macOS blocks the first launch: open **System Settings → Privacy & Security** and choose **Open Anyway**, or run `xattr -d com.apple.quarantine /Applications/Paddock.app`. Keys are stored in the macOS Keychain. Consoles open your login shell.
+
+### Windows
 
 This release is unsigned, so Windows may show an unknown-publisher or SmartScreen prompt. Only download it from this repository's releases. Existing users keep their settings, keys and saved panels. Uninstalling leaves that local data in `%APPDATA%\Paddock`.
 
@@ -61,7 +71,7 @@ An optional free Duck DNS hostname follows a changing address; its token stays i
 
 ## Run from source
 
-On Windows, with Node.js 24.22.1 and Git installed:
+With Node.js 24.22.1 and Git installed (on Linux also a C++ toolchain: `sudo apt install python3 make g++`, which builds the terminal library):
 
 ```powershell
 git clone https://github.com/YeerooXY/agentdock.git
@@ -76,7 +86,7 @@ To add desktop and Start menu shortcuts, run `powershell -File scripts/desktop-s
 
 ## Build an installer
 
-On Windows x64 with Node.js 24.22.1, run `npm ci`, then `npm run dist`. The installer and `SHA256SUMS.txt` are written to `release/`. `npm run pack` builds an unpacked app for inspection; `npm run test:packaged` tests it with a temporary profile and no system Node on PATH.
+With Node.js 24.22.1, run `npm ci`, then the command for the system you are on: `npm run dist` (Windows x64), `npm run dist:linux` (AppImage and `.deb`) or `npm run dist:mac` (Apple silicon and Intel `.dmg`). Each system builds its own installers. The installers and `SHA256SUMS.txt` are written to `release/`. The CI workflow builds all three when a `v*` tag is pushed or the workflow is run by hand. `npm run pack` builds an unpacked app for inspection; `npm run test:packaged` tests it with a temporary profile and no system Node on PATH.
 
 `powershell -NoProfile -File scripts/test-installer.ps1` also checks installation, the Start menu shortcut and removal. It refuses to run when Paddock is already installed and preserves existing development shortcuts.
 

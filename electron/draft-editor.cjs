@@ -74,7 +74,7 @@ function resolveWindowsShim(executable, env = process.env) {
 function powershellLiteral(value) { return `'${String(value).replaceAll("'", "''")}'`; }
 function runEditor(args) {
   const configured = process.env.PADDOCK_REAL_EDITOR;
-  if (!configured?.trim()) throw new Error('Set VISUAL or EDITOR in Windows before using Ctrl+G. The composer was left unchanged.');
+  if (!configured?.trim()) throw new Error(`Set VISUAL or EDITOR in ${process.platform === 'win32' ? 'Windows' : 'your shell profile'} before using Ctrl+G. The composer was left unchanged.`);
   const commandLine = editorArgs(configured);
   const executable = commandLine.shift(), commandArgs = [...commandLine, ...args];
   const resolved = resolveWindowsShim(executable);

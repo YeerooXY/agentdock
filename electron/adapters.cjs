@@ -12,6 +12,7 @@ function findProgram(name) {
   return (process.env.PATH || '').split(path.delimiter).map(x => path.join(x, name)).find(x => fs.existsSync(x)) || null;
 }
 function nativeCodex() {
+  if (process.platform !== 'win32') return findProgram('codex') || [path.join(os.homedir(), '.local', 'bin', 'codex')].find(file => fs.existsSync(file)) || null;
   const standalone = path.join(process.env.LOCALAPPDATA || '', 'Programs', 'OpenAI', 'Codex', 'bin', 'codex.exe');
   if (fs.existsSync(standalone)) return standalone;
   const direct = findProgram('codex.exe');
@@ -25,11 +26,12 @@ function nativeCodex() {
       if (fs.existsSync(file)) return file;
     }
   }
-  return process.platform === 'win32' ? null : wrapper;
+  return null;
 }
 function findClaude() {
-  const native = findProgram('claude') || [path.join(os.homedir(), '.local', 'bin', 'claude.exe'), path.join(os.homedir(), '.claude', 'local', 'claude.exe')].find(x => fs.existsSync(x));
-  if (native) return { kind: 'native', path: native, label: 'Windows' };
+  const ext = process.platform === 'win32' ? '.exe' : '';
+  const native = findProgram('claude') || [path.join(os.homedir(), '.local', 'bin', 'claude' + ext), path.join(os.homedir(), '.claude', 'local', 'claude' + ext)].find(x => fs.existsSync(x));
+  if (native) return { kind: 'native', path: native, label: { win32: 'Windows', darwin: 'macOS', linux: 'Linux' }[process.platform] || process.platform };
   if (process.platform !== 'win32') return null;
   const list = spawnSync('wsl.exe', ['--list', '--quiet'], { encoding: 'utf16le', windowsHide: true, timeout: 5000 });
   for (const distro of (list.stdout || '').replaceAll('\0', '').split(/\r?\n/).map(x => x.trim()).filter(x => x && !x.startsWith('docker-'))) {

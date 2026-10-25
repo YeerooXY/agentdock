@@ -2,6 +2,7 @@
 const { openPage } = require('./ui-navigation.cjs');
 const { _electron: electron } = require('playwright');
 const assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path');
+const shellCommand = require('./shell-commands.cjs');
 const root = path.resolve(__dirname, '..'), parent = path.join(root, 'test-data');
 fs.mkdirSync(parent, { recursive: true });
 const work = fs.mkdtempSync(path.join(parent, 'setup-desktop-')), profile = path.join(work, 'profile'); fs.mkdirSync(profile);
@@ -46,7 +47,7 @@ let app;
   await page.locator('[data-mobile=close]').first().click();
   const opened = (await call('state')).sessions.filter(x => x.alive);
   assert.equal(opened.length, 1); assert.equal(opened[0].cwd, work); assert.equal(opened[0].provider, 'shell');
-  await call('session.input', { id: opened[0].id, data: "Write-Output ('SETUP_' + 'LAUNCH_OK')\r" });
+  await call('session.input', { id: opened[0].id, data: shellCommand.join('SETUP_', 'LAUNCH_OK') + '\r' });
   await page.waitForFunction(async id => (await window.dock.call('session.buffer', id)).value.data.includes('SETUP_LAUNCH_OK'), opened[0].id);
   await openPage(page, 'console-settings'); await page.locator('[data-action=agent-setup]').click();
   await page.keyboard.press('Escape'); assert.equal(await page.locator('#first-run').isVisible(), false);

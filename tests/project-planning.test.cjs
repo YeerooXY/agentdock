@@ -121,7 +121,9 @@ test('discussion prompt is a Codex argument and is never replayed when resuming 
 
 test('Claude planning prompts survive native, PowerShell and WSL launch arguments without input injection', async t => {
   const f = fixture(t);
-  for (const claude of [{ kind: 'native', path: 'C:\\Programs\\claude.exe' }, { kind: 'native', path: 'C:\\Programs\\claude.cmd' }, { kind: 'wsl', path: '/home/test/.local/bin/claude', distro: 'Ubuntu' }]) {
+  const installs = [{ kind: 'native', path: 'C:\\Programs\\claude.exe' }, { kind: 'native', path: 'C:\\Programs\\claude.cmd' }, { kind: 'wsl', path: '/home/test/.local/bin/claude', distro: 'Ubuntu' }];
+  // PowerShell wrappers and WSL exist only on Windows.
+  for (const claude of process.platform === 'win32' ? installs : [{ kind: 'native', path: '/opt/claude/bin/claude' }]) {
     const launches = [];
     const sessions = new Sessions(f.root, { projects: f.store, claude, findProgram: () => process.execPath, pty: { spawn(executable, args) { launches.push({ executable, args }); return { onData() {}, onExit() {}, write() { assert.fail('No input injection'); }, kill() {} }; } } });
     await sessions.create({ provider: 'claude', cwd: f.folder, projectId: f.p.id, planDiscussion: 'infrastructure' });

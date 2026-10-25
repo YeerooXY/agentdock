@@ -1,0 +1,10 @@
+node_modules
+.build
+dist
+release
+test-data
+artifacts
+mobile/*
+!mobile/assets
+.git
+HANDOFF.md

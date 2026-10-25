@@ -1,4 +1,5 @@
 'use strict';
+const { secureStore } = require('./platform.cjs');
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
@@ -47,7 +48,7 @@ class Vault {
     const value = this.entries[provider];
     if (!value) throw new Error('Save a key for this provider in the vault first.');
     try { return this.crypto.decryptString(Buffer.from(value.encrypted, 'base64')); }
-    catch { throw new Error('This key cannot be decrypted by this Windows account. Save it again.'); }
+    catch { throw new Error(`This key cannot be decrypted with ${secureStore()}. Save it again.`); }
   }
   remove(provider) { const next = { ...this.entries }; delete next[provider]; atomicJson(this.file, next); this.entries = next; }
 }

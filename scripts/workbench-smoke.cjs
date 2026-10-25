@@ -4,6 +4,7 @@ const { _electron: electron } = require('playwright');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const shellCommand = require('./shell-commands.cjs');
 const http = require('node:http');
 const root = path.resolve(__dirname,'..'), parent=path.join(root,'test-data');
 fs.mkdirSync(parent,{recursive:true}); const work=fs.mkdtempSync(path.join(parent,'workbench-desktop-')), profile=path.join(work,'profile'), project=path.join(work,'project');
@@ -25,7 +26,7 @@ async function eventually(check, message='Timed out') {const end=Date.now()+4500
   const call=(method,payload)=>page.evaluate(async([m,p])=>{const r=await window.dock.call(m,p);if(!r.ok)throw Error(r.error);return r.value;},[method,payload]);
   const one=await call('session.create',{slot:1,provider:'shell',cwd:project,name:'Trader'}),two=await call('session.create',{slot:9,provider:'shell',cwd:project,name:'Game'});
   await call('slot.name',{slot:1,name:'Trader',sessionId:one.id});await call('slot.name',{slot:9,name:'Game',sessionId:two.id});
-  await call('session.input',{id:one.id,data:"Write-Output 'MOVE_MARKER_917'\r"});
+  await call('session.input',{id:one.id,data:shellCommand.say('MOVE_MARKER_917')+'\r'});
   await eventually(async()=>(await call('session.buffer',one.id)).data.includes('MOVE_MARKER_917'));
   await page.locator(`[data-console-drag="${one.id}"]`).dragTo(page.locator('.session-card[data-slot="9"]'));
   await eventually(async()=>(await call('state')).sessions.find(x=>x.id===one.id).slot===9,'Console drag did not swap');
@@ -40,7 +41,7 @@ async function eventually(check, message='Timed out') {const end=Date.now()+4500
   assert.equal(await page.locator('nav [data-page="inbox"], nav [data-page="reviews"]').count(), 0);
   assert.equal('inbox' in (await call('state')).workbench, false);
   const bridgeFile=path.join(profile,'fixture-bridge.json');
-  await call('session.input',{id:one.id,data:`@{url=$env:PADDOCK_BRIDGE_URL;token=$env:PADDOCK_BRIDGE_TOKEN} | ConvertTo-Json -Compress | Set-Content -LiteralPath '${bridgeFile.replaceAll("'","''")}'\r`});
+  await call('session.input',{id:one.id,data:shellCommand.saveBridge(bridgeFile)+'\r'});
   await eventually(()=>fs.existsSync(bridgeFile));
   const grant=JSON.parse(fs.readFileSync(bridgeFile,'utf8').replace(/^\uFEFF/,''));
   async function tool(name,args={}) {

@@ -28,7 +28,7 @@ export async function storeKey(container, call) {
 }
 export function savedKeys(state, e) {
   if (!state.vault.entries.length) return '';
-  return `<section class="surface saved-key-list"><h2>Saved keys</h2><p class="field-hint">Encrypted with your Windows account. Replace a key from the tool or API that uses it.</p><div class="saved-keys">${state.vault.entries.map(x => `<div class="saved-key"><div><strong>${e(x.label)}</strong><small>${e(x.id)} · ${new Date(x.savedAt).toLocaleDateString()}</small></div><button class="subtle danger" data-remove-key="${e(x.id)}">Remove</button></div>`).join('')}</div></section>`;
+  return `<section class="surface saved-key-list"><h2>Saved keys</h2><p class="field-hint">Encrypted with ${({ win32: 'your Windows account', darwin: 'the macOS Keychain' })[state.platform] || 'your system keyring'}. Replace a key from the tool or API that uses it.</p><div class="saved-keys">${state.vault.entries.map(x => `<div class="saved-key"><div><strong>${e(x.label)}</strong><small>${e(x.id)} · ${new Date(x.savedAt).toLocaleDateString()}</small></div><button class="subtle danger" data-remove-key="${e(x.id)}">Remove</button></div>`).join('')}</div></section>`;
 }
 
 export function integrationCards(state, e) {

@@ -9,4 +9,4 @@ Local Windows desktop app. Keep user-facing copy short, direct and factual. Pres
 - The API ledger covers requests made through this app. Costs are estimates from explicitly configured rates, not provider invoices.
 - Never run paid model requests during tests. Use mocked HTTP and temporary data directories.
 - Hide/collapse must preserve sessions. Killing sessions requires an explicit UI action.
-- Use npm run build, npm test and npm run test:desktop for relevant changes.
+- Use npm run build, npm test and npm run test:desktop for relevant changes. Run desktop tests headless with npm run test:linux (Docker) so no windows open on the user's screen; GitHub Actions runs them on Windows and macOS.

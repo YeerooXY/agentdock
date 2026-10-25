@@ -124,7 +124,8 @@ function runInstaller(command, args, options) {
 }
 
 function installEnvironment(runtime, directory, agentId) {
-  const allow = new Set(['systemroot','windir','comspec','path','pathext','temp','tmp','userprofile','homedrive','homepath','localappdata','appdata','programfiles','programfiles(x86)','programdata','processor_architecture','number_of_processors']);
+  const allow = new Set(['systemroot','windir','comspec','path','pathext','temp','tmp','userprofile','homedrive','homepath','localappdata','appdata','programfiles','programfiles(x86)','programdata','processor_architecture','number_of_processors',
+    'home','user','logname','shell','lang','lc_all','tmpdir','xdg_data_home','xdg_config_home','xdg_cache_home']);
   const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => allow.has(key.toLowerCase()) && key.toLowerCase() !== 'path'));
   env.PATH = path.dirname(runtime.node) + path.delimiter + (process.env.PATH || '');
   // Public packages only; do not inherit registry tokens or a user's npmrc.
@@ -170,11 +171,12 @@ class CliSetup {
       kiro: [path.join(local, 'Kiro-Cli'), path.join(process.env.ProgramFiles || '', 'Kiro-Cli')],
       kimi: [path.join(this.home, '.kimi-code', 'bin')]
     };
-    const dirs = [path.join(this.directory, agent.id, 'node_modules', '.bin'), ...(vendorDirs[agent.id] || []), path.join(this.home, '.local', 'bin'), path.join(local, 'Programs', agent.name)];
+    if (this.platform !== 'win32') Object.assign(vendorDirs, { cursor: [path.join(this.home, '.local', 'bin')], kiro: [], kimi: [path.join(this.home, '.kimi-code', 'bin')], antigravity: [] });
+    const dirs = [path.join(this.directory, agent.id, 'node_modules', '.bin'), ...(vendorDirs[agent.id] || []), path.join(this.home, '.local', 'bin'), ...(this.platform === 'win32' ? [path.join(local, 'Programs', agent.name)] : [])];
     for (const dir of dirs) {
       const cursorVendorDir = agent.id === 'cursor' && (dir === vendorDirs.cursor[0] || dir === vendorDirs.cursor[1]);
       const candidates = cursorVendorDir ? ['cursor-agent', 'agent'] : names;
-      for (const name of candidates) for (const ext of ['.exe', '.cmd', '.ps1', '']) {
+      for (const name of candidates) for (const ext of this.platform === 'win32' ? ['.exe', '.cmd', '.ps1', ''] : ['']) {
         const file = path.join(dir, name + ext);
         try { if (fs.statSync(file).isFile()) return file; } catch {}
       }
@@ -196,11 +198,12 @@ class CliSetup {
   }
   executable(id) { const agent = byId.get(id); if (!agent) return null; const file = this.locate(agent); this.installed.set(id, file); return file; }
   snapshot() {
-    return catalog.map(({ script, installArgs, npm, ignoreScripts, aliases, args, mcp, ...agent }) => ({ ...agent,
+    const windows = this.platform === 'win32';
+    return catalog.map(({ script, shScript, installArgs, npm, ignoreScripts, aliases, args, mcp, ...agent }) => ({ ...agent,
       installed: !!this.installed.get(agent.id), job: this.jobs[agent.id] || null,
-      installable: this.platform === 'win32' && (!agent.windowsBuild || this.build >= agent.windowsBuild),
-      requirement: agent.windowsBuild ? agent.windowsBuild >= 26100 ? 'Windows 11 24H2 or newer' : 'Windows 11 or newer' : 'Windows 10/11',
-      installSource: script || `https://www.npmjs.com/package/${npm}`
+      installable: windows ? !agent.windowsBuild || this.build >= agent.windowsBuild : ['darwin', 'linux'].includes(this.platform) && !!(shScript || npm),
+      requirement: !windows ? 'macOS or Linux' : agent.windowsBuild ? agent.windowsBuild >= 26100 ? 'Windows 11 24H2 or newer' : 'Windows 11 or newer' : 'Windows 10/11',
+      installSource: (windows ? script : shScript) || `https://www.npmjs.com/package/${npm}`
     }));
   }
   changed() { atomicJson(this.file, this.jobs); this.onChange(); }
@@ -228,19 +231,25 @@ class CliSetup {
           this.changed(); continue;
         }
         this.jobs[id] = { state: 'installing' }; this.changed();
-        const directory = path.join(this.directory, id), source = agent.script ? agent.script.split('?')[0] : `https://www.npmjs.com/package/${agent.npm}`;
-        const downloadEntry = { name: agent.name + (agent.script ? ' installer workspace' : ''), kind: agent.script ? 'installer' : 'npm', source, directory };
+        const script = this.platform === 'win32' ? agent.script : agent.shScript;
+        const directory = path.join(this.directory, id), source = script ? script.split('?')[0] : `https://www.npmjs.com/package/${agent.npm}`;
+        const downloadEntry = { name: agent.name + (script ? ' installer workspace' : ''), kind: script ? 'installer' : 'npm', source, directory };
         let installedExecutable = null;
         try {
           fs.mkdirSync(directory, { recursive: true });
           this.downloads.record({ ...downloadEntry, state: 'installing' });
           fs.writeFileSync(path.join(directory, 'npmrc'), '', { mode: 0o600 }); fs.writeFileSync(path.join(directory, 'global-npmrc'), '', { mode: 0o600 });
           const env = installEnvironment(this.runtime, directory, agent.id);
-          if (agent.script) {
+          if (script && this.platform === 'win32') {
             const installer = path.join(directory, 'install.ps1');
-            fs.writeFileSync(installer, await this.download(agent.script), { mode: 0o600 });
+            fs.writeFileSync(installer, await this.download(script), { mode: 0o600 });
             const args = ['-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', installer, ...(agent.installArgs || [])];
             await this.run(shell(), args, { cwd: directory, env });
+          } else if (script) {
+            // The vendor's own shell installer, run with bash and no terminal.
+            const installer = path.join(directory, 'install.sh');
+            fs.writeFileSync(installer, await this.download(script), { mode: 0o600 });
+            await this.run('/bin/bash', [installer], { cwd: directory, env });
           } else {
             if (!this.runtime.npm || !fs.existsSync(this.runtime.npm)) throw new Error('Paddock’s package installer is missing. Reinstall Paddock or open the setup guide.');
             const args = [this.runtime.npm, 'install', '--prefix', directory, '--no-audit', '--no-fund', '--registry=https://registry.npmjs.org', '--save-exact', agent.ignoreScripts ? '--ignore-scripts' : '--dangerously-allow-all-scripts', agent.npm + '@latest'];
@@ -249,7 +258,7 @@ class CliSetup {
           const executable = this.locate(agent);
           if (!executable) throw new Error('The installer finished, but the command was not found. Check again or open the setup guide.');
           this.installed.set(id, executable);
-          if (agent.script && path.isAbsolute(executable)) installedExecutable = executable;
+          if (script && path.isAbsolute(executable)) installedExecutable = executable;
           await this.verify(executable, ['--version'], { cwd: directory, env });
           this.jobs[id] = { state: 'installed' };
           this.downloads.record({ ...downloadEntry, ...(installedExecutable ? { executable: installedExecutable } : {}) });

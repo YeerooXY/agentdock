@@ -50,7 +50,7 @@ test('individual console end confirmation defaults on and accepts only an explic
 });
 
 test('source helpers prefer the prepared Node runtime and retain PATH fallback before preparation', t => {
-  const prepared = path.resolve(__dirname, '..', '.build', 'runtime', 'node.exe');
+  const prepared = path.resolve(__dirname, '..', '.build', 'runtime', require('../electron/runtime.cjs').nodeName);
   const exists = fs.existsSync;
   let ready = true;
   t.mock.method(fs, 'existsSync', file => file === prepared ? ready : exists(file));
@@ -63,7 +63,8 @@ test('packaged sessions use their bundled runtime and helpers without Node on PA
   const parent = path.resolve(__dirname, '..', 'test-data'); fs.mkdirSync(parent, { recursive: true });
   const root = fs.mkdtempSync(path.join(parent, 'packaged paths '));
   t.after(() => { assert.equal(path.dirname(fs.realpathSync(root)), fs.realpathSync(parent)); fs.rmSync(root, { recursive: true, force: true }); });
-  fs.mkdirSync(path.join(root, 'runtime')); fs.writeFileSync(path.join(root, 'runtime', 'node.exe'), 'fixture');
+  const bundledNode = path.join(root, 'runtime', require('../electron/runtime.cjs').nodeName);
+  fs.mkdirSync(path.dirname(bundledNode), { recursive: true }); fs.writeFileSync(bundledNode, 'fixture');
   const runtime = runtimeFiles({ isPackaged: true, resourcesPath: root, findProgram: () => { throw new Error('Must not search PATH'); } });
   const calls = [];
   const sessions = new Sessions(root, {

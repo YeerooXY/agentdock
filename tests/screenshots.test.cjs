@@ -67,7 +67,7 @@ test('refuses SSH consoles, closed consoles and missing screenshots', async t =>
   assert.throws(() => shots.pathFor(open), /moved or deleted/);
 });
 
-test('WSL Claude consoles receive a /mnt path', async t => {
+test('WSL Claude consoles receive a /mnt path', { skip: process.platform !== 'win32' && 'WSL is Windows only' }, async t => {
   const { folder, shots } = fixture(t);
   fs.writeFileSync(path.join(folder, 'a.png'), 'a'); await shots.refresh();
   const value = shots.pathFor({ alive: true, provider: 'claude', claudeTarget: { kind: 'wsl' } });
@@ -77,7 +77,7 @@ test('WSL Claude consoles receive a /mnt path', async t => {
 test('plain PowerShell/CMD consoles are refused with a clear message', async t => {
   const { folder, shots } = fixture(t);
   fs.writeFileSync(path.join(folder, 'a.png'), 'a'); await shots.refresh();
-  assert.throws(() => shots.pathFor({ alive: true, provider: 'shell' }), /PowerShell and CMD cannot open images/);
+  assert.throws(() => shots.pathFor({ alive: true, provider: 'shell' }), process.platform === 'win32' ? /PowerShell and CMD cannot open images/ : /plain shell cannot open images/);
   assert.match(shots.pathFor({ alive: true, provider: 'kiro' }), /a\.png/);
 });
 
@@ -88,5 +88,5 @@ test('Ctrl+V pastes a clipboard image as a saved path and text as text', async t
   clipboard.image = 'pasted';
   const value = await shots.paste(open);
   assert.ok(value.includes(path.join(root, 'screenshots')));
-  await assert.rejects(shots.paste({ alive: true, provider: 'shell' }), /PowerShell and CMD/);
+  await assert.rejects(shots.paste({ alive: true, provider: 'shell' }), /cannot open images/);
 });

@@ -1,4 +1,5 @@
 'use strict';
+const { encryptionUnavailable } = require('./platform.cjs');
 const { providers } = require('./cli-catalog.cjs');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -26,7 +27,7 @@ class Workspace {
     try {
       const text = JSON.stringify(this.sessions.savedConsoles());
       if (text + JSON.stringify(this.sessions.grid) === this.lastSaved) return;
-      if (!this.available()) throw new Error('Windows encryption is unavailable. Previous consoles could not be saved.');
+      if (!this.available()) throw new Error(encryptionUnavailable('Previous consoles could not be saved.'));
       atomicJson(this.file, { version: 1, grid: this.sessions.grid, savedAt: Date.now(), encrypted: this.crypto.encryptString(text).toString('base64') });
       this.lastSaved = text + JSON.stringify(this.sessions.grid);
       this.onError(null);
@@ -38,7 +39,7 @@ class Workspace {
     try {
       const saved = readJson(this.file, null);
       if (!saved) return;
-      if (!this.available()) throw new Error('Windows encryption is unavailable.');
+      if (!this.available()) throw new Error(encryptionUnavailable());
       if (saved.version !== 1 || typeof saved.encrypted !== 'string') throw new Error('Unsupported saved workspace.');
       const entries = JSON.parse(this.crypto.decryptString(Buffer.from(saved.encrypted, 'base64')));
       const grid = gridSize(saved.grid), capacity = grid.columns * grid.rows;

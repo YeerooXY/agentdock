@@ -1,4 +1,5 @@
 'use strict';
+const shellCommand = require('./shell-commands.cjs');
 const { openPage } = require('./ui-navigation.cjs');
 const assert = require('node:assert/strict');
 
@@ -51,8 +52,8 @@ async function checkVimControls({ page, app, invoke, eventually, capture }) {
   await eventually(async () => (await invoke('state')).sessions.some(x => x.alive && x.slot === 9));
   const created = (await invoke('state')).sessions.find(x => x.alive && x.slot === 9);
   assert.equal(created.provider, 'shell'); assert.equal(created.name, 'Vim workspace');
-  await eventually(async () => await mode() === 'insert' && (await invoke('session.buffer', created.id)).data.includes('PS '));
-  await page.keyboard.type("Write-Output ('VIM_' + 'hjkl123')"); await key('Enter');
+  await eventually(async () => await mode() === 'insert' && shellCommand.prompt((await invoke('session.buffer', created.id)).data));
+  await page.keyboard.type(shellCommand.join('VIM_', 'hjkl123')); await key('Enter');
   await eventually(async () => (await invoke('session.buffer', created.id)).data.includes('VIM_hjkl123'));
   await page.evaluate(() => {
     window.vimPassThrough = [];
@@ -104,9 +105,10 @@ async function checkVimControls({ page, app, invoke, eventually, capture }) {
   await normal(); await sequence('gs'); await openPage(page, 'console-settings'); await page.locator('[data-setting=vimControls]').waitFor();
   await key('Shift+G');
   assert.ok(await page.locator('.settings-stage').evaluate(el => el.scrollTop > 0));
-  await sequence('gg'); assert.equal(await page.locator('.settings-stage').evaluate(el => el.scrollTop), 0);
+  // Scrolling can still be settling when the key returns; wait for the final position.
+  await sequence('gg'); await eventually(async () => await page.locator('.settings-stage').evaluate(el => el.scrollTop) === 0);
   await key('Control+d'); assert.ok(await page.locator('.settings-stage').evaluate(el => el.scrollTop > 0));
-  await key('Control+u'); assert.equal(await page.locator('.settings-stage').evaluate(el => el.scrollTop), 0);
+  await key('Control+u'); await eventually(async () => await page.locator('.settings-stage').evaluate(el => el.scrollTop) === 0);
   await sequence('gc'); await eventually(async () => await page.locator('#consoles-page').isVisible());
   await key('d'); await eventually(async () => (await invoke('state')).mode === 'hud' && !(await invoke('state')).transitioning);
   await key('1'); await key('l'); assert.equal(await slot(), '2');

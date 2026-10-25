@@ -103,12 +103,13 @@ for (const protocol of ['responses', 'anthropic', 'chat']) test(`${protocol} API
 });
 test('known CLI adapters receive the same context and MCP bridge without vault credentials in arguments', async t => {
   const { root, hub, secret } = fixture(t); await hub.start(); const launched = [];
-  const sessions = new Sessions(root, { hub, claude: { kind: 'wsl', distro: 'Ubuntu', path: '/home/test/.local/bin/claude' }, nativeCodex: () => 'C:\\codex.exe', findProgram: () => 'C:\\Program Files\\nodejs\\node.exe', pty: { spawn(executable, args, options) { launched.push({ executable, args, options }); return { onData() {}, onExit() {}, kill() {} }; } } });
+  const windows = process.platform === 'win32';
+  const sessions = new Sessions(root, { hub, claude: windows ? { kind: 'wsl', distro: 'Ubuntu', path: '/home/test/.local/bin/claude' } : { kind: 'native', path: '/opt/claude/bin/claude' }, nativeCodex: () => 'C:\\codex.exe', findProgram: () => 'C:\\Program Files\\nodejs\\node.exe', pty: { spawn(executable, args, options) { launched.push({ executable, args, options }); return { onData() {}, onExit() {}, kill() {} }; } } });
   await sessions.create({ provider: 'codex', cwd: root, permissions: 'unrestricted' });
   await sessions.create({ provider: 'claude', cwd: root, permissions: 'unrestricted' });
   assert.ok(launched[0].args.some(x => x.startsWith('developer_instructions=')));
   assert.ok(launched[0].args.some(x => x.startsWith('mcp_servers.paddock.command=')));
-  assert.equal(launched[1].executable, 'wsl.exe'); assert.ok(launched[1].args.includes('--append-system-prompt-file')); assert.ok(launched[1].args.includes('--mcp-config')); assert.ok(launched[1].args.includes('--dangerously-skip-permissions'));
+  assert.equal(launched[1].executable, windows ? 'wsl.exe' : '/opt/claude/bin/claude'); assert.ok(launched[1].args.includes('--append-system-prompt-file')); assert.ok(launched[1].args.includes('--mcp-config')); assert.ok(launched[1].args.includes('--dangerously-skip-permissions'));
   assert.ok(!JSON.stringify(launched).includes(secret));
   assert.ok(!JSON.stringify(launched.map(x => x.args)).includes(launched[0].options.env.PADDOCK_BRIDGE_TOKEN));
 });

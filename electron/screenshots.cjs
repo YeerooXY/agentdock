@@ -18,7 +18,11 @@ class Screenshots extends EventEmitter {
     super();
     this.clipboard = clipboard; this.nativeImage = nativeImage;
     this.saved = path.join(root, 'screenshots');
-    this.folders = folders || [path.join(os.homedir(), 'Pictures', 'Screenshots'), path.join(os.homedir(), 'OneDrive', 'Pictures', 'Screenshots')];
+    // Windows and GNOME save to Pictures/Screenshots; macOS saves to the Desktop.
+    this.folders = folders || (process.platform === 'darwin' ? [path.join(os.homedir(), 'Desktop'), path.join(os.homedir(), 'Pictures', 'Screenshots')]
+      : [path.join(os.homedir(), 'Pictures', 'Screenshots'), path.join(os.homedir(), 'OneDrive', 'Pictures', 'Screenshots'), path.join(os.homedir(), 'Pictures')]);
+    // Shared folders such as the Desktop count only files named as screenshots.
+    this.namedOnly = new Set(folders ? [] : [path.join(os.homedir(), 'Desktop'), path.join(os.homedir(), 'Pictures')]);
     this.clip = null; this.latest = null; this.thumbs = new Map(); this.watchers = [];
   }
   start() {
@@ -34,7 +38,7 @@ class Screenshots extends EventEmitter {
     for (const folder of this.folders) {
       let names; try { names = fs.readdirSync(folder); } catch { continue; }
       for (const name of names) {
-        if (!IMAGE.test(name)) continue;
+        if (!IMAGE.test(name) || (this.namedOnly.has(folder) && !/^screen ?shot/i.test(name))) continue;
         const file = path.join(folder, name);
         try { const stat = fs.statSync(file); if (stat.isFile() && (!best || stat.mtimeMs > best.at)) best = { file, at: stat.mtimeMs, name }; } catch {}
       }
@@ -103,7 +107,7 @@ class Screenshots extends EventEmitter {
   check(session) {
     if (!session?.alive) throw new Error('Choose an open console first.');
     if (session.remote) throw new Error('Screenshots stay on this PC. SSH consoles cannot open PC files yet.');
-    if (!agent(session.provider)) throw new Error('PowerShell and CMD cannot open images. Paste into an agent console such as Claude, Codex or Kiro.');
+    if (!agent(session.provider)) throw new Error(`${process.platform === 'win32' ? 'PowerShell and CMD' : 'A plain shell'} cannot open images. Paste into an agent console such as Claude, Codex or Kiro.`);
   }
   // Ctrl+V in an agent console: a clipboard image becomes a saved file path,
   // anything else pastes as text. Shell consoles keep their own Ctrl+V.

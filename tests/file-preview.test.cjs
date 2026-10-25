@@ -27,8 +27,13 @@ test('large text is truncated and line suffixes are ignored', t => {
   fs.writeFileSync(path.join(root, 'big.log'), 'x'.repeat(300 * 1024));
   const big = preview('big.log', root);
   assert.equal(big.truncated, true); assert.equal(big.text.length, 256 * 1024);
-  assert.equal(resolve('"src\\app.js:12:4",', 'C:\\work'), path.resolve('C:\\work', 'src\\app.js'));
-  assert.equal(resolve('C:\\a\\b.md'), path.resolve('C:\\a\\b.md'));
+  if (process.platform === 'win32') {
+    assert.equal(resolve('"src\\app.js:12:4",', 'C:\\work'), path.resolve('C:\\work', 'src\\app.js'));
+    assert.equal(resolve('C:\\a\\b.md'), path.resolve('C:\\a\\b.md'));
+  } else {
+    assert.equal(resolve('"src/app.js:12:4",', '/work'), path.resolve('/work', 'src/app.js'));
+    assert.equal(resolve('/a/b.md'), path.resolve('/a/b.md'));
+  }
 });
 
 test('finds Windows, quoted, relative and wrapped paths but not URLs', async () => {

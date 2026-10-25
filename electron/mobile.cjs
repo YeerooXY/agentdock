@@ -1,4 +1,5 @@
 'use strict';
+const { encryptionUnavailable } = require('./platform.cjs');
 const https = require('node:https');
 const os = require('node:os');
 const path = require('node:path');
@@ -91,7 +92,7 @@ class MobileCompanion extends EventEmitter {
     this.scheduleState(); return true;
   }
   persist() {
-    if (!this.available()) throw new Error('Windows credential encryption is unavailable.');
+    if (!this.available()) throw new Error(encryptionUnavailable());
     this.config.encrypted = this.crypto.encryptString(JSON.stringify(this.private)).toString('base64'); atomicJson(this.file, this.config); this.emit('changed');
   }
   snapshot() { const p = this.pendingPairing; return { notice: this.notice || '', name: this.name, enabled: !!this.server, host: this.config.host, port: this.config.port, mode: this.config.mode || 'local', publicHost: this.config.publicHost || '', externalPort: this.config.externalPort || 47831, routerMode: this.config.routerMode || 'manual', duckKeyId: this.config.duckKeyId || '', network: this.network.snapshot(), interfaces: interfaces(), error: this.error, devices: this.private.devices.map(({ id, name, at, directAlerts, lastInternetAt }) => ({ id, name, at, lastInternetAt, alerts: !!directAlerts, connected: [...this.clients].some(x => x.device.id === id) })), pairingExpires: this.pairing?.expires || 0, pendingPairing: p && p.expires > Date.now() && ['pending', 'approved'].includes(p.state) ? { id: p.id, name: p.name, code: p.code, expires: p.expires, state: p.state } : null, bytes: this.counters }; }
@@ -99,7 +100,7 @@ class MobileCompanion extends EventEmitter {
     if (!enabled) { await this.stop(); this.config.enabled = false; this.persist(); return; }
     if (!interfaces().some(x => x.address === host) || !isPrivate(host)) throw new Error('Choose this PC’s private network address.');
     if (!Number.isInteger(port) || port < 1024 || port > 65535) throw new Error('Use a port from 1024 to 65535.');
-    if (!this.available()) throw new Error('Windows credential encryption is unavailable.');
+    if (!this.available()) throw new Error(encryptionUnavailable());
     const options = connectionOptions(remote);
     if (name !== undefined) options.name = deviceName(name);
     if (options.mode === 'tailscale' && !isTailscale(host)) throw new Error('Choose this PC’s Tailscale address (100.x). Install Tailscale and sign in if none is listed.');
@@ -110,7 +111,7 @@ class MobileCompanion extends EventEmitter {
   }
   async start() {
     if (!this.config.enabled || this.server) return;
-    if (!this.available()) throw new Error('Windows credential encryption is unavailable.');
+    if (!this.available()) throw new Error(encryptionUnavailable());
     if (!interfaces().some(x => x.address === this.config.host)) { this.error = 'That network address is unavailable. Choose another address in Phone setup.'; this.emit('changed'); return; }
     if (!this.private.identity) {
       const pems = await require('selfsigned').generate([{ name: 'commonName', value: 'Paddock' }], { keyType: 'ec', curve: 'P-256', algorithm: 'sha256', notBeforeDate: new Date(Date.now() - 60000), notAfterDate: new Date(Date.now() + 5 * 365 * 86400000) });

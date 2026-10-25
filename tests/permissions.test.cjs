@@ -49,7 +49,7 @@ test('unrestricted Claude works with native executable and PowerShell wrapper pa
     assert.match(calls[0].args.join(' '), /--settings/);
     const settings = JSON.parse(fs.readFileSync(path.join(root, 'sessions', session.id, 'claude-settings.json'), 'utf8'));
     assert.ok(settings.hooks.Stop); assert.ok(settings.statusLine);
-    if (executable.endsWith('.cmd')) assert.match(calls[0].args.at(-1), /User''s Apps/);
+    if (executable.endsWith('.cmd') && process.platform === 'win32') assert.match(calls[0].args.at(-1), /User''s Apps/);
     else assert.equal(calls[0].executable, executable);
   }
 });
@@ -62,7 +62,8 @@ test('permission flags are not injected into shell or custom commands', async ()
   }
   for (const call of calls) assert.ok(!call.args.some(x => /dangerously/.test(x)));
   const args = calls[1].args;
-  assert.equal(Buffer.from(args[args.indexOf('-EncodedCommand') + 1], 'base64').toString('utf16le'), "Write-Output 'TEST_ONLY'");
+  if (process.platform === 'win32') assert.equal(Buffer.from(args[args.indexOf('-EncodedCommand') + 1], 'base64').toString('utf16le'), "Write-Output 'TEST_ONLY'");
+  else { assert.equal(args[1], '-c'); assert.ok(args[2].startsWith("Write-Output 'TEST_ONLY'\n"), 'the custom command runs first, then the shell stays open'); }
 });
 
 test('unknown permission values are rejected before starting a process', async () => {

@@ -13,7 +13,10 @@
     "prepare:runtime": "node scripts/prepare-runtime.cjs",
     "pack": "npm run build && npm run prepare:runtime && electron-builder --dir --win --x64",
     "dist": "npm run build && npm run prepare:runtime && electron-builder --win --x64 --publish never && node scripts/checksum.cjs",
-    "test:packaged": "node scripts/packaged-smoke.cjs"
+    "dist:linux": "npm run build && npm run prepare:runtime && electron-builder --linux --x64 --publish never && node scripts/checksum.cjs",
+    "dist:mac": "npm run build && PADDOCK_ARCH=arm64 npm run prepare:runtime && electron-builder --mac --arm64 --publish never && PADDOCK_ARCH=x64 npm run prepare:runtime && electron-builder --mac --x64 --publish never && node scripts/checksum.cjs",
+    "test:packaged": "node scripts/packaged-smoke.cjs",
+    "test:linux": "docker build -q -f scripts/linux/Dockerfile -t paddock-linux . && docker run --rm --shm-size=1g paddock-linux"
   },
   "devDependencies": {
     "@meshy-ai/meshy-mcp-server": "0.6.4",

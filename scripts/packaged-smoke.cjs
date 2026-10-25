@@ -15,12 +15,17 @@ const work = fs.mkdtempSync(path.join(parent, 'Installed Paddock '));
 const dataDir = path.join(work, 'profile'); fs.mkdirSync(dataDir);
 const suppliedApp = process.argv.find(arg => arg.startsWith('--app='))?.slice(6);
 const keepTestData = process.argv.includes('--keep-test-data');
+const windows = process.platform === 'win32', mac = process.platform === 'darwin';
+// electron-builder's unpacked output for this system.
+const unpacked = windows ? 'win-unpacked' : mac ? `mac${process.arch === 'arm64' ? '-arm64' : ''}` : 'linux-unpacked';
 const install = suppliedApp ? path.dirname(path.resolve(suppliedApp)) : path.join(work, 'Program Files', 'Paddock');
-const executablePath = suppliedApp ? path.resolve(suppliedApp) : path.join(install, 'Paddock.exe');
+const executablePath = suppliedApp ? path.resolve(suppliedApp) : path.join(install, windows ? 'Paddock.exe' : mac ? 'Paddock.app/Contents/MacOS/Paddock' : 'paddock');
+const resources = mac ? path.join(path.dirname(path.dirname(executablePath)), 'Resources') : path.join(install, 'resources');
 const systemRoot = process.env.SystemRoot || 'C:\\Windows';
 // Exclude developer runtimes and npm from PATH, as on a computer without Node.
 const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !['path', 'userprofile', 'home', 'appdata', 'localappdata', 'electron_run_as_node', 'node_options'].includes(key.toLowerCase())));
-Object.assign(env, { PATH: `${systemRoot}\\System32;${systemRoot}\\System32\\WindowsPowerShell\\v1.0`, USERPROFILE: work, APPDATA: path.join(work, 'Roaming'), LOCALAPPDATA: path.join(work, 'Local') });
+Object.assign(env, windows ? { PATH: `${systemRoot}\\System32;${systemRoot}\\System32\\WindowsPowerShell\\v1.0`, USERPROFILE: work, APPDATA: path.join(work, 'Roaming'), LOCALAPPDATA: path.join(work, 'Local') }
+  : { PATH: '/usr/bin:/bin', HOME: work, SHELL: '/bin/bash' });
 let app, client, server;
 async function eventually(predicate) {
   const end = Date.now() + 15000;
@@ -28,24 +33,28 @@ async function eventually(predicate) {
   throw new Error('Timed out waiting for the packaged app');
 }
 (async () => {
-  if (!suppliedApp) fs.cpSync(path.join(root, 'release', 'win-unpacked'), install, { recursive: true });
-  assert.notEqual(spawnSync(path.join(systemRoot, 'System32', 'where.exe'), ['node'], { env, windowsHide: true }).status, 0, 'No system Node is available to the test app');
-  const packaged = require('@electron/asar').listPackage(path.join(install, 'resources', 'app.asar')).map(file => file.replaceAll('\\', '/'));
-  const allowed = new Set(['assets', 'dist', 'electron', 'guides', 'node_modules', 'package.json']);
-  assert.ok(packaged.every(file => allowed.has(file.split('/').filter(Boolean)[0])), 'Only allowlisted app files and production dependencies are packaged');
+  if (!suppliedApp) fs.cpSync(path.join(root, 'release', unpacked), install, { recursive: true, verbatimSymlinks: true });
+  const findNode = windows ? spawnSync(path.join(systemRoot, 'System32', 'where.exe'), ['node'], { env, windowsHide: true }) : spawnSync('/bin/sh', ['-c', 'command -v node'], { env });
+  assert.notEqual(findNode.status, 0, 'No system Node is available to the test app');
+  const packaged = require('@electron/asar').listPackage(path.join(resources, 'app.asar')).map(file => file.replaceAll('\\', '/'));
+  const allowed = new Set(['assets', 'dist', 'electron', 'guides', 'node_modules', 'package.json', 'skills']);
+  const unexpected = packaged.filter(file => !allowed.has(file.split('/').filter(Boolean)[0]));
+  assert.deepEqual(unexpected.slice(0, 20), [], 'Only allowlisted app files and production dependencies are packaged');
   assert.ok(!packaged.some(file => /\/(vault|workspace|settings|ledger)\.json$/.test(file) || /\/(test-data|artifacts|\.git)(\/|$)/.test(file)), 'No user data or development artifacts');
-  const runtime = path.join(install, 'resources', 'runtime'), node = path.join(runtime, 'node.exe');
-  assert.ok(fs.existsSync(path.join(install, 'resources', 'mobile-network.ps1')), 'Router and firewall helper is installed outside ASAR');
-  assert.deepEqual(fs.readdirSync(runtime).sort(), ['agent-event.cjs', 'agent-tools.cjs', 'draft-editor.cjs', 'draft-policy.cjs', 'meshy-cli', 'meshy-mcp.cjs', 'mirofish-mcp.cjs', 'npm', 'node.exe', 'NODE-LICENSE.txt', 'THIRD-PARTY-NOTICES.txt', 'runtime.json'].sort());
+  const runtime = path.join(resources, 'runtime'), node = path.join(runtime, windows ? 'node.exe' : path.join('bin', 'node'));
+  assert.equal(fs.existsSync(path.join(resources, 'mobile-network.ps1')), windows, 'The Windows router and firewall helper ships only on Windows, outside ASAR');
+  assert.deepEqual(fs.readdirSync(runtime).sort(), ['agent-event.cjs', 'agent-tools.cjs', 'draft-editor.cjs', 'draft-policy.cjs', 'meshy-cli', 'meshy-mcp.cjs', 'mirofish-mcp.cjs', 'npm', ...(windows ? ['node.exe'] : ['bin', 'node-source.sha256']), 'NODE-LICENSE.txt', 'THIRD-PARTY-NOTICES.txt', 'runtime.json'].sort());
   assert.equal(execFileSync(node, [path.join(runtime, 'npm', 'bin', 'npm-cli.js'), '--version'], { env, windowsHide: true, encoding: 'utf8' }).trim(), require('npm/package.json').version, 'Bundled installer runs without system Node/npm');
   const localPackage = path.join(work, 'fixture-cli'), installedCli = path.join(work, 'installed-cli');
   fs.mkdirSync(localPackage); fs.writeFileSync(path.join(localPackage, 'package.json'), JSON.stringify({ name: 'dock-offline-fixture', version: '1.0.0', bin: { 'dock-fixture': 'cli.js' } }));
   fs.writeFileSync(path.join(localPackage, 'cli.js'), '#!/usr/bin/env node\nconsole.log("BUNDLED_INSTALL_OK");\n');
   const npmrc = path.join(work, 'npmrc'), globalNpmrc = path.join(work, 'global-npmrc'); fs.writeFileSync(npmrc, ''); fs.writeFileSync(globalNpmrc, '');
-  const installEnv = { ...env, PATH: runtime + ';' + env.PATH, NPM_CONFIG_USERCONFIG: npmrc, NPM_CONFIG_GLOBALCONFIG: globalNpmrc, NPM_CONFIG_CACHE: path.join(work, 'npm-cache') };
+  const installEnv = { ...env, PATH: path.dirname(node) + path.delimiter + env.PATH, NPM_CONFIG_USERCONFIG: npmrc, NPM_CONFIG_GLOBALCONFIG: globalNpmrc, NPM_CONFIG_CACHE: path.join(work, 'npm-cache') };
   execFileSync(node, [path.join(runtime, 'npm', 'bin', 'npm-cli.js'), 'install', '--prefix', installedCli, '--ignore-scripts', '--no-audit', '--no-fund', '--install-links', localPackage], { env: installEnv, windowsHide: true, timeout: 30000, stdio: 'pipe' });
-  const shim = path.join(installedCli, 'node_modules', '.bin', 'dock-fixture.cmd');
-  const installedOutput = execFileSync(path.join(systemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe'), ['-NoProfile', '-Command', "& '" + shim.replaceAll("'", "''") + "'"], { env: installEnv, windowsHide: true, encoding: 'utf8', timeout: 15000 });
+  const shim = path.join(installedCli, 'node_modules', '.bin', windows ? 'dock-fixture.cmd' : 'dock-fixture');
+  const installedOutput = windows
+    ? execFileSync(path.join(systemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe'), ['-NoProfile', '-Command', "& '" + shim.replaceAll("'", "''") + "'"], { env: installEnv, windowsHide: true, encoding: 'utf8', timeout: 15000 })
+    : execFileSync(shim, [], { env: installEnv, encoding: 'utf8', timeout: 15000 });
   assert.match(installedOutput, /BUNDLED_INSTALL_OK/, 'Bundled npm installs and launches a CLI with no system Node or network request');
   const help = execFileSync(node, [path.join(runtime, 'meshy-cli', 'dist', 'index.js'), 'image-to-image', 'create', '--help', '--no-update-check'], { env, windowsHide: true, encoding: 'utf8', timeout: 30000 });
   assert.ok(help.includes('--reference-image-urls'), 'Bundled Meshy CLI runs without system Node or developer dependencies');
@@ -68,7 +77,8 @@ async function eventually(predicate) {
   await eventually(async () => (await invoke('state')).sessions.some(item => item.alive));
   const session = (await invoke('state')).sessions.find(item => item.alive);
   assert.equal(session.cwd, folder); assert.equal(session.provider, 'shell');
-  await invoke('session.input', { id: session.id, data: "Write-Output ('BUNDLED_' + 'TERMINAL_OK'); (Get-Location).Path\r" });
+  // The marker is assembled by the shell, so the echoed command line cannot match it.
+  await invoke('session.input', { id: session.id, data: windows ? "Write-Output ('BUNDLED_' + 'TERMINAL_OK'); (Get-Location).Path\r" : "printf 'BUNDLED_%s\\n' TERMINAL_OK; pwd\r" });
   await eventually(async () => (await invoke('session.buffer', session.id)).data.includes('BUNDLED_TERMINAL_OK'));
   await page.screenshot({ path: path.join(artifacts, 'test-packaged-console.png') });
 
@@ -92,6 +102,9 @@ async function eventually(predicate) {
   assert.equal((await client.callTool({ name: 'dock_context', arguments: {} })).content[0].text, 'PACKAGED_CONTEXT_OK');
   await client.close(); client = null;
 
+  // The web design guide is opt-in; turning it on adds it to the shared instructions.
+  assert.doesNotMatch((await invoke('state')).shared.summary, /website_guide/);
+  await invoke('shared.guides', ['web-design']);
   assert.match((await invoke('state')).shared.summary, /website_guide/);
   await invoke('vault.save', { provider: 'meshy', label: 'Meshy test', key: 'TEST_ONLY_NO_REQUESTS' });
   await invoke('integrations.setup', { id: 'meshy', keyId: 'meshy' });
@@ -104,7 +117,7 @@ async function eventually(predicate) {
   assert.equal(await page.locator('#first-run').evaluate(el => el.open), false);
   const restored = (await invoke('state')).sessions.find(item => item.alive);
   assert.equal(restored.cwd, folder); assert.equal(restored.slot, 1); assert.notEqual(restored.id, session.id);
-  await invoke('session.input', { id: restored.id, data: "Write-Output ('RESTORED_' + 'PACKAGE_OK')\r" });
+  await invoke('session.input', { id: restored.id, data: windows ? "Write-Output ('RESTORED_' + 'PACKAGE_OK')\r" : "printf 'RESTORED_%s\\n' PACKAGE_OK\r" });
   await eventually(async () => (await invoke('session.buffer', restored.id)).data.includes('RESTORED_PACKAGE_OK'));
   assert.deepEqual(problems, []);
   console.log('PASS: packaged setup, real terminal, bundled Node and Meshy tools, shared web guide, completion callback, MCP bridge, and restart/restore. No system Node or paid model requests.');

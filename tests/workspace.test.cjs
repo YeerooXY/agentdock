@@ -226,7 +226,7 @@ test('damaged saves and unavailable encryption are preserved without plaintext f
   assert.equal(fs.existsSync(unavailable.workspace.file), false); assert.match(unavailable.errors[0], /encryption/);
 });
 
-test('WSL Claude resumes through its original distribution even after a native install appears', async t => {
+test('WSL Claude resumes through its original distribution even after a native install appears', { skip: process.platform !== 'win32' && 'WSL is Windows only' }, async t => {
   const first = fixture(t, undefined, { claude: { kind: 'wsl', distro: 'Ubuntu', path: '/home/test/.local/bin/claude' } });
   const created = await first.sessions.create({ provider: 'claude', cwd: first.root });
   const thread = crypto.randomUUID(); first.sessions.items.get(created.id).providerSessionId = thread; first.workspace.freeze();

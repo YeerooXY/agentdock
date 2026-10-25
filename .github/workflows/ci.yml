@@ -1,0 +1,92 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    # Version tags also build the installers for each system.
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.1
+          cache: npm
+      - name: Linux packages
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends xvfb xauth dbus-x11 gnome-keyring libsecret-1-0 python3 make g++
+      - run: npm ci --no-audit --no-fund
+      - name: Unit and desktop tests (Linux)
+        if: runner.os == 'Linux'
+        env:
+          XDG_CURRENT_DESKTOP: GNOME
+        run: bash scripts/linux/run-tests.sh
+      - name: Unit and desktop tests
+        if: runner.os != 'Linux'
+        run: |
+          npm run build
+          npm run prepare:runtime
+          npm test
+          npm run test:desktop
+
+  package:
+    name: Installer (${{ matrix.os }})
+    needs: test
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            script: dist
+          - os: ubuntu-latest
+            script: dist:linux
+          - os: macos-latest
+            script: dist:mac
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.1
+          cache: npm
+      - name: Linux packages
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends python3 make g++ xvfb xauth dbus-x11 gnome-keyring libsecret-1-0
+      - run: npm ci --no-audit --no-fund
+      - name: Build installers
+        run: npm run ${{ matrix.script }}
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+      - name: Test the packaged app (Linux)
+        if: runner.os == 'Linux'
+        env:
+          XDG_CURRENT_DESKTOP: GNOME
+        run: bash scripts/linux/with-keyring.sh npm run test:packaged
+      - name: Test the packaged app
+        if: runner.os != 'Linux'
+        run: npm run test:packaged
+      - uses: actions/upload-artifact@v4
+        with:
+          name: paddock-${{ runner.os }}
+          path: |
+            release/Paddock-*
+            release/SHA256SUMS.txt
+          if-no-files-found: error

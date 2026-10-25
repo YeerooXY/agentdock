@@ -18,6 +18,7 @@ const { Workspace } = require('./workspace.cjs');
 const { Projects } = require('./projects.cjs');
 const { MessageUsage, apiMessages } = require('./message-usage.cjs');
 const { Updates } = require('./updates.cjs');
+const { loginPath } = require('./platform.cjs');
 const { Workbench } = require('./workbench.cjs');
 const { creativeTools } = require('./creative-tools.cjs');
 const { Turns } = require('./turns.cjs');
@@ -48,6 +49,9 @@ const appModelId = APP_ID;
 if (process.platform === 'win32') app.setAppUserModelId(appModelId);
 const testMode = process.argv.includes('--smoke-test');
 const testDir = process.argv.find(x => x.startsWith('--data-dir='))?.slice(11);
+// Playwright starts Electron with --password-store=basic, which Paddock rejects.
+// Linux test runs with an unlocked keyring opt back in to it explicitly.
+if (testMode && process.platform === 'linux' && /^(gnome-libsecret|kwallet[56]?)$/.test(process.env.PADDOCK_TEST_PASSWORD_STORE || '')) app.commandLine.appendSwitch('password-store', process.env.PADDOCK_TEST_PASSWORD_STORE);
 if (testMode && testDir) app.setPath('userData', testDir);
 else app.setPath('userData', userDataPath(app.getPath('appData'), app.getPath('userData')));
 if (!app.requestSingleInstanceLock() && !testMode) app.quit();
@@ -64,7 +68,7 @@ const entryUrl = pathToFileURL(entryFile).href;
 const projectsFolder = path.join(os.homedir(), 'Projects');
 const defaultFolder = fs.existsSync(projectsFolder) && fs.statSync(projectsFolder).isDirectory() ? projectsFolder : os.homedir();
 function snapshot() {
-  return { mode, transitioning, trayHidden, sessions: sessions?.list() || [], codePanels: sessions?.codePanels() || [], codeRevision: codePanel?.revision || 0, limits, accounts: ['codex', 'claude'].flatMap(provider => accounts?.choices(provider) || []), recent, accountError, refreshing, lastRefresh, agents: cliSetup?.snapshot() || [], agentSetupBusy: !!cliSetup?.running, skills: skillPacks?.snapshot() || { packs: [], busy: false },
+  return { platform: process.platform, mode, transitioning, trayHidden, sessions: sessions?.list() || [], codePanels: sessions?.codePanels() || [], codeRevision: codePanel?.revision || 0, limits, accounts: ['codex', 'claude'].flatMap(provider => accounts?.choices(provider) || []), recent, accountError, refreshing, lastRefresh, agents: cliSetup?.snapshot() || [], agentSetupBusy: !!cliSetup?.running, skills: skillPacks?.snapshot() || { packs: [], busy: false },
     usageAccounts: usageAccounts(), usageChecks: subscriptionUsage?.snapshot() || [],
     sshHosts: ssh?.list() || [], capabilities, projects: projects?.list() || [], messages: [...(messageUsage?.items || []), ...apiMessages(ledger || [])].sort((a,b) => b.at - a.at).slice(0, 200), mobile: mobile?.snapshot(), workbench: workbench?.snapshot(), vault: { available: vault?.available() || false, entries: vault?.list() || [] },
     ledger: ledger || [], summary: ledgerSummary(ledger || []), shared: hub?.snapshot(), updates: updates?.snapshot(), grid: sessions?.grid || settings?.grid, settings, storageError, workspaceError, shortcutAvailable,
@@ -268,6 +272,16 @@ app.whenReady().then(async () => {
   // The frameless UI supplies its own controls. Electron's default menu would
   // otherwise take editor keys such as Ctrl+W, Ctrl+R and Ctrl+A from terminals.
   Menu.setApplicationMenu(null);
+  if (process.platform === 'darwin') {
+    // macOS routes ⌘C, ⌘V and ⌘Q through the menu bar. Keep only those roles,
+    // so terminal keys such as Ctrl+W still reach the consoles.
+    Menu.setApplicationMenu(Menu.buildFromTemplate([
+      { label: 'Paddock', submenu: [{ role: 'about' }, { type: 'separator' }, { role: 'hide' }, { role: 'hideOthers' }, { type: 'separator' }, { label: 'Quit Paddock', accelerator: 'Command+Q', click: () => quit() }] },
+      { label: 'Edit', submenu: [{ role: 'undo' }, { role: 'redo' }, { type: 'separator' }, { role: 'cut' }, { role: 'copy' }, { role: 'paste' }, { role: 'selectAll' }] }
+    ]));
+  }
+  // Apps opened from the Dock or a desktop launcher get a minimal PATH.
+  if (process.platform !== 'win32' && !testMode) process.env.PATH = loginPath();
   root = app.getPath('userData'); fs.mkdirSync(root, { recursive: true });
   accounts = new AccountProfiles(root);
   draftBridge = new DraftBridge(); await draftBridge.start();
@@ -358,7 +372,9 @@ app.whenReady().then(async () => {
   workspace = new Workspace(root, sessions, safeStorage, { enabled: settings.restoreConsoles, onError: message => { workspaceError = message; publish(); } });
   await workspace.restore();
   const windowIcon = path.join(__dirname, '..', 'assets', process.platform === 'win32' && !app.isPackaged ? 'icon.ico' : 'icon.png');
-  window = new BrowserWindow({ width: 1240, height: 840, minWidth: 720, minHeight: 520, frame: false, show: false, backgroundColor: '#010103', title: 'Paddock', icon: windowIcon,
+  // macOS keeps its own window buttons; other systems use Paddock's title bar.
+  const chrome = process.platform === 'darwin' ? { titleBarStyle: 'hidden', trafficLightPosition: { x: 14, y: 14 } } : { frame: false };
+  window = new BrowserWindow({ width: 1240, height: 840, minWidth: 720, minHeight: 520, ...chrome, show: false, backgroundColor: '#010103', title: 'Paddock', icon: windowIcon,
     webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true, webSecurity: true, spellcheck: false } });
   if (process.platform === 'win32') {
     const icon = taskbarIcon({ projectDir: app.getAppPath(), dataDir: root, packaged: app.isPackaged });
@@ -441,6 +457,13 @@ app.whenReady().then(async () => {
             const answer = await dialog.showMessageBox(window, { type: 'question', buttons: ['Keep working', 'Install update'], defaultId: 0, cancelId: 0, message: 'Install the downloaded update?', detail: 'Running console tasks will stop. Your saved panels can reopen after installation.' });
             if (answer.response !== 1) break;
           }
+          if (process.platform === 'linux' && process.env.APPIMAGE) {
+            // Replace the running AppImage with the verified download, then restart.
+            const target = process.env.APPIMAGE, staged = target + '.update';
+            fs.copyFileSync(file, staged); fs.chmodSync(staged, 0o755); fs.renameSync(staged, target);
+            quitting = true; app.relaunch({ execPath: target }); app.quit(); break;
+          }
+          if (process.platform === 'linux') { shell.showItemInFolder(file); break; }
           const error = await shell.openPath(file); if (error) throw new Error('The installer could not be opened.');
           quitting = true; app.quit(); break;
         }
@@ -800,6 +823,8 @@ app.whenReady().then(async () => {
   });
 }).catch(error => { dialog.showErrorBox('Paddock could not start', error.message); app.quit(); });
 app.on('second-instance', () => setMode('dashboard'));
+// Clicking the Dock icon reopens a window hidden to the tray.
+app.on('activate', () => { if (window && !window.isVisible()) setMode('dashboard'); });
 let cleanupStarted = false, cleanupDone = false;
 app.on('before-quit', event => {
   if (cleanupDone) return;

@@ -205,3 +205,9 @@ body.console-expanded #sidebar-toggle { display:none }
 #consoles-page.has-expanded-console .console-expanded .console-grip:disabled { opacity:1 }
 #consoles-page.has-expanded-console .session-grid>.session-card:not(.console-expanded) :is(.theme-wave,.theme-trace)::before,
 #consoles-page.has-expanded-console .session-grid>.session-card:not(.console-expanded) :is(.theme-wave,.theme-trace)::after { animation-play-state:paused!important }
+
+/* macOS draws its own window buttons at the top left; leave them room and
+   drop Paddock's minimize and close, which duplicate them. */
+body[data-platform=darwin] #sidebar { padding-top:46px }
+body[data-platform=darwin]:has(#sidebar[data-collapsed=true]) .titlebar,body[data-platform=darwin].console-expanded .titlebar { padding-left:84px }
+body[data-platform=darwin] .window-actions :is([data-action=minimize],[data-action=tray]) { display:none }

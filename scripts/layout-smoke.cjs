@@ -4,6 +4,7 @@ const { _electron: electron } = require('playwright');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const shellCommand = require('./shell-commands.cjs');
 const { Results } = require('../electron/results.cjs');
 const root = path.resolve(__dirname, '..'), parent = path.join(root, 'test-data'), artifacts = path.join(root, 'artifacts', 'console-layout');
 fs.mkdirSync(parent, { recursive: true }); fs.mkdirSync(artifacts, { recursive: true });
@@ -64,7 +65,7 @@ async function resize(id, edge, dx, dy, cancel = false, snapshot) {
   await until(async () => (await call('state')).sessions.filter(x => x.alive).length === 1);
   const first = (await call('state')).sessions[0];
   assert.equal(first.name, 'Trader'); assert.equal(await page.locator('dialog[open]').count(), 0);
-  await call('session.input', { id: first.id, data: "Write-Output 'FROZEN_TERMINAL_PREVIEW_421'\r" });
+  await call('session.input', { id: first.id, data: shellCommand.say('FROZEN_TERMINAL_PREVIEW_421') + '\r' });
   await until(async () => (await call('session.buffer', first.id)).data.includes('FROZEN_TERMINAL_PREVIEW_421'));
   await page.locator('[data-action=new][data-slot="5"]').click({ button: 'right' });
   assert.equal(await page.locator('#one-off-console-form [name=name]').isVisible(), true);
@@ -161,7 +162,7 @@ async function resize(id, edge, dx, dy, cancel = false, snapshot) {
   await page.keyboard.type('x');
   await acknowledged(first, second);
   await page.keyboard.press('Control+C');
-  await call('session.input', { id: first.id, data: "[Console]::Write(([char]27 + '[1 q'))\r" });
+  await call('session.input', { id: first.id, data: shellCommand.write('\u001b[1 q') + '\r' });
   await firstPanel.locator('.xterm-helper-textarea').focus();
   await firstPanel.locator('.xterm-cursor').waitFor();
   await until(async () => await firstPanel.locator('.xterm-cursor').evaluate(el => getComputedStyle(el).animationName === 'none'));

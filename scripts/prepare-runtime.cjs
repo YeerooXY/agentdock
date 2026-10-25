@@ -7,8 +7,17 @@ const { meshyZodPlugin } = require('./meshy-build.cjs');
 const root = path.resolve(__dirname, '..');
 const output = path.join(root, '.build', 'runtime');
 const version = '24.22.1';
-// Official Node.js v24.22.1 SHASUMS256.txt, win-x64/node.exe.
-const checksum = 'd702daa815eabbff763c7d3808e235cf031cf2ca70211b56847bc72f51e240e5';
+// Official Node.js v24.22.1 SHASUMS256.txt entries for each supported build.
+const builds = {
+  'win32-x64': { file: 'win-x64/node.exe', sha256: 'd702daa815eabbff763c7d3808e235cf031cf2ca70211b56847bc72f51e240e5' },
+  'linux-x64': { file: `node-v${version}-linux-x64.tar.gz`, sha256: 'eb6728e77c576a35162c122c45ccadf224d89ff00abc8dae46cc2897c6002d7c' },
+  'linux-arm64': { file: `node-v${version}-linux-arm64.tar.gz`, sha256: '33c37be234ba8bee041961047b19160f4d7d0f164e8e246f78bdd10feff148b3' },
+  'darwin-x64': { file: `node-v${version}-darwin-x64.tar.gz`, sha256: 'd132557e7ee2b85af08b0c8c34338e65c6430f2238d01f727728ef42dc83b035' },
+  'darwin-arm64': { file: `node-v${version}-darwin-arm64.tar.gz`, sha256: '89c682593d76cd44233fa53b1563264e7de9cbb189cad169135c5b4fadfbc0a7' }
+};
+const arch = process.env.PADDOCK_ARCH || process.arch;
+const target = builds[`${process.platform}-${arch}`];
+const checksum = target?.sha256;
 // Keep the official CLI intact (including its own auth handling and sharp).
 // Copy only its runtime dependency graph, never developer tools or user data.
 function copyPackage(name, from, destination) {
@@ -36,7 +45,7 @@ async function download(url) {
   return Buffer.from(await response.arrayBuffer());
 }
 (async () => {
-  if (process.platform !== 'win32' || process.arch !== 'x64') throw new Error('Build this Windows x64 installer on Windows x64.');
+  if (!target) throw new Error(`No bundled Node.js build for ${process.platform}-${arch}.`);
   fs.mkdirSync(output, { recursive: true });
   // npm carries its runtime dependencies and license texts in its own package.
   // Keep it outside ASAR so selected CLI packages can use the bundled Node.
@@ -52,11 +61,27 @@ async function download(url) {
   // Put the CLI at a stable entry point; dependencies stay beside it.
   const cliPackage = path.join(cliModules, 'meshy-cli');
   for (const file of fs.readdirSync(cliPackage)) fs.cpSync(path.join(cliPackage, file), path.join(output, 'meshy-cli', file), { recursive: true });
-  const executable = path.join(output, 'node.exe');
-  if (!fs.existsSync(executable) || hash(fs.readFileSync(executable)) !== checksum) {
-    const binary = await download(`https://nodejs.org/dist/v${version}/win-x64/node.exe`);
-    if (hash(binary) !== checksum) throw new Error('Node.js checksum did not match. No runtime was written.');
-    fs.writeFileSync(executable, binary);
+  const windows = process.platform === 'win32';
+  const executable = path.join(output, windows ? 'node.exe' : path.join('bin', 'node'));
+  const marker = path.join(output, 'node-source.sha256');
+  const current = windows ? fs.existsSync(executable) && hash(fs.readFileSync(executable)) === checksum
+    : fs.existsSync(executable) && fs.existsSync(marker) && fs.readFileSync(marker, 'utf8').trim() === checksum;
+  if (!current) {
+    const archive = await download(`https://nodejs.org/dist/v${version}/${target.file}`);
+    if (hash(archive) !== checksum) throw new Error('Node.js checksum did not match. No runtime was written.');
+    if (windows) fs.writeFileSync(executable, archive);
+    else {
+      // Extract only bin/node from the verified official archive.
+      const staging = path.join(output, '.node-download');
+      fs.rmSync(staging, { recursive: true, force: true }); fs.mkdirSync(staging, { recursive: true });
+      const archiveFile = path.join(staging, 'node.tar.gz'); fs.writeFileSync(archiveFile, archive);
+      const entry = `${target.file.replace(/\.tar\.gz$/, '')}/bin/node`;
+      await require('tar').x({ file: archiveFile, cwd: staging, filter: name => name === entry });
+      fs.mkdirSync(path.dirname(executable), { recursive: true });
+      fs.copyFileSync(path.join(staging, entry), executable); fs.chmodSync(executable, 0o755);
+      fs.rmSync(staging, { recursive: true, force: true });
+      fs.writeFileSync(marker, checksum + '\n');
+    }
   }
   const license = path.join(output, 'NODE-LICENSE.txt');
   fs.copyFileSync(path.join(root, 'electron', 'draft-editor.cjs'), path.join(output, 'draft-editor.cjs'));
@@ -96,6 +121,6 @@ async function download(url) {
     notices.push(`${pkg.name} ${pkg.version}\n${'='.repeat(60)}\n${licenses.map(file => fs.readFileSync(path.join(directory, file), 'utf8')).join('\n')}`);
   }
   fs.writeFileSync(path.join(output, 'THIRD-PARTY-NOTICES.txt'), notices.join('\n\n'));
-  fs.writeFileSync(path.join(output, 'runtime.json'), JSON.stringify({ node: version, arch: 'x64', sha256: checksum }, null, 2) + '\n');
+  fs.writeFileSync(path.join(output, 'runtime.json'), JSON.stringify({ node: version, platform: process.platform, arch, sha256: checksum }, null, 2) + '\n');
   console.log(`Prepared Node ${version}, agent helpers and Meshy MCP.`);
 })().catch(error => { console.error(error.message); process.exitCode = 1; });

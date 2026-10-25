@@ -72,7 +72,7 @@ export function vimControls({ context, focusSlot, action, onError }) {
   }
   function scroll(direction, half = false) {
     const content = scroller();
-    content.scrollBy({ top: direction * (half ? content.clientHeight / 2 : 80), behavior: 'instant' });
+    content.scrollBy({ top: direction * (half ? Math.round(content.clientHeight / 2) : 80), behavior: 'instant' });
   }
   document.addEventListener('focusin', event => { followFocus(event.target); refresh(); });
   document.addEventListener('focusout', () => queueMicrotask(refresh));

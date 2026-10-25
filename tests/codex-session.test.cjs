@@ -27,8 +27,10 @@ test('Codex startup config trusts only Paddock’s exact metadata hook, with no 
   assert.ok(!args.join(' ').includes('other-hook')); assert.ok(!args.join(' ').includes('dangerously'));
   assert.deepEqual(f.sent.filter(x => x.id).map(x => x.method), ['initialize', 'hooks/list']);
   assert.equal(f.calls[0][2].windowsHide, true); assert.equal(f.killed(), true);
-  const script = Buffer.from(hook().command.split(' ').at(-1), 'base64').toString('utf16le');
-  assert.ok(script.includes("User''s Apps")); assert.ok(script.includes('codex-session')); assert.ok(!script.includes('TOKEN'));
+  // Windows runs the hook through encoded PowerShell; macOS and Linux through sh.
+  const windows = process.platform === 'win32';
+  const script = windows ? Buffer.from(hook().command.split(' ').at(-1), 'base64').toString('utf16le') : hook().command;
+  assert.ok(script.includes(windows ? "User''s Apps" : "User'\"'\"'s Apps")); assert.ok(script.includes('codex-session')); assert.ok(!script.includes('TOKEN'));
 });
 test('missing, disabled, changed, or ambiguous hook definitions fail closed', async () => {
   for (const entries of [[], [null], [{ ...hook(), enabled: false }], [{ ...hook(), command: 'another-command' }], [hook(), hook()]]) {

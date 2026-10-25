@@ -12,8 +12,7 @@ const { prepareCodexSession } = require('./codex-session.cjs');
 const { copyConversation } = require('./account-history.cjs');
 const { defaultId, inside } = require('./account-profiles.cjs');
 const { hasClaudeEditorContext, validateDraftText } = require('./draft-policy.cjs');
-function psQuote(text) { return "'" + text.replaceAll("'", "''") + "'"; }
-function shQuote(text) { return "'" + text.replaceAll("'", "'\"'\"'") + "'"; }
+const { psQuote, shQuote, quote, shellLaunch, programLaunch, customLaunch } = require('./platform.cjs');
 function envValue(env, name) { return Object.entries(env).find(([key]) => key.toLowerCase() === name.toLowerCase())?.[1]; }
 function removeEnv(env, names) { const set = new Set(names.map(x => x.toLowerCase())); for (const key of Object.keys(env)) if (set.has(key.toLowerCase())) delete env[key]; }
 function canonical(value) { const result = path.resolve(value).replace(/[\\/]+$/, ''); return process.platform === 'win32' ? result.toLowerCase() : result; }
@@ -183,8 +182,7 @@ class Sessions extends EventEmitter {
     const bridgeHelper = this.runtime?.tools || path.join(__dirname, 'agent-tools.cjs');
     const mcpConfig = path.join(dir, 'mcp.json');
     if (purpose === 'agent' && this.hub && node) atomicJson(mcpConfig, { mcpServers: { paddock: { type: 'stdio', command: isWsl ? wslPath(node) : node, args: [bridgeHelper], env: { PADDOCK_BRIDGE_URL: '${PADDOCK_BRIDGE_URL}', PADDOCK_BRIDGE_TOKEN: '${PADDOCK_BRIDGE_TOKEN}', ...(isWsl ? { WSLENV: 'PADDOCK_BRIDGE_URL:PADDOCK_BRIDGE_TOKEN' } : {}) } } } });
-    let executable = process.env.SystemRoot ? path.join(process.env.SystemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe') : 'pwsh';
-    let args = ['-NoLogo', '-NoProfile'], cliEnv = {};
+    let { executable, args } = shellLaunch(), cliEnv = {};
     if (raw.provider === 'codex') {
       executable = this.nativeCodex();
       if (!executable) throw new Error('Codex CLI was not found. Install it, then restart Paddock.');
@@ -224,20 +222,18 @@ class Sessions extends EventEmitter {
       if (permissions === 'unrestricted') claudeArgs.push('--dangerously-skip-permissions');
       if (discussion) claudeArgs.push('--', discussion);
       if (isWsl) { executable = 'wsl.exe'; args = ['-d', claudeInstall.distro, '--cd', cwd, '--exec', claude, ...claudeArgs]; }
-      else if (claude.toLowerCase().endsWith('.exe')) { executable = claude; args = claudeArgs; }
-      else { args.push('-Command', `& ${psQuote(claude)} ${claudeArgs.map(psQuote).join(' ')}`); }
+      else ({ executable, args } = programLaunch(claude, claudeArgs));
     } else if (cliAgents.has(raw.provider)) {
       const agent = cliAgents.get(raw.provider);
       const program = this.cliSetup?.executable(raw.provider) || this.findProgram(agent.command);
       if (!program) throw new Error(`${agent.name} was not found. Open Settings → Set up agents to install it.`);
       const prepared = this.hub ? prepareCli(raw.provider, { directory: dir, runtime: { ...this.runtime, node, tools: bridgeHelper }, summary, summaryPath, home: this.agentHome, model, permissions }) : { args: [...(agent.args || []), ...(model && agent.model ? [agent.model, model] : [])], env: {} };
       cliEnv = prepared.env;
-      if (program.toLowerCase().endsWith('.exe')) { executable = program; args = prepared.args; }
-      else args.push('-ExecutionPolicy', 'Bypass', '-Command', `& ${psQuote(program)} ${prepared.args.map(psQuote).join(' ')}`);
+      ({ executable, args } = programLaunch(program, prepared.args, { bypass: true }));
     } else if (raw.provider === 'custom') {
       if (typeof raw.command !== 'string' || !raw.command.trim() || raw.command.length > 4000 || raw.command.includes('\0')) throw new Error('Enter the command you want this console to run.');
-      const command = this.hub ? raw.command.replaceAll('{instructions}', psQuote(summaryPath)).replaceAll('{mcp_config}', psQuote(mcpConfig)) : raw.command;
-      args.push('-NoExit', '-EncodedCommand', Buffer.from(command, 'utf16le').toString('base64'));
+      const command = this.hub ? raw.command.replaceAll('{instructions}', quote(summaryPath)).replaceAll('{mcp_config}', quote(mcpConfig)) : raw.command;
+      ({ executable, args } = customLaunch(command));
     }
     const baseEnv = terminalEnvironment();
     const editorCommand = envValue(baseEnv, 'VISUAL') || envValue(baseEnv, 'EDITOR') || '';

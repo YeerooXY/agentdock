@@ -1,11 +1,14 @@
 'use strict';
 const { spawn } = require('node:child_process');
-const quote = value => "'" + value.replaceAll("'", "''") + "'";
+const { isWindows, psQuote, shQuote } = require('./platform.cjs');
 
 // Ask Codex for the identity/hash of our own hook. Trust only that exact
 // definition for this invocation; never edit config.toml or trust other hooks.
 function startupHook(node, helper, root, session, launchId) {
-  const script = `& ${[node, helper, 'codex-session', root, session, launchId].map(quote).join(' ')}`;
+  const parts = [node, helper, 'codex-session', root, session, launchId];
+  // Codex runs hook commands through the system shell.
+  if (!isWindows) return parts.map(shQuote).join(' ');
+  const script = `& ${parts.map(psQuote).join(' ')}`;
   return `powershell.exe -NoLogo -NoProfile -NonInteractive -EncodedCommand ${Buffer.from(script, 'utf16le').toString('base64')}`;
 }
 function prepareCodexSession(executable, { node, helper, root, session, launchId, cwd, env, sqliteHome = null }, { spawnProcess = spawn, timeout = 8000 } = {}) {
