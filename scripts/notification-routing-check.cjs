@@ -24,6 +24,7 @@ const rows = []; let browser;
       if (method === 'state') return { ok: true, value: state };
       if (method === 'session.buffer') return { ok: true, value: { data: '', sequence: 0 } };
       if (method === 'session.models') return { ok: true, value: [] };
+      if (method === 'mode') { state.mode = payload; setTimeout(() => page.evaluate(s => window.fixtureState(s), state).catch(() => {}), 0); return { ok: true }; }
       if (method === 'workbench.results.preview') { previews.push(payload.id); return { ok: true, value: { text: '# Finished prompt\n\nThis is the result linked to the notification. Newer prompts stay separate.' } }; }
       if (method === 'workbench.results.seen') { for (const item of state.workbench.results) if (payload.includes(item.id)) item.seenAt ||= Date.now(); return { ok: true }; }
       return { ok: true };
@@ -50,9 +51,10 @@ const rows = []; let browser;
     await page.locator('#toast').filter({ hasText: 'These results are no longer available.' }).waitFor();
     assert.equal(await page.locator('.session-card.console-expanded').count(), 0); assert.deepEqual(previews, ['result-16']);
     await page.evaluate(item => window.fixtureNotice(item), { kind: 'ready', destination: 'results', sessionId: state.sessions[0].id, turnId: 'empty-prompt' });
-    await page.locator('#toast').filter({ hasText: 'No results were saved for this prompt.' }).waitFor();
-    assert.equal(await page.locator('.session-card.console-expanded').count(), 0); assert.deepEqual(errors, []);
-    rows.push({ profile: name, browser: browser.version(), emulated: name !== 'pc', passed: ['Exact completed prompt despite newer results and filters', 'Correct pagination', 'Deleted result does not open a console', 'No saved result does not open a console', 'Keyboard Escape', 'Scoped contrast and labels', 'No overflow or page errors'], screenshot: `${name}-notification-result.png` });
+    // A text-only turn opens its console, where the reply is.
+    await page.locator('#toast').filter({ hasText: 'Its reply is in this console.' }).waitFor();
+    await page.locator(`.session-card.console-expanded[data-console-id="${state.sessions[0].id}"]`).waitFor(); assert.deepEqual(errors, []);
+    rows.push({ profile: name, browser: browser.version(), emulated: name !== 'pc', passed: ['Exact completed prompt despite newer results and filters', 'Correct pagination', 'Deleted result does not open a console', 'A text-only turn opens its console', 'Keyboard Escape', 'Scoped contrast and labels', 'No overflow or page errors'], screenshot: `${name}-notification-result.png` });
     await browser.close(); browser = null; console.log('PASS ' + name);
   }
   fs.writeFileSync(path.join(out, 'browser-checks.json'), JSON.stringify(rows, null, 2));

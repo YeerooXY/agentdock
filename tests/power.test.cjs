@@ -50,3 +50,14 @@ test('API work overlaps console work and shutdown prevents reacquiring a request
   power.dispose(); power.dispose(); assert.deepEqual(stopped, [0, 1]);
   power.update({ enabled: true, apiBusy: true }); assert.equal(active.size, 0);
 });
+
+test('plain shells keep the PC awake while they print output, then release after a quiet period', () => {
+  const { power, active } = fixture();
+  const { SHELL_QUIET_MS } = require('../electron/power.cjs');
+  const now = 1_000_000, build = { alive: true, state: 'open', provider: 'shell', lastOutputAt: now - 1000 };
+  const agent = { alive: true, state: 'open', provider: 'codex', lastOutputAt: now - 1000 };
+  power.update({ enabled: true, sessions: [agent], now }); assert.equal(active.size, 0, 'agent output alone is not work; its status decides');
+  power.update({ enabled: true, sessions: [build], now }); assert.equal(active.size, 1);
+  power.update({ enabled: true, sessions: [build], now: now + SHELL_QUIET_MS }); assert.equal(active.size, 0);
+  power.update({ enabled: false, sessions: [{ ...build, lastOutputAt: now }], now }); assert.equal(active.size, 0);
+});

@@ -327,6 +327,8 @@ app.whenReady().then(async () => {
   } });
   workPower = new WorkPower(powerSaveBlocker);
   sessions.on('changed', updatePower);
+  // Shell output does not change session state; recheck so a running build keeps the PC awake.
+  setInterval(updatePower, 30000).unref();
   sessions.on('name-changed', item => {
     try { persistSettings({ ...settings, slotNames: { ...settings.slotNames, [item.slot]: item.name } }); }
     catch { storageError = 'The chat title could not be saved to this slot.'; }
@@ -555,6 +557,19 @@ app.whenReady().then(async () => {
           const renamed = accounts.rename(payload?.id, payload?.label);
           for (const session of sessions.items.values()) if (session.accountId === renamed.id) session.accountLabel = renamed.label;
           publish(); return { ok: true, value: renamed };
+        }
+        case 'accounts.remove': {
+          const profile = accounts.get(payload);
+          if (!profile) throw new Error('Account profile not found.');
+          if ([...sessions.items.values()].some(item => item.alive && item.accountId === profile.id)) throw new Error('End the consoles using this account first.');
+          const { response } = await dialog.showMessageBox(window, { type: 'warning', buttons: ['Keep account', 'Remove account'], defaultId: 0, cancelId: 0, noLink: true,
+            message: `Remove ${profile.label}?`, detail: 'Paddock deletes this account\'s sign-in and settings folder. Chats stored with the provider are not affected.' });
+          if (response !== 1) break;
+          codexAccounts.get(profile.id)?.stop(); codexAccounts.delete(profile.id);
+          accounts.remove(profile.id);
+          limits = limits.filter(item => limitAccountId(item) !== profile.id);
+          try { atomicJson(path.join(root, 'limits.json'), limits); } catch (error) { storageError = error.message; }
+          publish(); return { ok: true, value: true };
         }
         case 'accounts.login': {
           const session = await sessions.createLoginConsole(payload?.id, settings.consoleDefaults.cwd);

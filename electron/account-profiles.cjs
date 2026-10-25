@@ -87,6 +87,17 @@ class AccountProfiles {
     this.persist();
     return this.list().find(x => x.id === id);
   }
+  // Deletes the profile and its private sign-in folder. The default accounts
+  // (the CLI's own config folders) are never removed here.
+  remove(id) {
+    const profile = this.get(id);
+    if (!profile) throw new Error('Account profile not found.');
+    const folder = this.directory(id);
+    fs.rmSync(folder, { recursive: true, force: true, maxRetries: 3 });
+    this.profiles = this.profiles.filter(x => x.id !== id);
+    this.persist();
+    return { id, provider: profile.provider, label: profile.label };
+  }
   markLoginCompleted(id, completed) {
     const profile = this.get(id);
     if (!profile) return;

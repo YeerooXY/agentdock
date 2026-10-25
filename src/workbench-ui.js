@@ -187,7 +187,10 @@ export function workbenchUI({ call, getState, getPage, renderPage, escape: e, to
     const result = data().results.find(x => x.id === item.resultId) ||
       (item.reviewId && data().results.find(x => x.reviewId === item.reviewId || x.groupId === item.reviewId));
     const resultDestination = item.destination === 'results' || item.resultId || item.reviewId || item.turnId || item.kind === 'ready';
-    if (resultDestination) {
+    // A turn that only replied in text has its answer in the console, not in Results.
+    const textOnly = !result && !item.resultId && !item.reviewId && getState().sessions.some(x => x.id === item.sessionId && x.alive);
+    if (resultDestination && textOnly) { await selectSession(item.sessionId); toast('This prompt saved no files. Its reply is in this console.'); }
+    else if (resultDestination) {
       filter = ''; kind = ''; project = ''; consoleFilter = '';
       resultPage = result ? Math.max(0, Math.floor(resultGroups(filtered()).findIndex(group => group.some(x => x.id === result.id)) / 12)) : 0;
       navigate('results');

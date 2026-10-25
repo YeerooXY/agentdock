@@ -90,7 +90,8 @@ const started = { at: new Date().toISOString(), branch: execFileSync('git', ['br
   await tool('dock/start_turn');
   const empty = await tool('dock/notify', { title:'Text-only completion fixture',kind:'ready' });
   await app.evaluate(({ BrowserWindow }, notice) => BrowserWindow.getAllWindows()[0].webContents.send('dock:notice',notice), empty);
-  await page.locator('#toast').filter({ hasText:'No results were saved for this prompt.' }).waitFor();
+  // Text-only turns open their console when it is still open; otherwise Results explains.
+  await page.locator('#toast').filter({ hasText:/Its reply is in this console\.|No results were saved for this prompt\./ }).waitFor();
   await capture('15-no-saved-result', 'first-use', 'Activate a completion with no saved files/report', { savedResultsBefore:before,savedResultsAfter:(await call('state')).workbench.results.length,noticeResultId:empty.resultId,message:await page.locator('#toast').innerText() }, 'Fixture marks a turn ready and injects notification activation; no AI answer or OS toast was tested.');
   const state = await call('state'); state.sessions.forEach(s => { s.cwd = 'C:/Test/Website'; }); state.settings.consoleDefaults.cwd = 'C:/Test/Website'; state.settings.notifications = false;
   fs.writeFileSync(path.join(out, 'fixture.json'), JSON.stringify(state));
