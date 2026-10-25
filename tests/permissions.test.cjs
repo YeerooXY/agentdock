@@ -8,9 +8,10 @@ const parent = path.resolve(__dirname, '..', 'test-data');
 fs.mkdirSync(parent, { recursive: true });
 const root = fs.mkdtempSync(path.join(parent, 'permissions-'));
 after(() => { assert.equal(path.dirname(fs.realpathSync(root)), fs.realpathSync(parent)); fs.rmSync(root, { recursive: true }); });
-function fixture(claude = 'C:\\Apps With Spaces\\claude.exe') {
+function fixture(claude = 'C:\\Apps With Spaces\\claude.exe', extra = {}) {
   const calls = [];
   const sessions = new Sessions(root, {
+    ...extra,
     prepareCodexSession: async () => [],
     pty: { spawn(executable, args, options) { calls.push({ executable, args, options }); return { onData() {}, onExit() {}, kill() {} }; } },
     nativeCodex: () => 'C:\\Apps With Spaces\\codex.exe',
@@ -88,4 +89,13 @@ test('invalid model overrides are rejected before starting a process', async () 
     await assert.rejects(() => sessions.create({ provider: 'codex', cwd: root, model }), /model name or alias/);
   }
   assert.equal(calls.length, 0);
+});
+
+test('Codex runs inline to keep scrollback unless the setting is off', async () => {
+  const on = fixture();
+  await on.sessions.create({ provider: 'codex', cwd: root });
+  assert.ok(on.calls[0].args.includes('--no-alt-screen'));
+  const off = fixture(undefined, { codexScrollback: () => false });
+  await off.sessions.create({ provider: 'codex', cwd: root });
+  assert.ok(!off.calls[0].args.includes('--no-alt-screen'));
 });

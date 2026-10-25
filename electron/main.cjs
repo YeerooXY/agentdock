@@ -304,7 +304,7 @@ app.whenReady().then(async () => {
     return !!item?.alive && !item.switching && item.launchId === owner.launchId;
   } }); await hub.start();
   ssh = new SshHosts(root);
-  sessions = new Sessions(root, { ssh, hub, claude, runtime, cliSetup, projects, accounts, draftBridge, grid: settings.grid,
+  sessions = new Sessions(root, { ssh, hub, claude, runtime, cliSetup, projects, accounts, draftBridge, grid: settings.grid, codexScrollback: () => settings.codexScrollback !== false,
     isBusy: id => !!turns?.active.has(id), getThreadModel: (accountId, threadId) => getCodexAccount(accountId).threadModel(threadId), onLayout: ({ grid, plan }) => {
     const slotNames = { ...settings.slotNames };
     for (const item of plan) delete slotNames[sessions.items.get(item.id)?.slot];
@@ -692,6 +692,7 @@ app.whenReady().then(async () => {
           if (typeof payload?.confirmConsoleEnd === 'boolean') next.confirmConsoleEnd = payload.confirmConsoleEnd;
           if (typeof payload?.keepAwakeWhileWorking === 'boolean') next.keepAwakeWhileWorking = payload.keepAwakeWhileWorking;
           if (typeof payload?.restoreConsoles === 'boolean') next.restoreConsoles = payload.restoreConsoles;
+          if (typeof payload?.codexScrollback === 'boolean') next.codexScrollback = payload.codexScrollback;
           if (typeof payload?.autoSaveResults === 'boolean') next.autoSaveResults = payload.autoSaveResults;
           if (payload?.accountSwitchThreshold !== undefined) {
             const threshold = Number(payload.accountSwitchThreshold);

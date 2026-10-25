@@ -57,6 +57,7 @@ class Sessions extends EventEmitter {
     this.pty = dependencies.pty || require('node-pty');
     this.findProgram = dependencies.findProgram || findProgram;
     this.nativeCodex = dependencies.nativeCodex || nativeCodex;
+    this.codexScrollback = dependencies.codexScrollback || (() => true);
     this.hub = dependencies.hub;
     this.projects = dependencies.projects;
     this.ssh = dependencies.ssh;
@@ -188,6 +189,8 @@ class Sessions extends EventEmitter {
       executable = this.nativeCodex();
       if (!executable) throw new Error('Codex CLI was not found. Install it, then restart Paddock.');
       args = [...(resumeId ? ['--no-daemon', 'resume', resumeId, '--cd', cwd] : ['--no-daemon'])];
+      // Inline mode keeps the console's scrollback and text selection.
+      if (this.codexScrollback()) args.push('--no-alt-screen');
       if (purpose === 'agent') {
         if (!node) throw new Error('Node.js is needed for completion notifications.');
         args.push('-c', `notify=${JSON.stringify([node, helper, 'codex-notify'])}`);

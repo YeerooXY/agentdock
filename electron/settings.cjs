@@ -3,7 +3,7 @@
 function initialSettings(saved, folder, capabilities) {
   const defaults = {
     hudAlwaysOnTop: false, notifications: true, restoreConsoles: true, confirmConsoleEnd: true, keepAwakeWhileWorking: true, autoSaveResults: false, suggestProjects: true,
-    agentPermissions: 'default', sidebarCollapsed: false, vimControls: false, trimStyle: 'classic', trimWidth: 1, lighting: 'static', lightingSpeed: 'normal', starDensity: 2, ambientMotion: true, launchEffect: true, cursorBlink: false,
+    agentPermissions: 'default', codexScrollback: true, sidebarCollapsed: false, vimControls: false, trimStyle: 'classic', trimWidth: 1, lighting: 'static', lightingSpeed: 'normal', starDensity: 2, ambientMotion: true, launchEffect: true, cursorBlink: false,
     slotNames: {}, slotTrims: {}, rates: {}, accountSwitchThreshold: 90, autoSwitchAccounts: false, grid: { columns: 3, rows: 3 },
     consoleDefaults: { provider: capabilities.codex ? 'codex' : capabilities.claude ? 'claude' : 'shell', cwd: folder, name: '', command: '' }
   };

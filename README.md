@@ -173,7 +173,9 @@ A fresh installation uses **Agent defaults** for permissions. Select **Unrestric
 | Cline | `--auto-approve true` |
 | Factory Droid | `--auto high` |
 
-Pi has no approval prompts, so the setting does not apply to it. Consoles on a Linux host through SSH always use Agent defaults. Existing consoles keep their permissions. Full access uses the signed-in OS account's permissions; it does not grant administrator rights or remove provider limits. First-run setup and sign-in still apply.
+Pi has no approval prompts, so the setting does not apply to it. Consoles on a Linux host through SSH always use Agent defaults.
+
+Codex consoles run inline (`--no-alt-screen`), so you can scroll up and select text to copy. Turn this off in **Settings → Consoles → Keep scrollback in Codex consoles**; Codex then uses its full-screen view, where Shift+drag selects text. Paddock tells an agent its new size once a resize stops, so Codex repaints once per drag. Existing consoles keep their permissions. Full access uses the signed-in OS account's permissions; it does not grant administrator rights or remove provider limits. First-run setup and sign-in still apply.
 
 Per-session hooks report completion and attention states. Claude's status line reports usage when available. User and project CLI configuration files are not edited. Existing processes outside Paddock are not controlled.
 

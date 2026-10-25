@@ -513,7 +513,7 @@ function renderSettingsCategory() {
   return settingsShell(page, `<div class="settings-layout${page === 'console-settings' ? ' settings-console-grid' : ''}">${content}</div>`, icon('close'), state.settings.trimStyle || 'classic');
 }
 function renderStartupSettings() {
-  return `<section class="surface"><h2>Startup</h2><label class="toggle-row"><span><strong>Restore previous consoles</strong><small>Reopen your panels and folders. Saved agent chats resume; shells and custom commands restart.</small></span><input type="checkbox" data-setting="restoreConsoles" ${state.settings.restoreConsoles ? 'checked' : ''}></label><p id="workspace-error" class="form-error" role="alert">${escape(state.workspaceError || '')}</p></section>`;
+  return `<section class="surface"><h2>Startup</h2><label class="toggle-row"><span><strong>Restore previous consoles</strong><small>Reopen your panels and folders. Saved agent chats resume; shells and custom commands restart.</small></span><input type="checkbox" data-setting="restoreConsoles" ${state.settings.restoreConsoles ? 'checked' : ''}></label><label class="toggle-row"><span><strong>Keep scrollback in Codex consoles</strong><small>Codex runs inline, so you can scroll up and select text to copy. Applies to Codex consoles opened after the change.</small></span><input type="checkbox" data-setting="codexScrollback" ${state.settings.codexScrollback !== false ? 'checked' : ''}></label><p id="workspace-error" class="form-error" role="alert">${escape(state.workspaceError || '')}</p></section>`;
 }
 function renderResultsSettings() {
   return `<section class="surface"><h2>Results</h2><p class="field-hint">Agents save the documents, images, designs, reports and exports you ask them to create. Add other files from Results.</p><label class="toggle-row"><span><strong>Also capture file changes</strong><small>Copy code diffs and changed images after each turn.</small></span><input type="checkbox" data-setting="autoSaveResults" ${state.settings.autoSaveResults === true ? 'checked' : ''}></label><p class="field-hint">Optional. Turning this off stops current captures. Requested outputs and files you add are still saved.</p></section>`;
@@ -960,7 +960,17 @@ function fitVisible() {
         const anchor = record.scrollAnchor;
         let fitted = false;
         try {
-          record.fit.fit();
+          // xterm can re-measure the cell width a fraction of a pixel differently,
+          // which rounds to one column less at the same size. Reuse the size this
+          // console had before at these dimensions so agents are not resized again.
+          const known = record.fitted?.get(dimensions);
+          if (known) record.term.resize(known.cols, known.rows);
+          else {
+            record.fit.fit();
+            record.fitted ||= new Map();
+            if (record.fitted.size > 40) record.fitted.clear();
+            record.fitted.set(dimensions, { cols: record.term.cols, rows: record.term.rows });
+          }
           if (wasFollowing) keepFollowing(record);
           else { record.follow = false; scheduleTerminalAnchorRestore(record, anchor); }
           fitted = true;
@@ -971,7 +981,13 @@ function fitVisible() {
       const size = `${record.term.cols}:${record.term.rows}`;
       if (record.size !== size) {
         record.size = size;
-        call('session.resize', { id: record.id, cols: record.term.cols, rows: record.term.rows }).catch(() => {});
+        // Agents such as Codex repaint their whole screen on every resize, so
+        // report only the size a console settles on after a drag.
+        clearTimeout(record.resizeTimer);
+        record.resizeTimer = setTimeout(() => {
+          if (terminals.get(record.id) !== record || record.size !== `${record.term.cols}:${record.term.rows}`) return;
+          call('session.resize', { id: record.id, cols: record.term.cols, rows: record.term.rows }).catch(() => {});
+        }, 250);
       }
     } catch {}
   }
