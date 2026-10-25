@@ -41,6 +41,7 @@ const { endSession } = require('./session-end.cjs');
 const { Worktrees, cleanWorktree } = require('./worktrees.cjs');
 const { MessageQueue } = require('./message-queue.cjs');
 const { PromptLibrary } = require('./prompt-library.cjs');
+const { isLocal } = require('./web-preview.cjs');
 const filePreview = require('./file-preview.cjs');
 const { userDataPath } = require('./user-data.cjs');
 const { AccountProfiles, defaultId } = require('./account-profiles.cjs');
@@ -400,6 +401,9 @@ app.whenReady().then(async () => {
   }
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   window.webContents.on('will-navigate', event => event.preventDefault());
+  // Preview frames stay on local development servers.
+  window.webContents.on('will-frame-navigate', event => { if (!event.isMainFrame && !isLocal(event.url)) event.preventDefault(); });
+  window.webContents.on('will-redirect', event => { if (!event.isMainFrame && !isLocal(event.url)) event.preventDefault(); });
   window.webContents.session.setPermissionRequestHandler((_, __, callback) => callback(false));
   window.webContents.session.setPermissionCheckHandler(() => false);
   window.webContents.on('render-process-gone', () => { if (!quitting) window.loadFile(entryFile); });
@@ -531,6 +535,17 @@ app.whenReady().then(async () => {
           const panel = sessions.createCodePanel({ cwd, codeSourceKey: source ? source.consoleKey || source.id : null, slot: payload?.slot });
           publish(); return { ok: true, value: panel };
         }
+        case 'web.create': {
+          const source = sessions.items.get(payload?.sourceId);
+          const panel = sessions.createWebPanel({ url: payload?.url || '', codeSourceKey: source && !source.kind ? source.consoleKey || source.id : null, slot: payload?.slot });
+          publish(); return { ok: true, value: panel };
+        }
+        case 'web.url': return { ok: true, value: sessions.setWebUrl(payload?.id, payload?.url) };
+        case 'web.open': {
+          const panel = sessions.items.get(payload);
+          if (panel?.kind !== 'web' || !isLocal(panel.url)) throw new Error('Enter a local address first.');
+          await shell.openExternal(panel.url); break;
+        }
         case 'code.source': {
           const panel = codePanel.panel(payload?.id), source = sessions.items.get(payload?.sourceId);
           if (!source || source.remote || source.kind === 'code') throw new Error('Choose a local console.');
@@ -540,8 +555,9 @@ app.whenReady().then(async () => {
         case 'code.report': return { ok: true, value: await codePanel.report(payload?.id, payload?.refresh === true) };
         case 'code.browse': return { ok: true, value: await codePanel.browse(payload?.id, payload?.path) };
         case 'code.file': return { ok: true, value: await codePanel.file(payload?.id, payload?.path, payload?.reportId) };
-        case 'code.close': {
-          const panel = codePanel.panel(payload), slotNames = { ...settings.slotNames };
+        case 'code.close': case 'web.close': {
+          const panel = method === 'web.close' ? sessions.items.get(payload) : codePanel.panel(payload), slotNames = { ...settings.slotNames };
+          if (method === 'web.close' && panel?.kind !== 'web') throw new Error('Open a preview panel first.');
           delete slotNames[panel.slot]; persistSettings({ ...settings, slotNames });
           sessions.end(payload); break;
         }

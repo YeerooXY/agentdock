@@ -14,6 +14,9 @@ const { defaultId, inside } = require('./account-profiles.cjs');
 const { hasClaudeEditorContext, validateDraftText } = require('./draft-policy.cjs');
 const { psQuote, shQuote, quote, shellLaunch, programLaunch, customLaunch, realRoot } = require('./platform.cjs');
 const { cleanWorktree } = require('./worktrees.cjs');
+const { previewUrl } = require('./web-preview.cjs');
+// Code and preview panels sit in the grid but run no process.
+const isPanel = item => item?.kind === 'code' || item?.kind === 'web';
 function envValue(env, name) { return Object.entries(env).find(([key]) => key.toLowerCase() === name.toLowerCase())?.[1]; }
 function removeEnv(env, names) { const set = new Set(names.map(x => x.toLowerCase())); for (const key of Object.keys(env)) if (set.has(key.toLowerCase())) delete env[key]; }
 function canonical(value) { const result = path.resolve(value).replace(/[\\/]+$/, ''); return process.platform === 'win32' ? result.toLowerCase() : result; }
@@ -78,13 +81,13 @@ class Sessions extends EventEmitter {
     this.projects?.on('changed', this.refreshProjectContext);
     this.hub?.on?.('context-changed', this.refreshProjectContext);
   }
-  list() { return [...this.items.values()].filter(item => item.kind !== 'code').map(item => ({
+  list() { return [...this.items.values()].filter(item => !isPanel(item)).map(item => ({
     ...publicSession(item),
       ...(this.accounts && ['codex', 'claude'].includes(item.provider) && !['login', 'setup'].includes(item.purpose) ? {
       switchTargets: this.accounts.choices(item.provider).filter(x => x.id !== item.accountId).map(({ id, label, loginCompletedAt }) => ({ id, label, ready: id.endsWith(':default') || !!loginCompletedAt }))
     } : {})
   })).sort((a, b) => a.slot - b.slot); }
-  codePanels() { return [...this.items.values()].filter(item => item.kind === 'code' && item.alive).map(publicSession); }
+  codePanels() { return [...this.items.values()].filter(item => isPanel(item) && item.alive).map(publicSession); }
   createCodePanel(raw = {}) {
     if (this.stopping || this.starting.size) throw new Error('Wait for the console to finish opening.');
     const cwd = String(raw.cwd || '');
@@ -94,10 +97,22 @@ class Sessions extends EventEmitter {
       slot: opening.slot, width: opening.width, height: opening.height, codeSourceKey: typeof raw.codeSourceKey === 'string' ? raw.codeSourceKey.slice(0, 100) : null, consoleKey: raw.consoleKey || crypto.randomUUID(), projectId: raw.projectId || null };
     this.commitLayout(opening.plan, opening.grid); this.items.set(item.id, item); this.emit('changed'); return publicSession(item);
   }
+  createWebPanel(raw = {}) {
+    if (this.stopping || this.starting.size) throw new Error('Wait for the console to finish opening.');
+    const url = previewUrl(raw.url), opening = planOpening(this.items.values(), raw, this.grid);
+    const item = { id: crypto.randomUUID(), kind: 'web', provider: 'web', purpose: 'web', alive: true, state: 'open', name: 'Preview', nameMode: 'custom', permissions: 'default', cwd: '', url,
+      slot: opening.slot, width: opening.width, height: opening.height, codeSourceKey: typeof raw.codeSourceKey === 'string' ? raw.codeSourceKey.slice(0, 100) : null, consoleKey: raw.consoleKey || crypto.randomUUID(), projectId: null };
+    this.commitLayout(opening.plan, opening.grid); this.items.set(item.id, item); this.emit('changed'); return publicSession(item);
+  }
+  setWebUrl(id, url) {
+    const item = this.items.get(id); if (!item?.alive || item.kind !== 'web') throw new Error('Open a preview panel first.');
+    item.url = previewUrl(url); this.emit('changed'); return publicSession(item);
+  }
   savedConsoles() {
     return [...this.items.values()].filter(x => (x.alive || x.restoreError) && !x.dismissed && !['login', 'setup'].includes(x.purpose)).map(x => ({
       slot: x.slot, width: x.width || 1, height: x.height || 1, consoleKey: x.consoleKey || x.id, projectId: x.projectId || null, name: x.name, nameMode: x.nameMode, cwd: x.cwd, provider: x.provider, permissions: x.permissions,
       ...(x.kind === 'code' ? { kind: 'code', codeSourceKey: x.codeSourceKey } : {}),
+      ...(x.kind === 'web' ? { kind: 'web', url: x.url, codeSourceKey: x.codeSourceKey } : {}),
       command: x.command || '', model: x.launchModel || '', accountId: ['codex', 'claude'].includes(x.provider) ? x.accountId || defaultId(x.provider) : null, providerSessionId: ['codex', 'claude'].includes(x.provider) ? x.providerSessionId : null, claudeTarget: x.claudeTarget,
       ...(x.remote ? { remoteHostId: x.remote.hostId, remoteFolder: x.remote.folder } : {}),
       ...(x.worktree ? { worktree: x.worktree } : {})
@@ -106,6 +121,9 @@ class Sessions extends EventEmitter {
   async restore(entry) {
     if (entry.kind === 'code' && entry.provider === 'code') {
       try { return this.createCodePanel(entry); } catch { return null; }
+    }
+    if (entry.kind === 'web' && entry.provider === 'web') {
+      try { return this.createWebPanel(entry); } catch { return null; }
     }
     if (entry.projectId && this.projects && !this.projects.get(entry.projectId)) entry = { ...entry, projectId: null, ...(entry.nameMode === 'project' ? { name: '', nameMode: 'folder' } : {}) };
     try {
@@ -611,7 +629,7 @@ class Sessions extends EventEmitter {
   }
   write(id, data, { draft = false, queued = false } = {}) {
     const item = this.items.get(id);
-    if (item?.kind === 'code') throw new Error('This is a read-only code panel.');
+    if (isPanel(item)) throw new Error(item.kind === 'code' ? 'This is a read-only code panel.' : 'This is a preview panel.');
     if (!item?.alive) return;
     if (item.switching) throw new Error('This console is switching accounts. Your composer draft stays on the phone until switching finishes.');
     if (typeof data !== 'string' || data.length > 65536) throw new Error('Terminal input is too large.');
@@ -627,7 +645,7 @@ class Sessions extends EventEmitter {
   }
   resize(id, cols, rows) {
     const item = this.items.get(id); if (!item?.alive) return;
-    if (item.kind === 'code') return;
+    if (isPanel(item)) return;
     cols = Math.max(20, Math.min(500, Math.floor(cols) || 80)); rows = Math.max(5, Math.min(200, Math.floor(rows) || 24));
     if (item.cols === cols && item.rows === rows) return;
     item.cols = cols; item.rows = rows;
@@ -636,7 +654,7 @@ class Sessions extends EventEmitter {
   }
   buffer(id) { const item = this.items.get(id); return { data: item?.buffer || '', sequence: item?.sequence || 0, launchId: item?.launchId || null }; }
   refreshContextFile(item) {
-    if (item.kind === 'code') return;
+    if (isPanel(item)) return;
     if (!this.hub || item.remote) return;
     const file = path.join(this.root, 'sessions', item.id, 'PADDOCK.md'), temp = file + '.tmp';
     try {
@@ -707,7 +725,7 @@ class Sessions extends EventEmitter {
   }
   end(id) {
     const item = this.items.get(id); if (!item) return;
-    if (item.kind === 'code') { this.items.delete(id); this.emit('changed'); return; }
+    if (isPanel(item)) { this.items.delete(id); this.emit('changed'); return; }
     if (item.remote) return this.ssh.end(item.remote).then(() => {
       item.dismissed = true;
       if (item.alive) item.terminal.kill(); else this.items.delete(id);
@@ -764,7 +782,7 @@ class Sessions extends EventEmitter {
     this.stopping = true;
     this.projects?.off('changed', this.refreshProjectContext);
     this.hub?.off?.('context-changed', this.refreshProjectContext);
-    const active = [...this.items.values()].filter(x => x.alive && x.kind !== 'code');
+    const active = [...this.items.values()].filter(x => x.alive && !isPanel(x));
     const staged = [...this.pendingStages.values()];
     for (const item of staged) {
       this.pendingStages.delete(item.launchId);

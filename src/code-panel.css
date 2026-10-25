@@ -28,5 +28,16 @@
 .code-workspace :focus-visible{outline:2px solid #9dc7ff;outline-offset:-2px}
 .code-panel .code-editor-host .cm-editor.cm-focused{outline:2px solid #9dc7ff;outline-offset:-2px}
 .code-open{display:inline-flex;align-items:center;gap:5px;min-height:30px;white-space:nowrap}
+/* Preview panels: a local dev server in the grid. */
+.web-panel .web-url-form{flex:1;min-width:0}
+.web-panel .web-url-form input{margin:0;height:26px;padding:3px 8px;font-size:12px;font-family:"Cascadia Code",Consolas,monospace;background:#05060b}
+.web-panel-body{flex:1;min-height:0;min-width:0;overflow:hidden;background:#fff}
+.web-panel-body iframe{display:block;width:100%;height:100%;border:0;background:#fff}
+.web-panel-body:has(.web-empty){background:#0b0d16}
+.web-empty{padding:18px;color:#b9c2de;font-size:13px;line-height:1.6;overflow-wrap:anywhere}
+.web-empty p+p{margin-top:8px;color:var(--muted)}
+@container (max-width:420px){.web-panel [data-web-action=open]{display:none}}
 @container(max-width:420px){.code-toolbar{gap:3px}.code-toolbar label{flex-basis:100%}.code-toolbar select{max-width:none;flex:1}.code-file-list{width:28%;min-width:75px}.code-context>span{flex-basis:100%}}
 @media(pointer:coarse){.code-workspace button,.code-workspace select{min-height:44px}.code-open{min-height:44px}}
+/* Narrow windows keep Code and Preview as icons so the window buttons stay visible. */
+@media(max-width:760px){.titlebar .code-open{font-size:0;gap:0;padding-inline:8px}}

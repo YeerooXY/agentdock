@@ -10,15 +10,19 @@ const root = path.resolve(__dirname,'..'), parent=path.join(root,'test-data');
 fs.mkdirSync(parent,{recursive:true}); const work=fs.mkdtempSync(path.join(parent,'workbench-desktop-')), profile=path.join(work,'profile'), project=path.join(work,'project');
 fs.mkdirSync(profile); fs.mkdirSync(project); fs.mkdirSync(path.join(root,'artifacts'),{recursive:true});
 fs.writeFileSync(path.join(profile,'settings.json'),JSON.stringify({setupComplete:true,restoreConsoles:true,consoleDefaults:{provider:'shell',cwd:project,name:'',command:''}}));
-let app, server;
+let app, server, awayServer, awayHits = 0, awayUrl = 'http://192.0.2.1/';
 const executablePath = process.argv.find(arg => arg.startsWith('--app='))?.slice(6);
 async function eventually(check, message='Timed out') {const end=Date.now()+45000; while(Date.now()<end){if(await check())return;await new Promise(r=>setTimeout(r,100));}throw Error(message);}
 (async()=>{
   server=http.createServer((req,res)=>{
     if(req.url==='/missing'){res.writeHead(404);return res.end();}
+    if(req.url==='/preview'){res.setHeader('Content-Type','text/html');return res.end('<!doctype html><title>Preview</title><a id="local" href="/other">Local</a> <a id="away" href="'+awayUrl+'">Away</a>');}
+    if(req.url==='/other'){res.setHeader('Content-Type','text/html');return res.end('<!doctype html><title>Other</title><p id="other">Other local page</p>');}
     if(req.url==='/image.png'){res.setHeader('Content-Type','image/png');return res.end(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9ZDbkAAAAASUVORK5CYII=','base64'));}
     res.setHeader('Content-Type','text/html');res.end('<!doctype html><html><head><title>Fixture workshop</title></head><body style="background:#080612;color:#eee;font:22px sans-serif;padding:40px"><main><h1>Review fixture</h1><p>A deliberately flawed page for the review test.</p><img src="/image.png" style="width:180px;height:100px"><div style="width:700px">This fixed width overflows a phone.</div><a href="/missing">Broken link</a><button style="color:#ddd;background:#eee">Low contrast</button></main></body></html>');
   }); await new Promise(r=>server.listen(0,'127.0.0.1',r));
+  // A responding server on another loopback address stands in for an outside site. macOS has only 127.0.0.1.
+  if(process.platform!=='darwin'){awayServer=http.createServer((req,res)=>(awayHits++,res.end('<p id="left">Left Paddock</p>')));await new Promise(r=>awayServer.listen(0,'127.0.0.2',r));awayUrl=`http://127.0.0.2:${awayServer.address().port}/`;}
   const errors=[];
   app=await electron.launch({ ...(executablePath ? { executablePath } : {}), args:[...(executablePath ? [] : [root]),'--smoke-test',`--data-dir=${profile}`],timeout:30000}); const page=await app.firstWindow(); page.setDefaultTimeout(15000); page.on('pageerror',e=>errors.push(e.message));
   await page.waitForSelector('.session-grid');
@@ -35,6 +39,21 @@ async function eventually(check, message='Timed out') {const end=Date.now()+4500
   await eventually(async()=>(await call('state')).sessions.find(x=>x.id===one.id).slot===4);
   assert.ok((await call('session.buffer',one.id)).data.includes('MOVE_MARKER_917')); assert.equal((await call('state')).sessions.filter(x=>x.alive).length,2);
   console.log('PASS console drag, occupied swap, keyboard move and terminal preservation');
+  // Preview panels follow local links but never leave this PC.
+  const port=server.address().port, web=await call('web.create',{slot:5,url:`127.0.0.1:${port}/preview`});
+  const frameUrls=()=>page.frames().filter(f=>f.parentFrame()===page.mainFrame()).map(f=>f.url());
+  const webFrame=page.frameLocator(`.web-panel[data-console-id="${web.id}"] iframe`);
+  // The panel can re-render while the first state updates arrive; click until the local link opens.
+  await eventually(async()=>{await webFrame.locator('#local').click({timeout:3000}).catch(()=>{});return webFrame.locator('#other').isVisible({timeout:2000}).catch(()=>false);},'The preview did not follow a local link: '+frameUrls());
+  await page.locator(`.web-panel[data-console-id="${web.id}"] [data-web-action=reload]`).click(); await webFrame.locator('#away').waitFor();
+  await webFrame.locator('#away').click(); await new Promise(r=>setTimeout(r,1500));
+  // CSP frame-src and the main-process guard both stop it; the outside server never sees a request.
+  assert.equal(awayHits,0,'A preview frame reached a non-local server');
+  assert.ok(!frameUrls().some(url=>url.startsWith(awayUrl)),'A preview frame left the local server: '+frameUrls());
+  await assert.rejects(call('web.url',{id:web.id,url:'https://example.com'}),/local servers only/);
+  await call('web.close',web.id); assert.equal((await call('state')).codePanels.some(x=>x.id===web.id),false);
+  awayServer?.close();
+  console.log('PASS preview panels load local servers, follow local links and block other sites');
   const tools=await call('tools.catalog','dock');assert.ok(tools.some(x=>x.name==='dock/save_result'));assert.ok(tools.some(x=>x.name==='dock/meshy_concept'));
   fs.mkdirSync(path.join(profile,'events'),{recursive:true});fs.writeFileSync(path.join(profile,'events',`${one.id}.${one.launchId}.state.json`),JSON.stringify({session:one.id,launchId:one.launchId,state:'ready',at:Date.now()}));
   await eventually(async()=>(await call('state')).sessions.find(x=>x.id===one.id).state==='ready');
@@ -106,4 +125,4 @@ async function eventually(check, message='Timed out') {const end=Date.now()+4500
   assert.equal(fs.existsSync(path.join(profile,'inbox.json')),false);
   assert.deepEqual(errors,[]); console.log('PASS gallery previews/deletion, agent-only review/checklist/delete tools, removed tabs/storage, and paid-call guard');
   await call('quit'); await app.close(); app=null;
-})().catch(error=>{console.error(error);process.exitCode=1;}).finally(async()=>{if(app){await (await app.firstWindow()).evaluate(()=>window.dock.call('quit')).catch(()=>{});await app.close().catch(()=>{});}if(server)server.closeAllConnections?.();if(server)await new Promise(r=>server.close(r));assert.equal(path.dirname(fs.realpathSync(work)),fs.realpathSync(parent));fs.rmSync(work,{recursive:true,force:true});});
+})().catch(error=>{console.error(error);process.exitCode=1;}).finally(async()=>{if(app){await (await app.firstWindow()).evaluate(()=>window.dock.call('quit')).catch(()=>{});await app.close().catch(()=>{});}awayServer?.close();if(server)server.closeAllConnections?.();if(server)await new Promise(r=>server.close(r));assert.equal(path.dirname(fs.realpathSync(work)),fs.realpathSync(parent));fs.rmSync(work,{recursive:true,force:true});});

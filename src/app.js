@@ -25,6 +25,7 @@ import './setup.css';
 import { projectsUI } from './projects-ui.js';
 import { consoleProjects } from './console-projects.js';
 import { consoleQueue } from './console-queue.js';
+import { webPanelUI } from './web-panel-ui.js';
 import { imageGenerationUI } from './image-generation-ui.js';
 import { sshUI } from './ssh-ui.js';
 import './ssh.css';
@@ -65,7 +66,8 @@ const icons = {
   star: '<path d="m12 2 2.7 7.3L22 12l-7.3 2.7L12 22l-2.7-7.3L2 12l7.3-2.7Z"/>',
   list: '<path d="M9 6h11M9 12h11M9 18h7M4.5 6h.01M4.5 12h.01M4.5 18h.01"/>',
   up: '<path d="m6 15 6-6 6 6"/>',
-  down: '<path d="m6 9 6 6 6-6"/>'
+  down: '<path d="m6 9 6 6 6-6"/>',
+  globe: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.7 3.7 5.7 3.7 9s-1.2 6.3-3.7 9c-2.5-2.7-3.7-5.7-3.7-9S9.5 5.7 12 3Z"/>'
 };
 let iconSequence = 0;
 const icon = (name, cls = '') => { const id = `accent-icon-${++iconSequence}`; return `<svg class="icon ${cls}" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="url(#${id})" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><defs><linearGradient id="${id}" x1="0" y1="0" x2="24" y2="24" gradientUnits="userSpaceOnUse"><stop class="icon-blue"/><stop offset="1" class="icon-pink"/></linearGradient></defs>${icons[name] || icons.terminal}</svg>`; };
@@ -85,7 +87,7 @@ const gridSize = () => state?.grid || { columns: 3, rows: 3 };
 const allPanels = () => [...(state?.sessions || []), ...(state?.codePanels || [])];
 const gridCapacity = () => gridSize().columns * gridSize().rows;
 let openingConsole = false;
-let codePanels, launchGesture, chooserOpener, vim, setup, workbench, layoutMotion, phone, projects, projectChats, messageQueue, imageGenerator, updates, usageView;
+let codePanels, webPanels, launchGesture, chooserOpener, vim, setup, workbench, layoutMotion, phone, projects, projectChats, messageQueue, imageGenerator, updates, usageView;
 const nameSaves = new Map();
 const launchHint = 'title="Click to open. Hold or right-click to choose." aria-haspopup="dialog"';
 let renderedView = null, viewAnimation, windowMoving = false, pageBeforeSettings = 'consoles';
@@ -142,7 +144,7 @@ $('#app').innerHTML = `
     <div class="sidebar-bottom"><button data-page="settings">${icon('settings')}Settings</button></div>
   </aside>
   <div class="workspace">
-    <header class="titlebar"><button id="sidebar-toggle" class="icon-button" data-action="sidebar" aria-label="Hide sidebar" title="Hide sidebar" aria-controls="sidebar" aria-expanded="true">${icon('menu')}</button><button id="launch-folder" class="launch-folder" data-action="launch-folder" aria-label="Choose launch folder">${icon('folder')}<span></span></button><button type="button" class="subtle code-open" data-code-action="create" title="Open a read-only code panel">${icon('api')}Code</button><div class="window-drag-handle" data-window-drag title="Drag to move. Double-click for fullscreen." aria-hidden="true"><span></span></div><div class="window-actions"><button data-action="hud" title="Collapse to corner HUD" aria-label="Collapse to corner HUD">${icon('corner')}</button><button data-action="minimize" aria-label="Minimize">${icon('minus')}</button><button data-action="fullscreen" aria-label="Fullscreen" title="Fullscreen">${icon('expand')}</button><button data-action="tray" aria-label="Hide in system tray" title="Hide in system tray">${icon('close')}</button></div></header>
+    <header class="titlebar"><button id="sidebar-toggle" class="icon-button" data-action="sidebar" aria-label="Hide sidebar" title="Hide sidebar" aria-controls="sidebar" aria-expanded="true">${icon('menu')}</button><button id="launch-folder" class="launch-folder" data-action="launch-folder" aria-label="Choose launch folder">${icon('folder')}<span></span></button><button type="button" class="subtle code-open" data-code-action="create" title="Open a read-only code panel">${icon('api')}Code</button><button type="button" class="subtle code-open" data-web-action="create" title="Preview a local web server">${icon('globe')}Preview</button><div class="window-drag-handle" data-window-drag title="Drag to move. Double-click for fullscreen." aria-hidden="true"><span></span></div><div class="window-actions"><button data-action="hud" title="Collapse to corner HUD" aria-label="Collapse to corner HUD">${icon('corner')}</button><button data-action="minimize" aria-label="Minimize">${icon('minus')}</button><button data-action="fullscreen" aria-label="Fullscreen" title="Fullscreen">${icon('expand')}</button><button data-action="tray" aria-label="Hide in system tray" title="Hide in system tray">${icon('close')}</button></div></header>
     <main id="content" tabindex="-1"></main>
     <section id="consoles-page" class="console-grid-view" hidden aria-label="Consoles"><div class="consoles-only"><div class="session-grid"></div></div><button id="grid-add" class="primary" data-action="new" aria-label="Add console" title="Add console · Ctrl Shift N" hidden>${icon('plus')}</button></section>
     <div id="terminal-cache" hidden></div>
@@ -326,6 +328,7 @@ function sessionCard(slot) {
   const session = allPanels().find(x => x.slot === slot && isOpenConsole(x));
   if (!session) return `<article class="session-card empty" data-slot="${slot}"><header class="empty-panel-header">${slotNameInput(slot)}${appearance.button(slot)}</header><button class="console-launch" data-action="new" data-slot="${slot}" aria-label="Open console ${slot}" ${launchHint} ${openingConsole ? 'disabled' : ''}>${newConsoleMark()}</button></article>`;
   if (session.kind === 'code') return codePanels.card(session);
+  if (session.kind === 'web') return webPanels.card(session);
   const expanded = expandedId === session.id;
   const endLabel = session.restoreError ? 'Remove saved console' : 'End this console';
   return `<article class="session-card ${escape(session.state)}${expanded ? ' console-expanded' : ''}" data-console-id="${session.id}" data-slot="${slot}"><header class="console-panel-header"><button class="console-grip" draggable="true" data-console-drag="${session.id}" aria-label="Move console ${slot}" title="Drag to move or swap. Focus here and press Alt + 1–9 to move.">${readyIcon(session)}</button><span class="slot" title="${escape(providerName(session.provider) + ' · ' + session.cwd)}">${String(slot).padStart(2, '0')}</span>${slotNameInput(slot, session)}${session.worktree ? `<span class="worktree-badge" role="img" aria-label="${escape(`Git worktree branch ${session.worktree.branch}`)}" title="${escape(`Git worktree on ${session.worktree.branch}\n${session.worktree.path}`)}"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="4" cy="3.5" r="1.6"/><circle cx="4" cy="12.5" r="1.6"/><circle cx="12" cy="5.5" r="1.6"/><path d="M4 5.1v5.8M12 7.1c0 2.6-3 3-6.6 4.4"/></svg><span class="worktree-name">${escape(session.worktree.branch.replace(/^paddock\//, ''))}</span></span>` : ''}<span class="panel-status">${badge(session.state)}</span>${accountSwitchMenu(session, 'panel')}${projectChats.button(session)}${textSizeButtons(session.id, `console ${slot}`)}${appearance.button(slot)}<button class="icon-button console-expand" data-action="toggle-console" data-id="${session.id}" aria-label="${expanded ? 'Restore console ' + slot + ' to the grid (Ctrl+Shift+Enter)' : 'Expand console ' + slot}" aria-keyshortcuts="${expanded ? 'Control+Shift+Enter' : ''}" title="${expanded ? 'Restore console · Ctrl+Shift+Enter' : 'Expand console'}">${icon(expanded ? 'restore' : 'expand')}</button><button class="icon-button console-close" data-action="end-session" data-id="${session.id}" aria-label="${endLabel} ${slot}" title="${endLabel}">${icon('close')}</button></header>${switchOfferHtml(session)}<div class="console-panel-body" data-terminal-mount="${session.id}"></div>${messageQueue?.button(session) || ''}${resizeHandles(slot)}</article>`;
@@ -400,10 +403,12 @@ function renderConsoles() {
     appearance.sync(panel, slot);
     panel.style.gridColumn = `${(slot - 1) % gridSize().columns + 1} / span ${session?.width || 1}`;
     panel.style.gridRow = `${Math.floor((slot - 1) / gridSize().columns) + 1} / span ${session?.height || 1}`;
-    if (session?.kind === 'code') {
-      panel.classList.toggle('console-expanded', isExpanded); panel.setAttribute('aria-label', 'Code panel');
-      codePanels.mount(session, panel.querySelector('.code-panel-body'));
-      const expand = panel.querySelector('[data-action="toggle-console"]'); expand.innerHTML = icon(isExpanded ? 'restore' : 'expand'); expand.setAttribute('aria-label', isExpanded ? 'Restore code panel to grid' : 'Expand code panel'); expand.setAttribute('aria-expanded', String(isExpanded));
+    if (session?.kind === 'code' || session?.kind === 'web') {
+      const kind = session.kind === 'web' ? 'preview' : 'code';
+      panel.classList.toggle('console-expanded', isExpanded); panel.setAttribute('aria-label', session.kind === 'web' ? 'Preview panel' : 'Code panel');
+      if (session.kind === 'web') webPanels.mount(session, panel.querySelector('.web-panel-body'));
+      else codePanels.mount(session, panel.querySelector('.code-panel-body'));
+      const expand = panel.querySelector('[data-action="toggle-console"]'); expand.innerHTML = icon(isExpanded ? 'restore' : 'expand'); expand.setAttribute('aria-label', isExpanded ? `Restore ${kind} panel to grid` : `Expand ${kind} panel`); expand.setAttribute('aria-expanded', String(isExpanded));
       panel.querySelectorAll('.console-grip,.console-resize').forEach(handle => { handle.disabled = !!expanded; });
       continue;
     }
@@ -451,6 +456,7 @@ function renderConsoles() {
     mountTerminal(session, panel.querySelector('.console-panel-body'), true);
   }
   codePanels?.sync();
+  webPanels?.sync();
   if (refreshDecorations) refreshSky();
   renderedExpansion = expanded?.id || null;
   renderedConsoleVisibility = consoleVisible;
@@ -1802,6 +1808,7 @@ vim = vimControls({
   context: () => ({ enabled: state?.settings.vimControls === true, view: state?.mode === 'hud' ? 'hud' : expandedId ? 'terminal' : page, sessions: state?.sessions || [], grid: gridSize(), busy: windowMoving || openingConsole }),
   focusSlot: focusVimSlot, action: vimAction, onError: message => toast(message, true)
 });
+webPanels = webPanelUI({ call, getState: () => state, selectedConsole: () => selectedId, escape, icon, resizeHandles, toast, navigate: navigatePage });
 codePanels = codePanelUI({ call, getState: () => state, selectedConsole: () => selectedId, escape, icon, resizeHandles, toast, navigate: navigatePage,
   pasteContext: async (id, text) => {
     const session = state.sessions.find(x => x.id === id && x.alive && !x.switching);

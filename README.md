@@ -51,6 +51,10 @@ Press **Code** in the desktop title bar to add a read-only panel to the console 
 
 Choose **Diff** or **File**, select code, and use **Copy** or **Add to draft**. Adding context preserves the agent's existing draft and sends no Enter key. If the console cannot safely accept a multiline paste, Paddock copies the context for manual pasting. Credential files, generated folders, external links, binary files and text files above 256 KB are excluded. Changes are folder comparisons; other agents working in the same folder may contribute. Code panels currently belong to the desktop app; the Android companion continues to list agent consoles.
 
+## Web preview panels
+
+Press **Preview** in the desktop title bar to add a panel that shows a local development server, for example `localhost:5173` or `127.0.0.1:3000`. Type the address and press Enter. The panel reloads when the console that was selected when you opened it finishes a turn (or any console, if none was selected); the reload button reloads it on demand and the arrow opens the page in your browser. Only `localhost`, `127.0.0.1` and `[::1]` load inside Paddock; a link to another site is blocked and the panel shows an error page; press reload to return. Preview panels are saved with your layout and run no process. On narrow windows, **Code** and **Preview** show as icons.
+
 ## Android preview
 
 The native Android companion controls your PC consoles, shows Results and account usage, and receives optional completion alerts. The header shows the harness icon, chat name, connection status and PC name.

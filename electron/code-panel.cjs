@@ -58,7 +58,7 @@ class CodePanel {
     return text;
   }
   async begin(session, turn) {
-    if (!session || session.remote || session.kind === 'code' || !this.watched(session)) return;
+    if (!session || session.remote || session.kind === 'code' || session.kind === 'web' || !this.watched(session)) return;
     try { this.baselines.set(session.id, { id: turn.id, before: await snapshot(session.cwd, { maxFiles: 5000, maxBytes: 8 * 1024 * 1024, exclude: name => !permitted(name) }) }); }
     catch { this.baselines.set(session.id, { id: turn.id, error: true }); }
   }
