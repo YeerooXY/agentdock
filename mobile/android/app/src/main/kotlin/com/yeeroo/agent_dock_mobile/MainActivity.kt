@@ -40,24 +40,5 @@ class MainActivity : FlutterActivity() {
                 result.success(mapOf("version" to info.versionName, "abis" to android.os.Build.SUPPORTED_ABIS.toList()))
             } else result.notImplemented()
         }
-        MethodChannel(engine.dartExecutor.binaryMessenger, "agentdock/push").setMethodCallHandler { call, result ->
-            try {
-                when (call.method) {
-                    "configure" -> {
-                        val values = call.arguments as? Map<*, *> ?: error("Missing Firebase configuration")
-                        val fields = listOf("projectId", "appId", "apiKey", "messagingSenderId")
-                        if (fields.any { (values[it] as? String).isNullOrBlank() }) error("Incomplete Firebase configuration")
-                        val prefs = getSharedPreferences("push_public_config", MODE_PRIVATE)
-                        val edit = prefs.edit()
-                        for (field in fields) edit.putString(field, values[field] as String)
-                        edit.commit()
-                        DockApplication.initializePush(this)
-                        result.success(null)
-                    }
-                    "clear" -> { getSharedPreferences("push_public_config", MODE_PRIVATE).edit().clear().commit(); result.success(null) }
-                    else -> result.notImplemented()
-                }
-            } catch (_: Exception) { result.error("firebase_setup", "Firebase setup could not be loaded. Check the project files on your PC.", null) }
-        }
     }
 }

@@ -424,13 +424,6 @@ app.whenReady().then(async () => {
             if (!gateway || !require('./mobile-address.cjs').isPrivate(gateway)) throw new Error('Check your network first.');
             await shell.openExternal(`http://${gateway}/`); break;
           }
-          case 'mobile.test-push': if (testMode) throw new Error('Push requests are disabled in tests.'); await mobile.sendPush('test', payload); break;
-          case 'mobile.remove-push': mobile.removeFirebase(); break;
-          case 'mobile.import-push': {
-            const choose = async title => { const selected = await dialog.showOpenDialog(window, { title, properties: ['openFile'], filters: [{ name: 'Firebase JSON', extensions: ['json'] }] }); if (selected.canceled) return null; const file = selected.filePaths[0]; if (fs.statSync(file).size > 65536) throw new Error('Choose a Firebase configuration under 64 KB.'); try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { throw new Error('This Firebase configuration could not be read.'); } };
-            const options = await choose('Choose google-services.json'); if (!options) break;
-            const credential = await choose('Choose the Firebase service-account JSON'); if (credential) mobile.configureFirebase(options, credential); break;
-          }
           default: throw new Error('Unknown mobile action.');
         }
         return { ok: true, value };
@@ -787,7 +780,7 @@ app.whenReady().then(async () => {
         }
         case 'docs': {
           const urls = { codex: 'https://learn.chatgpt.com/docs/codex/cli', claude: 'https://code.claude.com/docs/en/overview', openai: 'https://developers.openai.com/api/docs/pricing', anthropic: 'https://platform.claude.com/docs/en/about-claude/pricing' };
-          Object.assign(urls, { tailscale: 'https://tailscale.com/download', duckdns: 'https://www.duckdns.org/', firebase: 'https://console.firebase.google.com/', 'mobile-guide': 'https://github.com/YeerooXY/agentdock/blob/main/docs/android-setup.md', 'android-download': 'https://github.com/YeerooXY/agentdock/releases' });
+          Object.assign(urls, { tailscale: 'https://tailscale.com/download', duckdns: 'https://www.duckdns.org/', 'mobile-guide': 'https://github.com/YeerooXY/agentdock/blob/main/docs/android-setup.md', 'android-download': 'https://github.com/YeerooXY/agentdock/releases' });
           for (const item of integrationDefinitions) urls[item.id] = item.docs;
           for (const item of creativeTools) urls[item.id] = item.docs;
           for (const item of recommendedTools) urls[item.id] = item.docs;

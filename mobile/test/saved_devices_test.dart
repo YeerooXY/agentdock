@@ -131,7 +131,6 @@ void main() {
     expect(phone.pcName, 'Home workstation');
     expect(phone.pairing!['token'], 'token-a');
     expect(phone.pairing!['manualUrl'], 'https://home.duckdns.org:47831');
-    expect(phone.alerts, 'Enabled');
     expect(m.store.pcs.length, 2);
     await phone.forgetPC('b' * 64);
     expect(phone.activePC, 'a' * 64);

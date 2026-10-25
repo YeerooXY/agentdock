@@ -1,6 +1,6 @@
 # Paddock for Android
 
-A native Flutter companion for the Windows app. It connects to your own PC over pinned TLS, shows one live terminal at a time, and loads Results on demand. Optional direct alerts keep a status connection open without a cloud account. Firebase alerts remain available with your own project.
+A native Flutter companion for the Windows app. It connects to your own PC over pinned TLS, shows one live terminal at a time, and loads Results on demand. Optional alerts keep a status connection open to the PC; no cloud account is needed.
 
 For installation, pairing and notification setup, see [the Android guide](../docs/android-setup.md).
 
@@ -25,8 +25,6 @@ APKs are written to `build/app/outputs/flutter-apk/`. Use `app-arm64-v8a-release
 
 The current preview uses the local Android development signing key even in release mode. Configure a durable private release/upload keystore before a store release; never commit that keystore or its passwords. Users may need to uninstall a development build before installing a differently signed build. No iOS project is included yet.
 
-Do not put `google-services.json` or service-account JSON in the app source. Each PC imports its user's files; the APK loads only public Firebase options at runtime. Native initialization also runs when Android starts the app for a background FCM message. The private sender key never reaches the APK.
-
 ## Checks
 
 Preview 21 adds phone console styles under **Settings → Appearance** and the
@@ -39,8 +37,8 @@ the device's reduced-motion setting. Explicit ANSI backgrounds stay opaque.
 
 See [native console FX verification](../docs/mobile-console-fx-review.md).
 
-`flutter test` covers invalid pairing, narrow layout, separate message submission, interrupted sends, terminal checkpoint replacement, draft retention, on-demand Results, native Markdown and update selection. Root `npm test` exercises the HTTPS/WebSocket protocol, resize ordering, token revocation, compressed reconnects, and mocked Firebase sends. The [preview 3 checks](../docs/mobile-input-resize-review.md) also exercise the installed Codex CLI against a local mock API.
+`flutter test` covers invalid pairing, narrow layout, separate message submission, interrupted sends, terminal checkpoint replacement, draft retention, on-demand Results, native Markdown and update selection. Root `npm test` exercises the HTTPS/WebSocket protocol, resize ordering, token revocation and compressed reconnects. The [preview 3 checks](../docs/mobile-input-resize-review.md) also exercise the installed Codex CLI against a local mock API.
 
 `scripts/mobile-device-fixture.cjs` starts an isolated unpaid Windows test instance for an emulator. `scripts/mobile-adb.cjs` only targets `emulator-5554`; it never chooses a physical phone. Generated pairing codes and profiles stay under ignored `artifacts/mobile-device` and must not be published. Browser profile screenshots test the desktop renderer's responsive fallback, not an iOS app.
 
-See [the original Android checks](../docs/android-review.md) and [direct internet verification](../docs/direct-internet-review.md). New direct internet pairing requires preview 8 on both devices. Physical-phone internet access was verified by the owner on 18 October 2026. Live FCM and the new approval flow on a physical phone still need testing.
+See [the original Android checks](../docs/android-review.md) and [direct internet verification](../docs/direct-internet-review.md). New direct internet pairing requires preview 8 on both devices. Physical-phone internet access was verified by the owner on 18 October 2026. The new approval flow on a physical phone still needs testing.

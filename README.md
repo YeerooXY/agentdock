@@ -51,13 +51,13 @@ Tap the **chat name ? New console** to select a saved project/folder and an inst
 
 Use **Settings → Devices** to name your phone, add computers and switch between saved PCs. Each PC keeps its pairing and address. On Windows, **Settings → Devices → Connect a phone → Connection** names the PC; **Pair phone** manages its paired phones. [Multiple-device setup](docs/android-setup.md#multiple-computers-and-phones).
 
-**Settings → General → Stay connected** enables direct background alerts without Firebase. Android shows an ongoing notification; battery restrictions can delay alerts.
+**Settings → General → Stay connected** turns on alerts. They come straight from your PC; no cloud account is needed. After pairing, the app offers to turn them on. Android shows an ongoing notification; battery restrictions can delay alerts.
 
 **Linux VM through SSH:** add a host in **Settings → Devices → Linux hosts**, verify its fingerprint on the VM, then check the connection. Choose it when opening a console. tmux keeps the remote session available after Paddock disconnects. A paired phone controls that same console through the PC. [SSH setup](docs/ssh-hosts.md).
 
 Phone and PC connect directly on the same Wi-Fi. For access away from home, choose **Direct internet**: Paddock checks your network, can forward a port on a compatible router, helps with Windows Firewall, and pairs your phone by QR code. This needs a reachable public IPv4 address. An upstream router or provider NAT may need a manual step; the wizard does not claim internet access works until a phone connects from outside. A private VPN you already use still works too.
 
-An optional free Duck DNS hostname follows a changing address; its token stays in Keys. If mobile data stops working, follow the [connection recovery steps](docs/android-setup.md#if-mobile-data-stops-connecting). Completion alerts can use the optional direct connection or your own Firebase project. No terminal traffic goes through an Paddock account or hosted relay. See the [setup and privacy guide](docs/android-setup.md) and [direct-internet verification](docs/direct-internet-review.md). Physical-phone internet access was verified on 18 October 2026; address changes still require a fresh test. Live Firebase delivery remains unverified.
+An optional free Duck DNS hostname follows a changing address; its token stays in Keys. If mobile data stops working, follow the [connection recovery steps](docs/android-setup.md#if-mobile-data-stops-connecting). No terminal traffic goes through a Paddock account or hosted relay. See the [setup and privacy guide](docs/android-setup.md) and [direct-internet verification](docs/direct-internet-review.md). Physical-phone internet access was verified on 18 October 2026; address changes still require a fresh test.
 
 ## Run from source
 
@@ -157,7 +157,23 @@ On other pages, j/k scroll and Ctrl+d/u scroll half a page. Press the two keys i
 
 Claude Code is detected on Windows PATH, in its usual native install folders, and inside installed WSL distributions. Open a Claude console to complete any first-run setup and sign-in.
 
-A fresh installation uses **Agent defaults** for permissions. Select **Unrestricted** in **Settings → Console defaults** to pass `--dangerously-bypass-approvals-and-sandbox` to new Codex consoles or `--dangerously-skip-permissions` to Claude. Existing consoles keep their permissions. Full access uses the signed-in OS account's permissions; it does not grant administrator rights or remove provider limits. First-run setup and sign-in still apply.
+A fresh installation uses **Agent defaults** for permissions. Select **Unrestricted** in **Settings → Console defaults** to start every new agent console without approval prompts. Paddock passes each agent's own flag:
+
+| Agent | Flag |
+| --- | --- |
+| Codex | `--dangerously-bypass-approvals-and-sandbox` |
+| Claude Code, Google Antigravity | `--dangerously-skip-permissions` |
+| GitHub Copilot | `--allow-all` |
+| OpenCode | `--auto` |
+| Cursor | `--force` |
+| Grok Build | `--always-approve` |
+| Kiro | `--trust-all-tools` |
+| Qwen Code, Gemini CLI | `--approval-mode yolo` |
+| Kimi Code | `--yolo` |
+| Cline | `--auto-approve true` |
+| Factory Droid | `--auto high` |
+
+Pi has no approval prompts, so the setting does not apply to it. Consoles on a Linux host through SSH always use Agent defaults. Existing consoles keep their permissions. Full access uses the signed-in OS account's permissions; it does not grant administrator rights or remove provider limits. First-run setup and sign-in still apply.
 
 Per-session hooks report completion and attention states. Claude's status line reports usage when available. User and project CLI configuration files are not edited. Existing processes outside Paddock are not controlled.
 
@@ -254,7 +270,7 @@ Local data is in `%APPDATA%\Paddock`:
 - `integrations`: installed Blender server, setup versions and add-on setup notes. The Blender add-on itself lives in Blender's user add-ons folder. Unity Pipeline lives in the project you selected.
 - `ledger.json`: model, time, tokens, request status and estimated cost; no prompts or responses.
 - `results/`, `reviews.json`: saved files, page screenshots, findings and manual checklist notes. These can contain project or page content. Delete saved copies in Results, or ask your agent to delete a whole review with `dock/delete_review`.
-- `mobile.json`: connection settings plus an OS-encrypted payload containing paired device tokens, TLS identity and optional Firebase sender credentials. Disable the connection or remove phones/Firebase in Android setup.
+- `mobile.json`: connection settings plus an OS-encrypted payload containing paired device tokens and TLS identity. Disable the connection or remove phones in Android setup.
 - `concept-jobs/` holds image job metadata, prompts and Meshy temporary downloads; `concept-usage.json` keeps reported usage and request IDs to prevent repeat billing. Completed images are copied to Results. Removing a job deletes its prompt and temporary files; usage metadata remains. [Image data and deletion](docs/screen-previews.md#data-and-usage).
 - `settings.json`, `limits.json`, `events`, `sessions`: preferences, cached quotas and per-session tracking/configuration.
 - `projects.json`: project records, including the chosen color. `message-usage.json` retains up to 5,000 turn records with token counts, project IDs and reported quota changes; the desktop view shows the latest 200. A per-console `events/*.quota-start.json` file keeps the starting quota reading. These tracking fields contain no prompts, answers, key values or credit balances.

@@ -11,8 +11,6 @@ dependencies:
     sdk: flutter
   xterm: ^4.0.0
   flutter_secure_storage: ^11.2.0
-  firebase_core: ^5.0.0
-  firebase_messaging: ^17.0.0
   mobile_scanner: ^7.4.2
   crypto: ^3.0.7
   flutter_markdown_plus: ^1.0.12

@@ -14,7 +14,6 @@ const { MobileCompanion } = require('../electron/mobile.cjs');
 const { Results } = require('../electron/results.cjs');
 const { AlertEvents } = require('../electron/alerts.cjs');
 const { TerminalStream } = require('../electron/mobile-stream.cjs');
-const { MobilePush, publicConfig, serviceAccount } = require('../electron/mobile-push.cjs');
 const safe = (() => { const key = crypto.randomBytes(32); return { isEncryptionAvailable: () => true, encryptString(value) { const iv = crypto.randomBytes(12), cipher = crypto.createCipheriv('aes-256-gcm', key, iv); const encrypted = Buffer.concat([cipher.update(value), cipher.final()]); return Buffer.concat([iv, cipher.getAuthTag(), encrypted]); }, decryptString(buffer) { const d = crypto.createDecipheriv('aes-256-gcm', key, buffer.subarray(0, 12)); d.setAuthTag(buffer.subarray(12, 28)); return Buffer.concat([d.update(buffer.subarray(28)), d.final()]).toString(); } }; })();
 async function fixture(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dock-mobile-'));
@@ -446,14 +445,14 @@ test('mobile parses a resized console redraw at its new width before the next fl
   assert.equal(frame.cols, 120);
   assert.equal(stream.term.buffer.active.getLine(0).translateToString(true), 'x'.repeat(110) + 'RIGHT');
 });
-test('Firebase imports validate project/package and push contains no console content', async () => {
-  const keys = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
-  const raw = { type: 'service_account', project_id: 'dock-test-123', client_email: 'sender@dock-test-123.iam.gserviceaccount.com', private_key: keys.privateKey.export({ type: 'pkcs8', format: 'pem' }) };
-  const config = publicConfig({ project_info: { project_id: raw.project_id, project_number: '1234567' }, client: [{ client_info: { android_client_info: { package_name: 'com.yeeroo.agentdock.mobile' }, mobilesdk_app_id: '1:1234567:android:abcdef' }, api_key: [{ current_key: 'AIza' + 'x'.repeat(35) }] }] });
-  assert.equal(config.projectId, raw.project_id); assert.throws(() => serviceAccount(raw, 'other-project'), /same Firebase/);
-  const calls = [], push = new MobilePush({ credential: () => serviceAccount(raw, config.projectId), fetcher: async (url, options) => { calls.push({ url, options }); return { ok: true, json: async () => ({ access_token: 'test-bearer', expires_in: 3600 }) }; } });
-  await push.send('phone-token', 'event-123');
-  assert.equal(calls.length, 2); assert.equal(calls[0].url, 'https://oauth2.googleapis.com/token');
-  const body = JSON.parse(calls[1].options.body); assert.equal(body.message.notification.body, 'An agent needs your attention.'); assert.ok(!calls[1].options.body.includes('PRIVATE KEY')); assert.equal(body.message.token, 'phone-token');
-  const bad = new MobilePush({ credential: () => raw, fetcher: async () => ({ ok: false }) }); await assert.rejects(bad.send('phone-token'), /Firebase sign-in failed/);
+test('a saved Firebase sender key and phone registrations are erased on load', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dock-mobile-'));
+  try {
+    const saved = { devices: [{ id: 'phone', name: 'Phone', token: 't', pushToken: 'TEST_ONLY_PUSH' }], firebase: { public: { projectId: 'dock-test-123' }, credential: { private_key: 'TEST_ONLY_KEY' } } };
+    fs.writeFileSync(path.join(root, 'mobile.json'), JSON.stringify({ enabled: false, host: '', port: 47831, encrypted: safe.encryptString(JSON.stringify(saved)).toString('base64') }));
+    const m = new MobileCompanion(root, safe, { sessions: new EventEmitter(), results: new EventEmitter(), alerts: new AlertEvents(), testMode: true });
+    assert.equal(m.private.firebase, undefined); assert.equal('pushToken' in m.private.devices[0], false);
+    const stored = safe.decryptString(Buffer.from(JSON.parse(fs.readFileSync(path.join(root, 'mobile.json'), 'utf8')).encrypted, 'base64'));
+    assert.doesNotMatch(stored, /TEST_ONLY_KEY|TEST_ONLY_PUSH|firebase/); assert.equal(JSON.parse(stored).devices[0].id, 'phone');
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });

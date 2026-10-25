@@ -8,7 +8,6 @@ const { EventEmitter } = require('node:events');
 const { WebSocketServer, WebSocket } = require('ws');
 const { readJson, atomicJson } = require('./storage.cjs');
 const { TerminalStream } = require('./mobile-stream.cjs');
-const { MobilePush, publicConfig, serviceAccount } = require('./mobile-push.cjs');
 const { isPrivate, isPublic, isTailscale, connectionOptions } = require('./mobile-address.cjs');
 const { MobileNetwork } = require('./mobile-network.cjs');
 const { consoleChoices, mobileLaunch, consoleFiles } = require('./mobile-console.cjs');
@@ -52,7 +51,11 @@ class MobileCompanion extends EventEmitter {
     this.attempts = new Map(); this.attemptPeriod = Date.now(); this.attemptTotal = 0;
     this.private = { devices: [] }; this.clients = new Set(); this.streams = new Map(); this.liveAlerts = []; this.counters = { sent: 0, received: 0 }; this.error = ''; this.pairing = null; this.pendingPairing = null;
     if (this.config.encrypted) { try { this.private = JSON.parse(safeStorage.decryptString(Buffer.from(this.config.encrypted, 'base64'))); } catch { this.error = 'Mobile credentials could not be unlocked. Set up this PC again.'; this.config.enabled = false; } }
-    this.push = new MobilePush({ credential: () => this.private.firebase?.credential });
+    // Firebase alerts were removed; drop a saved sender key and phone registrations.
+    if (this.private.firebase || this.private.devices.some(x => 'pushToken' in x)) {
+      delete this.private.firebase; for (const device of this.private.devices) delete device.pushToken;
+      try { this.persist(); } catch {}
+    }
     this.output = packet => {
       const previous = this.streams.get(packet.id), existing = !!previous;
       const generationChanged = previous && packet.launchId && previous.launchId !== packet.launchId;
@@ -73,7 +76,6 @@ class MobileCompanion extends EventEmitter {
       // It has no read state, persistence or notification-management API.
       this.liveAlerts = [...this.liveAlerts.slice(-49), { id: item.id, title: item.title, at: item.at }];
       this.scheduleState();
-      if (this.config.enabled && !testMode) this.sendPush(item.id).catch(() => {});
     };
     sessions.on('output', this.output); sessions.on('resize', this.resized); sessions.on('changed', this.changed); results.on('changed', this.changed); alerts?.on('notification', this.notification);
   }
@@ -92,7 +94,7 @@ class MobileCompanion extends EventEmitter {
     if (!this.available()) throw new Error('Windows credential encryption is unavailable.');
     this.config.encrypted = this.crypto.encryptString(JSON.stringify(this.private)).toString('base64'); atomicJson(this.file, this.config); this.emit('changed');
   }
-  snapshot() { const p = this.pendingPairing; return { notice: this.notice || '', name: this.name, enabled: !!this.server, host: this.config.host, port: this.config.port, mode: this.config.mode || 'local', publicHost: this.config.publicHost || '', externalPort: this.config.externalPort || 47831, routerMode: this.config.routerMode || 'manual', duckKeyId: this.config.duckKeyId || '', network: this.network.snapshot(), interfaces: interfaces(), error: this.error, devices: this.private.devices.map(({ id, name, at, pushToken, lastInternetAt }) => ({ id, name, at, lastInternetAt, alerts: !!pushToken, connected: [...this.clients].some(x => x.device.id === id) })), push: { project: this.private.firebase?.public.projectId || '', configured: !!this.private.firebase?.credential, error: this.push.error, lastSent: this.push.lastSent }, pairingExpires: this.pairing?.expires || 0, pendingPairing: p && p.expires > Date.now() && ['pending', 'approved'].includes(p.state) ? { id: p.id, name: p.name, code: p.code, expires: p.expires, state: p.state } : null, bytes: this.counters }; }
+  snapshot() { const p = this.pendingPairing; return { notice: this.notice || '', name: this.name, enabled: !!this.server, host: this.config.host, port: this.config.port, mode: this.config.mode || 'local', publicHost: this.config.publicHost || '', externalPort: this.config.externalPort || 47831, routerMode: this.config.routerMode || 'manual', duckKeyId: this.config.duckKeyId || '', network: this.network.snapshot(), interfaces: interfaces(), error: this.error, devices: this.private.devices.map(({ id, name, at, directAlerts, lastInternetAt }) => ({ id, name, at, lastInternetAt, alerts: !!directAlerts, connected: [...this.clients].some(x => x.device.id === id) })), pairingExpires: this.pairing?.expires || 0, pendingPairing: p && p.expires > Date.now() && ['pending', 'approved'].includes(p.state) ? { id: p.id, name: p.name, code: p.code, expires: p.expires, state: p.state } : null, bytes: this.counters }; }
   async configure({ enabled, host, name, port = 47831, ...remote }) {
     if (!enabled) { await this.stop(); this.config.enabled = false; this.persist(); return; }
     if (!interfaces().some(x => x.address === host) || !isPrivate(host)) throw new Error('Choose this PC’s private network address.');
@@ -206,7 +208,7 @@ class MobileCompanion extends EventEmitter {
       if (pending.state === 'pending') { res.writeHead(202); res.end(JSON.stringify({ status: 'pending' })); return; }
       if (!pending.device) {
         if (this.private.devices.length >= 9) { res.writeHead(409); res.end('{}'); return; }
-        const device = { id: crypto.randomUUID(), name: pending.name, token: token(), at: Date.now(), pushToken: '' };
+        const device = { id: crypto.randomUUID(), name: pending.name, token: token(), at: Date.now() };
         this.private.devices.push(device);
         try { this.persist(); } catch (error) { this.private.devices = this.private.devices.filter(x => x !== device); throw error; }
         pending.device = device; pending.state = 'claimed'; this.emit('changed');
@@ -346,12 +348,6 @@ class MobileCompanion extends EventEmitter {
       case 'alerts.mode':
         if (typeof payload.direct !== 'boolean') throw new Error('Choose a notification mode.');
         client.device.directAlerts = payload.direct; this.persist(); return true;
-      case 'push.config': return this.private.firebase?.public || null;
-      case 'push.register': {
-        if (typeof payload.token !== 'string' || payload.token.length > 4096 || /[\s\x00]/.test(payload.token)) throw new Error('Invalid notification registration.');
-        client.device.pushToken = payload.token; this.persist(); return true;
-      }
-      case 'push.test': if (this.testMode) throw new Error('Push requests are disabled in tests.'); return this.push.send(client.device.pushToken);
       case 'ping': return true;
       default: throw new Error('This mobile action is unavailable.');
     }
@@ -365,18 +361,6 @@ class MobileCompanion extends EventEmitter {
         if ((chunk.data || chunk.reset) && this.send(client, { type: 'terminal', id: selected, ...chunk })) { client.sequence = chunk.sequence; client.epoch = chunk.epoch; }
       } finally { client.inflight = false; client.lastFlush = Date.now(); }
     }
-  }
-  configureFirebase(rawPublic, rawPrivate) {
-    const options = publicConfig(rawPublic), credential = serviceAccount(rawPrivate, options.projectId);
-    if (this.private.firebase?.public.projectId !== options.projectId) for (const device of this.private.devices) device.pushToken = '';
-    this.private.firebase = { public: options, credential }; this.push.cached = null; this.persist(); return this.snapshot();
-  }
-  removeFirebase() { delete this.private.firebase; for (const d of this.private.devices) d.pushToken = ''; this.push.cached = null; this.persist(); }
-  async sendPush(id = 'test', deviceId) {
-    const devices = this.private.devices.filter(x => !x.directAlerts && x.pushToken && (!deviceId || x.id === deviceId));
-    if (!devices.length || !this.private.firebase) { if (id === 'test') throw new Error('Enable alerts on your paired phone first.'); return; }
-    const results = await Promise.allSettled(devices.map(x => this.push.send(x.pushToken, id)));
-    this.emit('changed'); if (results.some(x => x.status === 'rejected')) throw new Error(this.push.error);
   }
   revoke(id) { this.private.devices = this.private.devices.filter(x => x.id !== id); for (const client of this.clients) if (client.device.id === id) client.ws.close(1008, 'Phone removed'); this.persist(); }
   async stop() {

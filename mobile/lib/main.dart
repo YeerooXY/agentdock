@@ -557,6 +557,30 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
     }
   }
 
+  Future<void> offerAlerts() async {
+    if (!mounted || c.stayConnected) return;
+    final enable = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Turn on alerts?'),
+        content: const Text(
+          'Get a notification when a console is ready or needs you. Your phone stays connected to this PC, which uses extra battery. Change this later in Settings → Stay connected.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Not now'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Turn on'),
+          ),
+        ],
+      ),
+    );
+    if (enable == true) await run(() => c.setStayConnected(true));
+  }
+
   Future<void> copyConsole() async {
     final terminal = c.screen?.terminal;
     if (terminal == null) return;
@@ -607,6 +631,10 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
     animation: c,
     builder: (context, _) {
       if (c.pairing == null) return PairPage(client: c);
+      if (c.offerAlerts && c.connected) {
+        c.offerAlerts = false;
+        WidgetsBinding.instance.addPostFrameCallback((_) => offerAlerts());
+      }
       final current = c.sessions
           .where((s) => s['id'] == c.selected)
           .firstOrNull;

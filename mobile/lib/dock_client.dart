@@ -7,8 +7,6 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'package:firebase_core/firebase_core.dart';
-import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:xterm/xterm.dart';
 
 import 'pairing_request.dart';
@@ -84,7 +82,6 @@ class DockClient extends ChangeNotifier {
   }
 
   static const storage = FlutterSecureStorage();
-  static const nativePush = MethodChannel('agentdock/push');
   static const background = MethodChannel('agentdock/background');
   final SavedDevices devices;
   final ConsoleDrafts drafts;
@@ -155,7 +152,6 @@ class DockClient extends ChangeNotifier {
   String pairingCode = '';
   bool _disposed = false;
   Timer? retry;
-  StreamSubscription<String>? tokenRefresh;
   bool connected = false,
       connecting = false,
       foreground = true,
@@ -163,8 +159,9 @@ class DockClient extends ChangeNotifier {
       dataSaver = true;
   String selected = '',
       status = 'Pair your PC to begin.',
-      inputError = '',
-      alerts = 'Not enabled';
+      inputError = '';
+  // Set after a new pairing so the home screen can offer direct alerts once.
+  bool offerAlerts = false;
   int received = 0, sent = 0, attempts = 0, serial = 0, generation = 0;
   List<Map<String, dynamic>> get sessions =>
       (state['sessions'] as List? ?? []).cast<Map<String, dynamic>>();
@@ -412,7 +409,6 @@ class DockClient extends ChangeNotifier {
     state = {'sessions': <dynamic>[], 'unreadResults': 0};
     received = sent = attempts = 0;
     inputError = '';
-    alerts = pc?['alerts'] == true ? 'Enabled' : 'Not enabled';
     status = pc == null ? 'Pair your PC to begin.' : 'Connecting…';
     if (pc == null && stayConnected) {
       unawaited(setStayConnected(false).catchError((_) {}));
@@ -580,6 +576,7 @@ class DockClient extends ChangeNotifier {
       _pairingRequest = null;
       pairingCode = '';
       activate(devices.find(saved['pin'] as String));
+      offerAlerts = !stayConnected;
       unawaited(connect());
     } catch (_) {
       await operation.cancel();
@@ -661,7 +658,6 @@ class DockClient extends ChangeNotifier {
         cancelOnError: true,
       );
       if (selected.isNotEmpty && streaming) await subscribe();
-      refreshAlerts().catchError((_) {});
       unawaited(syncPhoneName());
       unawaited(syncAlertMode().catchError((_) {}));
       notifyListeners();
@@ -1164,110 +1160,6 @@ class DockClient extends ChangeNotifier {
       }
     }
     pending.clear();
-    tokenRefresh?.cancel();
-    tokenRefresh = null;
-  }
-
-  Future<void> enableAlerts() async {
-    if (stayConnected) await setStayConnected(false);
-    final pin = activePC, current = generation;
-    final options = await request('push.config');
-    if (options == null) {
-      throw StateError(
-        'Import your Firebase files in PC setup → Alerts first.',
-      );
-    }
-    if (current != generation) throw StateError('The selected PC changed.');
-    // Android FCM uses one default Firebase application. Preserve registrations
-    // on other PCs instead of silently replacing their notification identity.
-    if (devices.pcs.any(
-          (pc) =>
-              pc['pin'] != pin &&
-              pc['alerts'] == true &&
-              pc['pushProject'] != null &&
-              pc['pushProject'] != options['projectId'],
-        ) ||
-        Firebase.apps.any(
-              (app) => app.options.projectId != options['projectId'],
-            ) &&
-            devices.pcs.any((pc) => pc['pin'] != pin && pc['alerts'] == true)) {
-      throw StateError(
-        'Use the same Firebase project on your PCs to keep alerts from all of them.',
-      );
-    }
-    for (final app in Firebase.apps) {
-      if (app.options.projectId != options['projectId']) await app.delete();
-    }
-    await nativePush.invokeMethod('configure', options);
-    await Firebase.initializeApp();
-    final permission = await FirebaseMessaging.instance.requestPermission();
-    if (permission.authorizationStatus != AuthorizationStatus.authorized) {
-      throw StateError(
-        'Allow notifications in Android settings, then try again.',
-      );
-    }
-    await FirebaseMessaging.instance.setAutoInitEnabled(true);
-    // HTTP v1 direct-send currently accepts registration tokens, not FIDs.
-    // ignore: deprecated_member_use
-    final token = await FirebaseMessaging.instance.getToken();
-    if (token == null) {
-      throw StateError(
-        'Google Play services could not register this phone. Try again.',
-      );
-    }
-    if (current != generation) {
-      throw StateError('The selected PC changed. Enable alerts there again.');
-    }
-    await request('push.register', {'token': token});
-    await devices.patch(pin, {
-      'alerts': true,
-      'pushProject': options['projectId'],
-    });
-    if (current != generation) return;
-    pairing = devices.find(pin);
-    watchToken(current);
-    alerts = 'Enabled';
-    notifyListeners();
-  }
-
-  Future<void> refreshAlerts() async {
-    final pin = activePC, current = generation;
-    if (pairing?['alerts'] != true) return;
-    final options = await request('push.config');
-    await Firebase.initializeApp();
-    if (options == null ||
-        Firebase.app().options.projectId != options['projectId']) {
-      if (generation == current) {
-        alerts = 'Setup changed on this PC';
-        notifyListeners();
-      }
-      return;
-    }
-    // Refresh a token that changed while the private connection was asleep.
-    // ignore: deprecated_member_use
-    final token = await FirebaseMessaging.instance.getToken();
-    if (token != null && connected && current == generation) {
-      await request('push.register', {'token': token});
-    }
-    if (generation != current) return;
-    if (pairing?['pushProject'] == null) {
-      await devices.patch(pin, {'pushProject': options['projectId']});
-      if (generation != current) return;
-      pairing = devices.find(pin);
-    }
-    watchToken(current);
-    alerts = 'Enabled';
-    notifyListeners();
-  }
-
-  void watchToken(int current) {
-    tokenRefresh?.cancel();
-    // ignore: deprecated_member_use
-    tokenRefresh = FirebaseMessaging.instance.onTokenRefresh.listen((value) {
-      if (connected && generation == current) {
-        request('push.register', {'token': value}).catchError((_) => null);
-      }
-    });
   }
 
   Future<void> forgetPC(String pin) async {
@@ -1276,11 +1168,6 @@ class DockClient extends ChangeNotifier {
     }
     changingDevice = true;
     try {
-      if (pin == activePC && connected) {
-        try {
-          await request('push.register', {'token': ''});
-        } catch (_) {}
-      }
       await drafts.forgetPC(pin);
       await devices.remove(pin);
       _selections.remove(pin);
@@ -1288,7 +1175,6 @@ class DockClient extends ChangeNotifier {
         activate(devices.find(devices.active));
         unawaited(connect());
       }
-      // Keep FCM alive: another saved or temporarily unreachable PC may use it.
       notifyListeners();
     } finally {
       changingDevice = false;
@@ -1306,7 +1192,6 @@ class DockClient extends ChangeNotifier {
     retry?.cancel();
     socket?.close();
     transport?.close(force: true);
-    tokenRefresh?.cancel();
     drafts.removeListener(notifyListeners);
     drafts.dispose();
     super.dispose();

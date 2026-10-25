@@ -2,7 +2,7 @@
 
 Leave Paddock running on your PC, then use your phone to work in the same consoles. The Android app shows one terminal at a time. You can switch consoles, start one with your saved defaults, view Results, and check usage.
 
-This is an Android preview. iPhone support comes later. The owner verified a physical phone sending commands over mobile data on 18 October 2026. The new matching-code approval flow is tested separately; live Firebase delivery still needs verification.
+This is an Android preview. iPhone support comes later. The owner verified a physical phone sending commands over mobile data on 18 October 2026. The new matching-code approval flow is tested separately.
 
 ## Install and pair
 
@@ -33,8 +33,6 @@ The saved pairing token has no automatic expiry and survives normal restarts and
 - **Forget one computer:** its three-dot menu → Forget computer. Other saved PCs are kept. For revocation, remove the phone on the forgotten PC too; an offline PC may still send alerts until you remove it there.
 
 Existing single-PC pairings migrate automatically into encrypted device storage. Names and addresses are labels and routes; the saved certificate fingerprint still identifies the server. Renaming does not replace its certificate or token. Give a cloned VM a fresh Paddock profile rather than copying an existing PC's pairing credentials.
-
-Cloud alerts on multiple PCs currently require the same Firebase project on those PCs. Paddock preserves the shared phone registration when switching; it refuses a conflicting setup that would break another PC's alerts. If Google rotates the registration token, reconnect to each PC to refresh it. Alerts are generic and opening one does not yet select its originating PC automatically. Live multi-PC Firebase delivery is unverified.
 
 A Windows VM running Paddock can be added once its network address is reachable. A Linux SSH connector and an integrated desktop remote-host selector are not included. New consoles on Android use the selected PC's configured defaults.
 
@@ -68,53 +66,44 @@ The phone still checks the PC certificate pinned during pairing, so Tailscale ad
 
 When an older setup used **Direct internet**, Paddock switches it to **Same Wi-Fi** on start and shows a note in Phone setup. Paired phones stay paired and keep working on Wi-Fi. Choose **Anywhere · Tailscale**, then pair again or enter the Tailscale address in the phone's **Connection** screen. Remove the old port-forwarding rule from your router and any Duck DNS token you no longer need from **Keys**.
 
-## Optional completion alerts
+## Completion alerts
 
-Choose **Usage → Notifications → Stay connected** for direct background alerts. Allow Android notifications when asked. Paddock keeps one authenticated connection to the selected PC, receives status changes, and pauses terminal output while backgrounded. An ongoing notification shows the connection and offers **Stop alerts**. No Firebase account or server is needed.
+Alerts come straight from your PC. After pairing, the app asks whether to turn them on. To change it later, use **Settings → Notifications → Stay connected**. Allow Android notifications when asked. Paddock keeps one authenticated connection to the selected PC, receives status changes, and pauses terminal output while backgrounded. An ongoing notification shows the connection and offers **Stop alerts**. No cloud account or server is needed.
 
-The PC and its route must remain available. Android power saving, force-stop, a reboot or network loss can delay or stop delivery; reopen Paddock to resume. For long waits, review Android's battery setting for Paddock. This is optional and uses more battery/network time than cloud push. It watches the selected PC; other saved computers remain paired.
+The PC and its route must remain available. Android power saving, force-stop, a reboot or network loss can delay or stop delivery; reopen Paddock to resume. For long waits, review Android's battery setting for Paddock. This uses extra battery and data. It watches the selected PC; other saved computers remain paired.
 
-**Firebase alerts** is a separate option for devices with Google Play services. Expand it under Usage → Notifications and use **your own Firebase project**. Direct mode suppresses that phone's Firebase sends on preview 15 hosts; turning direct mode off restores its existing registration. There is no Paddock cloud relay or shared billing account.
+Alerts show the console name and whether it is ready or needs you. Tapping one opens Paddock; open the ready console from the switcher. Windows notification clicks open the related console, result, or review directly.
 
-1. Open the [Firebase console](https://console.firebase.google.com/) and create a dedicated project. Google Analytics is not needed.
-2. Add an Android app with package **`com.yeeroo.agentdock.mobile`**. Download its **`google-services.json`**. You do not need to rebuild the APK or add the Firebase SDK yourself.
-3. In **Project settings → Cloud Messaging**, check that the Firebase Cloud Messaging HTTP v1 API is enabled.
-4. In **Project settings → Service accounts**, generate and download a private key. Keep this project separate from other apps. Administrators can instead create a dedicated sender service account with the **Firebase Cloud Messaging API Admin** role and generate its JSON key. The key must belong to the same project as the Android configuration.
-5. In Paddock's **Phone setup → Alerts**, choose **Import Firebase files**. Pick `google-services.json`, then the service-account JSON. Paddock checks the package and project, then encrypts the private key on this PC. Never paste that key into a chat or commit it to Git. You can delete the original download after importing it.
-6. On Android, open **Usage → Notifications → Firebase alerts → Enable alerts** and allow notifications. Then send a test alert. Google Play services and an internet connection are required.
-
-The PC sends a generic “An agent needs your attention” alert through Google. It does not send terminal text, project names, code, or model API keys through FCM. Tapping a phone notification opens Paddock; open the ready console from the switcher. Windows notification clicks open the related console, result, or review directly.
-
-If a test fails, check the project match, Cloud Messaging permissions, Android notification permission, and Play services. Re-enable alerts after changing projects or reinstalling the app. Android force-stop and device power restrictions can prevent background delivery until you open the app again. Delivery is not guaranteed.
+Updated 25 October 2026: Firebase alerts were removed. On first start, the PC erases any imported Firebase key and phone registrations, and the phone clears its saved Firebase settings. You can delete the Firebase project you created for Paddock.
 
 ## Who pays?
 
 The phone talks to **your PC** over your own connection. Paddock operates no relay and collects no cloud fee. Tailscale may route an encrypted connection through its relay when a direct path is unavailable; this is part of your Tailscale service, not an Paddock server. Its Personal plan is for personal, non-commercial use; check the plan appropriate to your use. [Tailscale pricing](https://tailscale.com/pricing), [connection types](https://tailscale.com/docs/reference/connection-types).
 
-Firebase Cloud Messaging is currently a no-cost product. This setup does not deploy Cloud Run, Functions, a database, or storage. Google project limits and service terms still apply. Do not enable unrelated paid services just to configure alerts. Mobile carrier data and your chosen AI subscriptions/API calls remain your costs. [Firebase pricing](https://firebase.google.com/pricing), [FCM HTTP v1 setup](https://firebase.google.com/docs/cloud-messaging/send/v1-api).
+Mobile carrier data and your chosen AI subscriptions/API calls remain your costs.
 
-### Can alerts work without Firebase?
+### How reliable are alerts?
 
-Yes: **Stay connected** is implemented from Android preview 15. A foreground service keeps the selected PC connection available with an ongoing notification. Android Doze and vendor battery restrictions can still delay delivery; it is not a guarantee of instant alerts. [Android background restrictions](https://developer.android.com/training/monitoring-device-state/doze-standby).
+A foreground service keeps the selected PC connection available with an ongoing notification. Android Doze and vendor battery restrictions can still delay delivery; it is not a guarantee of instant alerts. [Android background restrictions](https://developer.android.com/training/monitoring-device-state/doze-standby).
 
 Preview 15 PC hosts provide event IDs so reconnects avoid duplicate alerts and can deliver recent unread events. Older PC hosts use console-state transitions, which can miss a completion while disconnected. UnifiedPush/ntfy is not integrated.
 
 ## Data use and privacy
 
 - Only the selected terminal streams. Updates are compressed and batched, and reconnects request missing output or a bounded screen snapshot. Commands are never resent automatically after a disconnect.
-- Switching away from Console stops terminal streaming. Backgrounding closes the connection unless Stay connected is enabled. Direct mode receives status only with a 60-second WebSocket keepalive; it does not poll or stream terminal text. Firebase remains a separate optional delivery route.
+- Switching away from Console stops terminal streaming. Backgrounding closes the connection unless Stay connected is enabled. Direct mode receives status only with a 60-second WebSocket keepalive; it does not poll or stream terminal text.
 - Results downloads its list first. A picture or report loads when you open it; larger images need another tap. Markdown previews do not load remote images. Web links open in your browser only when tapped.
-- **Data saver** is on by default. Usage shows compressed application bytes for the current app session, not TLS, VPN, Firebase, or carrier overhead. It is not a billing meter.
+- **Data saver** is on by default. Usage shows compressed application bytes for the current app session, not TLS, VPN, or carrier overhead. It is not a billing meter.
 - **Check for updates** contacts GitHub for public release metadata. **Download update** sends your browser to GitHub's APK download. These requests expose ordinary connection information, such as your IP address, to GitHub; they send no pairing credentials, projects, terminal text or model keys. Update downloads are not included in the private-connection byte counter.
-- The connection uses HTTPS/WSS with the PC certificate pinned during pairing. PC device tokens, certificate key, FCM tokens, and Firebase service-account credentials are encrypted with Windows safeStorage. The phone stores its pairing credential through Android Keystore-backed secure storage. There is no plaintext fallback for PC secrets.
+- The connection uses HTTPS/WSS with the PC certificate pinned during pairing. PC device tokens and the certificate key are encrypted with Windows safeStorage. The phone stores its pairing credential through Android Keystore-backed secure storage. There is no plaintext fallback for PC secrets.
 - Phone console style and motion preferences are stored locally through the same secure-storage library. They are not sent to the PC or a third party. Change them in **Settings → Appearance**; clearing the Android app's storage removes them.
 - Paddock contacts no address-check or DNS service. Tailscale is optional; when you use it, Tailscale coordinates the connection under its own account and privacy terms, while console traffic stays end-to-end encrypted between your devices. Chosen connection settings are stored locally. Removing a phone deletes its device record. **Remove firewall rule** removes Paddock's Windows rule with administrator approval. Turning off mobile stops its listener. A narrow firewall rule may remain until explicitly removed; no service listens while mobile is off.
-- Google receives the Firebase installation/registration identifiers and generic alert metadata needed to deliver notifications. The public Firebase app configuration is stored on Android; the service-account private key stays on the PC. No Google Analytics SDK is enabled. Tailscale has its own account and network data practices. [Firebase privacy information](https://firebase.google.com/support/privacy).
+- Tailscale has its own account and network data practices.
 - QR scanning uses Google ML Kit locally. Google states that scan images/results stay on the device, while the SDK sends performance and usage metrics and may request updates. Paste a code instead if you prefer not to use scanning. [ML Kit privacy information](https://developers.google.com/ml-kit/terms).
 - Code, terminal output, selected Results, account usage, configuration names and shared instructions go directly from your PC to its paired phone. Key values, endpoint URLs and connection bindings stay on the PC. Terminal buffers and opened previews stay in app memory; reconnect credentials persist until forgotten. The phone app does not upload these to Paddock hosting.
 - Image attachments use the Android system picker. Android 14+ screenshot detection only offers the picker; it does not read screenshots automatically. Chosen images are resized, re-encoded without EXIF/location metadata and sent over the paired TLS connection into the selected local project's `.agentdock/mobile-attachments` folder. Uploads are capped at 4 MiB; each project keeps at most 128 copies/64 MiB. Remove old copies from that folder on the PC. They are not automatically deleted or sent to an AI.
 - Unsent message drafts stay in OS-backed encrypted storage on the phone, separately for each PC and console. Sending or clearing a draft removes it; forgetting a PC removes its drafts. Up to 128 recent drafts are retained, with a combined target of 1 MiB of text. Drafts are sent only when you press Send. **Copy** puts selected terminal text on Android's clipboard. The optional file picker reads names inside the selected console's working folder, not file contents.
-- **Devices → computer menu → Forget computer** clears that computer's saved pairing. Other computers and their alert registrations remain saved. Also **Remove** the phone on the PC, especially if it was offline when forgotten. Remove Firebase setup on the PC to erase its saved key/tokens; revoke the service-account key in Google Cloud if you want to invalidate it everywhere. Clearing app data/uninstalling removes the phone's local data. Deleting Results permanently removes the saved copies from disk, not project originals or copies already exported elsewhere.
+- **Devices → computer menu → Forget computer** clears that computer's saved pairing. Other computers remain saved. Also **Remove** the phone on the PC, especially if it was offline when forgotten. Clearing app data/uninstalling removes the phone's local data. Deleting Results permanently removes the saved copies from disk, not project originals or copies already exported elsewhere.
 
 The author does not hold your private connection or project data. There is no author-hosted account to delete. Manage Tailscale and Google accounts with those providers. For app problems, use the [repository's issue page](https://github.com/YeerooXY/agentdock/issues); do not post pairing codes, keys, or private reports.
 

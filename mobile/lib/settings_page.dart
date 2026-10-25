@@ -342,7 +342,7 @@ class _SettingsPageState extends State<SettingsPage> {
               contentPadding: EdgeInsets.zero,
               title: const Text('Stay connected'),
               subtitle: const Text(
-                'Direct alerts from the selected PC. No Firebase setup. Uses extra battery and data; Android may delay alerts in power-saving mode.',
+                'Alerts come straight from the selected PC. Uses extra battery and data; Android may delay alerts in power-saving mode.',
               ),
               value: c.stayConnected,
               onChanged: busy
@@ -360,46 +360,6 @@ class _SettingsPageState extends State<SettingsPage> {
                 return null;
               }),
               child: const Text('Android notification & battery settings'),
-            ),
-            const SizedBox(height: 12),
-            ExpansionTile(
-              key: const PageStorageKey('firebase-alerts'),
-              tilePadding: EdgeInsets.zero,
-              childrenPadding: const EdgeInsets.only(top: 8),
-              title: Text('Firebase alerts', style: TextStyle(color: pink)),
-              subtitle: Text(c.alerts),
-              children: [
-                const Text(
-                  'PC setup → Alerts. Google Play services are required.',
-                  style: TextStyle(color: muted, fontSize: 12),
-                ),
-                const SizedBox(height: 12),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    FilledButton.icon(
-                      onPressed: busy || !c.connected
-                          ? null
-                          : () => action(() async {
-                              await c.enableAlerts();
-                              return 'Alerts enabled. Send a test to check delivery.';
-                            }),
-                      icon: const Icon(Icons.notifications_outlined),
-                      label: const Text('Enable alerts'),
-                    ),
-                    TextButton(
-                      onPressed: busy || !c.connected
-                          ? null
-                          : () => action(() async {
-                              await c.request('push.test');
-                              return 'Test alert sent. Put Paddock in the background to check it.';
-                            }),
-                      child: const Text('Send test alert'),
-                    ),
-                  ],
-                ),
-              ],
             ),
           ],
         ),
