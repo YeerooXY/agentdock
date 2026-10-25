@@ -6,7 +6,7 @@ const { Workbench } = require('../electron/workbench.cjs');
 const { Sessions } = require('../electron/sessions.cjs');
 function fixture(t) {
   const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'dock-planning-'))); // CI temp folders can be symlinks or short names
-  t.after(() => { assert.equal(path.dirname(fs.realpathSync(root)), fs.realpathSync(os.tmpdir())); fs.rmSync(root, { recursive: true, force: true, maxRetries: 3 }); });
+  t.after(() => { assert.equal(path.dirname(fs.realpathSync.native(root)), fs.realpathSync.native(os.tmpdir())); fs.rmSync(root, { recursive: true, force: true, maxRetries: 3 }); });
   const folder = path.join(root, 'app'); fs.mkdirSync(folder);
   const store = new Projects(root); const p = store.save({ name: 'Learning app', guided: true, goals: 'Practice class notes', audience: 'University students', success: 'Complete a practice session', folders: [{ path: folder }], milestones: [{ text: 'Practice prototype' }] });
   const review = (section, changes, action = 'approve') => store.review(p.id, { section, changes, action, revision: store.get(p.id).plan.revision });
