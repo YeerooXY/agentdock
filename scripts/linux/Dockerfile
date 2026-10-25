@@ -13,6 +13,7 @@ USER paddock
 WORKDIR /home/paddock/app
 COPY --chown=paddock package.json package-lock.json ./
 COPY --chown=paddock vendor ./vendor
+COPY --chown=paddock scripts/fix-node-pty.cjs ./scripts/
 RUN npm ci --no-audit --no-fund && node node_modules/electron/install.js
 COPY --chown=paddock . .
 ENV XDG_CURRENT_DESKTOP=GNOME SHELL=/bin/bash
