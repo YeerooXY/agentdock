@@ -320,6 +320,8 @@ npm run test:desktop
 
 This is a local development build, not a signed installer. It uses Electron, xterm.js and ConPTY. Each console, MCP server and WSL distribution adds its own resource usage. Background tool connections are opened on demand and reused. Terminal buffers and recent-log scans are bounded.
 
+After a build, `npm test` also checks the renderer bundle: xterm.js has its own chunk, the application chunk stays under 400 kB and no chunk exceeds 500 kB. Raise these limits in `tests/bundle-budget.test.cjs` deliberately, or move a page behind a dynamic import.
+
 Validation includes real Windows encryption, nine live shell consoles, HUD/fullscreen persistence, installed agent startup, MCP subprocess/loopback integration, HTTP credential bindings, all three model tool loops with mocked responses, form failures and narrow layouts. Agent-specific checks depend on the CLIs installed on the test machine. Tests use temporary data and never submit paid model requests. Screenshots and reports are in `artifacts` and stay out of Git.
 
 ## References
