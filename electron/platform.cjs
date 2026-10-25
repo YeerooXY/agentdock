@@ -54,4 +54,10 @@ function encryptionUnavailable(detail = '') {
   const fix = process.platform === 'linux' ? ' Install and unlock a keyring such as GNOME Keyring or KWallet, then restart Paddock.' : '';
   return `Paddock needs encryption through ${secureStore()}, which is unavailable.${detail ? ' ' + detail : ''}${fix}`;
 }
-module.exports = { secureStore, encryptionUnavailable, isWindows, psQuote, shQuote, quote, powershell, userShell, shellLaunch, programLaunch, customLaunch, loginPath };
+// The real location of a folder Paddock owns. macOS temp folders sit behind a
+// /private symlink and Windows may report 8.3 short names; checks that refuse
+// redirected folders compare against this resolved path.
+function realRoot(folder) {
+  try { return fs.realpathSync.native(folder); } catch { return path.resolve(folder); }
+}
+module.exports = { realRoot, secureStore, encryptionUnavailable, isWindows, psQuote, shQuote, quote, powershell, userShell, shellLaunch, programLaunch, customLaunch, loginPath };

@@ -12,7 +12,7 @@ const { prepareCodexSession } = require('./codex-session.cjs');
 const { copyConversation } = require('./account-history.cjs');
 const { defaultId, inside } = require('./account-profiles.cjs');
 const { hasClaudeEditorContext, validateDraftText } = require('./draft-policy.cjs');
-const { psQuote, shQuote, quote, shellLaunch, programLaunch, customLaunch } = require('./platform.cjs');
+const { psQuote, shQuote, quote, shellLaunch, programLaunch, customLaunch, realRoot } = require('./platform.cjs');
 function envValue(env, name) { return Object.entries(env).find(([key]) => key.toLowerCase() === name.toLowerCase())?.[1]; }
 function removeEnv(env, names) { const set = new Set(names.map(x => x.toLowerCase())); for (const key of Object.keys(env)) if (set.has(key.toLowerCase())) delete env[key]; }
 function canonical(value) { const result = path.resolve(value).replace(/[\\/]+$/, ''); return process.platform === 'win32' ? result.toLowerCase() : result; }
@@ -52,7 +52,7 @@ function validateConsoleDefaults(raw) {
 }
 class Sessions extends EventEmitter {
   constructor(root, dependencies = {}) {
-    super(); this.root = root; this.items = new Map(); this.eventTimes = new Map(); this.starting = new Map(); this.codexIdentities = new Map();
+    super(); this.root = realRoot(root); this.items = new Map(); this.eventTimes = new Map(); this.starting = new Map(); this.codexIdentities = new Map();
     this.pty = dependencies.pty || require('node-pty');
     this.findProgram = dependencies.findProgram || findProgram;
     this.nativeCodex = dependencies.nativeCodex || nativeCodex;

@@ -18,6 +18,7 @@ const cleanLabel = value => {
 
 class AccountProfiles {
   constructor(root, { env = process.env, home = os.homedir() } = {}) {
+    root = require('./platform.cjs').realRoot(root);
     this.root = path.join(root, 'agent-accounts');
     this.file = path.join(root, 'agent-accounts.json');
     this.env = env;

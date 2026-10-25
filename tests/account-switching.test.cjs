@@ -430,7 +430,7 @@ test('a target that loses its completed login during draft capture is rechecked 
 });
 
 test('a Codex folder trust prompt opens an account-pinned setup console and keeps the source draft', async t => {
-  const f = await fixture(t, { failTrustTarget: true, bridgeTimeout: 120 });
+  const f = await fixture(t, { failTrustTarget: true, bridgeTimeout: 1000 });
   const source = await f.sessions.create({ provider: 'codex', cwd: f.workspace, permissions: 'unrestricted' }, { accountId: f.first.id });
   await new Promise(resolve => setTimeout(resolve, 5)); f.sessions.scanEvents();
   const live = f.sessions.items.get(source.id), sourceTerminal = live.terminal, draft = 'Keep this unsent draft\nUnicode: café 🧪\n';

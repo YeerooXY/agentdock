@@ -282,7 +282,7 @@ app.whenReady().then(async () => {
   }
   // Apps opened from the Dock or a desktop launcher get a minimal PATH.
   if (process.platform !== 'win32' && !testMode) process.env.PATH = loginPath();
-  root = app.getPath('userData'); fs.mkdirSync(root, { recursive: true });
+  root = app.getPath('userData'); fs.mkdirSync(root, { recursive: true }); root = require('./platform.cjs').realRoot(root);
   accounts = new AccountProfiles(root);
   draftBridge = new DraftBridge(); await draftBridge.start();
   const runtime = runtimeFiles({ isPackaged: app.isPackaged, resourcesPath: process.resourcesPath, findProgram });

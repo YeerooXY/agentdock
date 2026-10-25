@@ -10,7 +10,7 @@ const { Turns } = require('../electron/turns.cjs');
 const { Results } = require('../electron/results.cjs');
 
 function fixture(t) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dock-revision-'));
+  const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'dock-revision-'))); // Git reports the long path; CI temp can be an 8.3 short name
   const project = path.join(root, 'repo'), store = path.join(root, 'store');
   fs.mkdirSync(project); fs.mkdirSync(store);
   const git = (...args) => execFileSync('git', ['-C', project, ...args], { windowsHide: true }).toString().trim();

@@ -7,7 +7,7 @@ const path = require('node:path');
 const { MobileAttachments, MAX_IMAGE } = require('../electron/mobile-attachments.cjs');
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=', 'base64');
 test('image uploads stay in the selected workspace and validate size, ordering and type', async t => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'dock-image-'));
+  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'dock-image-'))); // CI temp folders can be short names or symlinks
   t.after(() => fs.rm(root, { recursive: true, force: true }));
   const service = new MobileAttachments(), session = { id: 'one', alive: true, cwd: root }, client = { selected: 'one' };
   assert.throws(() => service.begin(client, session, MAX_IMAGE + 1));
@@ -24,7 +24,7 @@ test('image uploads stay in the selected workspace and validate size, ordering a
   await assert.rejects(service.finish(client, second, () => true), /PNG or JPEG/);
 });
 test('revocation, changed console and linked folders cannot save an attachment', async t => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'dock-image-'));
+  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'dock-image-'))); // CI temp folders can be short names or symlinks
   const outside = await fs.mkdtemp(path.join(os.tmpdir(), 'dock-image-outside-'));
   t.after(() => Promise.all([fs.rm(root, { recursive: true, force: true }), fs.rm(outside, { recursive: true, force: true })]));
   const service = new MobileAttachments(), session = { id: 'one', alive: true, cwd: root }, client = { selected: 'one' };
