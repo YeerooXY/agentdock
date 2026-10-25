@@ -21,6 +21,7 @@ import 'console_drafts.dart';
 import 'live_agent_controls.dart';
 import 'agent_selection.dart';
 import 'terminal_keys.dart';
+import 'message_queue_sheet.dart';
 import 'console_surface.dart';
 import 'console_theme.dart';
 import 'console_appearance_controls.dart';
@@ -1104,6 +1105,33 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
     }
   }
 
+  Future<void> messageQueue() async {
+    stopTerminalTyping();
+    composerFocus.unfocus();
+    final key = draftKey;
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (_) => MessageQueueSheet(
+        client: c,
+        draft: composer.text,
+        onQueued: () {
+          if (mounted && draftKey == key) composer.clear();
+        },
+        onUsePrompt: (text) {
+          if (!mounted || draftKey != key) return;
+          composer.value = TextEditingValue(
+            text: text,
+            selection: TextSelection.collapsed(offset: text.length),
+          );
+          stagedCommandTarget = null;
+        },
+      ),
+    );
+  }
+
   Future<void> terminalKeys() async {
     stopTerminalTyping();
     composerFocus.unfocus();
@@ -1115,6 +1143,10 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
       builder: (_) => TerminalKeys(client: c),
     );
   }
+
+  int queuedCount(Object? id) =>
+      ((((c.state['queues'] as Map?)?[id] as Map?)?['entries']) as List? ?? [])
+          .length;
 
   Future<void> displaySettings() async {
     stopTerminalTyping();
@@ -1368,6 +1400,20 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
                     ],
                   ),
                 ),
+                if ((c.state['capabilities'] as List? ?? []).contains(
+                      'console.queue',
+                    ) &&
+                    (session['purpose'] ?? 'agent') == 'agent' &&
+                    !['shell', 'custom'].contains(session['provider']))
+                  IconButton(
+                    tooltip: 'Queue',
+                    onPressed: c.connected && !sending ? messageQueue : null,
+                    icon: Badge(
+                      isLabelVisible: queuedCount(session['id']) > 0,
+                      label: Text('${queuedCount(session['id'])}'),
+                      child: Icon(Icons.playlist_play, color: blue),
+                    ),
+                  ),
                 IconButton(
                   tooltip: 'Terminal keys',
                   onPressed: c.connected && !sending ? terminalKeys : null,

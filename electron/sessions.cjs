@@ -609,13 +609,15 @@ class Sessions extends EventEmitter {
     this.emit('changed');
     return this.list().find(x => x.id === id);
   }
-  write(id, data, { draft = false } = {}) {
+  write(id, data, { draft = false, queued = false } = {}) {
     const item = this.items.get(id);
     if (item?.kind === 'code') throw new Error('This is a read-only code panel.');
     if (!item?.alive) return;
     if (item.switching) throw new Error('This console is switching accounts. Your composer draft stays on the phone until switching finishes.');
     if (typeof data !== 'string' || data.length > 65536) throw new Error('Terminal input is too large.');
     item.terminal.write(data);
+    // Typed keys, not terminal reports such as focus or mouse events.
+    if (!draft && !queued && !data.startsWith('\x1b')) item.lastInputAt = Date.now();
     if (!draft && /[\r\n]/.test(data)) this.projects?.touch(item.projectId);
     if (!draft && /[\r\n]/.test(data) && cliAgents.has(item.provider) && !item.remote) { item.state = 'active'; item.updatedAt = Date.now(); this.emit('changed'); }
   }

@@ -39,6 +39,8 @@ const { CodePanel } = require('./code-panel.cjs');
 const { Screenshots, clipboardReader } = require('./screenshots.cjs');
 const { endSession } = require('./session-end.cjs');
 const { Worktrees, cleanWorktree } = require('./worktrees.cjs');
+const { MessageQueue } = require('./message-queue.cjs');
+const { PromptLibrary } = require('./prompt-library.cjs');
 const filePreview = require('./file-preview.cjs');
 const { userDataPath } = require('./user-data.cjs');
 const { AccountProfiles, defaultId } = require('./account-profiles.cjs');
@@ -57,7 +59,7 @@ if (testMode && testDir) app.setPath('userData', testDir);
 else app.setPath('userData', userDataPath(app.getPath('appData'), app.getPath('userData')));
 if (!app.requestSingleInstanceLock() && !testMode) app.quit();
 let window, tray, vault, sessions, workspace, projects, messageUsage, updates, account, root, settings, ledger, notifications, hub, integrations, mcpCatalog, workbench, cliSetup, skillPacks, turns, mobile, workPower, ssh, screenshots, accounts, draftBridge;
-let codePanel, worktrees;
+let codePanel, worktrees, messageQueue, prompts;
 let mode = 'dashboard', quitting = false, refreshing = false, lastRefresh = 0, apiBusy = false, subscriptionUsage, usageRefresh;
 let modeTarget = null, modeTask, modeSequence = 0, transitioning = false;
 let trayHidden = false, windowDrag = null;
@@ -69,7 +71,7 @@ const entryUrl = pathToFileURL(entryFile).href;
 const projectsFolder = path.join(os.homedir(), 'Projects');
 const defaultFolder = fs.existsSync(projectsFolder) && fs.statSync(projectsFolder).isDirectory() ? projectsFolder : os.homedir();
 function snapshot() {
-  return { platform: process.platform, mode, transitioning, trayHidden, sessions: sessions?.list() || [], codePanels: sessions?.codePanels() || [], codeRevision: codePanel?.revision || 0, limits, accounts: ['codex', 'claude'].flatMap(provider => accounts?.choices(provider) || []), recent, accountError, refreshing, lastRefresh, agents: cliSetup?.snapshot() || [], agentSetupBusy: !!cliSetup?.running, skills: skillPacks?.snapshot() || { packs: [], busy: false },
+  return { platform: process.platform, mode, transitioning, trayHidden, sessions: sessions?.list() || [], codePanels: sessions?.codePanels() || [], queues: messageQueue?.snapshot() || {}, prompts: prompts?.list() || [], codeRevision: codePanel?.revision || 0, limits, accounts: ['codex', 'claude'].flatMap(provider => accounts?.choices(provider) || []), recent, accountError, refreshing, lastRefresh, agents: cliSetup?.snapshot() || [], agentSetupBusy: !!cliSetup?.running, skills: skillPacks?.snapshot() || { packs: [], busy: false },
     usageAccounts: usageAccounts(), usageChecks: subscriptionUsage?.snapshot() || [],
     sshHosts: ssh?.list() || [], capabilities, projects: projects?.list() || [], messages: [...(messageUsage?.items || []), ...apiMessages(ledger || [])].sort((a,b) => b.at - a.at).slice(0, 200), mobile: mobile?.snapshot(), workbench: workbench?.snapshot(), vault: { available: vault?.available() || false, entries: vault?.list() || [] },
     ledger: ledger || [], summary: ledgerSummary(ledger || []), shared: hub?.snapshot(), updates: updates?.snapshot(), grid: sessions?.grid || settings?.grid, settings, storageError, workspaceError, shortcutAvailable,
@@ -286,6 +288,7 @@ app.whenReady().then(async () => {
   root = app.getPath('userData'); fs.mkdirSync(root, { recursive: true }); root = require('./platform.cjs').realRoot(root);
   accounts = new AccountProfiles(root);
   worktrees = new Worktrees(root);
+  prompts = new PromptLibrary(root);
   draftBridge = new DraftBridge(); await draftBridge.start();
   const runtime = runtimeFiles({ isPackaged: app.isPackaged, resourcesPath: process.resourcesPath, findProgram });
   cliSetup = new CliSetup(root, runtime, { testMode, onChange: publish });
@@ -342,7 +345,10 @@ app.whenReady().then(async () => {
   codePanel = new CodePanel(sessions, { onChange: publish, getSecrets: () => vault.list().flatMap(x => { try { return [vault.get(x.id)]; } catch { return []; } }) });
   turns.codePanel = codePanel;
   turns.on('tracking-error', ({ owner, message }) => workbench.alerts.send({ title: 'Code capture needs attention', message, sessionId: owner, kind: 'error' }));
-  mobile = new MobileCompanion(root, safeStorage, { sessions, results: workbench.results, alerts: workbench.alerts, getUsage: usageSnapshot, refreshUsage: refreshLimits, getDefaults: () => ({ ...settings.consoleDefaults, permissions: settings.agentPermissions }), getModels: () => getCodexAccount(defaultId('codex')).models(), getSettings: () => ({ shared: hub.snapshot(), keys: vault.list() }), getKey: id => vault.get(id), networkScript: app.isPackaged ? path.join(process.resourcesPath, 'mobile-network.ps1') : path.join(__dirname, 'mobile-network.ps1'), program: process.execPath, testMode });
+  messageQueue = new MessageQueue(sessions);
+  messageQueue.on('changed', publish); prompts.on('changed', publish);
+  messageQueue.on('error', ({ id, message }) => workbench.alerts.send({ key: 'queue:' + id + ':' + Date.now(), title: (sessions.items.get(id)?.name || 'Console') + ': queued message not sent', message, sessionId: id, kind: 'error' }));
+  mobile = new MobileCompanion(root, safeStorage, { sessions, results: workbench.results, alerts: workbench.alerts, queue: messageQueue, prompts, getUsage: usageSnapshot, refreshUsage: refreshLimits, getDefaults: () => ({ ...settings.consoleDefaults, permissions: settings.agentPermissions }), getModels: () => getCodexAccount(defaultId('codex')).models(), getSettings: () => ({ shared: hub.snapshot(), keys: vault.list() }), getKey: id => vault.get(id), networkScript: app.isPackaged ? path.join(process.resourcesPath, 'mobile-network.ps1') : path.join(__dirname, 'mobile-network.ps1'), program: process.execPath, testMode });
   mobile.on('changed', publish);
   mobile.on('pairing-requested', () => { if (settings.notifications && !testMode) notifications?.show({ title: 'Approve a phone?', message: 'Compare the codes on your PC and phone before allowing access.', destination: 'phone-pairing' }); });
   if (!testMode) mobile.start().catch(() => publish());
@@ -659,6 +665,14 @@ app.whenReady().then(async () => {
         }
         case 'session.retry': return { ok: true, value: await sessions.retry(payload) };
         case 'session.input': sessions.write(payload?.id, payload?.data); break;
+        case 'queue.add': return { ok: true, value: messageQueue.add(payload?.id, payload?.text) };
+        case 'queue.edit': messageQueue.edit(payload?.id, payload?.entryId, payload?.text); break;
+        case 'queue.remove': messageQueue.remove(payload?.id, payload?.entryId); break;
+        case 'queue.move': messageQueue.move(payload?.id, payload?.entryId, payload?.offset); break;
+        case 'queue.pause': messageQueue.pause(payload?.id, payload?.paused === true); break;
+        case 'queue.send': await messageQueue.sendNow(payload?.id, payload?.entryId); break;
+        case 'prompt.save': return { ok: true, value: prompts.save(payload) };
+        case 'prompt.remove': prompts.remove(payload); break;
         case 'clipboard.write': {
           if (typeof payload !== 'string' || payload.length > 1024 * 1024) throw new Error('Select up to 1 MB of text to copy.');
           clipboard.writeText(payload); break;

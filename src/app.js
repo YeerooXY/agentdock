@@ -24,6 +24,7 @@ import './console-polish.css';
 import './setup.css';
 import { projectsUI } from './projects-ui.js';
 import { consoleProjects } from './console-projects.js';
+import { consoleQueue } from './console-queue.js';
 import { imageGenerationUI } from './image-generation-ui.js';
 import { sshUI } from './ssh-ui.js';
 import './ssh.css';
@@ -61,7 +62,10 @@ const icons = {
   minus: '<path d="M5 12h14"/>',
   menu: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/>',
   dock: '<path d="M8 3.5H5.5a2 2 0 0 0-2 2V8m13-4.5h2.5a2 2 0 0 1 2 2V8m0 8v2.5a2 2 0 0 1-2 2H16m-8 0H5.5a2 2 0 0 1-2-2V16"/><path d="m12 6 1.8 4.2L18 12l-4.2 1.8L12 18l-1.8-4.2L6 12l4.2-1.8Z"/>',
-  star: '<path d="m12 2 2.7 7.3L22 12l-7.3 2.7L12 22l-2.7-7.3L2 12l7.3-2.7Z"/>'
+  star: '<path d="m12 2 2.7 7.3L22 12l-7.3 2.7L12 22l-2.7-7.3L2 12l7.3-2.7Z"/>',
+  list: '<path d="M9 6h11M9 12h11M9 18h7M4.5 6h.01M4.5 12h.01M4.5 18h.01"/>',
+  up: '<path d="m6 15 6-6 6 6"/>',
+  down: '<path d="m6 9 6 6 6-6"/>'
 };
 let iconSequence = 0;
 const icon = (name, cls = '') => { const id = `accent-icon-${++iconSequence}`; return `<svg class="icon ${cls}" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="url(#${id})" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><defs><linearGradient id="${id}" x1="0" y1="0" x2="24" y2="24" gradientUnits="userSpaceOnUse"><stop class="icon-blue"/><stop offset="1" class="icon-pink"/></linearGradient></defs>${icons[name] || icons.terminal}</svg>`; };
@@ -81,7 +85,7 @@ const gridSize = () => state?.grid || { columns: 3, rows: 3 };
 const allPanels = () => [...(state?.sessions || []), ...(state?.codePanels || [])];
 const gridCapacity = () => gridSize().columns * gridSize().rows;
 let openingConsole = false;
-let codePanels, launchGesture, chooserOpener, vim, setup, workbench, layoutMotion, phone, projects, projectChats, imageGenerator, updates, usageView;
+let codePanels, launchGesture, chooserOpener, vim, setup, workbench, layoutMotion, phone, projects, projectChats, messageQueue, imageGenerator, updates, usageView;
 const nameSaves = new Map();
 const launchHint = 'title="Click to open. Hold or right-click to choose." aria-haspopup="dialog"';
 let renderedView = null, viewAnimation, windowMoving = false, pageBeforeSettings = 'consoles';
@@ -324,7 +328,7 @@ function sessionCard(slot) {
   if (session.kind === 'code') return codePanels.card(session);
   const expanded = expandedId === session.id;
   const endLabel = session.restoreError ? 'Remove saved console' : 'End this console';
-  return `<article class="session-card ${escape(session.state)}${expanded ? ' console-expanded' : ''}" data-console-id="${session.id}" data-slot="${slot}"><header class="console-panel-header"><button class="console-grip" draggable="true" data-console-drag="${session.id}" aria-label="Move console ${slot}" title="Drag to move or swap. Focus here and press Alt + 1–9 to move.">${readyIcon(session)}</button><span class="slot" title="${escape(providerName(session.provider) + ' · ' + session.cwd)}">${String(slot).padStart(2, '0')}</span>${slotNameInput(slot, session)}${session.worktree ? `<span class="worktree-badge" role="img" aria-label="${escape(`Git worktree branch ${session.worktree.branch}`)}" title="${escape(`Git worktree on ${session.worktree.branch}\n${session.worktree.path}`)}"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="4" cy="3.5" r="1.6"/><circle cx="4" cy="12.5" r="1.6"/><circle cx="12" cy="5.5" r="1.6"/><path d="M4 5.1v5.8M12 7.1c0 2.6-3 3-6.6 4.4"/></svg><span class="worktree-name">${escape(session.worktree.branch.replace(/^paddock\//, ''))}</span></span>` : ''}<span class="panel-status">${badge(session.state)}</span>${accountSwitchMenu(session, 'panel')}${projectChats.button(session)}${textSizeButtons(session.id, `console ${slot}`)}${appearance.button(slot)}<button class="icon-button console-expand" data-action="toggle-console" data-id="${session.id}" aria-label="${expanded ? 'Restore console ' + slot + ' to the grid (Ctrl+Shift+Enter)' : 'Expand console ' + slot}" aria-keyshortcuts="${expanded ? 'Control+Shift+Enter' : ''}" title="${expanded ? 'Restore console · Ctrl+Shift+Enter' : 'Expand console'}">${icon(expanded ? 'restore' : 'expand')}</button><button class="icon-button console-close" data-action="end-session" data-id="${session.id}" aria-label="${endLabel} ${slot}" title="${endLabel}">${icon('close')}</button></header>${switchOfferHtml(session)}<div class="console-panel-body" data-terminal-mount="${session.id}"></div>${resizeHandles(slot)}</article>`;
+  return `<article class="session-card ${escape(session.state)}${expanded ? ' console-expanded' : ''}" data-console-id="${session.id}" data-slot="${slot}"><header class="console-panel-header"><button class="console-grip" draggable="true" data-console-drag="${session.id}" aria-label="Move console ${slot}" title="Drag to move or swap. Focus here and press Alt + 1–9 to move.">${readyIcon(session)}</button><span class="slot" title="${escape(providerName(session.provider) + ' · ' + session.cwd)}">${String(slot).padStart(2, '0')}</span>${slotNameInput(slot, session)}${session.worktree ? `<span class="worktree-badge" role="img" aria-label="${escape(`Git worktree branch ${session.worktree.branch}`)}" title="${escape(`Git worktree on ${session.worktree.branch}\n${session.worktree.path}`)}"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="4" cy="3.5" r="1.6"/><circle cx="4" cy="12.5" r="1.6"/><circle cx="12" cy="5.5" r="1.6"/><path d="M4 5.1v5.8M12 7.1c0 2.6-3 3-6.6 4.4"/></svg><span class="worktree-name">${escape(session.worktree.branch.replace(/^paddock\//, ''))}</span></span>` : ''}<span class="panel-status">${badge(session.state)}</span>${accountSwitchMenu(session, 'panel')}${projectChats.button(session)}${textSizeButtons(session.id, `console ${slot}`)}${appearance.button(slot)}<button class="icon-button console-expand" data-action="toggle-console" data-id="${session.id}" aria-label="${expanded ? 'Restore console ' + slot + ' to the grid (Ctrl+Shift+Enter)' : 'Expand console ' + slot}" aria-keyshortcuts="${expanded ? 'Control+Shift+Enter' : ''}" title="${expanded ? 'Restore console · Ctrl+Shift+Enter' : 'Expand console'}">${icon(expanded ? 'restore' : 'expand')}</button><button class="icon-button console-close" data-action="end-session" data-id="${session.id}" aria-label="${endLabel} ${slot}" title="${endLabel}">${icon('close')}</button></header>${switchOfferHtml(session)}<div class="console-panel-body" data-terminal-mount="${session.id}"></div>${messageQueue?.button(session) || ''}${resizeHandles(slot)}</article>`;
 }
 function coveredSlots() {
   return new Map(allPanels().filter(isOpenConsole).flatMap(x => Array.from({ length: x.height || 1 }, (_, y) => Array.from({ length: x.width || 1 }, (_, dx) => [x.slot + y * gridSize().columns + dx, x])).flat()));
@@ -452,6 +456,7 @@ function renderConsoles() {
   renderedConsoleVisibility = consoleVisible;
   if (before) layoutMotion.animate(before);
   projectChats?.sync();
+  messageQueue?.sync();
   scheduleFits();
   lightingChanged();
 }
@@ -1809,6 +1814,7 @@ codePanels = codePanelUI({ call, getState: () => state, selectedConsole: () => s
 phone = mobileUI({ call, escape, icon, getState: () => state, toast, navigate: navigatePage });
 projects = projectsUI({ call, getState: () => state, escape, icon, toast, renderPage, openNew, preview: value => openFile(null, value) });
 projectChats = consoleProjects({ call, getState: () => state, getView: () => ({ page, selectedId }), projects, navigate: navigatePage, escape, icon, toast });
+messageQueue = consoleQueue({ call, getState: () => state, escape, icon, toast, paste: (id, text) => { const record = terminals.get(id); if (!record) throw new Error('This console is no longer open.'); record.term.paste(text); record.term.focus(); }, agentProviders: () => (state?.agents || []).map(x => x.id) });
 imageGenerator = imageGenerationUI({ call, getState: () => state, escape, toast });
 remoteHosts = sshUI({ call, escape, getState: () => state, toast, render: renderPage });
 updates = updatesUI({ call, getState: () => state, escape, icon, toast });

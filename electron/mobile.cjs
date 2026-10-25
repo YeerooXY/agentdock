@@ -32,8 +32,9 @@ function deviceName(value) {
   return name;
 }
 class MobileCompanion extends EventEmitter {
-  constructor(root, safeStorage, { sessions, results, alerts, getUsage, refreshUsage, getDefaults, getModels, getSettings, getKey, networkScript, program, network, testMode = false } = {}) {
+  constructor(root, safeStorage, { sessions, results, alerts, queue, prompts, getUsage, refreshUsage, getDefaults, getModels, getSettings, getKey, networkScript, program, network, testMode = false } = {}) {
     super(); this.file = path.join(root, 'mobile.json'); this.crypto = safeStorage;
+    this.queue = queue; this.prompts = prompts;
     this.sessions = sessions; this.results = results; this.getUsage = getUsage; this.getDefaults = getDefaults; this.testMode = testMode;
     this.getModels = getModels;
     this.refreshUsage = refreshUsage;
@@ -78,7 +79,7 @@ class MobileCompanion extends EventEmitter {
       this.liveAlerts = [...this.liveAlerts.slice(-49), { id: item.id, title: item.title, at: item.at }];
       this.scheduleState();
     };
-    sessions.on('output', this.output); sessions.on('resize', this.resized); sessions.on('changed', this.changed); results.on('changed', this.changed); alerts?.on('notification', this.notification);
+    sessions.on('output', this.output); sessions.on('resize', this.resized); sessions.on('changed', this.changed); results.on('changed', this.changed); alerts?.on('notification', this.notification); queue?.on('changed', this.changed); prompts?.on?.('changed', this.changed);
   }
   available() { return this.crypto.isEncryptionAvailable() && this.crypto.getSelectedStorageBackend?.() !== 'basic_text'; }
   get name() { return this.config.name || os.hostname(); }
@@ -229,7 +230,7 @@ class MobileCompanion extends EventEmitter {
     const localUrl = `https://${this.config.host}:${this.config.port}`;
     const connection = { url: localUrl };
     connection.name = this.name;
-    return { connection, capabilities: ['console.agents', 'console.files', 'console.close', 'console.projects', 'console.models', 'console.ssh', 'console.switch', 'console.setup', 'alerts.direct', 'console.attachments'], capacity: (this.sessions.grid?.columns || 3) * (this.sessions.grid?.rows || 3), sessions: this.sessions.list().filter(x => !x.dismissed).map(({ id, slot, name, provider, alive, state, cols, rows, consoleKey, projectId, remote, updatedAt, providerSessionId, model, modelId, effort, settingsAt, launchId, accountId, accountLabel, switchTargets, switching, purpose, draftSupported, switchOffer }) => ({ id, slot, name, provider, alive, state, cols, rows, consoleKey, projectId, remote, updatedAt, providerSessionId, model: modelId || model || null, modelName: model || null, effort: effort || null, settingsAt: settingsAt || null, launchId: launchId || null, accountId: accountId || null, accountLabel: accountLabel || null, switchTargets: switchTargets || [], switching: !!switching, purpose: purpose || 'agent', draftSupported: draftSupported === true, switchOffer: switchOffer || null })), alerts: this.liveAlerts, unreadResults: this.results.unreadGroups(), resultVersion: digest(this.results.list().map(x => x.id + ':' + x.seenAt + ':' + x.changeCount).join(',')).slice(0, 16) };
+    return { connection, capabilities: ['console.agents', 'console.files', 'console.close', 'console.projects', 'console.models', 'console.ssh', 'console.switch', 'console.setup', 'alerts.direct', 'console.attachments', ...(this.queue ? ['console.queue'] : []), ...(this.prompts ? ['prompts'] : [])], capacity: (this.sessions.grid?.columns || 3) * (this.sessions.grid?.rows || 3), sessions: this.sessions.list().filter(x => !x.dismissed).map(({ id, slot, name, provider, alive, state, cols, rows, consoleKey, projectId, remote, updatedAt, providerSessionId, model, modelId, effort, settingsAt, launchId, accountId, accountLabel, switchTargets, switching, purpose, draftSupported, switchOffer }) => ({ id, slot, name, provider, alive, state, cols, rows, consoleKey, projectId, remote, updatedAt, providerSessionId, model: modelId || model || null, modelName: model || null, effort: effort || null, settingsAt: settingsAt || null, launchId: launchId || null, accountId: accountId || null, accountLabel: accountLabel || null, switchTargets: switchTargets || [], switching: !!switching, purpose: purpose || 'agent', draftSupported: draftSupported === true, switchOffer: switchOffer || null })), queues: this.queue?.snapshot() || {}, prompts: this.prompts?.list() || [], alerts: this.liveAlerts, unreadResults: this.results.unreadGroups(), resultVersion: digest(this.results.list().map(x => x.id + ':' + x.seenAt + ':' + x.changeCount).join(',')).slice(0, 16) };
   }
   scheduleState() {
     if (!this.server || this.stateTimer) return;
@@ -282,6 +283,17 @@ class MobileCompanion extends EventEmitter {
         this.sessions.acknowledge(payload.id); this.sessions.write(payload.id, payload.data); return true;
       }
       case 'acknowledge': this.sessions.acknowledge(payload.id); return true;
+      case 'queue.add': case 'queue.edit': case 'queue.remove': case 'queue.move': case 'queue.pause': case 'queue.send': {
+        // Queue changes apply only to the console this phone has open.
+        if (!this.queue) throw new Error('Update Paddock on your PC to queue messages.');
+        if (client.selected !== payload.id) throw new Error('Select an open console first.');
+        if (method === 'queue.add') return this.queue.add(payload.id, payload.text);
+        if (method === 'queue.edit') { this.queue.edit(payload.id, payload.entryId, payload.text); return true; }
+        if (method === 'queue.remove') { this.queue.remove(payload.id, payload.entryId); return true; }
+        if (method === 'queue.move') { this.queue.move(payload.id, payload.entryId, payload.offset); return true; }
+        if (method === 'queue.pause') { this.queue.pause(payload.id, payload.paused === true); return true; }
+        await this.queue.sendNow(payload.id, payload.entryId); return true;
+      }
       case 'console.create': {
         return this.sessions.create(mobileLaunch(this.sessions, this.getDefaults(), payload));
       }

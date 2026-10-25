@@ -222,3 +222,34 @@ body.console-expanded #sidebar-toggle { display:none }
 body[data-platform=darwin] #sidebar { padding-top:46px }
 body[data-platform=darwin]:has(#sidebar[data-collapsed=true]) .titlebar,body[data-platform=darwin].console-expanded .titlebar { padding-left:84px }
 body[data-platform=darwin] .window-actions :is([data-action=minimize],[data-action=tray]) { display:none }
+/* Message queue: a corner button on agent consoles and its panel. */
+.queue-toggle { position:absolute; right:16px; bottom:12px; z-index:4; display:inline-flex; align-items:center; gap:4px; height:28px; min-width:28px; padding:0 7px; border:1px solid #3a3f58; border-radius:999px; background:#0d0f18e6; color:#c5cdf0; font-size:12px; opacity:0; transition:opacity .15s; -webkit-app-region:no-drag }
+.queue-toggle svg { width:15px; height:15px; flex:none }
+.session-card:is(:hover,:focus-within)>.queue-toggle,.queue-toggle:focus-visible,.queue-toggle.has-items { opacity:1 }
+.queue-toggle.has-items { border-color:var(--accent-pink,#c99adc); color:#f0e6ff }
+.queue-toggle:hover { background:#1a1d2c }
+@media (hover:none) { .queue-toggle { opacity:.85 } }
+#queue-panel { position:fixed; inset:auto; margin:0; padding:16px; overflow:auto; background:#0b0d14; color:#d4dbf2; border:1px solid #33384e; border-radius:10px; box-shadow:0 18px 48px #000a; font-size:13px }
+#queue-panel .queue-heading { display:flex; align-items:center; justify-content:space-between; gap:12px }
+#queue-panel h2 { margin:0; font-size:15px; font-weight:600; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+#queue-panel .queue-hint { margin:6px 0 10px; color:var(--muted); font-size:12px; line-height:1.5 }
+#queue-panel ol,#queue-panel ul { list-style:none; margin:0; padding:0 }
+.queue-list li { display:grid; grid-template-columns:auto minmax(0,1fr); gap:4px 10px; padding:9px 0; border-top:1px solid #1f2333 }
+.queue-list li.editing { background:#151a2b }
+.queue-list li.queue-empty,.queue-prompts li.queue-empty { display:block; color:var(--muted); font-size:12px; padding:8px 0 }
+.queue-index { color:var(--muted); font-size:12px; padding-top:1px }
+.queue-list p { margin:0; white-space:pre-wrap; overflow-wrap:anywhere; max-height:5.4em; overflow:hidden; line-height:1.35 }
+.queue-entry-actions { grid-column:2; display:flex; flex-wrap:wrap; align-items:center; gap:2px }
+.queue-entry-actions .subtle { padding:4px 7px; font-size:12px }
+.queue-entry-actions .icon-button { width:26px; height:26px }
+#queue-panel label { margin-top:10px; font-size:12px }
+#queue-panel textarea { min-height:72px; font-size:13px }
+.queue-buttons { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:6px; margin-top:10px }
+.queue-buttons .primary,.queue-buttons .secondary { padding:8px 12px }
+.queue-prompts { margin-top:12px; border-top:1px solid #1f2333; padding-top:10px }
+.queue-prompts summary { cursor:pointer; color:#bdc9e5; font-size:12px }
+.queue-prompts li { display:flex; align-items:center; gap:6px; padding:7px 0; border-bottom:1px solid #1a1e2c }
+.queue-prompts li>div { flex:1; min-width:0 }
+.queue-prompts strong { display:block; font-weight:550; font-size:12px }
+.queue-prompts small { display:block; color:var(--muted); font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
+#queue-panel .queue-pause { margin-top:12px }
