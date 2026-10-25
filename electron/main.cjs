@@ -516,7 +516,10 @@ app.whenReady().then(async () => {
           payload = payload?.projectId ? projects.launch(payload) : payload;
           const occupied = occupiedCells(sessions.items.values(), sessions.grid);
           const slot = payload?.slot ?? Array.from({ length: sessions.grid.columns * sessions.grid.rows }, (_, i) => i + 1).find(x => !occupied.has(x));
-          const session = await sessions.create({ ...settings.consoleDefaults, ...(settings.slotNames?.[slot] ? { name: settings.slotNames[slot] } : {}), ...payload, permissions: payload?.permissions ?? settings.agentPermissions });
+          const { accountId, ...launch } = payload || {};
+          // Only a signed-in account of the chosen agent can be launched directly.
+          if (accountId !== undefined && !accounts?.choices(launch.provider).some(choice => choice.id === accountId && (!choice.profile || choice.loginCompletedAt))) throw new Error('Choose a signed-in account for this agent.');
+          const session = await sessions.create({ ...settings.consoleDefaults, ...(settings.slotNames?.[slot] ? { name: settings.slotNames[slot] } : {}), ...launch, permissions: launch.permissions ?? settings.agentPermissions }, accountId ? { accountId } : undefined);
           persistSettings({ ...settings, slotNames: { ...settings.slotNames, [session.slot]: session.name } }); publish();
           return { ok: true, value: session };
         }

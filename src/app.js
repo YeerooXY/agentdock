@@ -150,7 +150,7 @@ $('#app').innerHTML = `
     <div class="dialog-heading"><div><h2 id="console-chooser-title">Open console</h2><p id="console-chooser-hint">Just for this console.</p></div><button type="button" class="icon-button" data-action="cancel-console" aria-label="Close chooser">${icon('close')}</button></div>
     <label>Computer<select name="remoteHostId"><option value="">This PC</option></select></label><label id="chooser-remote-folder" hidden>Linux folder<input name="remoteFolder" value="."></label><div class="chooser-project"><label>Project<div class="folder-input"><select name="projectId"><option value="">No project</option></select><button type="button" class="secondary" id="chooser-new-project">New project</button></div></label><label id="chooser-project-folders" hidden>Start in<select name="projectFolder"></select></label></div>
     <label>Name <span class="optional">optional</span><input name="name" maxlength="64" placeholder="Uses the folder name" autocomplete="off"></label>
-    <div class="form-pair"><div class="shell-field"><span>Agent or shell</span><select name="provider" aria-label="Agent or shell">${consoleProviders().map(provider => `<option value="${provider}">${providerName(provider)}</option>`).join('')}</select></div><label id="one-off-model">Model<select name="model"><option value="">Agent default</option><option value="__custom__">Enter a model…</option></select></label></div>
+    <div class="form-pair"><div class="shell-field"><span>Agent or shell</span><select name="provider" aria-label="Agent or shell">${consoleProviders().map(provider => `<option value="${provider}">${providerName(provider)}</option>`).join('')}</select><input type="hidden" name="accountId"></div><label id="one-off-model">Model<select name="model"><option value="">Agent default</option><option value="__custom__">Enter a model…</option></select></label></div>
     <label id="one-off-custom-model" hidden>Model name<input name="customModel" maxlength="200" spellcheck="false" autocomplete="off" placeholder="Model name or alias"></label>
     <label>Project folder<div class="folder-input"><input name="cwd" required><button type="button" data-action="pick-folder" aria-label="Choose project folder for this console">${icon('folder')}</button></div></label>
     <label id="one-off-command" hidden>Command<textarea name="command" rows="3" maxlength="4000" spellcheck="false" placeholder="The command to run"></textarea></label>
@@ -166,7 +166,63 @@ $('#app').innerHTML = `
     <div class="dialog-footer"><button type="button" class="secondary" data-action="cancel-account-rename">Cancel</button><button type="submit" class="primary">Save name</button></div>
   </form>
 </dialog>`;
-const oneOffShellPicker = shellPicker($('#one-off-console-form [name=provider]'), shellMark);
+// Agent choices for the console chooser: installed agents only, one row per
+// signed-in Codex or Claude account, most recently used first.
+const RECENT_KEY = 'console-recent';
+const recentChoices = () => { try { return JSON.parse(localStorage.getItem(RECENT_KEY) || '{}'); } catch { return {}; } };
+function rememberChoice(provider, accountId) {
+  const recent = recentChoices(); recent[`${provider}|${accountId || ''}`] = Date.now();
+  try { localStorage.setItem(RECENT_KEY, JSON.stringify(recent)); } catch { /* order falls back to open consoles */ }
+}
+function accountLimits(provider, accountId) {
+  return state.limits.filter(x => x.provider === provider && (x.accountId || (provider === 'codex' ? 'codex:default' : provider === 'claude' && x.id === 'claude:account' ? 'claude:default' : x.id)) === accountId);
+}
+function shortReset(at) {
+  if (!at || at <= Date.now()) return '';
+  const date = new Date(at);
+  return at - Date.now() < 86400000 ? date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : date.toLocaleDateString([], { weekday: 'short' });
+}
+// The window with the least left decides what an account can still do.
+function choiceUsage(provider, accountId) {
+  let tightest = null, stale = false;
+  for (const entry of accountLimits(provider, accountId)) {
+    if (!Number.isFinite(entry.observedAt) || Date.now() - entry.observedAt > 5 * 60000) stale = true;
+    for (const w of entry.windows || []) {
+      const left = w.unlimited ? null : remainingPercent(w.usedPercent);
+      if (left !== null && (!tightest || left < tightest.left)) tightest = { left, resetsAt: w.resetsAt };
+    }
+  }
+  if (!tightest) return { left: null, detail: '' };
+  const reset = shortReset(tightest.resetsAt);
+  return { left: tightest.left, detail: `${number(tightest.left)}% left${reset ? ' · resets ' + reset : ''}${stale ? ' · cached' : ''}` };
+}
+function consoleChoices() {
+  const form = $('#one-off-console-form'), host = state.sshHosts?.find(h => h.id === form.elements.remoteHostId.value);
+  if (host) return ['shell', ...(host.agents || [])].map(provider => ({ provider, accountId: '', label: providerName(provider), group: 'On ' + host.name }));
+  const installed = provider => ['shell', 'custom'].includes(provider) || !!state.agents?.find(x => x.id === provider)?.installed || !!state.capabilities?.[provider];
+  const rows = [];
+  for (const provider of consoleProviders().filter(installed)) {
+    const accounts = ['codex', 'claude'].includes(provider) ? (state.accounts || []).filter(a => a.provider === provider && (!a.profile || a.loginCompletedAt)) : [];
+    if (accounts.length > 1) for (const a of accounts) rows.push({ provider, accountId: a.id, label: `${providerName(provider)} · ${a.label}` });
+    else rows.push({ provider, accountId: accounts[0]?.id || '', label: providerName(provider) });
+  }
+  const recent = recentChoices();
+  for (const row of rows) {
+    const opened = state.sessions.filter(s => s.provider === row.provider && (!row.accountId || (s.accountId || `${s.provider}:default`) === row.accountId)).map(s => s.createdAt || 0);
+    row.usedAt = Math.max(recent[`${row.provider}|${row.accountId}`] || 0, ...opened);
+    Object.assign(row, choiceUsage(row.provider, row.accountId || `${row.provider}:default`));
+  }
+  for (const provider of new Set(rows.map(row => row.provider))) {
+    const same = rows.filter(row => row.provider === provider && row.left !== null);
+    if (rows.filter(row => row.provider === provider).length > 1 && same.length) same.reduce((a, b) => b.left > a.left ? b : a).best = true;
+  }
+  const used = rows.filter(row => row.usedAt).sort((a, b) => b.usedAt - a.usedAt).slice(0, 5);
+  for (const row of rows) row.group = used.includes(row) ? 'Recent' : 'Other installed';
+  return [...used, ...rows.filter(row => !used.includes(row))];
+}
+const oneOffShellPicker = shellPicker($('#one-off-console-form [name=provider]'), $('#one-off-console-form [name=accountId]'), {
+  mark: shellMark, escape, choices: consoleChoices, more: { label: 'Install more agents…', open: () => { $('#console-chooser').close(); setup.open(); } }
+});
 $('#account-rename-dialog').addEventListener('close', () => {
   const dialog = $('#account-rename-dialog'), active = document.activeElement;
   const id = $('#account-rename-form').dataset.id;
@@ -1172,6 +1228,7 @@ function chooseConsole(button) {
   form.elements.projectId.innerHTML = '<option value="">No project</option>' + (state.projects || []).filter(x => x.status !== 'archived').map(x => `<option value="${escape(x.id)}">${escape(x.name)}${x.category ? ' · ' + escape(x.category) : ''}</option>`).join('');
   $('#chooser-project-folders').hidden = true;
   for (const key of ['provider', 'cwd', 'name', 'command']) form.elements[key].value = state.settings.consoleDefaults[key] || '';
+  form.elements.accountId.value = consoleChoices().find(row => row.provider === form.elements.provider.value)?.accountId || '';
   form.elements.name.value = state.settings.slotNames?.[slot] || form.elements.name.value;
   form.elements.permissions.value = state.settings.agentPermissions;
   form.querySelector('details').open = false; form.querySelector('.form-error').textContent = '';
@@ -1490,8 +1547,13 @@ document.addEventListener('change', async event => {
       form.elements.cwd.closest('label').hidden = !!host;
       form.elements.remoteFolder.value = host?.folder || '.';
       form.elements.provider.innerHTML = (host ? ['shell', ...(host.agents || [])] : consoleProviders()).map(p => `<option value="${p}">${providerName(p)}</option>`).join('');
-      form.elements.permissions.value = 'default'; chooserModels();
-    } else if (input.name === 'provider') chooserModels();
+      form.elements.accountId.value = ''; form.elements.permissions.value = 'default'; chooserModels();
+    } else if (input.name === 'provider') {
+      // Keep the account only while it belongs to the chosen agent.
+      const account = input.form.elements.accountId;
+      if (!account.value.startsWith(input.value + ':') && !(state.accounts || []).some(a => a.id === account.value && a.provider === input.value)) account.value = consoleChoices().find(row => row.provider === input.value)?.accountId || '';
+      chooserModels();
+    }
     else if (input.name === 'model') chooserFields();
     else if (input.name === 'projectId') selectProject(input.value);
     else if (input.name === 'projectFolder') input.form.elements.cwd.value = input.value;
@@ -1558,7 +1620,9 @@ document.addEventListener('submit', async event => {
       form.querySelector('.form-error').textContent = '';
       const { customModel, projectFolder, ...overrides } = data;
       if (overrides.model === '__custom__') overrides.model = customModel;
+      if (!overrides.accountId) delete overrides.accountId;
       await openNew(form.dataset.slot, overrides);
+      rememberChoice(data.provider, data.accountId);
     } else if (form.getAttribute('id') === 'grid-form') {
       form.querySelector('.form-error').textContent = '';
       await call('grid.configure', { columns: Number(data.columns), rows: Number(data.rows) }); toast('Grid updated.');

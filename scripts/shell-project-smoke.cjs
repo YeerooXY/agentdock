@@ -79,20 +79,20 @@ async function screenshot(page, name) {
       await screenshot(page,name+'-consoles');
       await page.locator('.session-card.empty[data-slot="3"] [data-action=new]').click({button:'right'});
       const chooser=page.locator('#console-chooser');await chooser.waitFor({state:'visible'});
-      await chooser.locator('.shell-picker>summary').click();
+      await chooser.locator('.shell-picker-trigger').click();
       assert.equal(await chooser.locator('.shell-picker-options [data-shell=claude] img').count(),1);
       assert.equal(await chooser.locator('.shell-picker-options img').evaluateAll(images=>images.every(img=>img.complete&&img.naturalWidth>0)),true);
       const b=await chooser.boundingBox();assert.ok(b.x>=-1&&b.x+b.width<=page.viewportSize().width+1,'Chooser overflows '+name);
       await screenshot(page,name+'-chooser');
-      await page.evaluate(() => { window.pickerEvents=[]; const picker=document.querySelector('#console-chooser .shell-picker'); for(const kind of ['pointerdown','pointerup','click','focusin','focusout','toggle']) picker.addEventListener(kind,e=>window.pickerEvents.push({kind:e.type,tag:e.target.tagName,text:e.target.textContent.slice(0,60),open:picker.open,active:document.activeElement.tagName}),true); });
+      await page.evaluate(() => { window.pickerEvents=[]; const picker=document.querySelector('#console-chooser .shell-picker'); for(const kind of ['pointerdown','pointerup','click','focusin','focusout','toggle']) picker.addEventListener(kind,e=>window.pickerEvents.push({kind:e.type,tag:e.target.tagName,text:e.target.textContent.slice(0,60),open:!!picker.querySelector(':popover-open'),active:document.activeElement.tagName}),true); });
       await chooser.locator('.shell-picker-options button').filter({hasText:'Claude Code'}).click();
       assert.equal(await chooser.locator('[name=provider]').inputValue(),'claude',name+': '+JSON.stringify(await page.evaluate(()=>window.pickerEvents)));
 
-      await chooser.locator('.shell-picker>summary').press('ArrowDown');await page.keyboard.press('Escape');
-      assert.equal(await chooser.isVisible(),true);assert.equal(await chooser.locator('.shell-picker').getAttribute('open'),null);
-      await chooser.locator('.shell-picker>summary').press('ArrowDown');await page.keyboard.press('Home');await page.keyboard.press('Enter');
-      assert.equal(await chooser.locator('[name=provider]').inputValue(),'codex');
-      await chooser.locator('.shell-picker>summary').press('ArrowUp');await page.keyboard.press('End');await page.keyboard.press('Enter');
+      await chooser.locator('.shell-picker-trigger').press('ArrowDown');await page.keyboard.press('Escape');
+      assert.equal(await chooser.isVisible(),true);assert.equal(await chooser.locator('.shell-picker-options').evaluate(el=>el.matches(':popover-open')),false);
+      await chooser.locator('.shell-picker-trigger').press('ArrowDown');const first=await chooser.locator('.shell-picker-options [data-choice] .shell-mark').first().getAttribute('data-shell');await page.keyboard.press('Home');await page.keyboard.press('Enter');
+      assert.equal(await chooser.locator('[name=provider]').inputValue(),first);
+      await chooser.locator('.shell-picker-trigger').press('ArrowUp');await page.keyboard.press('End');await page.keyboard.press('ArrowUp');await page.keyboard.press('Enter');
       assert.equal(await chooser.locator('[name=provider]').inputValue(),'custom');
       await chooser.getByRole('button',{name:'Cancel',exact:true}).click();
       await page.locator('#sidebar-toggle').click();await openPage(page, 'projects');

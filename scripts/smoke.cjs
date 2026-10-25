@@ -304,14 +304,14 @@ async function eventually(predicate, message) {
   };
   const activeBeforeChooser = (await invoke('state')).sessions.filter(x => x.alive).length;
   await holdPlus(page.locator('.session-card.empty[data-slot="6"]'));
-  await chooser.locator('.shell-picker>summary').click();
+  await chooser.locator('.shell-picker-trigger').click();
   await chooser.locator('.shell-picker-options button').filter({ hasText: 'Claude Code' }).click();
   assert.equal(await oneOff.locator('[name=provider]').inputValue(), 'claude');
-  assert.equal(await chooser.locator('.shell-picker>summary [data-shell=claude] img').evaluate(img => img.complete && img.naturalWidth > 0), true);
-  await chooser.locator('.shell-picker>summary').press('ArrowDown');
+  assert.equal(await chooser.locator('.shell-picker-trigger [data-shell=claude] img').evaluate(img => img.complete && img.naturalWidth > 0), true);
+  await chooser.locator('.shell-picker-trigger').press('ArrowDown');
   await page.keyboard.press('Escape');
   assert.equal(await chooser.isVisible(), true, 'Escape closes the shell list before the console chooser');
-  assert.equal(await chooser.locator('.shell-picker').getAttribute('open'), null);
+  assert.equal(await chooser.locator('.shell-picker-options').evaluate(el => el.matches(':popover-open')), false);
   assert.equal(await page.locator('#console-chooser-title').innerText(), 'Console 6');
   assert.equal((await invoke('state')).sessions.filter(x => x.alive).length, activeBeforeChooser);
   await oneOff.locator('[name=provider]').selectOption('claude');

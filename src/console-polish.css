@@ -23,17 +23,23 @@ input.console-name { color:var(--accent-pink); font-weight:550 }
 .shell-field { position:relative; min-width:0; font-size:12px; color:var(--muted); display:flex; flex-direction:column; gap:7px }
 .shell-picker-value { position:absolute; width:1px!important; height:1px!important; padding:0!important; margin:0!important; border:0; opacity:0; pointer-events:none }
 #console-chooser .shell-picker { margin:0; color:#e5e7ef; font-size:14px; min-width:0 }
-#console-chooser .shell-picker>summary { display:flex; align-items:center; gap:9px; width:100%; min-height:44px; padding:9px 12px; border:1px solid #444256; border-radius:7px; background:#08090f; list-style:none }
-.shell-picker>summary::-webkit-details-marker { display:none }
-.shell-picker>summary>span:last-child { flex:1; min-width:0; overflow-wrap:anywhere }
-.shell-picker>summary::after { content:''; width:6px; height:6px; flex:none; margin-left:auto; border-right:1.5px solid #cbb1e2; border-bottom:1.5px solid #cbb1e2; transform:rotate(45deg); transition:transform .15s }
-.shell-picker[open]>summary::after { transform:rotate(225deg) }
-.shell-picker>summary:focus-visible,.shell-picker-options button:focus-visible { outline:2px solid var(--accent-blue); outline-offset:2px }
-.shell-picker-options { display:grid; gap:3px; max-height:236px; overflow:auto; overscroll-behavior:contain; margin-top:5px; padding:5px; border:1px solid #66577d; border-radius:8px; background:#0b0c14 }
-.shell-picker-options button { display:flex; align-items:center; gap:10px; min-width:0; min-height:44px; width:100%; padding:8px; color:#e5e7ef; background:transparent; border:1px solid transparent; border-radius:5px; text-align:left; font-weight:400 }
-.shell-picker-options button>span:last-child { overflow-wrap:anywhere }
+.shell-picker-trigger { display:flex; align-items:center; gap:9px; width:100%; min-height:44px; padding:9px 12px; color:#e5e7ef; border:1px solid #444256; border-radius:7px; background:#08090f; text-align:left; font-weight:500 }
+.shell-picker-chevron { width:12px; height:12px; flex:none; margin-left:auto; fill:none; stroke:#cbb1e2; stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round; transition:transform .15s }
+.shell-picker-trigger[aria-expanded=true] .shell-picker-chevron { transform:rotate(180deg) }
+.shell-picker-name { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+.shell-picker-detail { flex:none; color:#9aa1b8; font-size:12px; font-variant-numeric:tabular-nums; white-space:nowrap }
+.shell-picker-trigger .shell-picker-detail { display:block; overflow:hidden; text-overflow:ellipsis }
+.shell-picker-options .shell-picker-name { white-space:normal; overflow-wrap:anywhere }
+.shell-picker-best { display:inline-block; white-space:nowrap; margin-left:8px; padding:1px 6px; border-radius:999px; color:#62d99a; border:1px solid #2f6b4c; font-size:11px; font-weight:600 }
+.shell-picker-trigger:focus-visible,.shell-picker-options button:focus-visible { outline:2px solid var(--accent-blue); outline-offset:2px }
+.shell-picker-options { position:fixed; inset:auto; margin:0; box-sizing:border-box; display:none; flex-direction:column; gap:2px; overflow:auto; overscroll-behavior:contain; padding:6px; color:#e5e7ef; border:1px solid #66577d; border-radius:9px; background:#0b0c14; box-shadow:0 18px 40px #000a }
+.shell-picker-options:popover-open { display:flex }
+.shell-picker-group { margin:8px 8px 4px; color:#8f88a8; font-size:11px; font-weight:600; letter-spacing:.06em; text-transform:uppercase }
+.shell-picker-group:first-child { margin-top:2px }
+.shell-picker-options button { display:flex; flex:none; align-items:center; gap:10px; min-width:0; min-height:40px; width:100%; padding:7px 8px; color:#e5e7ef; background:transparent; border:1px solid transparent; border-radius:6px; text-align:left; font-weight:500 }
 .shell-picker-options button:hover,.shell-picker-options button[aria-pressed=true] { background:linear-gradient(110deg,#192a43,#2d1b32); border-color:#9382b2 }
-@media (prefers-reduced-motion:reduce) { .shell-picker>summary::after { transition:none } }
+.shell-picker-options .shell-picker-more { margin-top:4px; border-top:1px solid #2a2638; border-radius:0 0 6px 6px; color:#b9a9e0 }
+@media (prefers-reduced-motion:reduce) { .shell-picker-chevron { transition:none } }
 .consoles-only .session-card.empty { background:var(--empty-black) }
 .consoles-only .session-card.empty:hover,.consoles-only .session-card.empty:focus-within { background:#090a12; border-color:#9c8dce }
 #consoles-page { padding:12px 14px 20px }
