@@ -63,7 +63,7 @@ let window, tray, vault, sessions, workspace, projects, messageUsage, updates, a
 let codePanel, worktrees, messageQueue, prompts;
 let mode = 'dashboard', quitting = false, refreshing = false, lastRefresh = 0, apiBusy = false, subscriptionUsage, usageRefresh;
 let modeTarget = null, modeTask, modeSequence = 0, transitioning = false;
-let trayHidden = false, windowDrag = null;
+let trayHidden = false, windowDrag = null, hiddenBounds = null;
 let limits = [], recent = [], accountError = null, capabilities = {}, storageError = null, workspaceError = null, shortcutAvailable = false;
 const codexAccounts = new Map(), dismissedThresholdOffers = new Set(), automaticSwitchAttempts = new Set();
 const recentReader = new RecentCodex();
@@ -94,11 +94,16 @@ function revealWindow() {
   if (!window || window.isDestroyed()) return;
   trayHidden = false; window.setSkipTaskbar(false);
   if (window.isMinimized()) window.restore();
-  window.show(); window.focus(); publish();
+  window.show();
+  // macOS can place a reshown window elsewhere; return it to where it was hidden.
+  if (hiddenBounds && !window.isFullScreen()) window.setBounds(hiddenBounds);
+  hiddenBounds = null;
+  window.focus(); publish();
 }
 function hideToTray() {
   if (!tray) { window.minimize(); return; }
   ++modeSequence; modeTarget = null; modeTask = null; transitioning = false; windowDrag = null;
+  hiddenBounds = window.isFullScreen() || window.isMaximized() ? null : window.getBounds();
   trayHidden = true; window.hide(); window.setSkipTaskbar(true); publish();
 }
 function dragWindow(action, point) {
@@ -124,6 +129,7 @@ function setMode(next) {
   if (next === 'hud' && settings?.setupComplete === false) next = 'dashboard';
   if (!window || window.isDestroyed() || quitting || !['hud', 'dashboard', 'fullscreen'].includes(next)) return Promise.resolve();
   if (modeTarget === next) return modeTask;
+  hiddenBounds = null;
   const sequence = ++modeSequence;
   modeTarget = next;
   modeTask = moveWindow(next, sequence).finally(() => {
