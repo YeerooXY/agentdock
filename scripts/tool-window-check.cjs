@@ -39,7 +39,7 @@ async function checkToolsAndWindow({ app, page, invoke, eventually, capture, dat
     const list = await page.locator('.connection-list').innerText().catch(() => '(no connection list)');
     const card = await page.locator('[data-integration=meshy]').innerText().catch(() => '(no Meshy card)');
     const pageId = await page.evaluate(() => document.querySelector('.page:not([hidden])')?.id || document.body.className);
-    throw new Error(`${error.message.split('\n')[0]}\nPage: ${pageId}\nMeshy connection: ${JSON.stringify(connection && { ...connection, envKeys: Object.keys(connection.envKeys || {}) })}\nConnection list: ${list.slice(0, 600)}\nMeshy card: ${card.slice(0, 600)}`);
+    throw new Error(`${error.message}\nPage: ${pageId}\nMeshy connection: ${JSON.stringify(connection && { ...connection, envKeys: Object.keys(connection.envKeys || {}) })}\nConnection list: ${list.slice(0, 600)}\nMeshy card: ${card.slice(0, 600)}`);
   });
   await page.locator('#tool-catalog .catalog-state').filter({ hasText: 'tools available' }).waitFor();
   assert.ok(await page.locator('.catalog-tools details').count() >= 20);

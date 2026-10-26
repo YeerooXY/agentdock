@@ -67,7 +67,15 @@ async function checkVimControls({ page, app, invoke, eventually, capture }) {
   assert.ok(keys.some(x => x.key === 'w' && x.ctrl && !x.prevented));
   assert.ok(keys.some(x => x.key === 'c' && x.ctrl && !x.prevented));
   assert.equal(await mode(), 'insert');
-  assert.equal(await app.evaluate(({ Menu }) => Menu.getApplicationMenu()), null, 'Native menu shortcuts must not close Paddock or steal editor keys');
+  // macOS keeps a small menu so ⌘C, ⌘V and ⌘Q work; it must not take Ctrl keys.
+  const menu = await app.evaluate(({ Menu }) => {
+    const items = [], walk = menu => { for (const item of menu?.items || []) { items.push({ role: item.role || '', accelerator: item.accelerator || '' }); walk(item.submenu); } };
+    const current = Menu.getApplicationMenu(); walk(current); return current && items;
+  });
+  if (process.platform === 'darwin') {
+    assert.ok(menu, 'macOS keeps an Edit menu for ⌘C and ⌘V');
+    assert.deepEqual(menu.filter(x => /^(close|reload|forcereload|toggledevtools|zoomin|zoomout|resetzoom)$/i.test(x.role) || /Ctrl|Control/.test(x.accelerator)), [], 'Native menu shortcuts must not close Paddock or steal editor keys');
+  } else assert.equal(menu, null, 'Native menu shortcuts must not close Paddock or steal editor keys');
   await app.evaluate(({ BrowserWindow }) => {
     const contents = BrowserWindow.getAllWindows()[0].webContents;
     contents.sendInputEvent({ type: 'keyDown', keyCode: 'W', modifiers: ['control'] });

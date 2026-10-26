@@ -4,6 +4,6 @@
 #   bash scripts/ci-summary.sh test.log
 log="${1:-test.log}"
 [ -f "$log" ] || exit 0
-lines=$( { grep -E '✖|Error|AssertionError|assert|Timeout|FAIL|not ok' "$log" | grep -vE '^\s+at ' | head -40; echo '--- last lines ---'; tail -n 25 "$log"; } \
+lines=$( { grep -E '✖|Error|AssertionError|assert|Timeout|FAIL|not ok' "$log" | grep -vE '^\s+at ' | head -40; echo '--- last lines ---'; tail -n 60 "$log"; } \
   | sed -e 's/%/%25/g' -e 's/\r//g' | awk '{ printf "%s%%0A", $0 }')
 echo "::error title=Test failures::${lines}"
