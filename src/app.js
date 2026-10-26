@@ -488,8 +488,12 @@ function renderApi() {
   return pageHeading('', 'API', 'Your shared tools and instructions are included.') + '<div class="api-columns"><form id="api-form" class="surface api-form"><h2>New request</h2><label>Project<select name="projectId"><option value="">No project</option>' + (state.projects || []).filter(x => x.status !== 'archived').map(x => '<option value="' + escape(x.id) + '">' + escape(x.name) + '</option>').join('') + '</select></label><label>API<select name="provider">' + profiles.map(x => '<option value="' + escape(x.id) + '" ' + (x.id === selectedApi ? 'selected' : '') + '>' + escape(x.name) + '</option>').join('') + '</select></label><div class="key-state ' + (hasKey ? 'saved' : '') + '">' + icon('lock') + (hasKey ? profile.keyId ? 'Key connected' : 'No key required' : 'Add a profile and enter or select its key in Settings → API.') + '</div><label>Model<input name="model" required maxlength="150" placeholder="Model ID" autocomplete="off"></label><label>Prompt<textarea name="prompt" rows="9" required maxlength="100000" placeholder="What are we working on?"></textarea></label><label>Max output tokens per step<input type="number" name="maxOutput" min="16" max="32768" value="1024" required></label><p class="field-hint">Each request starts fresh. Up to 8 model steps with tools.</p><p id="api-error" class="form-error" role="alert"></p><button type="submit" class="primary wide" ' + (!hasKey || apiBusy ? 'disabled' : '') + '>' + icon('arrow') + (apiBusy ? 'Working…' : 'Send') + '</button></form><section class="surface response-panel"><div class="section-label"><h2>Response</h2><span id="response-meta" class="small-label"></span></div><pre id="api-response">' + escape(outputText || 'Your response will appear here.') + '</pre></section></div>';
 }
 function renderTools() { return sharedViews(state, { escape, icon, pageHeading }).tools(); }
+// Connections and integration states shown by the Tools lists, without live status.
+const toolListKey = () => JSON.stringify([state.shared.connections.map(x => [x.id, x.enabled, x.integration]), (state.integrations || []).map(x => [x.id, x.connected, x.ready, x.enabled])]);
+let renderedToolList = '';
 function refreshToolSections() {
   if (page !== 'tools') return;
+  renderedToolList = toolListKey();
   const drafts = [...document.querySelectorAll('.integrations input, .integrations select')].map(field => [field.name, field.value]);
   const focusedSetup = document.activeElement?.dataset.integrationSetup;
   const template = document.createElement('template'); template.innerHTML = renderTools();
@@ -518,7 +522,7 @@ function renderSettingsCategory() {
   else if (page === 'console-settings') content = '<div class="settings-column">' + renderLaunchDefaults() + renderKeyboardSettings() + '</div><div class="settings-column">' + renderGridSettings() + (sections[1]?.outerHTML || '') + '</div>';
   else if (page === 'devices') content = (remoteHosts?.html() || '') + (phone?.renderSettings() || '');
   else if (page === 'api-settings') content = views.apis();
-  else if (page === 'tools') content = renderTools();
+  else if (page === 'tools') { content = renderTools(); renderedToolList = toolListKey(); }
   else if (page === 'instructions') content = renderInstructions();
   else content = '<div class="settings-general-columns"><div class="settings-column">' + (sections[0]?.outerHTML || '') + renderShortcutSettings() + '</div><div class="settings-column">' + renderStartupSettings() + renderProjectSettings() + renderResultsSettings() + '</div></div>' + (updates?.render() || '');
   return settingsShell(page, `<div class="settings-layout${page === 'console-settings' ? ' settings-console-grid' : ''}">${content}</div>`, icon('close'), state.settings.trimStyle || 'classic');
@@ -797,6 +801,8 @@ function receive(next) {
     if (label) { label.textContent = !connection.enabled ? 'Disabled' : connection.status ? connection.status.ok ? `${connection.status.count} tools` : 'Check connection' : 'Ready to connect'; label.classList.toggle('connected', !!connection.status?.ok); }
   }
   syncIntegrationJobs(state);
+  // A setup call can return before its state update arrives; redraw once it does.
+  if (page === 'tools' && renderedToolList && renderedToolList !== toolListKey()) refreshToolSections();
   if (page === 'tools') {
     const section = document.querySelector('.setup-requests');
     const next = JSON.stringify(state.workbench?.setupRequests || []);
