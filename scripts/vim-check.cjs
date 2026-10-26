@@ -74,7 +74,7 @@ async function checkVimControls({ page, app, invoke, eventually, capture }) {
   });
   if (process.platform === 'darwin') {
     assert.ok(menu, 'macOS keeps an Edit menu for ⌘C and ⌘V');
-    assert.deepEqual(menu.filter(x => /^(close|reload|forcereload|toggledevtools|zoomin|zoomout|resetzoom)$/i.test(x.role) || /Ctrl|Control/.test(x.accelerator)), [], 'Native menu shortcuts must not close Paddock or steal editor keys');
+    assert.deepEqual(menu.filter(x => /^(close|reload|forcereload|toggledevtools|zoomin|zoomout|resetzoom)$/i.test(x.role) || /Ctrl|Control/.test(x.accelerator.replace(/CommandOrControl|CmdOrCtrl/g, ''))), [], 'Native menu shortcuts must not close Paddock or steal editor keys');
   } else assert.equal(menu, null, 'Native menu shortcuts must not close Paddock or steal editor keys');
   await app.evaluate(({ BrowserWindow }) => {
     const contents = BrowserWindow.getAllWindows()[0].webContents;
