@@ -74,7 +74,9 @@ async function checkToolsAndWindow({ app, page, invoke, eventually, capture, dat
   assert.equal(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isMinimized()), false);
   await invoke('show'); assert.deepEqual(await bounds(), hudBounds);
   await invoke('mode', 'fullscreen');
-  await page.locator('#dashboard [data-action=tray]').click(); await invoke('show');
+  // macOS uses its own window buttons, so Paddock hides the tray button there.
+  if (process.platform === 'darwin') await invoke('tray'); else await page.locator('#dashboard [data-action=tray]').click();
+  await invoke('show');
   assert.equal(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isFullScreen()), true);
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].close());
   await eventually(async () => (await invoke('state')).trayHidden);
