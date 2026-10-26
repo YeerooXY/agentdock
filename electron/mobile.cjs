@@ -98,6 +98,7 @@ class MobileCompanion extends EventEmitter {
   }
   snapshot() { const p = this.pendingPairing; return { notice: this.notice || '', name: this.name, enabled: !!this.server, host: this.config.host, port: this.config.port, mode: this.config.mode || 'local', publicHost: this.config.publicHost || '', externalPort: this.config.externalPort || 47831, routerMode: this.config.routerMode || 'manual', duckKeyId: this.config.duckKeyId || '', network: this.network.snapshot(), interfaces: interfaces(), error: this.error, devices: this.private.devices.map(({ id, name, at, directAlerts, lastInternetAt }) => ({ id, name, at, lastInternetAt, alerts: !!directAlerts, connected: [...this.clients].some(x => x.device.id === id) })), pairingExpires: this.pairing?.expires || 0, pendingPairing: p && p.expires > Date.now() && ['pending', 'approved'].includes(p.state) ? { id: p.id, name: p.name, code: p.code, expires: p.expires, state: p.state } : null, bytes: this.counters }; }
   async configure({ enabled, host, name, port = 47831, ...remote }) {
+    if (this.network.firewallMutation) throw new Error('Wait for the current firewall change to finish before changing the connection.');
     if (!enabled) { await this.stop(); this.config.enabled = false; this.persist(); return; }
     if (!interfaces().some(x => x.address === host) || !isPrivate(host)) throw new Error('Choose this PC’s private network address.');
     if (!Number.isInteger(port) || port < 1024 || port > 65535) throw new Error('Use a port from 1024 to 65535.');
@@ -106,7 +107,7 @@ class MobileCompanion extends EventEmitter {
     if (name !== undefined) options.name = deviceName(name);
     if (options.mode === 'tailscale' && !isTailscale(host)) throw new Error('Choose this PC’s Tailscale address (100.x). Install Tailscale and sign in if none is listed.');
     const changed = host !== this.config.host || port !== this.config.port || ['mode', 'publicHost', 'externalPort'].some(key => options[key] !== this.config[key]);
-    if (changed) { for (const device of this.private.devices) delete device.lastInternetAt; this.network.state.firewall = ''; }
+    if (changed) { for (const device of this.private.devices) delete device.lastInternetAt; }
     this.notice = '';
     await this.stop(); Object.assign(this.config, { enabled: true, host, port }, options); this.persist(); await this.start();
   }

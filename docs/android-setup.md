@@ -57,10 +57,16 @@ Updated 24 October 2026: Tailscale replaces direct internet through the router a
 1. Install Tailscale on the PC and sign in.
 2. Install Tailscale on the phone, sign in to the **same account** and turn it on.
 3. In Paddock, open **Settings → Devices → Connect a phone**. Choose **Anywhere · Tailscale**, select the PC's Tailscale address (100.x) and press **Enable connection**. If no address is listed, sign in to Tailscale on the PC and press **Refresh addresses**.
-4. On **Firewall**, allow Paddock. The rule covers only Paddock's port on the Tailscale address, from Tailscale devices.
+4. On **Firewall**, Paddock checks its existing Windows rule. **Already configured** means you can continue; no new approval is needed. If the rule is missing, choose **Allow Paddock in Windows Firewall**. If the connection or executable changed, choose **Update firewall rule**. The rule covers only Paddock's port on the Tailscale address, from Tailscale devices.
 5. Pair from **Pair phone**. To test, turn off the phone's Wi-Fi and keep Tailscale on.
 
 The phone still checks the PC certificate pinned during pairing, so Tailscale adds a second encrypted layer. Keep the PC awake with Paddock running. Tailscale keeps the same 100.x address for a device, so the pairing keeps working when your home IP changes.
+
+### Firewall setup after a restart
+
+Current source builds check the saved Windows firewall rule when the connection starts and when you open phone setup. **Check again** is read-only and never requests administrator approval. Continuing setup with an unchanged connection keeps the paired phone connected. A matching rule is not recreated, even if setup is requested again.
+
+**Already configured** confirms that Paddock's rule matches the current executable, TCP port, network address, adapter and peer scope. It does not prove that the phone is online or that other firewall policies permit the connection. If Windows cannot read the rule, Paddock shows an unknown status instead of claiming success or that permission is missing. If your phone already connects through a manually configured rule, you can continue without creating another rule. Rule removal remains an explicit action under **Manage firewall rule**.
 
 ### Moving from direct internet
 

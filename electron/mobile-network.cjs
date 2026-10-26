@@ -25,10 +25,11 @@ async function limitedText(response, max = 2048) {
   return text.trim();
 }
 class MobileNetwork {
-  constructor({ script = path.join(__dirname, 'mobile-network.ps1'), program, getKey, testMode = false, helper = runHelper, fetcher = fetch, changed = () => {} } = {}) {
-    Object.assign(this, { script, program, getKey, testMode, helper, fetcher, changed });
-    this.state = { checkedAt: 0, relation: 'unknown', error: '', routerError: '', dnsError: '', firewall: '', publicAddress: '', wanAddress: '', upnp: false, gateway: '' };
+  constructor({ script = path.join(__dirname, 'mobile-network.ps1'), program, getKey, testMode = false, platform = process.platform, helper = runHelper, fetcher = fetch, changed = () => {} } = {}) {
+    Object.assign(this, { script, program, getKey, testMode, platform, helper, fetcher, changed });
+    this.state = { checkedAt: 0, relation: 'unknown', error: '', routerError: '', dnsError: '', firewall: 'unknown', firewallError: '', firewallCheckedAt: 0, firewallRulePresent: false, publicAddress: '', wanAddress: '', upnp: false, gateway: '' };
     this.running = null; this.mapped = null; this.generation = 0;
+    this.firewallGeneration = 0; this.firewallCheck = null; this.firewallMutation = null;
   }
   snapshot() { return { ...this.state }; }
   guard() { if (this.testMode) throw new Error('Router, firewall and DNS changes are disabled during tests.'); }
@@ -71,18 +72,12 @@ class MobileNetwork {
     this.changed();
   }
   async start(config) {
-    // Router mapping and Duck DNS were for direct internet, now replaced by Tailscale.
-    return;
-    const generation = ++this.generation;
-    this.running = this.maintain(config, generation);
-    await this.running;
-    if (generation !== this.generation) return;
-    this.timer = setInterval(() => {
-      if (this.pending) return;
-      this.pending = true; this.running = this.maintain(config, generation).finally(() => { this.pending = false; });
-    }, 5 * 60 * 1000); this.timer.unref();
+    // Only inspect the existing local rule. Never map ports, update DNS or
+    // request administrator approval when a saved connection starts.
+    await this.checkFirewall(config);
   }
   async stop() {
+    this.resetFirewall();
     ++this.generation; clearInterval(this.timer); this.timer = null;
     await this.running?.catch(() => {}); this.running = null;
     const mapped = this.mapped; this.mapped = null;
@@ -92,10 +87,52 @@ class MobileNetwork {
     }
     this.state.mapped = false; this.changed();
   }
+  resetFirewall() {
+    ++this.firewallGeneration; this.firewallCheck = null;
+    Object.assign(this.state, { firewall: 'unknown', firewallError: '', firewallCheckedAt: 0, firewallRulePresent: false });
+  }
+  firewallResult(result, generation) {
+    if (generation !== this.firewallGeneration) return;
+    const valid = ['allowed', 'missing', 'outdated'].includes(result?.firewall);
+    Object.assign(this.state, { firewall: valid ? result.firewall : 'unknown', firewallRulePresent: result?.firewallRulePresent === true, firewallCheckedAt: Date.now(), firewallError: valid ? '' : result?.firewallError || 'Windows could not confirm the firewall rule. Try checking again.' });
+    this.changed();
+  }
+  checkFirewall(config) {
+    if (this.testMode || this.platform !== 'win32' || !config.host || config.host.startsWith('127.')) return Promise.resolve(this.snapshot());
+    const captured = { ...config };
+    const key = JSON.stringify([captured.mappingId, captured.host, captured.port, captured.mode, this.program]);
+    if (this.firewallMutation) return this.firewallMutation;
+    if (this.firewallCheck?.key === key) return this.firewallCheck.promise;
+    const generation = ++this.firewallGeneration;
+    Object.assign(this.state, { firewall: 'checking', firewallError: '', firewallCheckedAt: 0, firewallRulePresent: false }); this.changed();
+    const promise = Promise.resolve().then(async () => {
+      try { this.firewallResult(await this.helper(this.script, 'firewall-status', captured, { program: this.program, timeout: 15000 }), generation); }
+      catch (error) { this.firewallResult({ firewallError: error.message }, generation); }
+      finally { if (this.firewallCheck?.generation === generation) this.firewallCheck = null; }
+      return this.snapshot();
+    });
+    this.firewallCheck = { key, generation, promise }; return promise;
+  }
   async firewall(config, remove = false) {
     this.guard();
-    await this.helper(this.script, remove ? 'firewall-remove' : 'firewall', config, { program: this.program, timeout: 120000 });
-    this.state.firewall = remove ? 'removed' : 'allowed'; this.changed(); return this.snapshot();
+    if (this.firewallMutation) throw new Error('Wait for the current firewall change to finish.');
+    const captured = { ...config };
+    const check = this.checkFirewall(captured), checkedGeneration = this.firewallGeneration;
+    const status = await check;
+    if (checkedGeneration !== this.firewallGeneration) throw new Error('The connection changed during the firewall check. Check the current connection again.');
+    if (!remove && status.firewall === 'allowed' || remove && status.firewall === 'missing') return status;
+    if (this.firewallMutation) throw new Error('Wait for the current firewall change to finish.');
+    const generation = ++this.firewallGeneration;
+    Object.assign(this.state, { firewall: 'checking', firewallError: '' }); this.changed();
+    const mutation = Promise.resolve().then(async () => {
+      try {
+        const result = await this.helper(this.script, remove ? 'firewall-remove' : 'firewall', captured, { program: this.program, timeout: 120000 });
+        this.firewallResult(result, generation);
+      } catch (error) { this.firewallResult({ firewallError: error.message }, generation); throw error; }
+      return this.snapshot();
+    });
+    this.firewallMutation = mutation;
+    try { return await mutation; } finally { this.firewallMutation = null; }
   }
 }
 module.exports = { MobileNetwork, runHelper, limitedText };

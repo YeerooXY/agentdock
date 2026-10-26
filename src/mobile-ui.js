@@ -1,7 +1,7 @@
 import './mobile.css';
 export function mobileUI({ call, getState, escape: e, icon, toast, navigate }) {
   const dialog = document.createElement('dialog'); dialog.className = 'mobile-setup'; dialog.setAttribute('aria-labelledby', 'mobile-title'); document.body.append(dialog);
-  let invite = null, step = 0, busy = false, deviceStamp = '', draft = null, current = null;
+  let invite = null, step = 0, busy = false, deviceStamp = '', networkStamp = '', checkId = 0, draft = null, current = null;
   const state = () => current || getState().mobile || { interfaces: [], devices: [], network: {} };
   const button = (action, label, primary = false) => `<button type="button" data-mobile="${action}" class="${primary ? 'primary' : 'secondary'}">${label}</button>`;
   const renderSettings = () => `<section class="surface"><div class="section-label"><h2>Android</h2>${button('open', 'Connect a phone', true)}</div><p class="field-hint">${state().enabled ? `${state().devices.length} paired · ${state().devices.filter(x => x.connected).length} connected` : 'Phone connection is off.'}</p>${state().error ? `<p role="alert">${e(state().error)}</p>` : ''}</section>`;
@@ -18,24 +18,55 @@ export function mobileUI({ call, getState, escape: e, icon, toast, navigate }) {
     if (!request) return '';
     return `<section class="mobile-approval" aria-labelledby="phone-approval-title"><h3 id="phone-approval-title">${request.state === 'approved' ? 'Phone approved' : 'Allow this phone?'}</h3><p>${e(request.name)}</p><div class="mobile-match-code" aria-label="Verification code ${e(request.code)}">${e(request.code.slice(0, 3))} ${e(request.code.slice(3))}</div><p>${request.state === 'approved' ? 'Waiting for the phone to finish connecting.' : 'Check that this code matches your phone. Allowing access gives it control of your consoles and Results.'}</p><p class="field-hint">Expires ${new Date(request.expires).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>${request.state === 'pending' ? `<div class="wb-toolbar"><button type="button" class="secondary" data-mobile="deny" data-id="${e(request.id)}">Deny</button><button type="button" class="primary" data-mobile="approve" data-id="${e(request.id)}">Codes match — Allow</button></div>` : ''}</section>`;
   }
+  function firewallPage(s) {
+    const n = s.network || {}, status = n.firewall || 'unknown';
+    if (!s.enabled) return '<h2>Windows Firewall</h2><p>Enable the connection on the first step.</p>';
+    const scope = s.mode === 'tailscale' ? 'your Tailscale address, from Tailscale devices' : 'this address, from your local network';
+    const retry = button('check-firewall', 'Check again');
+    if (status === 'checking') return '<h2>Windows Firewall</h2><p role="status">Checking the existing firewall rule…</p><p class="field-hint">This check does not change Windows settings or ask for administrator approval.</p>';
+    if (status === 'allowed') return `<h2>Windows Firewall</h2><p class="mobile-success" role="status"><strong>Already configured</strong></p><p>Paddock’s firewall rule matches this connection. No need to allow it again.</p><p class="field-hint">The rule covers Paddock’s TCP port on ${scope}. Pair your phone next, or continue using your paired phone.</p><div class="wb-toolbar">${retry}</div><details><summary>Manage firewall rule</summary>${button('remove-firewall', 'Remove firewall rule')}</details>`;
+    const outdated = status === 'outdated', missing = status === 'missing';
+    const message = outdated ? 'The firewall rule needs updating for this connection.' : missing ? 'Paddock’s firewall rule was not found.' : 'The firewall status could not be checked.';
+    const action = outdated ? 'Update firewall rule' : missing ? 'Allow Paddock in Windows Firewall' : 'Configure firewall rule';
+    return `<h2>Windows Firewall</h2><p role="status">${message}</p>${n.firewallError ? `<p class="field-hint">${e(n.firewallError)}</p>` : ''}<div class="wb-toolbar">${button('firewall', action, outdated || missing)}${retry}</div><p class="field-hint">Only configuring or updating the rule asks for administrator approval. The rule covers Paddock’s TCP port on ${scope}.</p><p class="field-hint">If your phone already connects, you can continue without changing the firewall. This checks Paddock’s own rule, not other rules you may have configured.</p>`;
+  }
+  function renderFirewall() {
+    if (!dialog.open || busy || step !== 1) return;
+    const focus = dialog.contains(document.activeElement) ? document.activeElement.dataset.mobile : null;
+    render();
+    if (focus) (dialog.querySelector(`[data-mobile="${CSS.escape(focus)}"]`) || dialog.querySelector('[data-mobile=next]'))?.focus();
+  }
+  async function checkFirewall() {
+    if (!state().enabled || getState().platform && getState().platform !== 'win32') return;
+    const id = ++checkId;
+    current = { ...state(), network: { ...state().network, firewall: 'checking', firewallError: '' } }; renderFirewall();
+    try {
+      const checked = await call('mobile.check-firewall');
+      if (id !== checkId) return;
+      current = checked || current;
+    } catch (error) {
+      if (id !== checkId) return;
+      current = { ...state(), network: { ...state().network, firewall: 'unknown', firewallError: error.message } };
+    }
+    renderFirewall();
+  }
   function render() {
-    const s = state(), tailscale = draft.mode === 'tailscale', n = s.network || {};
+    const s = state(), tailscale = draft.mode === 'tailscale';
     const addresses = s.interfaces.filter(x => tailscale ? x.tailscale : !x.tailscale);
     const pages = [
       `<h2>Connect your phone</h2><div class="wb-toolbar"><button type="button" class="secondary" data-docs="android-download">Get the Android app ↗</button></div>
       ${s.notice ? `<p class="mobile-network-note" role="status">${e(s.notice)}</p>` : ''}
       <div class="mobile-name-row"><label>This PC’s name<input data-field="name" value="${e(draft.name)}" maxlength="64" autocomplete="off"></label>${button('rename-pc', 'Save name')}</div>
       <label>Where will you connect?<select data-field="mode" id="mobile-mode">${options([['local', 'Same Wi-Fi'], ['tailscale', 'Anywhere · Tailscale']], draft.mode)}</select></label>
-      ${tailscale ? `<p>Tailscale connects your phone and PC over an encrypted private network. No router changes or open ports.</p>
+      ${tailscale ? `<p>Tailscale connects your phone and PC over an encrypted private network. No router port forwarding is needed.</p>
       <ol class="mobile-steps"><li>Install Tailscale on this PC and sign in. <button type="button" class="subtle" data-docs="tailscale">Get Tailscale ↗</button></li><li>Install Tailscale on your phone, sign in to the same account and turn it on.</li><li>Choose this PC’s Tailscale address below.</li></ol>` : '<p>Put your phone and PC on the same Wi-Fi. No extra app or account is needed.</p>'}
       ${addresses.length ? `<label>PC address<select data-field="host" id="mobile-host">${options(addresses.map(x => [x.address, `${x.tailscale ? 'Tailscale' : x.local ? 'This PC only' : x.name} · ${x.address}`]), draft.host)}</select></label>` : `<p class="mobile-network-note" role="status">${tailscale ? 'No Tailscale address found. Sign in to Tailscale on this PC, then refresh.' : 'No Wi-Fi or Ethernet address found. Connect this PC to a network, then refresh.'}</p>`}
       <p class="field-hint">${tailscale ? 'Your phone must have Tailscale turned on to reach this PC. Keep this PC awake with Paddock running.' : 'Choose your Wi-Fi or Ethernet address. Keep this PC awake with Paddock running.'}</p>${button('refresh', 'Refresh addresses')}
-      <div class="wb-toolbar mobile-enable">${button('enable', s.enabled ? 'Save connection' : 'Enable connection', true)}${s.enabled ? button('disable', 'Turn off') : s.host ? button('remove-firewall', 'Remove firewall rule') : ''}</div>`,
+      <div class="wb-toolbar mobile-enable">${button('enable', s.enabled ? connectionChanged() ? 'Save connection' : 'Continue setup' : 'Enable connection', true)}${s.enabled ? button('disable', 'Turn off') : s.host ? button('remove-firewall', 'Remove firewall rule') : ''}</div>`,
       getState().platform && getState().platform !== 'win32' ? `<h2>Firewall</h2>${!s.enabled ? '<p>Enable the connection on the first step.</p>' : getState().platform === 'darwin'
         ? '<p>The first time your phone connects, macOS asks whether Paddock may accept incoming connections. Choose <strong>Allow</strong>.</p><p class="field-hint">If you turned on the firewall in Stealth Mode or set it to block all connections, add Paddock in System Settings → Network → Firewall → Options.</p>'
         : `<p>If a firewall is on, allow incoming TCP connections to port ${e(String(s.port))} from your ${s.mode === 'tailscale' ? 'Tailscale network' : 'home network'}. With ufw: <code>sudo ufw allow ${s.mode === 'tailscale' ? 'in on tailscale0 ' : ''}to any port ${e(String(s.port))} proto tcp</code></p><p class="field-hint">Many desktop Linux systems have no firewall turned on, so no step is needed.</p>`}` :
-      `<h2>Windows Firewall</h2>${!s.enabled ? '<p>Enable the connection on the first step.</p>' : `<p>${s.mode === 'tailscale' ? 'Allow devices on your Tailscale network to reach Paddock.' : 'Allow the phone connection on your home network.'}</p>
-      <div class="wb-toolbar">${button('firewall', 'Allow Paddock in Windows Firewall', true)}${n.firewall === 'allowed' ? button('remove-firewall', 'Remove firewall rule') : ''}</div><p class="field-hint">Windows asks for administrator approval. The rule covers only Paddock’s TCP port on ${s.mode === 'tailscale' ? 'your Tailscale address, from Tailscale devices' : 'this address, from your local network'}.</p>${n.firewall === 'allowed' ? '<p class="mobile-success">Firewall rule added.</p>' : ''}`}`,
+      firewallPage(s),
       `<h2>Pair your phone</h2><p>Scan the QR code, compare the code on both screens, then approve this phone here.${s.mode === 'tailscale' ? ' To test, turn off Wi-Fi on the phone and keep Tailscale on.' : ''}</p>${s.pendingPairing ? pairingRequest(s) : invite ? `<div class="pairing-code"><img src="${e(invite.qr)}" alt="One-use Paddock pairing code" width="280" height="280"><p>Expires ${new Date(invite.expires).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p></div><div class="wb-toolbar">${button('copy', 'Copy pairing code')}${button('pair', 'New code')}</div>` : button('pair', 'Show QR code', true)}<div class="mobile-devices">${s.devices.length ? s.devices.map(d => `<div class="mobile-device"><span><label>Phone name<input data-phone-name="${e(d.id)}" aria-label="Name for ${e(d.name)}" value="${e(phoneNames.get(d.id) ?? d.name)}" maxlength="64" autocomplete="off"></label><small>${d.connected ? 'Connected' : 'Paired'}${d.alerts ? ' · Alerts enabled' : ''}</small>${d.lastInternetAt ? '<small class="mobile-success">Internet connection verified</small>' : ''}</span><button type="button" class="secondary" data-mobile="rename-phone" data-id="${e(d.id)}">Save name</button><button type="button" class="subtle danger" data-mobile="revoke" data-id="${e(d.id)}">Remove</button></div>`).join('') : '<p class="field-hint">No phones paired yet.</p>'}</div>${s.mode === 'internet' && !s.devices.some(d => d.lastInternetAt) ? '<p class="field-hint">Internet access is unverified until a paired phone connects from outside your home network.</p>' : ''}`,
       `<h2>Alerts</h2><p>Paddock sends alerts straight to your phone over this connection. No cloud account is needed.</p><ol class="mobile-steps"><li>In the Android app, open Settings and turn on <strong>Stay connected</strong>.</li><li>Allow notifications when Android asks.</li><li>Keep this PC awake with Paddock running.</li></ol>${s.devices.length ? `<p class="${s.devices.some(d => d.alerts) ? 'mobile-success' : 'field-hint'}">Alerts on for ${s.devices.filter(d => d.alerts).length} of ${s.devices.length} paired phone${s.devices.length === 1 ? '' : 's'}.</p>` : ''}<p class="field-hint">Alerts show the console name and whether it is ready or needs you. Android battery saving can delay them.</p><div class="wb-toolbar"><button type="button" class="subtle" data-docs="mobile-guide">Detailed guide ↗</button></div>`
     ];
@@ -50,23 +81,33 @@ export function mobileUI({ call, getState, escape: e, icon, toast, navigate }) {
       draft = { name: s.name || '', mode: chosen, host: s.host && (s.mode || 'local') === chosen ? s.host : defaultHost(s, chosen) };
     }
     render(); if (!dialog.open) dialog.showModal();
+    void checkFirewall();
   }
   dialog.addEventListener('input', () => { remember(); dialog.querySelector('.form-error').textContent = ''; });
-  dialog.addEventListener('change', event => { remember(); if (event.target.dataset.field === 'mode') { draft.host = defaultHost(state(), draft.mode); render(); dialog.querySelector('#mobile-mode').focus(); } });
-  dialog.addEventListener('cancel', event => { if (busy) { event.preventDefault(); return; } invite = null; call('mobile.cancel-pairing').catch(() => {}); });
+  dialog.addEventListener('change', event => {
+    remember(); const field = event.target.dataset.field;
+    if (field === 'mode') draft.host = defaultHost(state(), draft.mode);
+    if (field === 'mode' || field === 'host') { render(); dialog.querySelector(`#mobile-${field}`)?.focus(); }
+  });
+  dialog.addEventListener('cancel', event => { if (busy) { event.preventDefault(); return; } ++checkId; invite = null; call('mobile.cancel-pairing').catch(() => {}); });
   document.addEventListener('dock-mobile-setup', event => open(event.detail || {}));
   document.addEventListener('click', async event => {
     const target = event.target.closest('[data-mobile]'); if (!target || busy) return;
     const action = target.dataset.mobile;
     if (action === 'open') return open();
     remember();
-    if (action === 'close') { dialog.close(); invite = null; await call('mobile.cancel-pairing'); return; }
+    if (action === 'close') { ++checkId; dialog.close(); invite = null; await call('mobile.cancel-pairing'); return; }
+    if (action === 'check-firewall') return checkFirewall();
     if (['step','next','previous'].includes(action)) {
       const next = action === 'step' ? Number(target.dataset.step) : step + (action === 'next' ? 1 : -1);
       if (next > 0 && !state().enabled) { dialog.querySelector('.form-error').textContent = 'Enable your connection first, or close setup to do this later.'; return; }
       if (next > 0 && connectionChanged()) { dialog.querySelector('.form-error').textContent = 'Save your connection changes first.'; return; }
-      step = next; render(); dialog.querySelector('.mobile-step h2').setAttribute('tabindex', '-1'); dialog.querySelector('.mobile-step h2').focus(); return;
+      step = next; render(); dialog.querySelector('.mobile-step h2').setAttribute('tabindex', '-1'); dialog.querySelector('.mobile-step h2').focus(); if (step === 1) void checkFirewall(); return;
     }
+    // Reopening setup with an unchanged connection must not restart the
+    // listener, disconnect a paired phone or ask Windows for permission.
+    if (action === 'enable' && state().enabled && !connectionChanged()) { step = 1; render(); void checkFirewall(); return; }
+    ++checkId;
     busy = true; dialog.setAttribute('aria-busy', 'true'); for (const input of dialog.querySelectorAll('button,input,select')) input.disabled = true;
     dialog.querySelector('.mobile-progress').textContent = action.includes('firewall') ? 'Waiting for Windows…' : 'Saving…';
     try {
@@ -86,9 +127,17 @@ export function mobileUI({ call, getState, escape: e, icon, toast, navigate }) {
       render();
       if (action === 'enable') dialog.scrollTop = 0;
     } catch (error) {
+      if (action.includes('firewall')) { current = await call('mobile.status').catch(() => current); render(); }
       for (const input of dialog.querySelectorAll('button,input,select')) input.disabled = false;
       dialog.querySelector('.form-error').textContent = error.message; dialog.querySelector('.mobile-progress').textContent = '';
     } finally { busy = false; dialog.removeAttribute('aria-busy'); }
   });
-  return { renderSettings, open, receive() { current = getState().mobile || current; const next = JSON.stringify([state().devices, state().pendingPairing]); const changed = next !== deviceStamp; deviceStamp = next; if (invite && !state().pairingExpires) invite = null; if (dialog.open && !busy && step === 2 && changed) { remember(); render(); } } };
+  return { renderSettings, open, receive() {
+    current = getState().mobile || current;
+    const next = JSON.stringify([state().devices, state().pendingPairing]), network = JSON.stringify(state().network);
+    const changed = next !== deviceStamp, networkChanged = network !== networkStamp; deviceStamp = next; networkStamp = network;
+    if (invite && !state().pairingExpires) invite = null;
+    if (dialog.open && !busy && step === 2 && changed) { remember(); render(); }
+    if (networkChanged) renderFirewall();
+  } };
 }

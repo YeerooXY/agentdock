@@ -16,6 +16,9 @@ const { AlertEvents } = require('../electron/alerts.cjs');
 const { TerminalStream } = require('../electron/mobile-stream.cjs');
 const safe = (() => { const key = crypto.randomBytes(32); return { isEncryptionAvailable: () => true, encryptString(value) { const iv = crypto.randomBytes(12), cipher = crypto.createCipheriv('aes-256-gcm', key, iv); const encrypted = Buffer.concat([cipher.update(value), cipher.final()]); return Buffer.concat([iv, cipher.getAuthTag(), encrypted]); }, decryptString(buffer) { const d = crypto.createDecipheriv('aes-256-gcm', key, buffer.subarray(0, 12)); d.setAuthTag(buffer.subarray(12, 28)); return Buffer.concat([d.update(buffer.subarray(28)), d.final()]).toString(); } }; })();
 async function fixture(t) {
+  // These clients connect only to loopback. Keep the fixture independent of
+  // physical adapters and environments that cannot enumerate host networks.
+  t.mock.method(os, 'networkInterfaces', () => ({ loopback: [{ address: '127.0.0.1', family: 'IPv4', internal: true }] }));
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dock-mobile-'));
   const sessions = new EventEmitter(); sessions.items = new Map(); sessions.list = () => [...sessions.items.values()]; sessions.writes = []; sessions.write = (id, data) => sessions.writes.push({ id, data }); sessions.acknowledge = id => { sessions.items.get(id).state = 'open'; sessions.emit('changed'); };
   for (let i = 1; i <= 9; i++) sessions.items.set('console-' + i, { id: 'console-' + i, name: 'Console ' + i, alive: true, state: 'ready', cols: 80, rows: 24, slot: i, sequence: 0, buffer: 'Hello ' + i, provider: 'shell' });

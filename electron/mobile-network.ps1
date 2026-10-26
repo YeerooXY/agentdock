@@ -1,5 +1,5 @@
 param(
-  [ValidateSet('inspect','map','unmap','firewall','firewall-remove')][string]$Action = 'inspect',
+  [ValidateSet('inspect','map','unmap','firewall-status','firewall','firewall-remove')][string]$Action = 'inspect',
   [string]$LocalAddress,
   [ValidateRange(1024,65535)][int]$Port = 47831,
   [ValidateRange(1024,65535)][int]$ExternalPort = 47831,
@@ -40,6 +40,33 @@ function Soap([string]$Name, [hashtable]$Values = @{}) {
     throw 'The router did not accept this request. Use manual port forwarding in its settings.'
   }
 }
+function Single-Value($Value, [string[]]$Expected) {
+  $items = @($Value)
+  return $items.Count -eq 1 -and $Expected -contains [string]$items[0]
+}
+function Phone-Firewall-Status {
+  # Query the effective store, including the rule's separate filter objects.
+  # Enumerating by name here lets an empty result mean "missing" while query
+  # failures (including access denied) still throw instead of looking missing.
+  $rules = @(Get-NetFirewallRule -PolicyStore ActiveStore -ErrorAction Stop | Where-Object { $_.Name -eq $script:ruleName })
+  if ($rules.Count -eq 0) { return @{ firewall='missing'; firewallRulePresent=$false } }
+  $status = @{ firewall='outdated'; firewallRulePresent=$true }
+  if ($rules.Count -ne 1) { return $status }
+  $rule = $rules[0]
+  $application = $rule | Get-NetFirewallApplicationFilter -ErrorAction Stop
+  $ports = $rule | Get-NetFirewallPortFilter -ErrorAction Stop
+  $addresses = $rule | Get-NetFirewallAddressFilter -ErrorAction Stop
+  $adapter = $rule | Get-NetFirewallInterfaceFilter -ErrorAction Stop
+  $remote = if ($Mode -eq 'tailscale') { @('100.64.0.0/10', '100.64.0.0/255.192.0.0') } else { @('LocalSubnet') }
+  if ($rule.Enabled -eq 'True' -and $rule.Direction -eq 'Inbound' -and $rule.Action -eq 'Allow' -and $rule.Profile -eq 'Any' -and
+      (Single-Value $application.Program @($Program)) -and
+      (Single-Value $ports.Protocol @('TCP', '6')) -and (Single-Value $ports.LocalPort @([string]$Port)) -and (Single-Value $ports.RemotePort @('Any')) -and
+      (Single-Value $addresses.LocalAddress @($LocalAddress, "$LocalAddress/32", "$LocalAddress/255.255.255.255")) -and
+      (Single-Value $addresses.RemoteAddress $remote) -and (Single-Value $adapter.InterfaceAlias @($network.InterfaceAlias))) {
+    $status.firewall = 'allowed'
+  }
+  return $status
+}
 try {
   if ($Action -ne 'inspect' -and $Owner -notmatch '^[a-f0-9-]{36}$') { throw 'Invalid Paddock rule identifier.' }
   # The Tailscale adapter has no default gateway; Wi-Fi and Ethernet do.
@@ -51,20 +78,33 @@ try {
   $result.networkProfile = if ($profile) { [string]$profile.NetworkCategory } else { 'Unknown' }
   if ($Action -like 'firewall*') {
     if (-not [IO.Path]::IsPathRooted($Program) -or -not (Test-Path -LiteralPath $Program -PathType Leaf)) { throw 'The Paddock executable could not be found.' }
+    $script:ruleName = 'AgentDock-Mobile-'+$Owner
+    try { $status = Phone-Firewall-Status } catch {
+      if ($Action -eq 'firewall-status') { throw 'Windows could not read the firewall rule. Try checking again or review Windows Firewall settings.' }
+      $status = @{ firewall='unknown'; firewallRulePresent=$false }
+    }
+    # Status checks never elevate. Repeated setup is a no-op when the rule
+    # already matches, even if another caller bypasses the desktop status check.
+    if ($Action -eq 'firewall-status' -or ($Action -eq 'firewall' -and $status.firewall -eq 'allowed') -or ($Action -eq 'firewall-remove' -and $status.firewall -eq 'missing')) {
+      $result += $status; $result | ConvertTo-Json -Compress; exit 0
+    }
     $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
     if (-not $isAdmin) {
       if ($Elevated) { throw 'Windows administrator approval is required for this rule.' }
       $arguments = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "'+$PSCommandPath+'" -Action '+$Action+' -LocalAddress '+$LocalAddress+' -Port '+$Port+' -ExternalPort '+$ExternalPort+' -Owner '+$Owner+' -Program "'+$Program+'" -Mode '+$Mode+' -Elevated'
       try { $child = Start-Process -FilePath 'powershell.exe' -Verb RunAs -WindowStyle Hidden -ArgumentList $arguments -PassThru -Wait; if ($child.ExitCode -ne 0) { throw 'Firewall setup did not finish.' } } catch { throw 'Windows Firewall was not changed. Approve the Windows prompt, or add the rule manually.' }
     } else {
-      $ruleName = 'AgentDock-Mobile-'+$Owner
       Get-NetFirewallRule -Name $ruleName -ErrorAction SilentlyContinue | Remove-NetFirewallRule
       if ($Action -eq 'firewall') {
         $remote = if ($Mode -eq 'tailscale') { '100.64.0.0/10' } else { 'LocalSubnet' }
         New-NetFirewallRule -Name $ruleName -DisplayName 'Paddock phone connection' -Direction Inbound -Action Allow -Protocol TCP -LocalPort $Port -LocalAddress $LocalAddress -InterfaceAlias $network.InterfaceAlias -Program $Program -RemoteAddress $remote -Profile Any | Out-Null
       }
     }
-    $result.firewall = $Action -eq 'firewall'; $result | ConvertTo-Json -Compress; exit 0
+    try { $status = Phone-Firewall-Status } catch {
+      $status = @{ firewall='unknown'; firewallRulePresent=$false; firewallError='Windows could not verify the rule after setup. Check again before repeating setup.' }
+    }
+    if ($status.firewall -ne 'unknown' -and (($Action -eq 'firewall' -and $status.firewall -ne 'allowed') -or ($Action -eq 'firewall-remove' -and $status.firewall -ne 'missing'))) { throw 'Windows did not confirm the requested firewall change. Review Windows Firewall settings.' }
+    $result += $status; $result | ConvertTo-Json -Compress; exit 0
   }
   $udp = [Net.Sockets.UdpClient]::new()
   try {

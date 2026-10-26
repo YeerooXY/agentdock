@@ -465,6 +465,7 @@ app.whenReady().then(async () => {
           case 'mobile.revoke': mobile.revoke(payload); break;
           case 'mobile.rename': value = mobile.rename(payload); break;
           case 'mobile.status': value = mobile.snapshot(); publish(); break;
+          case 'mobile.check-firewall': await mobile.network.checkFirewall(mobile.config); value = mobile.snapshot(); break;
           case 'mobile.inspect-network': value = await mobile.network.inspect(payload?.host); break;
           case 'mobile.firewall': if (!mobile.server && payload?.remove !== true) throw new Error('Enable the phone connection first.'); value = await mobile.network.firewall(mobile.config, payload?.remove === true); break;
           case 'mobile.windows-network': await shell.openExternal('ms-settings:network-status'); break;
