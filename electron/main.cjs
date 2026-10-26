@@ -132,6 +132,17 @@ function setMode(next) {
   });
   return modeTask;
 }
+// macOS animates full screen changes, and setBounds is ignored until they finish.
+function fullScreen(on) {
+  if (window.isFullScreen() === on) return Promise.resolve();
+  return new Promise(resolve => {
+    const event = on ? 'enter-full-screen' : 'leave-full-screen';
+    const done = () => { clearTimeout(timer); window.off(event, done); resolve(); };
+    const timer = setTimeout(done, 2000);
+    window.on(event, done);
+    window.setFullScreen(on);
+  });
+}
 async function moveWindow(next, sequence) {
   const current = () => sequence === modeSequence && !quitting && window && !window.isDestroyed();
   const start = window.getBounds(), display = screen.getDisplayMatching(start), area = display.workArea;
@@ -151,7 +162,7 @@ async function moveWindow(next, sequence) {
   window.setResizable(true);
   // Allow movement through the HUD's smaller dimensions without a size jump.
   window.setMinimumSize(340, 390);
-  if (window.isFullScreen() && next !== 'fullscreen') { window.setFullScreen(false); window.setBounds(start); }
+  if (window.isFullScreen() && next !== 'fullscreen') { await fullScreen(false); if (!current()) return; window.setBounds(start); }
   if (window.isMaximized()) { window.unmaximize(); window.setBounds(start); }
   if (window.isMinimized()) window.restore();
   // Keep a way back to the app even when Show Desktop hides the corner HUD.
@@ -171,7 +182,7 @@ async function moveWindow(next, sequence) {
     if (!current()) return;
   }
   window.setBounds(target);
-  if (next === 'fullscreen') window.setFullScreen(true);
+  if (next === 'fullscreen') { await fullScreen(true); if (!current()) return; }
   window.setMinimumSize(next === 'hud' ? 340 : 720, next === 'hud' ? 390 : 520);
   window.setResizable(next !== 'hud');
   window.setAlwaysOnTop(next === 'hud' && settings.hudAlwaysOnTop);
