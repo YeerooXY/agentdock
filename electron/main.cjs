@@ -135,6 +135,8 @@ function setMode(next) {
 // macOS animates full screen changes, and setBounds is ignored until they finish.
 function fullScreen(on) {
   if (window.isFullScreen() === on) return Promise.resolve();
+  // Report the change as unfinished until the native animation ends.
+  if (!transitioning) { transitioning = true; publish(); }
   return new Promise(resolve => {
     const event = on ? 'enter-full-screen' : 'leave-full-screen';
     const done = () => { clearTimeout(timer); window.off(event, done); resolve(); };
