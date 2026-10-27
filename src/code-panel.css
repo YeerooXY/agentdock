@@ -1,4 +1,15 @@
 .code-panel{container-type:inline-size}
+.ask-agent{position:fixed;inset:auto;margin:0;box-sizing:border-box;padding:12px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:inherit;max-width:calc(100vw - 16px);max-height:calc(100vh - 16px);overflow:auto;box-shadow:0 8px 24px var(--surface)}
+.ask-agent-dialog{width:440px}
+.ask-agent p{margin:8px 0;overflow-wrap:anywhere}
+.ask-agent pre{max-height:160px;overflow:auto;background:var(--soft);padding:8px;white-space:pre;font:12px/1.5 Consolas,monospace}
+.code-workspace .ask-agent label{display:flex;flex-direction:column;align-items:stretch;margin:10px 0;gap:4px}
+.code-workspace .ask-agent select{max-width:none;width:100%}
+.ask-agent textarea{width:100%;box-sizing:border-box;resize:vertical;min-height:60px}
+.ask-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.ask-agent-menu{display:flex;flex-direction:column;gap:4px}
+.ask-agent-menu:not(:popover-open){display:none}
+.ask-agent :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .code-panel .console-panel-header strong{flex:1}
 .code-readonly{font-size:10px;color:#b4bdd4;white-space:nowrap}
 .code-panel-body{flex:1;min-height:0;min-width:0;overflow:hidden;background:#0b0d16}

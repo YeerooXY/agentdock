@@ -1,9 +1,11 @@
 import './code-panel.css';
+import { askAgentUI } from './ask-agent-ui.js';
 
 export function codePanelUI({ call, getState, selectedConsole, pasteContext, escape: e, icon, resizeHandles, toast, navigate }) {
   const records = new Map();
   const sources = () => getState().sessions.filter(x => x.alive && !x.dismissed && !x.remote && !['login', 'setup'].includes(x.purpose));
   const targets = () => sources().filter(x => !['shell', 'custom'].includes(x.provider));
+  const ask = askAgentUI({ call, getState, targets, pasteContext, selection, showFile, escape: e });
   const action = (name, text, extra = '') => `<button type="button" data-code-action="${name}" class="subtle" ${extra}>${text}</button>`;
   function card(panel) {
     return `<article class="session-card code-panel" data-console-id="${e(panel.id)}" data-slot="${panel.slot}"><header class="console-panel-header"><button class="console-grip" draggable="true" data-console-drag="${e(panel.id)}" aria-label="Move code panel" title="Drag to move. Alt + 1–9 moves to a slot.">${icon('api')}</button><span class="slot">${String(panel.slot).padStart(2, '0')}</span><strong>Code</strong><span class="code-readonly">Read only</span><button class="icon-button" data-action="toggle-console" data-id="${e(panel.id)}" aria-label="Expand code panel" title="Expand code panel">${icon('expand')}</button><button class="icon-button" data-code-action="close" aria-label="Close code panel" title="Close code panel">${icon('close')}</button></header><div class="code-panel-body"></div>${resizeHandles(panel.slot)}</article>`;
@@ -84,6 +86,7 @@ export function codePanelUI({ call, getState, selectedConsole, pasteContext, esc
       const node = document.createElement('div'); node.className = 'code-workspace';
       node.innerHTML = `<div class="code-toolbar"><label>Follow<select data-code-source aria-label="Follow console"></select></label>${action('refresh', 'Refresh')}${action('changes', 'Changes', 'aria-pressed="true"')}${action('browse', 'Browse files', 'aria-pressed="false"')}</div><div class="code-caption" data-code-caption role="status"></div><div class="code-browser"><nav class="code-file-list" data-code-files aria-label="Project files"></nav><section class="code-file-view"><div class="code-file-heading"><span data-code-filename></span>${action('diff', 'Diff', 'aria-pressed="true"')}${action('full', 'File', 'aria-pressed="false"')}</div><div class="code-editor-host" data-code-editor><p>Choose a file to read its code.</p></div></section></div><div class="code-context"><span data-code-selection>Select lines to add context</span>${action('copy', 'Copy', 'disabled')}<select data-code-target aria-label="Send context to console"></select>${action('send', 'Add to draft', 'disabled')}</div><p class="code-notes" data-code-notes></p><p class="form-error" data-code-error role="alert"></p>`;
       r = { id: panel.id, node, diff: true, browse: false, fileTicket: 0, sourceTicket: 0, revision: -1 }; records.set(panel.id, r);
+      ask.bind(r);
       node.addEventListener('click', async event => {
         const b = event.target.closest('button'); if (!b) return;
         try {
@@ -112,10 +115,11 @@ export function codePanelUI({ call, getState, selectedConsole, pasteContext, esc
     }
     if (r.node.parentElement !== host) host.append(r.node);
     chooseOptions(r, panel);
+    if (r.ask) r.updateAsk?.();
     const revision = `${panel.codeSourceKey}:${getState().codeRevision || 0}`;
     if (r.revision !== revision) { r.revision = revision; if (!selection(r)) void load(r); else r.node.querySelector('[data-code-caption]').textContent = 'New changes available · refresh when ready'; }
   }
-  function sync() { for (const [id, r] of records) if (!getState().codePanels?.some(p => p.id === id)) { ++r.fileTicket; r.editor?.destroy(); r.node.remove(); records.delete(id); } }
+  function sync() { for (const [id, r] of records) if (!getState().codePanels?.some(p => p.id === id)) { ++r.fileTicket; ask.close(r); r.editor?.destroy(); r.node.remove(); records.delete(id); } else if (r.ask) r.updateAsk?.(); }
   document.addEventListener('click', async event => {
     const b = event.target.closest('[data-code-action]'); if (!b) return;
     try {
