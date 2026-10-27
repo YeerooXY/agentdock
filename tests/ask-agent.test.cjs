@@ -22,10 +22,13 @@ test('chooses language fences and preserves embedded fences', async () => {
   assert.match(format({ ...sample, file: 'README', text: 'plain' }), /\n```\nplain\n```$/);
   assert.match(format({ ...sample, file: 'README.md', text: '```js\nx\n```' }), /\n````markdown\n```js\nx\n```\n````$/);
 });
-test('enforces the 60,000-character limit on the complete context', async () => {
-  const { formatAskContext: format } = await modulePromise;
-  const overhead = format({ ...sample, text: '' }).length;
-  assert.equal(format({ ...sample, text: 'x'.repeat(60000 - overhead) }).length, 60000);
-  assert.throws(() => format({ ...sample, text: 'x'.repeat(60001 - overhead) }), { message: 'Select fewer than 60,000 characters.' });
-  assert.throws(() => format({ ...sample, note: 'x'.repeat(60000) }), /Select fewer than 60,000 characters\./);
-});
+for (const [name, seed] of [['plain text', 'x'], ['embedded fence', '```js\nx\n```']]) {
+  test(`enforces the 60,000-character limit with ${name}`, async () => {
+    const { formatAskContext: format } = await modulePromise;
+    const overhead = format({ ...sample, text: seed }).length - seed.length;
+    const text = seed + 'x'.repeat(60000 - overhead - seed.length);
+    assert.equal(format({ ...sample, text }).length, 60000);
+    assert.throws(() => format({ ...sample, text: text + 'x' }), { message: 'Select fewer than 60,000 characters.' });
+    assert.throws(() => format({ ...sample, text: seed, note: 'x'.repeat(60000) }), /Select fewer than 60,000 characters\./);
+  });
+}

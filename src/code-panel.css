@@ -1,5 +1,5 @@
 .code-panel{container-type:inline-size}
-.ask-agent{position:fixed;inset:auto;margin:0;box-sizing:border-box;padding:12px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:inherit;max-width:calc(100vw - 16px);max-height:calc(100vh - 16px);overflow:auto;box-shadow:0 8px 24px var(--surface)}
+.ask-agent{position:fixed;inset:auto;margin:0;box-sizing:border-box;padding:12px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:inherit;max-width:calc(100vw - 16px);max-height:calc(100vh - 16px);overflow:auto;box-shadow:0 12px 32px #000b}
 .ask-agent-dialog{width:440px}
 .ask-agent p{margin:8px 0;overflow-wrap:anywhere}
 .ask-agent pre{max-height:160px;overflow:auto;background:var(--soft);padding:8px;white-space:pre;font:12px/1.5 Consolas,monospace}

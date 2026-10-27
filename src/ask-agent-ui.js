@@ -41,6 +41,12 @@ export function askAgentUI({ call, getState, targets, pasteContext, selection, s
       side: r.diff && r.file.before != null && r.file.after != null && r.file.mode !== 'file' ? 'after' : undefined };
     const node = surface(r, 'dialog', 'Ask agent');
     node.innerHTML = `<strong>Ask agent…</strong><p>${e(snapshot.file)}:${snapshot.from}-${snapshot.to}<br>${e(snapshot.folder)}${snapshot.branch ? ` @ ${e(snapshot.branch)}` : ''}${snapshot.side ? ' · diff after side' : ''}</p><pre tabindex="0" aria-label="Selected code">${e(snapshot.text)}</pre><label>Instruction<textarea rows="3"></textarea></label><div class="ask-actions">${['Explain this', 'Look for a bug', 'Propose a fix'].map(x => `<button type="button" data-note="${x}">${x}</button>`).join('')}</div><label>Destination<select aria-label="Destination console"></select></label><p data-mismatch role="status"></p><p class="form-error" role="alert"></p><div data-stale hidden><p>The file changed since you selected this.</p><button type="button" data-keep>Keep captured version</button><button type="button" data-reselect>Reselect</button></div><div class="ask-actions"><button type="button" data-draft>Add to draft</button><button type="button" data-queue>Queue</button><button type="button" data-cancel>Cancel</button></div>`;
+    const heading = node.querySelector('strong');
+    heading.id = `ask-agent-heading-${r.id}`;
+    heading.textContent = 'Ask agent';
+    node.setAttribute('aria-modal', 'true');
+    node.setAttribute('aria-labelledby', heading.id);
+    node.removeAttribute('aria-label');
     const target = node.querySelector('select'), note = node.querySelector('textarea'), error = node.querySelector('[role="alert"]');
     let sending = false, pending = null;
     const initial = targets();
@@ -58,7 +64,7 @@ export function askAgentUI({ call, getState, targets, pasteContext, selection, s
       node.querySelector('[data-queue]').disabled = sending || !busy(chosen);
     }
     r.updateAsk = update;
-    target.addEventListener('change', () => { choices.set(key, target.value); pending = null; node.querySelector('[data-stale]').hidden = true; update(); });
+    target.addEventListener('change', () => { choices.set(key, target.value); update(); });
     async function send(kind, keep = false) {
       if (sending || r.ask !== node) return;
       sending = true; error.textContent = ''; update();
