@@ -1,4 +1,5 @@
 import { codePanelUI } from './code-panel-ui.js';
+import { explorerUI } from './explorer-ui.js';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
@@ -41,6 +42,7 @@ import './console-themes.css';
 import { isSettingsPage, settingsShell } from './settings-ui.js';
 import { fileLinks, filePreviewDialog } from './file-links.js';
 import './theme-system.css';
+import './explorer.css';
 
 const $ = selector => document.querySelector(selector);
 const escape = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
@@ -88,7 +90,7 @@ const gridSize = () => state?.grid || { columns: 3, rows: 3 };
 const allPanels = () => [...(state?.sessions || []), ...(state?.codePanels || [])];
 const gridCapacity = () => gridSize().columns * gridSize().rows;
 let openingConsole = false;
-let codePanels, webPanels, launchGesture, chooserOpener, vim, setup, workbench, layoutMotion, phone, projects, projectChats, messageQueue, imageGenerator, updates, usageView;
+let explorer, codePanels, webPanels, launchGesture, chooserOpener, vim, setup, workbench, layoutMotion, phone, projects, projectChats, messageQueue, imageGenerator, updates, usageView;
 const nameSaves = new Map();
 const launchHint = 'title="Click to open. Hold or right-click to choose." aria-haspopup="dialog"';
 let renderedView = null, viewAnimation, windowMoving = false, pageBeforeSettings = 'consoles';
@@ -134,7 +136,7 @@ $('#app').innerHTML = `
   <aside id="sidebar" class="sidebar">
     <button class="brand" data-page="consoles" aria-label="Paddock home"><span class="brand-mark">${pdMark()}</span><span>pad<span class="brand-light">dock</span></span></button>
     <nav aria-label="Main navigation">
-
+      <button id="explorer-toggle" data-action="sidebar" aria-label="Explorer" title="Explorer" aria-controls="explorer-pane" aria-expanded="true">${icon('folder')}</button>
       <button data-page="consoles"><span class="notification-icon">${icon('terminal')}<span id="ready-count" class="notification-badge" hidden></span></span>Consoles <span id="nav-count">0</span></button>
       <button data-page="projects">${icon('folder')}Projects</button>
       <button data-page="results"><span class="notification-icon">${icon('grid')}<span id="results-count" class="notification-badge" hidden></span></span>Results</button>
@@ -144,6 +146,7 @@ $('#app').innerHTML = `
     <span class="sidebar-edge" aria-hidden="true"></span>
     <div class="sidebar-bottom"><button data-page="settings">${icon('settings')}Settings</button></div>
   </aside>
+  <aside id="explorer-pane" aria-label="Explorer"></aside>
   <div class="workspace">
     <header class="titlebar"><button id="sidebar-toggle" class="icon-button" data-action="sidebar" aria-label="Hide sidebar" title="Hide sidebar" aria-controls="sidebar" aria-expanded="true">${icon('menu')}</button><button id="launch-folder" class="launch-folder" data-action="launch-folder" aria-label="Choose launch folder">${icon('folder')}<span></span></button><button type="button" class="subtle code-open" data-code-action="create" title="Open a read-only code panel">${icon('api')}Code</button><button type="button" class="subtle code-open" data-web-action="create" title="Preview a local web server">${icon('globe')}Preview</button><div class="window-drag-handle" data-window-drag title="Drag to move. Double-click for fullscreen." aria-hidden="true"><span></span></div><div class="window-actions"><button data-action="hud" title="Collapse to corner HUD" aria-label="Collapse to corner HUD">${icon('corner')}</button><button data-action="minimize" aria-label="Minimize">${icon('minus')}</button><button data-action="fullscreen" aria-label="Fullscreen" title="Fullscreen">${icon('expand')}</button><button data-action="tray" aria-label="Hide in system tray" title="Hide in system tray">${icon('close')}</button></div></header>
     <main id="content" tabindex="-1"></main>
@@ -248,6 +251,15 @@ const appearance = consoleAppearance({ call, getState: () => state });
 $('#screenshot-spot').addEventListener('dragstart', e => { e.dataTransfer.setData(SCREENSHOT_DRAG, '1'); e.dataTransfer.effectAllowed = 'copy'; });
 document.querySelectorAll('.sidebar [data-page]').forEach(button => {
   if (!button.hasAttribute('aria-label')) button.setAttribute('aria-label', button.textContent.replace(/\d+$/, '').trim());
+  button.title = button.getAttribute('aria-label');
+  const label = document.createElement('span'); label.className = 'rail-tooltip'; label.textContent = button.title;
+  for (const node of [...button.childNodes]) if (node.nodeType === Node.TEXT_NODE) node.remove();
+  button.append(label);
+});
+$('#explorer-toggle').insertAdjacentHTML('beforeend', '<span class="rail-tooltip">Explorer</span>');
+document.querySelectorAll('.sidebar button').forEach(button => {
+  const position = () => { const tooltip = button.querySelector('.rail-tooltip'); if (tooltip) tooltip.style.top = `${button.getBoundingClientRect().top + 8}px`; };
+  button.addEventListener('pointerenter', position); button.addEventListener('focus', position);
 });
 
 function pageHeading(eyebrow, title, description, action = '') {
@@ -646,6 +658,8 @@ function renderPage() {
     }
   }
   document.querySelectorAll('[data-page]').forEach(button => button.classList.toggle('selected', button.dataset.page === page || button.closest('.sidebar-bottom') && isSettingsPage(page)));
+  document.querySelectorAll('.sidebar [data-page]').forEach(button => { if (button.classList.contains('selected') && !button.classList.contains('brand')) button.setAttribute('aria-current', 'page'); else button.removeAttribute('aria-current'); });
+  explorer?.sync();
   if (consoleView) { renderConsoles(); return; }
   const renderer = { projects: () => projects.render(), results: () => workbench.render('results'), usage: renderUsage, api: renderApi, tools: renderTools, instructions: renderInstructions, settings: renderSettingsCategory }[page] || renderSettingsCategory;
   const content = $('#content');
@@ -848,21 +862,44 @@ function applySidebar() {
   if (expandedId && (sidebar.contains(document.activeElement) || content.contains(document.activeElement))) {
     if (expandedId) document.querySelector(`.session-card[data-console-id="${CSS.escape(expandedId)}"] [data-action="toggle-console"]`)?.focus({ preventScroll: true });
   }
-  sidebar.inert = blocked;
-  sidebar.setAttribute('aria-hidden', String(blocked));
+  sidebar.inert = !!expandedId;
+  sidebar.setAttribute('aria-hidden', String(!!expandedId));
+  const pane = $('#explorer-pane');
+  const reopening = !blocked && (pane.hidden || pane.inert);
+  if (blocked && pane.contains(document.activeElement)) toggle.focus({ preventScroll: true });
+  pane.inert = blocked; pane.hidden = blocked;
+  if (blocked) explorer?.cancelFocus();
+  explorer?.sync();
+  if (reopening) explorer?.focusTree();
   titlebar.inert = false;
   titlebar.removeAttribute('aria-hidden');
   content.inert = !!expandedId;
   toggle.disabled = !!expandedId;
-  sidebar.dataset.collapsed = String(collapsed);
+  sidebar.dataset.collapsed = 'false';
+  $('#explorer-toggle').setAttribute('aria-expanded', String(!blocked));
   if (!initialized) {
     // Apply the saved layout before enabling motion on later toggles.
     sidebar.getBoundingClientRect();
     sidebar.classList.add('sidebar-animated');
   }
   $('#sidebar-toggle').setAttribute('aria-expanded', String(!collapsed));
-  $('#sidebar-toggle').setAttribute('aria-label', collapsed ? 'Show sidebar' : 'Hide sidebar');
-  $('#sidebar-toggle').title = collapsed ? 'Show sidebar' : 'Hide sidebar';
+  $('#sidebar-toggle').setAttribute('aria-controls', 'explorer-pane');
+  $('#sidebar-toggle').setAttribute('aria-label', collapsed ? 'Show Explorer' : 'Hide Explorer');
+  $('#sidebar-toggle').title = collapsed ? 'Show Explorer' : 'Hide Explorer';
+}
+async function setExplorerCollapsed(collapsed) {
+  const previous = !!state.settings.sidebarCollapsed;
+  // Visibility and focus change together, before the settings IPC round trip.
+  state.settings = { ...state.settings, sidebarCollapsed: collapsed };
+  applySidebar();
+  try { await call('settings', { sidebarCollapsed: collapsed }); }
+  catch (error) {
+    if (state.settings.sidebarCollapsed === collapsed) {
+      state.settings = { ...state.settings, sidebarCollapsed: previous };
+      applySidebar();
+    }
+    throw error;
+  }
 }
 const acknowledgments = new Set();
 async function acknowledgeSession(id) {
@@ -877,7 +914,7 @@ async function selectSession(id) {
   if (!target) return false;
   const launchId = target.launchId || null;
   const sameTarget = session => isOpenConsole(session) && (session.launchId || null) === launchId;
-  selectedId = id;
+  selectedId = id; explorer?.sync();
   const request = ++expansionRequest;
   const modeIntent = { request, mode: 'fullscreen' };
   expansionModeIntent = modeIntent;
@@ -890,7 +927,7 @@ async function selectSession(id) {
     if (request !== expansionRequest || current.mode !== 'fullscreen' || current.transitioning || !sameTarget(latestTarget)) return false;
     if (current === fresh) receive(fresh);
     if (request !== expansionRequest || state.mode !== 'fullscreen' || state.transitioning || !sameTarget(openConsole(id))) return false;
-    selectedId = id;
+    selectedId = id; explorer?.sync();
     expandedId = id;
     page = 'consoles';
     renderPage();
@@ -1129,7 +1166,7 @@ function mountTerminal(session, host, compact) {
       e.preventDefault();
       call('clipboard.menu', term.getSelection()).catch(error => toast(error.message, true));
     });
-    node.addEventListener('focusin', () => { selectedId = id; projectChats?.sync(); });
+    node.addEventListener('focusin', () => { selectedId = id; projectChats?.sync(); explorer?.sync(); });
     node.addEventListener('dragover', e => { if (e.dataTransfer.types.includes(SCREENSHOT_DRAG)) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; } });
     node.addEventListener('drop', e => { if (!e.dataTransfer.types.includes(SCREENSHOT_DRAG)) return; e.preventDefault(); e.stopPropagation(); selectedId = id; pasteScreenshot(id).catch(error => toast(error.message, true)); });
     // A focused console can finish while the user is reading. Wait for their
@@ -1544,7 +1581,7 @@ document.addEventListener('click', async event => {
       case 'vim-help': vim.showHelp(); break;
       case 'sidebar':
         button.disabled = true;
-        try { await call('settings', { sidebarCollapsed: !state.settings.sidebarCollapsed }); }
+        try { await setExplorerCollapsed(!state.settings.sidebarCollapsed); }
         finally { button.disabled = false; }
         break;
       case 'reset-tool': $('#tool-form').reset(); $('#tool-form').elements.id.readOnly = false; $('#tool-form-title').textContent = 'Add a tool'; toolFields(); break;
@@ -1837,7 +1874,7 @@ async function vimAction(action, value) {
     if (page === 'consoles') focusVimSlot(vim.slot); else $('#content').focus({ preventScroll: true });
     return;
   }
-  if (action === 'sidebar') { await call('settings', { sidebarCollapsed: !state.settings.sidebarCollapsed }); return; }
+  if (action === 'sidebar') { await setExplorerCollapsed(!state.settings.sidebarCollapsed); return; }
   if (action === 'fullscreen') { await call('mode', state.mode === 'fullscreen' ? 'dashboard' : 'fullscreen'); return; }
   if (action === 'dock') { await call('mode', 'hud'); focusVimSlot(vim.slot); return; }
   const session = coveredSlots().get(value);
@@ -1870,6 +1907,25 @@ codePanels = codePanelUI({ call, getState: () => state, selectedConsole: () => s
     if (!session || !record) throw new Error('Open this agent console before adding context.');
     if (!record.term.modes.bracketedPasteMode) { await call('clipboard.write', text); toast('Context copied. Paste it into the console when its prompt is ready.'); return; }
     record.term.paste(text); toast('Context added to the console draft.');
+  }
+});
+explorer = explorerUI({ host: $('#explorer-pane'), call, getState: () => state, selectedConsole: () => selectedId, escape, icon,
+  openFile: async (root, path) => {
+    const normalize = value => {
+      const name = value?.replaceAll('\\', '/').replace(/\/$/, '');
+      return document.body.dataset.platform === 'win32' ? name?.toLocaleLowerCase() : name;
+    };
+    let panel = state.codePanels?.find(p => {
+      const source = state.sessions.find(s => (s.consoleKey || s.id) === p.codeSourceKey);
+      return p.alive && p.kind === 'code' && !source?.remote && normalize(source?.cwd || p.cwd) === normalize(root);
+    });
+    if (!panel) panel = await call('code.create', { root });
+    // Read back the published state so the panel is mounted before opening the file.
+    receive(await call('state')); navigatePage('consoles');
+    await codePanels.openFile(panel.id, path);
+  },
+  afterOpenFile: async () => {
+    if (window.innerWidth < 900) await setExplorerCollapsed(true);
   }
 });
 phone = mobileUI({ call, escape, icon, getState: () => state, toast, navigate: navigatePage });

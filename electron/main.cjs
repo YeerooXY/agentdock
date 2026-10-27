@@ -381,7 +381,7 @@ app.whenReady().then(async () => {
   sessions.on('message-usage', ({ session, messages }) => { try { messageUsage.record({ ...session, projectName: projects.get(session.projectId)?.name || '' }, messages); } catch { storageError = 'Message usage could not be saved.'; } });
   turns = new Turns(workbench.results, { enabled: settings.autoSaveResults === true, getSession: id => sessions.items.get(id), getSecrets: () => vault.list().flatMap(x => { try { return [vault.get(x.id)]; } catch { return []; } }) });
   workbench.turns = turns;
-  codePanel = new CodePanel(sessions, { onChange: publish, getSecrets: () => vault.list().flatMap(x => { try { return [vault.get(x.id)]; } catch { return []; } }) });
+  codePanel = new CodePanel(sessions, { onChange: publish, getProjects: () => projects.list(), getSecrets: () => vault.list().flatMap(x => { try { return [vault.get(x.id)]; } catch { return []; } }) });
   turns.codePanel = codePanel;
   turns.on('tracking-error', ({ owner, message }) => workbench.alerts.send({ title: 'Code capture needs attention', message, sessionId: owner, kind: 'error' }));
   messageQueue = new MessageQueue(sessions);
@@ -567,11 +567,12 @@ app.whenReady().then(async () => {
           const result = await dialog.showOpenDialog(window, { properties: ['openDirectory'], title: 'Choose a launch folder', defaultPath: suggested });
           return { ok: true, value: result.filePaths[0] || null };
         }
+        case 'explorer.list': return { ok: true, value: await codePanel.list(payload?.root, payload?.path) };
         case 'code.create': {
           const source = sessions.items.get(payload?.sourceId);
           if (source?.remote || source?.kind === 'code') throw new Error('Choose a local agent console.');
-          const cwd = source?.cwd || settings.consoleDefaults.cwd;
-          const panel = sessions.createCodePanel({ cwd, codeSourceKey: source ? source.consoleKey || source.id : null, slot: payload?.slot });
+          const cwd = payload?.root !== undefined ? codePanel.explorerRoot(payload.root) : source?.cwd || settings.consoleDefaults.cwd;
+          const panel = sessions.createCodePanel({ cwd, codeSourceKey: source && payload?.root === undefined ? source.consoleKey || source.id : null, slot: payload?.slot });
           publish(); return { ok: true, value: panel };
         }
         case 'web.create': {
@@ -827,6 +828,10 @@ app.whenReady().then(async () => {
             next[key] = [...new Set(ids)];
           }
           if (typeof payload?.suggestProjects === 'boolean') next.suggestProjects = payload.suggestProjects;
+          if (payload?.explorerWidth !== undefined) {
+            if (!Number.isInteger(payload.explorerWidth) || payload.explorerWidth < 180 || payload.explorerWidth > 480) throw new Error('Explorer width must be between 180 and 480 pixels.');
+            next.explorerWidth = payload.explorerWidth;
+          }
           if (typeof payload?.sidebarCollapsed === 'boolean') next.sidebarCollapsed = payload.sidebarCollapsed;
           if (typeof payload?.vimControls === 'boolean') next.vimControls = payload.vimControls;
           if (typeof payload?.cursorBlink === 'boolean') next.cursorBlink = payload.cursorBlink;

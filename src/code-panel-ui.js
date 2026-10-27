@@ -29,6 +29,7 @@ export function codePanelUI({ call, getState, selectedConsole, pasteContext, esc
     if (r.options === stamp) return; r.options = stamp;
     const source = r.node.querySelector('[data-code-source]'), target = r.node.querySelector('[data-code-target]'), previous = target.value;
     source.innerHTML = `<option value="" disabled>${e(panel.cwd.split(/[\\/]/).pop() || 'Project folder')}</option>` + list.map(x => `<option value="${e(x.id)}" ${(x.consoleKey || x.id) === panel.codeSourceKey ? 'selected' : ''}>${e(x.name)}</option>`).join('');
+    if (!panel.codeSourceKey) source.value = '';
     target.innerHTML = eligible.map(x => `<option value="${e(x.id)}">${e(x.name)}</option>`).join('') || '<option value="">No agent console</option>';
     target.value = eligible.find(x => x.id === previous)?.id || eligible.find(x => x.id === source.value)?.id || eligible[0]?.id || '';
     selected(r);
@@ -131,5 +132,12 @@ export function codePanelUI({ call, getState, selectedConsole, pasteContext, esc
     } catch (error) { toast(error.message, true); }
     finally { if (b.dataset.codeAction === 'create') b.disabled = false; }
   });
-  return { card, mount, sync };
+  async function openFile(panelId, path) {
+    const r = records.get(panelId);
+    if (!r) throw new Error('Code panel is not available.');
+    ++r.sourceTicket; r.browse = true; r.diff = false;
+    await browse(r, path.split('/').slice(0, -1).join('/'));
+    await showFile(r, await call('code.file', { id: panelId, path }));
+  }
+  return { card, mount, sync, openFile };
 }

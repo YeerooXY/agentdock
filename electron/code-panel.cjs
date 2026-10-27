@@ -16,11 +16,29 @@ const key = session => session.consoleKey || session.id;
 const git = async (cwd, args) => (await exec('git', ['-c', 'core.fsmonitor=false', '-C', cwd, ...args], { windowsHide: true, timeout: 8000, maxBuffer: 2 * 1024 * 1024 })).stdout;
 
 class CodePanel {
-  constructor(sessions, { onChange = () => {}, getSecrets = () => [] } = {}) {
+  constructor(sessions, { onChange = () => {}, getSecrets = () => [], getProjects = () => [] } = {}) {
     this.sessions = sessions; this.onChange = onChange; this.getSecrets = getSecrets;
+    this.getProjects = getProjects;
     this.baselines = new Map(); this.latest = new Map(); this.pending = new Map(); this.revision = 0;
   }
   panel(id) { const p = this.sessions.items.get(id); if (!p?.alive || p.kind !== 'code') throw new Error('Open a code panel first.'); return p; }
+  explorerRoot(root) {
+    if (typeof root !== 'string' || !path.isAbsolute(root) || root.includes('\0') || root.split(/[\\/]/).includes('..')) throw new Error('Choose an available local folder.');
+    const roots = [...this.sessions.list().filter(s => s.alive && !s.remote && !s.remoteHostId && !s.kind).map(s => s.cwd), ...this.getProjects().flatMap(p => p.folders.map(f => f.path))];
+    if (!roots.some(p => typeof p === 'string' && path.resolve(p) === path.resolve(root))) throw new Error('Choose an available local folder.');
+    return path.resolve(root);
+  }
+  async list(root, relative = '') {
+    root = this.explorerRoot(root);
+    if (typeof relative !== 'string' || relative.split(/[\\/]/).includes('..')) throw new Error('Choose a folder inside this root.');
+    const panel = { cwd: root, codeSourceKey: null };
+    const { target, name } = await this.resolve(panel, relative);
+    const all = await fs.readdir(target, { withFileTypes: true });
+    const entries = all.filter(x => !x.isSymbolicLink() && (x.isDirectory() || x.isFile()) && permitted([name, x.name].filter(Boolean).join('/')))
+      .map(x => ({ name: x.name, path: [name, x.name].filter(Boolean).join('/'), directory: x.isDirectory() }))
+      .sort((a, b) => Number(b.directory) - Number(a.directory) || a.name.localeCompare(b.name));
+    return { entries: entries.slice(0, 500), truncated: entries.length > 500 };
+  }
   source(panel) { return this.sessions.list().find(s => !s.remote && key(s) === panel.codeSourceKey) || { cwd: panel.cwd, consoleKey: panel.codeSourceKey || panel.cwd, name: path.basename(panel.cwd) }; }
   watched(session) { return this.sessions.codePanels().some(p => p.codeSourceKey ? p.codeSourceKey === key(session) : p.cwd === session.cwd); }
   clean(text) {

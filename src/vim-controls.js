@@ -1,7 +1,7 @@
 const pageKeys = { c: 'consoles', u: 'usage', a: 'api', t: 'tools', i: 'instructions', s: 'settings' };
 // Settings scroll inside their own layer; other pages scroll #content.
 const scroller = () => document.querySelector('.settings-stage') || document.querySelector('#content');
-const editing = element => !!element?.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"]), .xterm');
+const editing = element => !!element?.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"]), .xterm, [role="tree"], [role="separator"]');
 
 export function vimControls({ context, focusSlot, action, onError }) {
   let slot = 1, pending = '', timer, busy = false, helpOpener;
