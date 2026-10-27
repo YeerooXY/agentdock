@@ -769,7 +769,9 @@ function receive(next) {
   document.body.dataset.pulse = 'off';
   lightingChanged();
   document.body.style.setProperty('--trim-width', (state.settings.trimWidth || 1) + 'px');
-  document.body.classList.toggle('is-fullscreen', state.mode === 'fullscreen');
+  if (document.body.classList.contains('is-fullscreen') !== (state.mode === 'fullscreen')) {
+    document.body.classList.toggle('is-fullscreen', state.mode === 'fullscreen'); document.body.classList.remove('titlebar-peek'); scheduleFits();
+  }
   document.body.classList.toggle('steady-cursor', !state.settings.cursorBlink);
   for (const record of terminals.values()) if (record.term.options.cursorBlink !== !!state.settings.cursorBlink) record.term.options.cursorBlink = !!state.settings.cursorBlink;
   const fullscreenButton = $('.window-actions [data-action=fullscreen]');
@@ -1731,6 +1733,13 @@ document.addEventListener('keydown', event => {
   }
   if (event.key === 'F11') { event.preventDefault(); call('mode', state.mode === 'fullscreen' ? 'dashboard' : 'fullscreen'); }
 }, true);
+
+// In fullscreen the title bar stays hidden until the pointer reaches the top edge.
+document.addEventListener('pointermove', event => {
+  if (!document.body.classList.contains('is-fullscreen')) return;
+  if (event.clientY <= 4) document.body.classList.add('titlebar-peek');
+  else if (!event.target.closest?.('.titlebar, .shell-picker, [popover]')) document.body.classList.remove('titlebar-peek');
+}, { passive: true });
 
 function closeSettings() {
   navigatePage(isSettingsPage(pageBeforeSettings) ? 'consoles' : pageBeforeSettings);

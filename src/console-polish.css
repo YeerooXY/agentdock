@@ -253,3 +253,11 @@ body[data-platform=darwin] .window-actions :is([data-action=minimize],[data-acti
 .queue-prompts strong { display:block; font-weight:550; font-size:12px }
 .queue-prompts small { display:block; color:var(--muted); font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
 #queue-panel .queue-pause { margin-top:12px }
+
+/* F11 fullscreen hides the title bar; touching the top edge or tabbing into it brings it back over the content. */
+body.is-fullscreen #consoles-page.has-expanded-console .session-grid>.session-card.console-expanded { inset:0!important }
+body.is-fullscreen .settings-stage { padding-top:0 }
+body.is-fullscreen .settings-close { top:12px }
+body.is-fullscreen .titlebar { position:fixed; inset:0 0 auto; z-index:1001; background:var(--window-black); transform:translateY(-100%); transition:transform .16s ease }
+body.is-fullscreen.titlebar-peek .titlebar,body.is-fullscreen .titlebar:focus-within { transform:none; box-shadow:0 8px 24px #0009 }
+@media(prefers-reduced-motion:reduce) { body.is-fullscreen .titlebar { transition:none } }
