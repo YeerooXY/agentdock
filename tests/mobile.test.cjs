@@ -150,6 +150,71 @@ test('mobile launch chooses an installed agent once without changing PC defaults
   assert.equal(created.length, 1);
 });
 
+test('phone manages live console metadata with pinned launch identity', async t => {
+  const f = await fixture(t), paired = (await f.pair()).data;
+  const c = client(f, paired.token); await once(c.ws, 'open');
+  t.after(() => c.ws.terminate());
+  const session = f.sessions.items.get('console-1');
+  Object.assign(session, { consoleKey: 'stable-console', launchId: 'launch-one', projectId: null });
+  const projects = [
+    { id: 'game', name: 'Game', color: '#ff0000', status: 'active', folders: [{ path: 'private' }] },
+    { id: 'other', name: 'Other', status: 'active' },
+    { id: 'old', name: 'Old', status: 'archived' },
+  ];
+  f.sessions.projects = { list: () => projects, get: id => projects.find(x => x.id === id) };
+  const changes = [];
+  f.sessions.rename = (id, name) => { changes.push(['rename', id, name]); session.name = name; f.sessions.emit('changed'); };
+  f.sessions.assignProject = (id, projectId) => { changes.push(['project', id, projectId]); session.projectId = projectId; f.sessions.emit('changed'); return { ...session }; };
+  const snapshot = await c.call('state');
+  assert.ok(snapshot.capabilities.includes('console.manage'));
+  assert.equal(snapshot.sessions[0].projectId, null);
+  assert.deepEqual(snapshot.projects, [{ id: 'game', name: 'Game', color: '#ff0000' }, { id: 'other', name: 'Other' }]);
+  const target = { id: session.id, consoleKey: session.consoleKey, launchId: session.launchId };
+  await c.call('subscribe', { id: session.id });
+  await c.call('console.rename', { ...target, name: ' Review ' });
+  assert.equal(session.name, 'Review');
+  for (const name of ['', '   ', 'x'.repeat(65), 'two\nlines', null, 42]) {
+    await assert.rejects(c.call('console.rename', { ...target, name }), /name/);
+  }
+  await c.call('console.project', { ...target, projectId: 'game' });
+  assert.equal((await c.call('state')).sessions[0].projectId, 'game');
+  await c.call('console.project', { ...target, projectId: 'other' });
+  assert.equal(session.projectId, 'other');
+  await c.call('console.project', { ...target, projectId: null });
+  assert.equal(session.projectId, null);
+  for (const projectId of ['old', 'missing', {}, 1, undefined]) {
+    await assert.rejects(c.call('console.project', { ...target, projectId }), /project/);
+  }
+  const count = changes.length;
+  for (const method of ['console.rename', 'console.project']) {
+    const payload = { ...target, name: 'Changed', projectId: 'game' };
+    for (const stale of [{ consoleKey: 'old' }, { launchId: 'old' }, { consoleKey: null }, { launchId: null }, { id: 'missing' }]) {
+      await assert.rejects(c.call(method, { ...payload, ...stale }), /This console changed\. Open its menu again\./);
+    }
+    for (const changed of [{ alive: false }, { dismissed: true }]) {
+      Object.assign(session, changed);
+      await assert.rejects(c.call(method, payload), /This console changed/);
+      Object.assign(session, { alive: true, dismissed: false });
+    }
+    await c.call('subscribe', { id: 'console-2' });
+    await assert.rejects(c.call(method, payload), /This console changed/);
+    await c.call('subscribe', { id: session.id });
+  }
+  assert.equal(changes.length, count);
+  session.remote = { hostId: 'vm' };
+  // SSH consoles have a unique process id and console key, with no launch id.
+  delete session.launchId;
+  const remoteTarget = { ...target, launchId: null };
+  await assert.rejects(c.call('console.rename', { ...target, name: 'Stale' }), /This console changed/);
+  await c.call('console.rename', { ...remoteTarget, name: 'Remote review' });
+  await c.call('console.project', { ...remoteTarget, projectId: 'game' });
+  assert.equal(session.name, 'Remote review');
+  assert.equal(session.projectId, 'game');
+  assert.equal(session.launchId, undefined);
+  assert.equal(session.alive, true);
+  assert.deepEqual(f.sessions.writes, []);
+});
+
 test('closing a mobile console requires the selected target and confirmation', async t => {
   const f = await fixture(t), paired = (await f.pair()).data;
   const c = client(f, paired.token); await once(c.ws, 'open');

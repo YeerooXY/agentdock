@@ -28,6 +28,15 @@ class _ConsoleSwitcherState extends State<ConsoleSwitcher> {
   bool open = false;
   String pc = '';
   int generation = -1;
+
+  String? projectName(Map<String, dynamic> session) {
+    final id = session['projectId'];
+    if (id == null) return null;
+    return (widget.client.state['projects'] as List? ?? [])
+        .whereType<Map>()
+        .where((project) => project['id'] == id)
+        .firstOrNull?['name'] as String?;
+  }
   @override
   Widget build(BuildContext context) => PopupMenuButton<String>(
     tooltip: 'Switch console',
@@ -81,10 +90,23 @@ class _ConsoleSwitcherState extends State<ConsoleSwitcher> {
                 ),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: Text(
-                    session['name'] as String,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        session['name'] as String,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      if (projectName(session) case final name?)
+                        Text(
+                          name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 12, color: muted),
+                        ),
+                    ],
                   ),
                 ),
                 if (session['id'] == widget.client.selected)

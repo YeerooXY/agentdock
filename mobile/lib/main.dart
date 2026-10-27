@@ -729,6 +729,16 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
                 pinnedAccountGeneration = -1;
               },
               onSelected: (action) {
+                if (action == 'rename' || action == 'project') {
+                  final pinned = pinnedAccountSession;
+                  final pc = pinnedAccountPC;
+                  final generation = pinnedAccountGeneration;
+                  pinnedAccountSession = null;
+                  if (pinned != null) {
+                    manageConsole(action, pinned, pc, generation);
+                  }
+                  return;
+                }
                 if (action.startsWith('account-switch:') ||
                     action.startsWith('account-setup:')) {
                   final pinned = pinnedAccountSession;
@@ -768,6 +778,18 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
               },
               itemBuilder: (_) => [
                 if (page == 0 && menuSession != null) ...[
+                  if (supports('console.manage')) ...[
+                    PopupMenuItem(
+                      value: 'rename',
+                      enabled: c.connected && menuSession['alive'] == true,
+                      child: const Text('Rename'),
+                    ),
+                    PopupMenuItem(
+                      value: 'project',
+                      enabled: c.connected && menuSession['alive'] == true,
+                      child: const Text('Project'),
+                    ),
+                  ],
                   if (['codex', 'claude'].contains(menuSession['provider']) &&
                       menuSession['draftSupported'] == true &&
                       menuSession['switching'] != true) ...[
@@ -977,6 +999,101 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
     if (action == 'files') pickFile(session);
     if (action == 'image') pickImage();
     if (action == 'close') closeConsole(session);
+  }
+
+  Future<void> manageConsole(
+    String action,
+    Map<String, dynamic> session,
+    String pc,
+    int generation,
+  ) async {
+    if (!supports('console.manage')) return;
+    bool currentLaunch() =>
+        mounted &&
+        c.connected &&
+        c.activePC == pc &&
+        c.generation == generation &&
+        c.selected == session['id'] &&
+        c.sessions.any(
+          (item) =>
+              item['id'] == session['id'] &&
+              item['alive'] == true &&
+              item['dismissed'] != true &&
+              item['consoleKey'] == session['consoleKey'] &&
+              item['launchId'] == session['launchId'],
+        );
+    Future<void> submit(Map<String, dynamic> value) => run(() async {
+      if (!currentLaunch()) {
+        throw StateError('This console changed. Open its menu again.');
+      }
+      await c.request('console.$action', {
+        'id': session['id'],
+        'consoleKey': session['consoleKey'],
+        'launchId': session['launchId'],
+        ...value,
+      });
+    });
+    if (action == 'rename') {
+      var editedName = session['name'] as String;
+      final name = await showDialog<String>(
+        context: context,
+        builder: (ctx) => StatefulBuilder(
+          builder: (ctx, update) => AlertDialog(
+            title: const Text('Rename console'),
+            content: TextFormField(
+              initialValue: editedName,
+              autofocus: true,
+              maxLength: 64,
+              decoration: const InputDecoration(labelText: 'Name'),
+              onChanged: (value) => update(() => editedName = value),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: editedName.trim().isEmpty
+                    ? null
+                    : () => Navigator.pop(ctx, editedName.trim()),
+                child: const Text('Save'),
+              ),
+            ],
+          ),
+        ),
+      );
+      if (name != null && mounted) await submit({'name': name});
+    } else {
+      final projects = (c.state['projects'] as List? ?? []).whereType<Map>();
+      final choice = await showModalBottomSheet<Map<String, dynamic>>(
+        context: context,
+        showDragHandle: true,
+        isScrollControlled: true,
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.sizeOf(context).height * .75,
+        ),
+        builder: (ctx) => SafeArea(
+          child: ListView(
+            shrinkWrap: true,
+            children: [
+              for (final project in <Map>[
+                {'id': null, 'name': 'No project'},
+                ...projects,
+              ])
+                ListTile(
+                  title: Text(project['name'] as String),
+                  selected: project['id'] == session['projectId'],
+                  trailing: project['id'] == session['projectId']
+                      ? const Icon(Icons.check)
+                      : null,
+                  onTap: () => Navigator.pop(ctx, {'projectId': project['id']}),
+                ),
+            ],
+          ),
+        ),
+      );
+      if (choice != null && mounted) await submit(choice);
+    }
   }
 
   Future<void> switchAccountPinned(

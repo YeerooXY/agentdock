@@ -89,6 +89,7 @@ class MobileCompanion extends EventEmitter {
       this.scheduleState();
     };
     sessions.on('output', this.output); sessions.on('resize', this.resized); sessions.on('changed', this.changed); results.on('changed', this.changed); alerts?.on('notification', this.notification); queue?.on('changed', this.changed); prompts?.on?.('changed', this.changed);
+    sessions.projects?.on?.('changed', this.changed);
   }
   available() { return this.crypto.isEncryptionAvailable() && this.crypto.getSelectedStorageBackend?.() !== 'basic_text'; }
   get name() { return this.config.name || os.hostname(); }
@@ -240,7 +241,7 @@ class MobileCompanion extends EventEmitter {
     const localUrl = `https://${this.config.host}:${this.config.port}`;
     const connection = { url: localUrl };
     connection.name = this.name;
-    return { connection, capabilities: ['console.agents', 'console.files', 'console.close', 'console.projects', 'console.models', 'console.ssh', 'console.switch', 'console.setup', 'alerts.direct', 'console.attachments', ...(this.queue ? ['console.queue'] : []), ...(this.prompts ? ['prompts', 'prompts.edit'] : [])], capacity: (this.sessions.grid?.columns || 3) * (this.sessions.grid?.rows || 3), sessions: this.sessions.list().filter(x => !x.dismissed).map(({ id, slot, name, provider, alive, state, cols, rows, consoleKey, projectId, remote, updatedAt, providerSessionId, model, modelId, effort, settingsAt, launchId, accountId, accountLabel, switchTargets, switching, purpose, draftSupported, switchOffer }) => ({ id, slot, name, provider, alive, state, cols, rows, consoleKey, projectId, remote, updatedAt, providerSessionId, model: modelId || model || null, modelName: model || null, effort: effort || null, settingsAt: settingsAt || null, launchId: launchId || null, accountId: accountId || null, accountLabel: accountLabel || null, switchTargets: switchTargets || [], switching: !!switching, purpose: purpose || 'agent', draftSupported: draftSupported === true, switchOffer: switchOffer || null })), queues: this.queue?.snapshot() || {}, prompts: this.prompts?.list() || [], alerts: this.liveAlerts, unreadResults: this.results.unreadGroups(), resultVersion: digest(this.results.list().map(x => x.id + ':' + x.seenAt + ':' + x.changeCount).join(',')).slice(0, 16) };
+    return { connection, projects: (typeof this.sessions.projects?.list === 'function' ? this.sessions.projects.list() || [] : []).filter(x => x.status !== 'archived').map(({ id, name, color }) => ({ id, name, ...(color ? { color } : {}) })), capabilities: ['console.agents', 'console.files', 'console.close', 'console.projects', 'console.models', 'console.ssh', 'console.manage', 'console.switch', 'console.setup', 'alerts.direct', 'console.attachments', ...(this.queue ? ['console.queue'] : []), ...(this.prompts ? ['prompts', 'prompts.edit'] : [])], capacity: (this.sessions.grid?.columns || 3) * (this.sessions.grid?.rows || 3), sessions: this.sessions.list().filter(x => !x.dismissed).map(({ id, slot, name, provider, alive, state, cols, rows, consoleKey, projectId, remote, updatedAt, providerSessionId, model, modelId, effort, settingsAt, launchId, accountId, accountLabel, switchTargets, switching, purpose, draftSupported, switchOffer }) => ({ id, slot, name, provider, alive, state, cols, rows, consoleKey, projectId, remote, updatedAt, providerSessionId, model: modelId || model || null, modelName: model || null, effort: effort || null, settingsAt: settingsAt || null, launchId: launchId || null, accountId: accountId || null, accountLabel: accountLabel || null, switchTargets: switchTargets || [], switching: !!switching, purpose: purpose || 'agent', draftSupported: draftSupported === true, switchOffer: switchOffer || null })), queues: this.queue?.snapshot() || {}, prompts: this.prompts?.list() || [], alerts: this.liveAlerts, unreadResults: this.results.unreadGroups(), resultVersion: digest(this.results.list().map(x => x.id + ':' + x.seenAt + ':' + x.changeCount).join(',')).slice(0, 16) };
   }
   scheduleState() {
     if (!this.server || this.stateTimer) return;
@@ -331,6 +332,24 @@ class MobileCompanion extends EventEmitter {
         const session = this.sessions.items.get(payload.id);
         if (client.selected !== payload.id || !session?.alive || session.launchId !== payload.launchId || session.consoleKey !== payload.consoleKey || session.accountId !== payload.accountId) throw new Error('This console changed. Open its account menu again.');
         return this.sessions.switchAccount({ id: payload.id, launchId: payload.launchId, targetAccountId: payload.targetAccountId });
+      }
+      case 'console.rename': case 'console.project': {
+        const session = this.sessions.items.get(payload.id);
+        if (client.selected !== payload.id || !session?.alive || session.dismissed ||
+            typeof payload.consoleKey !== 'string' || !payload.consoleKey ||
+            !(typeof payload.launchId === 'string' && payload.launchId || payload.launchId === null && session.remote && !session.launchId) ||
+            session.consoleKey !== payload.consoleKey || (session.launchId || null) !== payload.launchId) {
+          throw new Error('This console changed. Open its menu again.');
+        }
+        if (method === 'console.rename') {
+          if (typeof payload.name !== 'string' || !payload.name.trim() || payload.name.length > 64 || /[\x00-\x1f\x7f]/.test(payload.name)) throw new Error('Use a name from 1 to 64 characters, on one line.');
+          this.sessions.rename(payload.id, payload.name.trim());
+          this.results.renameConsole(session.consoleKey, session.name);
+          return true;
+        }
+        const project = typeof payload.projectId === 'string' ? this.sessions.projects?.get(payload.projectId) : null;
+        if (payload.projectId !== null && (!project || project.status === 'archived')) throw new Error('Choose an existing project on this PC.');
+        return this.sessions.assignProject(payload.id, payload.projectId);
       }
       case 'console.setup': {
         const session = this.sessions.items.get(payload.id);
