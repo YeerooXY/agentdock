@@ -119,7 +119,7 @@ export function codePanelUI({ call, getState, selectedConsole, pasteContext, esc
     const revision = `${panel.codeSourceKey}:${getState().codeRevision || 0}`;
     if (r.revision !== revision) { r.revision = revision; if (!selection(r)) void load(r); else r.node.querySelector('[data-code-caption]').textContent = 'New changes available · refresh when ready'; }
   }
-  function sync() { for (const [id, r] of records) if (!getState().codePanels?.some(p => p.id === id)) { ++r.fileTicket; ask.close(r); r.editor?.destroy(); r.node.remove(); records.delete(id); } else if (r.ask) r.updateAsk?.(); }
+  function sync() { for (const [id, r] of records) if (!getState().codePanels?.some(p => p.id === id)) { ++r.fileTicket; ask.close(r, false); r.editor?.destroy(); r.node.remove(); records.delete(id); } else if (r.ask) r.updateAsk?.(); }
   document.addEventListener('click', async event => {
     const b = event.target.closest('[data-code-action]'); if (!b) return;
     try {

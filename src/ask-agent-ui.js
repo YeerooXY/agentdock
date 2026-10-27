@@ -1,4 +1,4 @@
-import { formatAskContext } from './ask-agent.js';
+import { formatAskContext, askSelectionChanged, defaultAskTarget } from './ask-agent.js';
 
 export function askAgentUI({ call, getState, targets, pasteContext, selection, showFile, escape: e }) {
   const choices = new Map();
@@ -7,7 +7,11 @@ export function askAgentUI({ call, getState, targets, pasteContext, selection, s
     return getState().platform === 'win32' ? path.toLowerCase() : path;
   };
   const busy = target => ['active', 'working', 'busy'].includes(target?.state);
-  function close(r) { r.ask?.remove(); r.ask = null; r.updateAsk = null; r.editor?.focus(); }
+  function close(r, refocus = true) {
+    r.askEvents?.abort(); r.askEvents = null;
+    r.ask?.remove(); r.ask = null; r.updateAsk = null;
+    if (refocus) r.editor?.focus();
+  }
   function place(r, node, point) {
     const rect = r.node.getBoundingClientRect();
     const bounds = node.getBoundingClientRect();
@@ -17,18 +21,20 @@ export function askAgentUI({ call, getState, targets, pasteContext, selection, s
   function surface(r, role, label) {
     close(r);
     const node = document.createElement('div');
-    node.className = `ask-agent ask-agent-${role}`; node.popover = 'manual';
+    node.className = `ask-agent ask-agent-${role}`; node.popover = 'auto';
     node.setAttribute('role', role); node.setAttribute('aria-label', label);
     r.node.append(node); r.ask = node;
+    const events = new AbortController(); r.askEvents = events;
+    const dismiss = () => { if (r.ask === node) close(r, false); };
+    node.addEventListener('toggle', event => { if (event.newState === 'closed') dismiss(); });
+    document.addEventListener('pointerdown', event => { if (!node.contains(event.target)) dismiss(); }, { capture: true, signal: events.signal });
+    document.addEventListener('scroll', event => { if (!node.contains(event.target)) dismiss(); }, { capture: true, signal: events.signal });
+    node.addEventListener('focusout', () => {
+      queueMicrotask(() => { if (!node.contains(document.activeElement)) dismiss(); });
+    });
     node.addEventListener('keydown', event => {
       event.stopPropagation();
       if (event.key === 'Escape') { event.preventDefault(); close(r); }
-      if (event.key === 'Tab') {
-        const items = [...node.querySelectorAll('button:not(:disabled),select,textarea,[tabindex="0"]')].filter(x => !x.closest('[hidden]'));
-        const index = items.indexOf(document.activeElement);
-        if (event.shiftKey && index <= 0) { event.preventDefault(); items.at(-1)?.focus(); }
-        else if (!event.shiftKey && index === items.length - 1) { event.preventDefault(); items[0]?.focus(); }
-      }
     });
     return node;
   }
@@ -44,15 +50,16 @@ export function askAgentUI({ call, getState, targets, pasteContext, selection, s
     const heading = node.querySelector('strong');
     heading.id = `ask-agent-heading-${r.id}`;
     heading.textContent = 'Ask agent';
-    node.setAttribute('aria-modal', 'true');
     node.setAttribute('aria-labelledby', heading.id);
     node.removeAttribute('aria-label');
     const target = node.querySelector('select'), note = node.querySelector('textarea'), error = node.querySelector('[role="alert"]');
+    if (r.askReselect?.file === snapshot.file && r.askReselect.cwd === key) note.value = r.askReselect.note;
+    r.askReselect = null;
     let sending = false, pending = null;
-    const initial = targets();
-    const preferred = initial.find(x => x.id === choices.get(key)) || initial.find(x => cwdKey(x.cwd) === key) || initial[0];
     function update() {
-      const list = targets(), previous = target.value || preferred?.id;
+      const list = targets();
+      const preferred = defaultAskTarget(list, { rememberedId: choices.get(key), sourceKey: panel.codeSourceKey, cwd, platform: getState().platform });
+      const previous = list.find(x => x.id === target.value)?.id || preferred?.id;
       const stamp = JSON.stringify(list.map(x => [x.id, x.name]));
       if (target.dataset.stamp !== stamp) {
         target.innerHTML = list.map(x => `<option value="${e(x.id)}">${e(x.name)}</option>`).join('') || '<option value="">No agent console</option>';
@@ -71,11 +78,12 @@ export function askAgentUI({ call, getState, targets, pasteContext, selection, s
       try {
         if (sourceTicket !== r.sourceTicket || cwdKey(getState().codePanels.find(x => x.id === r.id)?.cwd) !== key) throw new Error('The source folder changed. Cancel and select the code again.');
         if (!keep) {
-          const current = await call('code.file', { id: r.id, path: snapshot.file });
+          let current;
+          try { current = await call('code.file', { id: r.id, path: snapshot.file }); }
+          catch { /* An unreadable or deleted file requires the same explicit choice. */ }
           if (r.ask !== node) return;
           if (sourceTicket !== r.sourceTicket) throw new Error('The source folder changed. Cancel and select the code again.');
-          const lines = (current.after ?? '').replace(/\r\n?/g, '\n').split('\n');
-          if (lines.slice(snapshot.from - 1, snapshot.to).join('\n') !== snapshot.text) {
+          if (pending || askSelectionChanged(current?.after, snapshot)) {
             pending = kind; node.querySelector('[data-stale]').hidden = false; node.querySelector('[data-keep]').focus(); return;
           }
         }
@@ -99,9 +107,15 @@ export function askAgentUI({ call, getState, targets, pasteContext, selection, s
       else if (button.hasAttribute('data-keep') && pending) void send(pending, true);
       else if (button.hasAttribute('data-reselect')) {
         try {
-          const current = await call('code.file', { id: r.id, path: snapshot.file });
+          const report = r.browse ? null : await call('code.report', { id: r.id, refresh: true });
+          if (r.ask !== node || sourceTicket !== r.sourceTicket) return;
+          const current = await call('code.file', { id: r.id, path: snapshot.file, ...(report ? { reportId: report.id } : {}) });
           if (r.ask !== node) return;
-          await showFile(r, current); close(r);
+          if (sourceTicket !== r.sourceTicket) throw new Error('The source folder changed. Cancel and select the code again.');
+          if (report) r.report = report;
+          r.askReselect = { file: snapshot.file, cwd: key, note: note.value };
+          await showFile(r, current);
+          if (r.ask === node) close(r);
         } catch (failure) { error.textContent = failure.message; }
       }
     });
@@ -113,7 +127,11 @@ export function askAgentUI({ call, getState, targets, pasteContext, selection, s
     node.innerHTML = '<button type="button" role="menuitem">Ask agent…</button><button type="button" role="menuitem">Copy</button>';
     const buttons = [...node.querySelectorAll('button')];
     buttons[0].onclick = () => open(r, captured);
-    buttons[1].onclick = async () => { try { await call('clipboard.write', captured.text); close(r); } catch (error) { node.setAttribute('aria-label', error.message); } };
+    buttons[1].onclick = async () => {
+      try { await call('clipboard.write', captured.text); }
+      catch (error) { r.node.querySelector('[data-code-error]').textContent = error.message; }
+      finally { if (r.ask === node) close(r); }
+    };
     node.addEventListener('keydown', event => {
       if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) { event.preventDefault(); buttons[document.activeElement === buttons[0] ? 1 : 0].focus(); }
     });
@@ -123,7 +141,7 @@ export function askAgentUI({ call, getState, targets, pasteContext, selection, s
     const host = r.node.querySelector('[data-code-editor]');
     host.addEventListener('keydown', event => {
       if (!r.editor?.hasFocus || !selection(r)) return;
-      if ((getState().platform === 'darwin' ? event.metaKey : event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === 'a') {
+      if ((getState().platform === 'darwin' ? event.metaKey : event.ctrlKey) && event.shiftKey && event.code === 'KeyA') {
         event.preventDefault(); event.stopPropagation(); open(r);
       } else if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) {
         event.preventDefault(); event.stopPropagation(); menu(r);

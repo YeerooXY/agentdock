@@ -3,6 +3,44 @@ const assert = require('node:assert/strict');
 const modulePromise = import('../src/ask-agent.js');
 const sample = { file: 'src/app.js', from: 4, to: 5, text: 'const x = 1;\nrun(x);', folder: 'Paddock' };
 
+test('compares source line ranges with normalized line endings', async () => {
+  const { askSelectionChanged: changed } = await modulePromise;
+  const selected = { from: 2, to: 3, text: 'second\nthird' };
+  assert.equal(changed('first\r\nsecond\r\nthird\r\nlast', selected), false);
+  assert.equal(changed('first\nsecond\nthird\nlast', { ...selected, text: 'second\r\nthird' }), false);
+  assert.equal(changed('changed outside selection\rsecond\rthird', selected), false);
+  assert.equal(changed('first\nchanged\nthird', selected), true);
+  assert.equal(changed('first\nsecond', selected), true);
+  assert.equal(changed(undefined, selected), true);
+  assert.equal(changed(null, selected), true);
+  assert.equal(changed('first\n', { from: 2, to: 2, text: '' }), false);
+  assert.equal(changed('first', { from: 2, to: 2, text: '' }), true);
+});
+
+test('defaults to remembered, followed, same-folder, then first available console', async () => {
+  const { defaultAskTarget: choose } = await modulePromise;
+  const first = { id: 'first', cwd: 'C:/other' };
+  const same = { id: 'same', cwd: 'C:/project' };
+  const followed = { id: 'followed', consoleKey: 'source', cwd: 'C:/project' };
+  const list = [first, same, followed];
+  const options = { sourceKey: 'source', cwd: 'C:/project', platform: 'win32' };
+  assert.equal(choose(list, { ...options, rememberedId: 'first' }), first);
+  assert.equal(choose(list, options), followed);
+  assert.equal(choose(list, { ...options, rememberedId: 'closed' }), followed);
+  assert.equal(choose([first, same], options), same);
+  assert.equal(choose([first], options), first);
+  assert.equal(choose([], options), undefined);
+  assert.equal(choose(list, { sourceKey: 'same' }), same);
+});
+
+test('matches folder paths using platform case rules and separators', async () => {
+  const { defaultAskTarget: choose } = await modulePromise;
+  const list = [{ id: 'first', cwd: '/other' }, { id: 'project', cwd: 'C:\\Project\\' }];
+  assert.equal(choose(list, { cwd: 'c:/project', platform: 'win32' }), list[1]);
+  assert.equal(choose(list, { cwd: 'c:/project', platform: 'linux' }), list[0]);
+  assert.equal(choose(list, { cwd: 'C:/Project/', platform: 'linux' }), list[1]);
+});
+
 test('formats selected source lines with and without a note', async () => {
   const { formatAskContext: format } = await modulePromise;
   const expected = 'File: src/app.js:4-5  (Paddock)\n```javascript\nconst x = 1;\nrun(x);\n```';
