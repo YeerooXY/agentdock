@@ -490,7 +490,46 @@ test('a phone queues messages only for the console it has open', async t => {
   await assert.rejects(c.call('queue.add', { id: 'console-2', text: 'elsewhere' }), /Select an open console/);
   assert.deepEqual(f.m.publicState().queues['console-1'].entries.map(x => x.text), ['Run the tests']);
   assert.ok(f.m.publicState().capabilities.includes('console.queue'));
+  await c.call('queue.edit', { id: 'console-1', entryId: entry.id, text: 'Run all tests' });
+  assert.equal(f.m.publicState().queues['console-1'].entries[0].text, 'Run all tests');
+  await assert.rejects(c.call('queue.edit', { id: 'console-2', entryId: entry.id, text: 'Wrong console' }), /Select an open console/);
   await c.call('queue.send', { id: 'console-1', entryId: entry.id });
-  assert.deepEqual(f.sessions.writes.map(x => x.data), ['Run the tests', '\r']);
+  await assert.rejects(c.call('queue.edit', { id: 'console-1', entryId: entry.id, text: 'Too late' }), /no queued messages|already sent or removed/);
+  assert.deepEqual(f.sessions.writes.map(x => x.data), ['Run all tests', '\r']);
   assert.equal(f.m.publicState().queues['console-1'], undefined);
+});
+
+test('phone prompt management validates scope, projects and library limits', async t => {
+  const { PromptLibrary } = require('../electron/prompt-library.cjs');
+  const f = await fixture(t), paired = await f.pair(), c = client(f, paired.data.token);
+  t.after(() => c.ws.terminate()); await once(c.ws, 'open');
+  assert.ok(!f.m.publicState().capabilities.includes('prompts.edit'));
+  await assert.rejects(c.call('prompts.save', { name: 'Tests', text: 'Run tests', scope: 'global' }), /Update Paddock/);
+  await assert.rejects(c.call('prompts.remove', { id: 'missing' }), /Update Paddock/);
+  f.m.prompts = new PromptLibrary(f.root);
+  f.sessions.projects = { get: id => id === 'project-one' ? { id } : null };
+  assert.ok(f.m.publicState().capabilities.includes('prompts.edit'));
+  const global = await c.call('prompts.save', { name: ' Tests ', text: 'Run tests\r\nReport failures', scope: 'global' });
+  assert.equal(global.name, 'Tests'); assert.equal(global.text, 'Run tests\nReport failures'); assert.equal(global.projectId, null);
+  const project = await c.call('prompts.save', { name: 'Review', text: 'Review changes', scope: 'project', projectId: 'project-one' });
+  assert.equal(project.projectId, 'project-one');
+  for (const payload of [{ scope: 'bad' }, { scope: null }, { scope: 'global', projectId: 'project-one' }]) {
+    await assert.rejects(c.call('prompts.save', { name: 'Bad', text: 'Text', ...payload }), /Choose This PC or a project/);
+  }
+  for (const projectId of ['missing', '', null, {}, '../project-one']) {
+    await assert.rejects(c.call('prompts.save', { name: 'Bad', text: 'Text', scope: 'project', projectId }), /existing project/);
+  }
+  for (const [payload, error] of [
+    [{ name: '' }, /Name the prompt/],
+    [{ name: 'x'.repeat(61) }, /60 characters/],
+    [{ text: ' ' }, /Type the prompt text/],
+    [{ text: 'x'.repeat(16001) }, /16000 characters/],
+  ]) {
+    await assert.rejects(c.call('prompts.save', { name: 'Bad', text: 'Text', scope: 'global', ...payload }), error);
+  }
+  assert.equal(f.m.prompts.list().length, 2, 'rejected prompts do not change the library');
+  assert.equal(await c.call('prompts.remove', { id: global.id }), true);
+  assert.deepEqual(new PromptLibrary(f.root).list().map(x => x.id), [project.id]);
+  await assert.rejects(c.call('prompts.remove', { id: global.id }), /already removed/);
+  assert.deepEqual(f.sessions.writes, [], 'saving and deleting prompts never sends input');
 });

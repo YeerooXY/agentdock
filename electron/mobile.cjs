@@ -240,7 +240,7 @@ class MobileCompanion extends EventEmitter {
     const localUrl = `https://${this.config.host}:${this.config.port}`;
     const connection = { url: localUrl };
     connection.name = this.name;
-    return { connection, capabilities: ['console.agents', 'console.files', 'console.close', 'console.projects', 'console.models', 'console.ssh', 'console.switch', 'console.setup', 'alerts.direct', 'console.attachments', ...(this.queue ? ['console.queue'] : []), ...(this.prompts ? ['prompts'] : [])], capacity: (this.sessions.grid?.columns || 3) * (this.sessions.grid?.rows || 3), sessions: this.sessions.list().filter(x => !x.dismissed).map(({ id, slot, name, provider, alive, state, cols, rows, consoleKey, projectId, remote, updatedAt, providerSessionId, model, modelId, effort, settingsAt, launchId, accountId, accountLabel, switchTargets, switching, purpose, draftSupported, switchOffer }) => ({ id, slot, name, provider, alive, state, cols, rows, consoleKey, projectId, remote, updatedAt, providerSessionId, model: modelId || model || null, modelName: model || null, effort: effort || null, settingsAt: settingsAt || null, launchId: launchId || null, accountId: accountId || null, accountLabel: accountLabel || null, switchTargets: switchTargets || [], switching: !!switching, purpose: purpose || 'agent', draftSupported: draftSupported === true, switchOffer: switchOffer || null })), queues: this.queue?.snapshot() || {}, prompts: this.prompts?.list() || [], alerts: this.liveAlerts, unreadResults: this.results.unreadGroups(), resultVersion: digest(this.results.list().map(x => x.id + ':' + x.seenAt + ':' + x.changeCount).join(',')).slice(0, 16) };
+    return { connection, capabilities: ['console.agents', 'console.files', 'console.close', 'console.projects', 'console.models', 'console.ssh', 'console.switch', 'console.setup', 'alerts.direct', 'console.attachments', ...(this.queue ? ['console.queue'] : []), ...(this.prompts ? ['prompts', 'prompts.edit'] : [])], capacity: (this.sessions.grid?.columns || 3) * (this.sessions.grid?.rows || 3), sessions: this.sessions.list().filter(x => !x.dismissed).map(({ id, slot, name, provider, alive, state, cols, rows, consoleKey, projectId, remote, updatedAt, providerSessionId, model, modelId, effort, settingsAt, launchId, accountId, accountLabel, switchTargets, switching, purpose, draftSupported, switchOffer }) => ({ id, slot, name, provider, alive, state, cols, rows, consoleKey, projectId, remote, updatedAt, providerSessionId, model: modelId || model || null, modelName: model || null, effort: effort || null, settingsAt: settingsAt || null, launchId: launchId || null, accountId: accountId || null, accountLabel: accountLabel || null, switchTargets: switchTargets || [], switching: !!switching, purpose: purpose || 'agent', draftSupported: draftSupported === true, switchOffer: switchOffer || null })), queues: this.queue?.snapshot() || {}, prompts: this.prompts?.list() || [], alerts: this.liveAlerts, unreadResults: this.results.unreadGroups(), resultVersion: digest(this.results.list().map(x => x.id + ':' + x.seenAt + ':' + x.changeCount).join(',')).slice(0, 16) };
   }
   scheduleState() {
     if (!this.server || this.stateTimer) return;
@@ -303,6 +303,18 @@ class MobileCompanion extends EventEmitter {
         if (method === 'queue.move') { this.queue.move(payload.id, payload.entryId, payload.offset); return true; }
         if (method === 'queue.pause') { this.queue.pause(payload.id, payload.paused === true); return true; }
         await this.queue.sendNow(payload.id, payload.entryId); return true;
+      }
+      case 'prompts.save': {
+        if (!this.prompts) throw new Error('Update Paddock on your PC to manage prompts.');
+        const scope = payload.scope === undefined ? (payload.projectId == null ? 'global' : 'project') : payload.scope;
+        if (!['global', 'project'].includes(scope) || (scope === 'global' && payload.projectId != null)) throw new Error('Choose This PC or a project for the prompt.');
+        const projectId = scope === 'project' ? payload.projectId : null;
+        if (scope === 'project' && (typeof projectId !== 'string' || !/^[\w-]{1,64}$/.test(projectId) || !this.sessions.projects?.get(projectId))) throw new Error('Choose an existing project on this PC.');
+        return this.prompts.save({ id: payload.id, name: payload.name, text: payload.text, projectId });
+      }
+      case 'prompts.remove': {
+        if (!this.prompts) throw new Error('Update Paddock on your PC to manage prompts.');
+        this.prompts.remove(payload.id); return true;
       }
       case 'console.create': {
         return this.sessions.create(mobileLaunch(this.sessions, this.getDefaults(), payload));

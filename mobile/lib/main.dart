@@ -1117,6 +1117,7 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
       builder: (_) => MessageQueueSheet(
         client: c,
         draft: composer.text,
+        draftSelection: composer.selection,
         onQueued: () {
           if (mounted && draftKey == key) composer.clear();
         },

@@ -8,12 +8,14 @@ import 'dock_style.dart';
 class MessageQueueSheet extends StatefulWidget {
   final DockClient client;
   final String draft;
+  final TextSelection draftSelection;
   final ValueChanged<String> onUsePrompt;
   final VoidCallback onQueued;
   const MessageQueueSheet({
     super.key,
     required this.client,
     required this.draft,
+    this.draftSelection = const TextSelection.collapsed(offset: -1),
     required this.onUsePrompt,
     required this.onQueued,
   });
@@ -37,6 +39,7 @@ class _MessageQueueSheetState extends State<MessageQueueSheet> {
       c.activePC == pc &&
       c.selected == id &&
       c.generation == generation &&
+      session != null &&
       session?['alive'] != false;
   Map<String, dynamic> get queue =>
       ((c.state['queues'] as Map?)?[id] as Map?)?.cast<String, dynamic>() ??
@@ -78,13 +81,188 @@ class _MessageQueueSheetState extends State<MessageQueueSheet> {
       error = '';
     });
     try {
-      await c.request(method, {'id': id, ...payload});
-      done?.call();
+      await c.request(method, {
+        if (method.startsWith('queue.')) 'id': id,
+        ...payload,
+      });
+      if (current) done?.call();
     } catch (failure) {
+      if (!mounted) return;
       error = '$failure'.replaceFirst(RegExp(r'^(Bad state|Exception): '), '');
+      if (method == 'queue.edit' && current) {
+        try {
+          await c.refreshQueue();
+        } catch (_) {
+          // Keep the edit error visible if the connection also failed.
+        }
+      }
     } finally {
       if (mounted) setState(() => busy = false);
     }
+  }
+
+  Future<T?> textDialog<T>(
+    TextEditingController controller,
+    WidgetBuilder builder,
+  ) async {
+    final route = DialogRoute<T>(context: context, builder: builder);
+    try {
+      final result = await Navigator.of(context).push(route);
+      await route.completed;
+      return result;
+    } finally {
+      controller.dispose();
+    }
+  }
+
+  Future<void> editEntry(Map<String, dynamic> entry) async {
+    final controller = TextEditingController(text: '${entry['text']}');
+    final text = await textDialog<String>(
+      controller,
+      (context) => AlertDialog(
+        title: const Text('Edit queued message'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: TextField(
+            controller: controller,
+            autofocus: true,
+            minLines: 4,
+            maxLines: 12,
+            keyboardType: TextInputType.multiline,
+            decoration: const InputDecoration(labelText: 'Message'),
+          ),
+        ),
+        scrollable: true,
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, controller.text),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    if (text != null && current) {
+      await run('queue.edit', {'entryId': entry['id'], 'text': text});
+    }
+  }
+
+  Future<void> savePrompt() async {
+    final name = TextEditingController();
+    final text = draft, projectId = session?['projectId'];
+    var project = false;
+    final payload = await textDialog<Map<String, dynamic>>(
+      name,
+      (context) => StatefulBuilder(
+        builder: (context, update) => AlertDialog(
+          title: const Text('Save prompt'),
+          scrollable: true,
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: name,
+                autofocus: true,
+                maxLength: 60,
+                decoration: const InputDecoration(labelText: 'Name'),
+              ),
+              DropdownButtonFormField<bool>(
+                initialValue: project,
+                decoration: const InputDecoration(labelText: 'Scope'),
+                items: [
+                  const DropdownMenuItem(
+                    value: false,
+                    child: Text('This PC'),
+                  ),
+                  if (projectId != null)
+                    const DropdownMenuItem(
+                      value: true,
+                      child: Text('Current project'),
+                    ),
+                ],
+                onChanged: (value) => update(() => project = value ?? false),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, <String, dynamic>{
+                'name': name.text,
+                'text': text,
+                'scope': project ? 'project' : 'global',
+                'projectId': project ? projectId : null,
+              }),
+              child: const Text('Save'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (payload != null && current && c.canEditPrompts) {
+      await run('prompts.save', payload);
+    }
+  }
+
+  Future<void> deletePrompt(Map<String, dynamic> prompt) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete saved prompt?'),
+        content: Text('${prompt['name']}'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true && current && c.canEditPrompts) {
+      await run('prompts.remove', {'id': prompt['id']});
+    }
+  }
+
+  Future<void> usePrompt(Map<String, dynamic> prompt) async {
+    final replace = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Use saved prompt'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Replace draft'),
+          ),
+          FilledButton(
+            autofocus: true,
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Insert at cursor'),
+          ),
+        ],
+      ),
+    );
+    if (replace == null || !current) return;
+    final text = '${prompt['text']}';
+    final selection = widget.draftSelection;
+    final offset = selection.isValid
+        ? selection.extentOffset.clamp(0, draft.length).toInt()
+        : draft.length;
+    widget.onUsePrompt(replace ? text : draft.replaceRange(offset, offset, text));
+    if (mounted) Navigator.pop(context);
   }
 
   @override
@@ -199,6 +377,10 @@ class _MessageQueueSheetState extends State<MessageQueueSheet> {
                             icon: const Icon(Icons.keyboard_arrow_down),
                           ),
                           TextButton(
+                            onPressed: enabled ? () => editEntry(entry) : null,
+                            child: const Text('Edit'),
+                          ),
+                          TextButton(
                             onPressed: enabled
                                 ? () => run('queue.send', {
                                     'entryId': entry['id'],
@@ -234,11 +416,19 @@ class _MessageQueueSheetState extends State<MessageQueueSheet> {
                 'Saved prompts',
                 style: TextStyle(fontSize: 18, color: blue),
               ),
+              if (c.canEditPrompts)
+                TextButton.icon(
+                  onPressed: enabled && draft.trim().isNotEmpty ? savePrompt : null,
+                  icon: const Icon(Icons.bookmark_add_outlined),
+                  label: const Text('Save draft as prompt'),
+                ),
               if (saved.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 8),
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
                   child: Text(
-                    'Save prompts on your PC from a console\'s queue.',
+                    c.canEditPrompts
+                        ? 'No saved prompts.'
+                        : 'Save prompts on your PC from a console\'s queue.',
                     style: TextStyle(color: muted),
                   ),
                 ),
@@ -252,12 +442,20 @@ class _MessageQueueSheetState extends State<MessageQueueSheet> {
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  trailing: TextButton(
-                    onPressed: () {
-                      widget.onUsePrompt('${prompt['text']}');
-                      Navigator.pop(context);
-                    },
-                    child: const Text('Use'),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      TextButton(
+                        onPressed: enabled ? () => usePrompt(prompt) : null,
+                        child: const Text('Use'),
+                      ),
+                      if (c.canEditPrompts)
+                        IconButton(
+                          tooltip: 'Delete prompt ${prompt['name']}',
+                          onPressed: enabled ? () => deletePrompt(prompt) : null,
+                          icon: const Icon(Icons.delete_outline),
+                        ),
+                    ],
                   ),
                 ),
             ],
