@@ -9,7 +9,7 @@ class MessageQueueSheet extends StatefulWidget {
   final DockClient client;
   final String draft;
   final TextSelection draftSelection;
-  final ValueChanged<String> onUsePrompt;
+  final void Function(String text, int cursorOffset) onUsePrompt;
   final VoidCallback onQueued;
   const MessageQueueSheet({
     super.key,
@@ -30,6 +30,7 @@ class _MessageQueueSheetState extends State<MessageQueueSheet> {
   late String draft = widget.draft;
   bool busy = false;
   String error = '';
+  final errorKey = GlobalKey();
 
   Map<String, dynamic>? get session =>
       c.sessions.where((s) => s['id'] == id).firstOrNull;
@@ -85,7 +86,7 @@ class _MessageQueueSheetState extends State<MessageQueueSheet> {
         if (method.startsWith('queue.')) 'id': id,
         ...payload,
       });
-      if (current) done?.call();
+      done?.call();
     } catch (failure) {
       if (!mounted) return;
       error = '$failure'.replaceFirst(RegExp(r'^(Bad state|Exception): '), '');
@@ -97,7 +98,21 @@ class _MessageQueueSheetState extends State<MessageQueueSheet> {
         }
       }
     } finally {
-      if (mounted) setState(() => busy = false);
+      if (mounted) {
+        setState(() => busy = false);
+        if (error.isNotEmpty) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            final target = errorKey.currentContext;
+            if (mounted && target != null) {
+              Scrollable.ensureVisible(
+                target,
+                alignment: .5,
+                duration: const Duration(milliseconds: 200),
+              );
+            }
+          });
+        }
+      }
     }
   }
 
@@ -153,6 +168,23 @@ class _MessageQueueSheetState extends State<MessageQueueSheet> {
   Future<void> savePrompt() async {
     final name = TextEditingController();
     final text = draft, projectId = session?['projectId'];
+    String? projectName = session?['projectName'] as String?;
+    if (projectId != null && projectName == null) {
+      var projects = c.state['projects'] as List? ?? [];
+      if (!projects.any((p) => p['id'] == projectId)) {
+        try {
+          final choices = await c.request('console.agents');
+          if (choices is Map) projects = choices['projects'] as List? ?? [];
+        } catch (_) {
+          // The project scope still works if its display name is unavailable.
+        }
+      }
+      projectName = projects.where((p) => p['id'] == projectId).firstOrNull?['name'] as String?;
+    }
+    if (!current) {
+      name.dispose();
+      return;
+    }
     var project = false;
     final payload = await textDialog<Map<String, dynamic>>(
       name,
@@ -178,9 +210,9 @@ class _MessageQueueSheetState extends State<MessageQueueSheet> {
                     child: Text('This PC'),
                   ),
                   if (projectId != null)
-                    const DropdownMenuItem(
+                    DropdownMenuItem(
                       value: true,
-                      child: Text('Current project'),
+                      child: Text(projectName ?? 'Current project'),
                     ),
                 ],
                 onChanged: (value) => update(() => project = value ?? false),
@@ -192,14 +224,19 @@ class _MessageQueueSheetState extends State<MessageQueueSheet> {
               onPressed: () => Navigator.pop(context),
               child: const Text('Cancel'),
             ),
-            FilledButton(
-              onPressed: () => Navigator.pop(context, <String, dynamic>{
-                'name': name.text,
-                'text': text,
-                'scope': project ? 'project' : 'global',
-                'projectId': project ? projectId : null,
-              }),
-              child: const Text('Save'),
+            ValueListenableBuilder<TextEditingValue>(
+              valueListenable: name,
+              builder: (context, value, _) => FilledButton(
+                onPressed: value.text.trim().isEmpty
+                    ? null
+                    : () => Navigator.pop(context, <String, dynamic>{
+                        'name': name.text,
+                        'text': text,
+                        'scope': project ? 'project' : 'global',
+                        'projectId': project ? projectId : null,
+                      }),
+                child: const Text('Save'),
+              ),
             ),
           ],
         ),
@@ -258,10 +295,16 @@ class _MessageQueueSheetState extends State<MessageQueueSheet> {
     if (replace == null || !current) return;
     final text = '${prompt['text']}';
     final selection = widget.draftSelection;
-    final offset = selection.isValid
-        ? selection.extentOffset.clamp(0, draft.length).toInt()
+    final start = selection.isValid
+        ? selection.start.clamp(0, draft.length).toInt()
         : draft.length;
-    widget.onUsePrompt(replace ? text : draft.replaceRange(offset, offset, text));
+    final end = selection.isValid
+        ? selection.end.clamp(start, draft.length).toInt()
+        : draft.length;
+    widget.onUsePrompt(
+      replace ? text : draft.replaceRange(start, end, text),
+      replace ? text.length : start + text.length,
+    );
     if (mounted) Navigator.pop(context);
   }
 
@@ -308,7 +351,7 @@ class _MessageQueueSheetState extends State<MessageQueueSheet> {
                 onPressed: enabled && draft.trim().isNotEmpty
                     ? () => run('queue.add', {'text': draft}, () {
                         widget.onQueued();
-                        setState(() => draft = '');
+                        if (mounted) setState(() => draft = '');
                       })
                     : null,
                 icon: const Icon(Icons.playlist_add),
@@ -325,7 +368,7 @@ class _MessageQueueSheetState extends State<MessageQueueSheet> {
               if (error.isNotEmpty)
                 Padding(
                   padding: const EdgeInsets.only(top: 8),
-                  child: Text(error, style: TextStyle(color: pink)),
+                  child: Text(error, key: errorKey, style: TextStyle(color: pink)),
                 ),
               const SizedBox(height: 8),
               if (list.isEmpty)
@@ -376,9 +419,12 @@ class _MessageQueueSheetState extends State<MessageQueueSheet> {
                                 : null,
                             icon: const Icon(Icons.keyboard_arrow_down),
                           ),
-                          TextButton(
-                            onPressed: enabled ? () => editEntry(entry) : null,
-                            child: const Text('Edit'),
+                          Tooltip(
+                            message: 'Edit message ${index + 1}',
+                            child: TextButton(
+                              onPressed: enabled ? () => editEntry(entry) : null,
+                              child: const Text('Edit'),
+                            ),
                           ),
                           TextButton(
                             onPressed: enabled

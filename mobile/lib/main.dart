@@ -1121,11 +1121,11 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
         onQueued: () {
           if (mounted && draftKey == key) composer.clear();
         },
-        onUsePrompt: (text) {
+        onUsePrompt: (text, cursorOffset) {
           if (!mounted || draftKey != key) return;
           composer.value = TextEditingValue(
             text: text,
-            selection: TextSelection.collapsed(offset: text.length),
+            selection: TextSelection.collapsed(offset: cursorOffset),
           );
           stagedCommandTarget = null;
         },

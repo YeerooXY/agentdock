@@ -4,8 +4,24 @@ import 'package:agent_dock_mobile/main.dart';
 
 import 'widget_test.dart' show FakeDock, enterChat;
 
-FakeDock queueDock() {
-  final c = FakeDock();
+class QueueDock extends FakeDock {
+  Map<String, dynamic>? queueSnapshot;
+  List<Map<String, dynamic>> projects = [];
+
+  @override
+  Future<dynamic> request(
+    String method, [
+    Map<String, dynamic> payload = const {},
+  ]) async {
+    final result = await super.request(method, payload);
+    if (method == 'state' && queueSnapshot != null) return queueSnapshot;
+    if (method == 'console.agents') return {'projects': projects};
+    return result;
+  }
+}
+
+QueueDock queueDock() {
+  final c = QueueDock();
   c.state['capabilities'] = ['console.queue', 'prompts', 'prompts.edit'];
   c.state['queues'] = {
     'one': {
@@ -154,6 +170,7 @@ void main() {
     await enterChat(tester);
     await tester.tap(find.byTooltip('Queue'));
     await tester.pumpAndSettle();
+    expect(find.byTooltip('Edit message 1'), findsOneWidget);
     await tester.tap(find.text('Edit').first);
     await tester.pumpAndSettle();
     expect(tester.widget<TextField>(find.byType(TextField).last).controller!.text, 'First queued');
@@ -163,6 +180,7 @@ void main() {
     expect(c.payloads[c.calls.indexOf('queue.edit')], {
       'id': 'one', 'entryId': 'a', 'text': 'Changed\nFull message',
     });
+    expect(find.byTooltip('Edit message 1'), findsOneWidget);
     await tester.tap(find.text('Edit').first);
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField).last, 'Discard this');
@@ -176,9 +194,11 @@ void main() {
   testWidgets('an edit racing a removed entry shows an error and refreshes', (tester) async {
     final c = queueDock();
     addTearDown(c.dispose);
+    final refreshedQueues = <String, dynamic>{};
+    final refreshedPrompts = <Map<String, dynamic>>[];
+    c.queueSnapshot = {'queues': refreshedQueues, 'prompts': refreshedPrompts};
     c.onRequest = (method, payload) async {
       if (method == 'queue.edit') {
-        c.state['queues'] = <String, dynamic>{};
         throw StateError('This queued message was already sent or removed.');
       }
     };
@@ -186,6 +206,7 @@ void main() {
     await enterChat(tester);
     await tester.tap(find.byTooltip('Queue'));
     await tester.pumpAndSettle();
+    expect(find.byTooltip('Edit message 1'), findsOneWidget);
     await tester.tap(find.text('Edit').first);
     await tester.pumpAndSettle();
     await tester.tap(find.text('Save'));
@@ -193,6 +214,8 @@ void main() {
     expect(find.text('This queued message was already sent or removed.'), findsOneWidget);
     expect(find.text('No queued messages.'), findsOneWidget);
     expect(c.calls, contains('state'));
+    expect(c.state['queues'], same(refreshedQueues));
+    expect(c.state['prompts'], same(refreshedPrompts));
     expect(c.inputs, isEmpty);
   });
 
@@ -200,7 +223,10 @@ void main() {
     testWidgets('save draft as prompt sends the ${project ? 'project' : 'PC'} scope', (tester) async {
       final c = queueDock();
       addTearDown(c.dispose);
-      if (project) c.sessions.first['projectId'] = 'project-one';
+      if (project) {
+        c.sessions.first['projectId'] = 'project-one';
+        c.projects = [{'id': 'project-one', 'name': 'Paddock'}];
+      }
       await tester.pumpWidget(DockApp(client: c));
       await enterChat(tester);
       await tester.enterText(find.byType(TextField).last, 'Draft\ntext');
@@ -209,11 +235,18 @@ void main() {
       await tester.ensureVisible(find.text('Save draft as prompt'));
       await tester.tap(find.text('Save draft as prompt'));
       await tester.pumpAndSettle();
+      final save = find.widgetWithText(FilledButton, 'Save');
+      expect(tester.widget<FilledButton>(save).onPressed, isNull);
+      await tester.enterText(find.byType(TextField).last, '   ');
+      await tester.pump();
+      expect(tester.widget<FilledButton>(save).onPressed, isNull);
       await tester.enterText(find.byType(TextField).last, 'Review');
+      await tester.pump();
+      expect(tester.widget<FilledButton>(save).onPressed, isNotNull);
       if (project) {
         await tester.tap(find.text('This PC'));
         await tester.pumpAndSettle();
-        await tester.tap(find.text('Current project').last);
+        await tester.tap(find.text('Paddock').last);
         await tester.pumpAndSettle();
       } else {
         expect(find.text('Current project'), findsNothing);
@@ -275,6 +308,8 @@ void main() {
       await tester.pumpAndSettle();
       expect(tester.widget<TextField>(find.byType(TextField).last).controller!.text,
         replace ? 'Write the test first.' : 'Before Write the test first.After');
+      expect(tester.widget<TextField>(find.byType(TextField).last).controller!.selection,
+        TextSelection.collapsed(offset: replace ? 'Write the test first.'.length : 7 + 'Write the test first.'.length));
       expect(c.calls.where((x) => x.startsWith('queue.') || x == 'input'), isEmpty);
     });
   }
@@ -297,6 +332,67 @@ void main() {
     await tester.tap(find.text('Insert at cursor'));
     await tester.pumpAndSettle();
     expect(tester.widget<TextField>(find.byType(TextField).last).controller!.text, 'Write the test first.');
+  });
+
+  testWidgets('a successful queue add clears the draft even if the console dies', (tester) async {
+    final c = queueDock();
+    addTearDown(c.dispose);
+    c.onRequest = (method, payload) async {
+      if (method == 'queue.add') {
+        c.sessions.first['alive'] = false;
+        c.notifyListeners();
+      }
+    };
+    await tester.pumpWidget(DockApp(client: c));
+    await enterChat(tester);
+    await tester.enterText(find.byType(TextField).last, 'Queue once');
+    await tester.tap(find.byTooltip('Queue'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Queue the message box text'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Close queue'));
+    await tester.pumpAndSettle();
+    expect(tester.widget<TextField>(find.byType(TextField).last).controller!.text, isEmpty);
+    expect(c.calls.where((x) => x == 'queue.add'), hasLength(1));
+  });
+
+  testWidgets('insertion replaces the selected range and leaves the cursor after the prompt', (tester) async {
+    final c = queueDock();
+    addTearDown(c.dispose);
+    await tester.pumpWidget(DockApp(client: c));
+    await enterChat(tester);
+    await tester.enterText(find.byType(TextField).last, 'Before selected After');
+    tester.widget<TextField>(find.byType(TextField).last).controller!.selection =
+        const TextSelection(baseOffset: 15, extentOffset: 7);
+    await tester.tap(find.byTooltip('Queue'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Use'));
+    await tester.tap(find.text('Use'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Insert at cursor'));
+    await tester.pumpAndSettle();
+    final composer = tester.widget<TextField>(find.byType(TextField).last).controller!;
+    expect(composer.text, 'Before Write the test first. After');
+    expect(composer.selection, TextSelection.collapsed(offset: 7 + 'Write the test first.'.length));
+    expect(c.calls.where((x) => x.startsWith('queue.') || x == 'input'), isEmpty);
+  });
+
+  testWidgets('a prompt action error is scrolled into view', (tester) async {
+    final c = queueDock();
+    addTearDown(c.dispose);
+    c.onRequest = (method, payload) async {
+      if (method == 'prompts.remove') throw StateError('This saved prompt was already removed.');
+    };
+    await tester.pumpWidget(DockApp(client: c));
+    await enterChat(tester);
+    await tester.tap(find.byTooltip('Queue'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byTooltip('Delete prompt Tests first'));
+    await tester.tap(find.byTooltip('Delete prompt Tests first'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Delete'));
+    await tester.pumpAndSettle();
+    expect(find.text('This saved prompt was already removed.').hitTestable(), findsOneWidget);
   });
 
 }

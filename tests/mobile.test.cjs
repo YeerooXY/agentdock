@@ -13,12 +13,13 @@ const { WebSocket } = require('ws');
 const { MobileCompanion } = require('../electron/mobile.cjs');
 const { Results } = require('../electron/results.cjs');
 const { AlertEvents } = require('../electron/alerts.cjs');
+const { PromptLibrary } = require('../electron/prompt-library.cjs');
 const { isTailscale } = require('../electron/mobile-address.cjs');
 const { TerminalStream } = require('../electron/mobile-stream.cjs');
 const safe = (() => { const key = crypto.randomBytes(32); return { isEncryptionAvailable: () => true, encryptString(value) { const iv = crypto.randomBytes(12), cipher = crypto.createCipheriv('aes-256-gcm', key, iv); const encrypted = Buffer.concat([cipher.update(value), cipher.final()]); return Buffer.concat([iv, cipher.getAuthTag(), encrypted]); }, decryptString(buffer) { const d = crypto.createDecipheriv('aes-256-gcm', key, buffer.subarray(0, 12)); d.setAuthTag(buffer.subarray(12, 28)); return Buffer.concat([d.update(buffer.subarray(28)), d.final()]).toString(); } }; })();
 // CI machines have no Tailscale adapter; loopback stands in for this PC's 100.x address.
 const loopbackTailnet = ip => ip === '127.0.0.1' || isTailscale(ip);
-async function fixture(t) {
+async function fixture(t, { withPrompts = false } = {}) {
   // These clients connect only to loopback. Keep the fixture independent of
   // physical adapters and environments that cannot enumerate host networks.
   t.mock.method(os, 'networkInterfaces', () => ({ loopback: [{ address: '127.0.0.1', family: 'IPv4', internal: true }] }));
@@ -26,7 +27,8 @@ async function fixture(t) {
   const sessions = new EventEmitter(); sessions.items = new Map(); sessions.list = () => [...sessions.items.values()]; sessions.writes = []; sessions.write = (id, data) => sessions.writes.push({ id, data }); sessions.acknowledge = id => { sessions.items.get(id).state = 'open'; sessions.emit('changed'); };
   for (let i = 1; i <= 9; i++) sessions.items.set('console-' + i, { id: 'console-' + i, name: 'Console ' + i, alive: true, state: 'ready', cols: 80, rows: 24, slot: i, sequence: 0, buffer: 'Hello ' + i, provider: 'shell' });
   const results = new Results(root, { trash: file => fs.promises.rm(file, { recursive: true, force: true }) }), alerts = new AlertEvents();
-  const m = new MobileCompanion(root, safe, { sessions, results, alerts, getDefaults: () => ({}), getUsage: () => ({ limits: [], summary: {} }), testMode: true, isTailnet: loopbackTailnet });
+  const prompts = withPrompts ? new PromptLibrary(root) : undefined;
+  const m = new MobileCompanion(root, safe, { sessions, results, alerts, prompts, getDefaults: () => ({}), getUsage: () => ({ limits: [], summary: {} }), testMode: true, isTailnet: loopbackTailnet });
   const reserve = net.createServer(); await new Promise(r => reserve.listen(0, '127.0.0.1', r)); const port = reserve.address().port; await new Promise(r => reserve.close(r));
   await m.configure({ enabled: true, host: '127.0.0.1', port });
   t.after(async () => { await m.stop(); fs.rmSync(root, { recursive: true, force: true }); });
@@ -494,29 +496,37 @@ test('a phone queues messages only for the console it has open', async t => {
   assert.equal(f.m.publicState().queues['console-1'].entries[0].text, 'Run all tests');
   await assert.rejects(c.call('queue.edit', { id: 'console-2', entryId: entry.id, text: 'Wrong console' }), /Select an open console/);
   await c.call('queue.send', { id: 'console-1', entryId: entry.id });
-  await assert.rejects(c.call('queue.edit', { id: 'console-1', entryId: entry.id, text: 'Too late' }), /no queued messages|already sent or removed/);
+  await assert.rejects(c.call('queue.edit', { id: 'console-1', entryId: entry.id, text: 'Too late' }), /already sent or removed/);
   assert.deepEqual(f.sessions.writes.map(x => x.data), ['Run all tests', '\r']);
   assert.equal(f.m.publicState().queues['console-1'], undefined);
 });
 
-test('phone prompt management validates scope, projects and library limits', async t => {
-  const { PromptLibrary } = require('../electron/prompt-library.cjs');
+test('phone prompt editing requires a prompt library', async t => {
   const f = await fixture(t), paired = await f.pair(), c = client(f, paired.data.token);
   t.after(() => c.ws.terminate()); await once(c.ws, 'open');
   assert.ok(!f.m.publicState().capabilities.includes('prompts.edit'));
   await assert.rejects(c.call('prompts.save', { name: 'Tests', text: 'Run tests', scope: 'global' }), /Update Paddock/);
   await assert.rejects(c.call('prompts.remove', { id: 'missing' }), /Update Paddock/);
-  f.m.prompts = new PromptLibrary(f.root);
-  f.sessions.projects = { get: id => id === 'project-one' ? { id } : null };
+});
+
+test('phone prompt management validates scope, projects and library limits', async t => {
+  const f = await fixture(t, { withPrompts: true }), paired = await f.pair(), c = client(f, paired.data.token);
+  t.after(() => c.ws.terminate()); await once(c.ws, 'open');
+  f.sessions.projects = { get: id => id === 'project-one' ? { id } : id === 'archived' ? { id, status: 'archived' } : null };
   assert.ok(f.m.publicState().capabilities.includes('prompts.edit'));
   const global = await c.call('prompts.save', { name: ' Tests ', text: 'Run tests\r\nReport failures', scope: 'global' });
+  await c.wait(x => x.type === 'state' && x.state.prompts.some(p => p.id === global.id));
   assert.equal(global.name, 'Tests'); assert.equal(global.text, 'Run tests\nReport failures'); assert.equal(global.projectId, null);
   const project = await c.call('prompts.save', { name: 'Review', text: 'Review changes', scope: 'project', projectId: 'project-one' });
   assert.equal(project.projectId, 'project-one');
+  const created = await c.call('prompts.save', { id: project.id, name: 'New prompt', text: 'New text', scope: 'global' });
+  assert.notEqual(created.id, project.id, 'phone-supplied IDs cannot overwrite existing prompts');
+  assert.deepEqual(f.m.prompts.list().find(x => x.id === project.id), project);
+  await c.call('prompts.remove', { id: created.id });
   for (const payload of [{ scope: 'bad' }, { scope: null }, { scope: 'global', projectId: 'project-one' }]) {
     await assert.rejects(c.call('prompts.save', { name: 'Bad', text: 'Text', ...payload }), /Choose This PC or a project/);
   }
-  for (const projectId of ['missing', '', null, {}, '../project-one']) {
+  for (const projectId of ['missing', 'archived', '', null, {}, '../project-one']) {
     await assert.rejects(c.call('prompts.save', { name: 'Bad', text: 'Text', scope: 'project', projectId }), /existing project/);
   }
   for (const [payload, error] of [
@@ -529,6 +539,7 @@ test('phone prompt management validates scope, projects and library limits', asy
   }
   assert.equal(f.m.prompts.list().length, 2, 'rejected prompts do not change the library');
   assert.equal(await c.call('prompts.remove', { id: global.id }), true);
+  await c.wait(x => x.type === 'state' && x.state.prompts.some(p => p.id === project.id) && !x.state.prompts.some(p => p.id === global.id));
   assert.deepEqual(new PromptLibrary(f.root).list().map(x => x.id), [project.id]);
   await assert.rejects(c.call('prompts.remove', { id: global.id }), /already removed/);
   assert.deepEqual(f.sessions.writes, [], 'saving and deleting prompts never sends input');

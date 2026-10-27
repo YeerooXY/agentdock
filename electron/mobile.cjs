@@ -298,7 +298,14 @@ class MobileCompanion extends EventEmitter {
         if (!this.queue) throw new Error('Update Paddock on your PC to queue messages.');
         if (client.selected !== payload.id) throw new Error('Select an open console first.');
         if (method === 'queue.add') return this.queue.add(payload.id, payload.text);
-        if (method === 'queue.edit') { this.queue.edit(payload.id, payload.entryId, payload.text); return true; }
+        if (method === 'queue.edit') {
+          try { this.queue.edit(payload.id, payload.entryId, payload.text); }
+          catch (error) {
+            if (error.message === 'This console has no queued messages.') throw new Error('This queued message was already sent or removed.');
+            throw error;
+          }
+          return true;
+        }
         if (method === 'queue.remove') { this.queue.remove(payload.id, payload.entryId); return true; }
         if (method === 'queue.move') { this.queue.move(payload.id, payload.entryId, payload.offset); return true; }
         if (method === 'queue.pause') { this.queue.pause(payload.id, payload.paused === true); return true; }
@@ -309,8 +316,9 @@ class MobileCompanion extends EventEmitter {
         const scope = payload.scope === undefined ? (payload.projectId == null ? 'global' : 'project') : payload.scope;
         if (!['global', 'project'].includes(scope) || (scope === 'global' && payload.projectId != null)) throw new Error('Choose This PC or a project for the prompt.');
         const projectId = scope === 'project' ? payload.projectId : null;
-        if (scope === 'project' && (typeof projectId !== 'string' || !/^[\w-]{1,64}$/.test(projectId) || !this.sessions.projects?.get(projectId))) throw new Error('Choose an existing project on this PC.');
-        return this.prompts.save({ id: payload.id, name: payload.name, text: payload.text, projectId });
+        const project = typeof projectId === 'string' && /^[\w-]{1,64}$/.test(projectId) ? this.sessions.projects?.get(projectId) : null;
+        if (scope === 'project' && (!project || project.status === 'archived')) throw new Error('Choose an existing project on this PC.');
+        return this.prompts.save({ name: payload.name, text: payload.text, projectId });
       }
       case 'prompts.remove': {
         if (!this.prompts) throw new Error('Update Paddock on your PC to manage prompts.');
