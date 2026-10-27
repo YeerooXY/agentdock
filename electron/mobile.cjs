@@ -109,10 +109,10 @@ class MobileCompanion extends EventEmitter {
   async configure({ enabled, host, name, port = 47831, ...remote }) {
     if (this.network.firewallMutation) throw new Error('Wait for the current firewall change to finish before changing the connection.');
     if (!enabled) { await this.stop(); this.config.enabled = false; this.persist(); return; }
-    if (!interfaces().some(x => x.address === host) || !this.tailnet(host)) throw new Error('Choose this PC’s Tailscale address (100.x). Install Tailscale and sign in if none is listed.');
     if (!Number.isInteger(port) || port < 1024 || port > 65535) throw new Error('Use a port from 1024 to 65535.');
     if (!this.available()) throw new Error(encryptionUnavailable());
     const options = connectionOptions(remote);
+    if (!interfaces().some(x => x.address === host) || !this.tailnet(host)) throw new Error('Choose this PC’s Tailscale address (100.x). Install Tailscale and sign in if none is listed.');
     if (name !== undefined) options.name = deviceName(name);
     const changed = host !== this.config.host || port !== this.config.port || ['mode', 'publicHost', 'externalPort'].some(key => options[key] !== this.config[key]);
     if (changed) { for (const device of this.private.devices) delete device.lastInternetAt; }
