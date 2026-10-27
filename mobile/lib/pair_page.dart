@@ -58,7 +58,7 @@ class _PairPageState extends State<PairPage> {
     } catch (e) {
       if (mounted) {
         setState(
-          () => error = e is FormatException ? e.message : 'Could not reach your PC. Use the same Wi-Fi, or turn on Tailscale on this phone. Then check Windows Firewall on the PC.',
+          () => error = e is FormatException ? e.message : 'Could not reach your PC. Turn on Tailscale on this phone, signed in to the same account as your PC. Then check Windows Firewall on the PC.',
         );
       }
     } finally {

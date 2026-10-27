@@ -7,21 +7,21 @@ This is an Android preview. iPhone support comes later. The owner verified a phy
 ## Install and pair
 
 1. Use the current [Windows and Android downloads](../README.md#downloads) on both devices for new pairing. Existing pairing is preserved during an upgrade. Most phones use the **arm64** APK. Android 7 or later is required. The APK uses a development signing key; a future store build may require uninstalling this preview first.
-2. Put the PC and phone on the same Wi-Fi or local network. **No extra app or account is needed** for this connection. To connect from anywhere, use [Tailscale](#anywhere-with-tailscale).
+2. Install [Tailscale](https://tailscale.com/download) on the PC and on the phone, sign in to the **same account** on both, and turn it on. Paddock connects only through Tailscale; see [why](#why-tailscale-only).
 3. On the PC, open **Settings → Devices → Connect a phone**. First-time setup also offers **Connect my Android phone next**.
-4. Select the PC's Wi-Fi or Ethernet address and enable the connection. Use **Refresh addresses** if you just changed networks. The **This PC only** address cannot be reached by your phone.
-5. On **Router**, choose **Allow Paddock in Windows Firewall** if needed. Windows asks for administrator approval for a rule scoped to Paddock's executable, TCP port, address and network adapter. Open **Pair phone → Show QR code**. In Android, choose **Scan QR code**, or paste the code. The code expires after five minutes and works once. Scanning only requests access. Compare the six-digit code on both screens, then choose **Codes match — Allow** on the PC. Deny a request you did not start. Requests expire after two minutes; Cancel on the phone or closing PC setup withdraws an unclaimed request.
+4. Select the PC's Tailscale address (100.x) and press **Enable connection**. If no address is listed, sign in to Tailscale on the PC and press **Refresh addresses**.
+5. On **Firewall**, choose **Allow Paddock in Windows Firewall** if needed. Windows asks for administrator approval for a rule scoped to Paddock's executable, TCP port, Tailscale address and adapter. Open **Pair phone → Show QR code**. In Android, choose **Scan QR code**, or paste the code. The code expires after five minutes and works once. Scanning only requests access. Compare the six-digit code on both screens, then choose **Codes match — Allow** on the PC. Deny a request you did not start. Requests expire after two minutes; Cancel on the phone or closing PC setup withdraws an unclaimed request.
 6. Keep the PC awake with Paddock running. Closing Paddock to its tray preserves the connection and consoles; choosing Quit stops them.
 
 Current source builds keep the PC awake while an agent is marked Thinking or a Paddock API request runs. You can switch this off in **Settings → Desktop**. The screen can still turn off, and normal sleep resumes when work finishes. For phone access while every console is idle, the PC still needs to remain awake. This setting was added after the 0.6 preview 1 installer.
 
-Same Wi-Fi mode accepts private network peers, and its firewall rule allows only the local subnet. Tailscale mode listens only on the PC's Tailscale address and accepts only Tailscale peers (100.64.0.0/10). Paddock never opens a router port.
+Paddock listens only on the PC's Tailscale address and accepts only Tailscale peers (100.64.0.0/10). Its firewall rule allows only Tailscale devices. Paddock never opens a router port.
 
 A paired phone can type commands using the console's existing permissions. This is access to your PC, so pair only devices you control. **Remove** beside a phone immediately revokes its token. **Turn off** stops mobile access without ending local consoles.
 
 ### How long does pairing last?
 
-The saved pairing token has no automatic expiry and survives normal restarts and compatible updates. The PC must stay awake, Paddock's connection must be enabled, and a saved local or internet address must remain reachable. Router, address or port changes can require updating the connection and pairing again. Clearing app data, removing the phone or replacing the PC's certificate also requires pairing again. The current PC certificate lasts five years; certificate expiry eventually needs renewal and re-pairing. The short QR/request expiry applies only while adding a phone.
+The saved pairing token has no automatic expiry and survives normal restarts and compatible updates. The PC must stay awake, Paddock's connection must be enabled, and the PC's Tailscale address must remain reachable. Router, address or port changes can require updating the connection and pairing again. Clearing app data, removing the phone or replacing the PC's certificate also requires pairing again. The current PC certificate lasts five years; certificate expiry eventually needs renewal and re-pairing. The short QR/request expiry applies only while adding a phone.
 
 ## Multiple computers and phones
 
@@ -50,15 +50,11 @@ Preview 14 changes subscription meters to **percent left**, with provider colors
 
 On the PC, use **Settings → Updates** to check, download and install a newer Windows build. The PC verifies the download's size and SHA-256 before offering installation. Update both devices when a release asks for matching versions. Checks are manual and contact GitHub; no terminal content or keys are sent. Preview builds offer newer previews as well as stable releases.
 
-## Anywhere with Tailscale
+## Why Tailscale only
 
-Updated 24 October 2026: Tailscale replaces direct internet through the router and Duck DNS. Tailscale connects your devices over an encrypted WireGuard network, so there is no port forwarding, public address or dynamic DNS to maintain. [Tailscale](https://tailscale.com/download) has a free personal plan; check its current terms.
+Updated 27 October 2026: phones connect only through Tailscale. Same Wi-Fi was removed; direct internet through the router and Duck DNS was removed on 24 October 2026. On a shared, café or office Wi-Fi, other devices could reach a Wi-Fi listener; Tailscale accepts only devices signed in to your account. It connects over an encrypted WireGuard network, at home or away, with no port forwarding, public address or dynamic DNS to maintain. [Tailscale](https://tailscale.com/download) has a free personal plan; check its current terms.
 
-1. Install Tailscale on the PC and sign in.
-2. Install Tailscale on the phone, sign in to the **same account** and turn it on.
-3. In Paddock, open **Settings → Devices → Connect a phone**. Choose **Anywhere · Tailscale**, select the PC's Tailscale address (100.x) and press **Enable connection**. If no address is listed, sign in to Tailscale on the PC and press **Refresh addresses**.
-4. On **Firewall**, Paddock checks its existing Windows rule. **Already configured** means you can continue; no new approval is needed. If the rule is missing, choose **Allow Paddock in Windows Firewall**. If the connection or executable changed, choose **Update firewall rule**. The rule covers only Paddock's port on the Tailscale address, from Tailscale devices.
-5. Pair from **Pair phone**. To test, turn off the phone's Wi-Fi and keep Tailscale on.
+On **Firewall**, Paddock checks its existing Windows rule. **Already configured** means you can continue; no new approval is needed. If the rule is missing, choose **Allow Paddock in Windows Firewall**. If the connection or executable changed, choose **Update firewall rule**. The rule covers only Paddock's port on the Tailscale address, from Tailscale devices.
 
 The phone still checks the PC certificate pinned during pairing, so Tailscale adds a second encrypted layer. Keep the PC awake with Paddock running. Tailscale keeps the same 100.x address for a device, so the pairing keeps working when your home IP changes.
 
@@ -68,9 +64,9 @@ Current source builds check the saved Windows firewall rule when the connection 
 
 **Already configured** confirms that Paddock's rule matches the current executable, TCP port, network address, adapter and peer scope. It does not prove that the phone is online or that other firewall policies permit the connection. If Windows cannot read the rule, Paddock shows an unknown status instead of claiming success or that permission is missing. If your phone already connects through a manually configured rule, you can continue without creating another rule. Rule removal remains an explicit action under **Manage firewall rule**.
 
-### Moving from direct internet
+### Moving from Same Wi-Fi or direct internet
 
-When an older setup used **Direct internet**, Paddock switches it to **Same Wi-Fi** on start and shows a note in Phone setup. Paired phones stay paired and keep working on Wi-Fi. Choose **Anywhere · Tailscale**, then pair again or enter the Tailscale address in the phone's **Connection** screen. Remove the old port-forwarding rule from your router and any Duck DNS token you no longer need from **Keys**.
+When an older setup used **Same Wi-Fi** or **Direct internet**, Paddock turns the phone connection off on start and shows a note in Phone setup. Paired phones stay paired. Set up Tailscale, choose the PC's Tailscale address and press **Enable connection**. Then, on the phone, open **Connection**, enter `https://<PC's 100.x address>:47831` and press **Save & reconnect**, or pair again. After a direct-internet setup, remove the old port-forwarding rule from your router.
 
 ## Completion alerts
 

@@ -16,7 +16,7 @@ const profiles = [['pc', chromium, { viewport: { width: 1440, height: 900 } }], 
     for (const withTailscale of [true, false]) {
       const browser = await engine.launch(), context = await browser.newContext(options), state = structuredClone(base);
       state.mode = 'dashboard'; Object.assign(state.settings, { setupComplete: true, trimStyle: 'void' });
-      state.mobile = { enabled: false, host: '', port: 47831, mode: 'local', notice: withTailscale ? '' : 'Direct internet access was replaced by Tailscale. Your phone still connects on the same Wi-Fi. Choose Anywhere with Tailscale in Phone setup, and remove the old port forward from your router.', interfaces: [{ name: 'Wi-Fi', address: '192.168.1.20', tailscale: false, local: false }, ...(withTailscale ? [{ name: 'Tailscale', address: '100.101.102.103', tailscale: true, local: false }] : [])], devices: [], push: {}, network: {} };
+      state.mobile = { enabled: false, host: '', port: 47831, mode: 'tailscale', notice: withTailscale ? '' : 'Phones now connect only through Tailscale, which other devices on your Wi-Fi cannot reach. Choose this PC’s Tailscale address below, then enter it in the phone app under Connection. Paired phones stay paired.', interfaces: [{ name: 'Wi-Fi', address: '192.168.1.20', tailscale: false, local: false }, ...(withTailscale ? [{ name: 'Tailscale', address: '100.101.102.103', tailscale: true, local: false }] : [])], devices: [], push: {}, network: {} };
       let page;
       await context.exposeFunction('fixtureCall', async (method) => {
         if (method === 'state') return { ok: true, value: state };
@@ -27,9 +27,13 @@ const profiles = [['pc', chromium, { viewport: { width: 1440, height: 900 } }], 
       page = await context.newPage(); page.on('pageerror', e => errors.push(`${name}: ${e.message}`));
       await page.goto(`http://127.0.0.1:${server.address().port}`); await page.locator('.session-grid').waitFor();
       await page.locator('.sidebar-bottom [data-page=settings]').click(); await page.locator('.settings-navigation [data-page=devices]').click();
-      await page.locator('[data-mobile=open]').click(); await page.locator('#mobile-mode').selectOption('tailscale'); await page.waitForTimeout(250);
+      await page.locator('[data-mobile=open]').click(); await page.waitForTimeout(250);
       await page.screenshot({ path: path.join(out, `tailscale-${name}-${withTailscale ? 'found' : 'missing'}.png`) });
       if (await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1)) errors.push(`${name}: overflow`);
+      if (await page.evaluate(() => { const d = document.querySelector('.mobile-setup[open]'); return !d || d.scrollWidth > d.clientWidth + 1 || d.getBoundingClientRect().right > innerWidth + 1; })) errors.push(`${name}: setup dialog overflow`);
+      if (await page.locator('#mobile-mode').count()) errors.push(`${name}: Wi-Fi choice still shown`);
+      const hosts = await page.locator('#mobile-host option').evaluateAll(o => o.map(x => x.value));
+      if (hosts.some(h => !h.startsWith('100.')) || hosts.length !== (withTailscale ? 1 : 0)) errors.push(`${name}: listed ${hosts.join(', ') || 'no'} addresses`);
       await browser.close();
     }
   }

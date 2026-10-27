@@ -13,8 +13,11 @@ const { WebSocket } = require('ws');
 const { MobileCompanion } = require('../electron/mobile.cjs');
 const { Results } = require('../electron/results.cjs');
 const { AlertEvents } = require('../electron/alerts.cjs');
+const { isTailscale } = require('../electron/mobile-address.cjs');
 const { TerminalStream } = require('../electron/mobile-stream.cjs');
 const safe = (() => { const key = crypto.randomBytes(32); return { isEncryptionAvailable: () => true, encryptString(value) { const iv = crypto.randomBytes(12), cipher = crypto.createCipheriv('aes-256-gcm', key, iv); const encrypted = Buffer.concat([cipher.update(value), cipher.final()]); return Buffer.concat([iv, cipher.getAuthTag(), encrypted]); }, decryptString(buffer) { const d = crypto.createDecipheriv('aes-256-gcm', key, buffer.subarray(0, 12)); d.setAuthTag(buffer.subarray(12, 28)); return Buffer.concat([d.update(buffer.subarray(28)), d.final()]).toString(); } }; })();
+// CI machines have no Tailscale adapter; loopback stands in for this PC's 100.x address.
+const loopbackTailnet = ip => ip === '127.0.0.1' || isTailscale(ip);
 async function fixture(t) {
   // These clients connect only to loopback. Keep the fixture independent of
   // physical adapters and environments that cannot enumerate host networks.
@@ -23,7 +26,7 @@ async function fixture(t) {
   const sessions = new EventEmitter(); sessions.items = new Map(); sessions.list = () => [...sessions.items.values()]; sessions.writes = []; sessions.write = (id, data) => sessions.writes.push({ id, data }); sessions.acknowledge = id => { sessions.items.get(id).state = 'open'; sessions.emit('changed'); };
   for (let i = 1; i <= 9; i++) sessions.items.set('console-' + i, { id: 'console-' + i, name: 'Console ' + i, alive: true, state: 'ready', cols: 80, rows: 24, slot: i, sequence: 0, buffer: 'Hello ' + i, provider: 'shell' });
   const results = new Results(root, { trash: file => fs.promises.rm(file, { recursive: true, force: true }) }), alerts = new AlertEvents();
-  const m = new MobileCompanion(root, safe, { sessions, results, alerts, getDefaults: () => ({}), getUsage: () => ({ limits: [], summary: {} }), testMode: true });
+  const m = new MobileCompanion(root, safe, { sessions, results, alerts, getDefaults: () => ({}), getUsage: () => ({ limits: [], summary: {} }), testMode: true, isTailnet: loopbackTailnet });
   const reserve = net.createServer(); await new Promise(r => reserve.listen(0, '127.0.0.1', r)); const port = reserve.address().port; await new Promise(r => reserve.close(r));
   await m.configure({ enabled: true, host: '127.0.0.1', port });
   t.after(async () => { await m.stop(); fs.rmSync(root, { recursive: true, force: true }); });
@@ -373,12 +376,11 @@ test('one selected terminal streams and resumes without replaying commands', asy
   d.ws.close();
 });
 
-test('Tailscale mode accepts only tailnet peers and keeps pairing and revocation', async t => {
+test('only Tailscale peers are accepted; pairing and revocation still work', async t => {
   const f = await fixture(t);
   const paired = await f.pair();
   const request = address => ({ headers: { authorization: 'Bearer ' + paired.data.token }, socket: { remoteAddress: address } });
   assert.equal(f.m.authenticate(request('8.8.8.8')), null, 'public peers are refused even with a valid token');
-  Object.assign(f.m.config, { mode: 'tailscale' });
   assert.equal(f.m.authenticate(request('100.101.102.103')).id, paired.data.id);
   assert.equal(f.m.authenticate(request('::ffff:100.64.0.9')).id, paired.data.id);
   for (const address of ['8.8.8.8', '192.168.1.20', '169.254.1.1']) assert.equal(f.m.authenticate(request(address)), null, address);
@@ -386,21 +388,34 @@ test('Tailscale mode accepts only tailnet peers and keeps pairing and revocation
   assert.equal(f.m.authenticate({ ...request('100.64.0.9'), headers: { ...request('').headers, origin: 'https://evil.example' } }), null);
   const invite = JSON.parse(Buffer.from((await f.m.invite()).code.slice(10), 'base64url'));
   assert.equal(invite.v, 1); assert.equal(invite.url, `https://127.0.0.1:${f.port}`); assert.equal(invite.pin, f.invite.pin); assert.equal(invite.localUrl, undefined);
-  await assert.rejects(f.m.configure({ enabled: true, host: '127.0.0.1', mode: 'tailscale' }), /Tailscale address/);
   await assert.rejects(f.m.configure({ enabled: true, host: '127.0.0.1', mode: 'internet' }), /replaced by Tailscale/);
+  await assert.rejects(f.m.configure({ enabled: true, host: '127.0.0.1', mode: 'local' }), /Same Wi-Fi connections were removed/);
+  // The app itself accepts only 100.64.0.0/10: no loopback, LAN or Wi-Fi peers or addresses.
+  f.m.tailnet = isTailscale;
+  for (const address of ['127.0.0.1', '192.168.1.20', '10.0.0.4']) assert.equal(f.m.authenticate(request(address)), null, address);
+  await assert.rejects(f.m.configure({ enabled: true, host: '127.0.0.1' }), /Tailscale address/);
   f.m.revoke(paired.data.id); assert.equal(f.m.authenticate(request('100.101.102.103')), null);
 });
-test('a saved direct-internet connection falls back to Wi-Fi and asks for Tailscale', async t => {
+test('saved Wi-Fi and direct-internet connections turn off and ask for Tailscale, keeping paired phones', async t => {
   const f = await fixture(t);
-  await f.m.stop();
+  await f.pair(); await f.m.stop();
   const saved = JSON.parse(fs.readFileSync(f.m.file, 'utf8'));
-  fs.writeFileSync(f.m.file, JSON.stringify({ ...saved, mode: 'internet', publicHost: 'old.duckdns.org', externalPort: 49000, duckKeyId: 'ddns', routerMode: 'automatic' }));
   const sessions = new EventEmitter(); sessions.items = new Map(); sessions.list = () => [];
-  const m = new MobileCompanion(path.dirname(f.m.file), safe, { sessions, results: new EventEmitter(), alerts: new AlertEvents(), getDefaults: () => ({}), getUsage: () => ({ limits: [], summary: {} }), testMode: true });
-  const state = m.snapshot();
-  assert.equal(state.mode, 'local'); assert.equal(state.publicHost, ''); assert.equal(state.duckKeyId, '');
-  assert.match(state.notice, /replaced by Tailscale/);
-  assert.equal(JSON.parse(fs.readFileSync(m.file, 'utf8')).mode, 'local');
+  const reopen = () => new MobileCompanion(path.dirname(f.m.file), safe, { sessions, results: new EventEmitter(), alerts: new AlertEvents(), getDefaults: () => ({}), getUsage: () => ({ limits: [], summary: {} }), testMode: true });
+  for (const [old, router] of [[{ mode: 'local', host: '192.168.1.5' }, false], [{ mode: 'internet', host: '192.168.1.5', publicHost: 'old.duckdns.org', externalPort: 49000, duckKeyId: 'ddns', routerMode: 'automatic' }, true], [{ mode: undefined, host: '10.0.0.4' }, false]]) {
+    fs.writeFileSync(f.m.file, JSON.stringify({ ...saved, ...old, enabled: true }));
+    const m = reopen(), state = m.snapshot();
+    assert.equal(state.mode, 'tailscale'); assert.equal(state.host, ''); assert.equal(state.publicHost, ''); assert.equal(state.duckKeyId, '');
+    assert.equal(m.config.enabled, false);
+    assert.match(state.notice, /only through Tailscale/); assert.equal(/port forward/.test(state.notice), router);
+    assert.equal(state.devices.length, 1, 'paired phones stay paired');
+    await m.start(); assert.equal(m.server, undefined, 'nothing listens on the old address');
+    assert.match(reopen().snapshot().notice, /only through Tailscale/, 'the notice stays until Tailscale is set up');
+  }
+  // A Wi-Fi-era save that already used the Tailscale address keeps working.
+  fs.writeFileSync(f.m.file, JSON.stringify({ ...saved, mode: 'local', host: '100.101.102.103', enabled: true }));
+  const kept = reopen();
+  assert.equal(kept.config.enabled, true); assert.equal(kept.config.host, '100.101.102.103'); assert.equal(kept.snapshot().notice, '');
 });
 test('terminal checkpoint carries a long answer, not only the last screens', async () => {
   const s = new TerminalStream({ buffer: '', sequence: 0, cols: 80, rows: 24 });

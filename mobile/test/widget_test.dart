@@ -530,54 +530,64 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
-  test('internet invitations require explicit version and pin, with a private local fallback', () {
+  test('pairing accepts only codes for a Tailscale address', () {
     final invite = <String, dynamic>{
-      'v': 2,
-      'mode': 'internet',
-      'url': 'https://dock-demo.duckdns.org:47831',
-      'localUrl': 'https://192.168.1.5:47831',
+      'v': 1,
+      'url': 'https://192.168.1.5:47831',
       'pin': 'a' * 64,
       'secret': 'b' * 43,
       'expires': DateTime.now().millisecondsSinceEpoch + 60000,
     };
     String code(Map<String, dynamic> data) =>
         'agentdock:${base64Url.encode(utf8.encode(jsonEncode(data)))}';
-    expect(DockClient.parseInvite(code(invite))['mode'], 'internet');
-    expect(DockClient.endpoints(invite), [
-      'https://192.168.1.5:47831',
-      'https://dock-demo.duckdns.org:47831',
-    ]);
-    for (final url in [
-      'http://host.com:47831',
-      'https://user@host.com:47831',
-      'https://host.com:47831/path',
-      'https://host.local:47831',
-      'https://127.0.0.1:47831',
-      'https://169.254.169.254:47831',
-      'https://host.com:47831?token=bad',
+    // A PC still set up for Wi-Fi or direct internet gets the way forward.
+    for (final old in [
+      invite,
+      {...invite, 'url': 'https://10.0.0.4:47831'},
+      {
+        ...invite,
+        'v': 2,
+        'mode': 'internet',
+        'url': 'https://dock-demo.duckdns.org:47831',
+        'localUrl': 'https://192.168.1.5:47831',
+      },
     ]) {
       expect(
-        () => DockClient.parseInvite(code({...invite, 'url': url})),
+        () => DockClient.parseInvite(code(old)),
+        throwsA(
+          isA<FormatException>().having(
+            (e) => e.message,
+            'message',
+            contains('not set up for Tailscale'),
+          ),
+        ),
+      );
+    }
+    final tailnet = {...invite, 'url': 'https://100.101.102.103:47831'};
+    expect(DockClient.parseInvite(code(tailnet))['v'], 1);
+    expect(
+      () => DockClient.parseInvite(
+        code({...tailnet, 'localUrl': 'https://192.168.1.5:47831'}),
+      ),
+      throwsFormatException,
+    );
+    for (final url in [
+      'https://127.0.0.1:47831',
+      'https://169.254.169.254:47831',
+      'https://100.128.0.1:47831',
+    ]) {
+      expect(
+        () => DockClient.parseInvite(code({...tailnet, 'url': url})),
         throwsFormatException,
       );
     }
     expect(
-      () => DockClient.parseInvite(
-        code({...invite, 'localUrl': 'https://other.com:47831'}),
-      ),
-      throwsFormatException,
-    );
-    expect(
-      () => DockClient.parseInvite(code({...invite, 'v': 1})),
-      throwsFormatException,
-    );
-    expect(
-      () => DockClient.parseInvite(code({...invite, 'mode': 'local'})),
-      throwsFormatException,
-    );
-    expect(
-      () => DockClient.parseInvite(code({...invite, 'pin': ''})),
-      throwsFormatException,
+      DockClient.endpoints({
+        'url': 'https://192.168.1.5:47831',
+        'localUrl': 'https://192.168.1.5:47831',
+        'manualUrl': 'https://100.101.102.103:47831',
+      }),
+      ['https://100.101.102.103:47831'],
     );
   });
   testWidgets(

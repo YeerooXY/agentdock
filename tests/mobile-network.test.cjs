@@ -9,7 +9,8 @@ test('connections are same Wi-Fi or Tailscale; direct internet is retired', () =
   assert.equal(isPrivate('192.168.evil'), false);
   for (const ip of ['100.64.0.1', '100.101.102.103', '100.127.255.254']) assert.ok(isTailscale(ip));
   for (const ip of ['100.63.0.1', '100.128.0.1', '192.168.1.1', '8.8.8.8', '100.64.evil', '::1']) assert.ok(!isTailscale(ip));
-  assert.equal(connectionOptions({}).mode, 'local');
+  assert.equal(connectionOptions({}).mode, 'tailscale');
+  assert.throws(() => connectionOptions({ mode: 'local' }), /Same Wi-Fi connections were removed/);
   assert.equal(connectionOptions({ mode: 'tailscale', publicHost: 'ignored.example' }).mode, 'tailscale');
   assert.equal(connectionOptions({ mode: 'tailscale', publicHost: 'ignored.example' }).publicHost, '');
   assert.throws(() => connectionOptions({ mode: 'internet' }), /replaced by Tailscale/);

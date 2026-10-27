@@ -33,26 +33,25 @@ void main() {
   });
 
   test(
-    'address recovery preserves identity and learns routes without repairing',
+    'address recovery preserves identity and learns only Tailscale routes',
     () async {
       final phone = OfflinePhone();
       addTearDown(phone.dispose);
       phone.pairing = {
-        'url': 'https://8.8.8.8:47831',
-        'localUrl': 'https://192.168.1.4:47831',
+        'url': 'https://100.100.1.1:47831',
         'pin': 'original-pin',
         'token': 'private-token',
         'id': 'phone',
       };
       await phone.devices.put(phone.pairing!, activate: true);
-      await phone.updateAddress('https://new-dock.duckdns.org:47831');
+      await phone.updateAddress('https://100.100.2.2:47831');
       expect(phone.reconnects, 1);
       expect(
         DockClient.endpoints(phone.pairing!).first,
-        'https://new-dock.duckdns.org:47831',
+        'https://100.100.2.2:47831',
       );
       await phone.rememberRoutes({
-        'url': 'https://new-dock.duckdns.org:47831',
+        'url': 'https://100.100.2.2:47831',
         'localUrl': 'https://192.168.1.5:47831',
         'pin': 'untrusted-replacement',
       });
@@ -62,63 +61,57 @@ void main() {
       expect(saved['pin'], 'original-pin');
       expect(saved['token'], 'private-token');
       expect(saved['id'], 'phone');
-      expect(saved['localUrl'], 'https://192.168.1.5:47831');
+      expect(saved['localUrl'], isNull, reason: 'Wi-Fi routes are not kept');
       expect(saved['manualUrl'], isNull);
       for (final bad in [
-        'http://new-dock.duckdns.org:47831',
-        'https://user:pass@example.com:47831',
-        'https://example.com:47831/path',
-        'https://example.com:443',
-        'https://example.com:47831?key=secret',
+        'https://192.168.1.4:47831',
+        'https://10.0.0.4:47831',
+        'https://8.8.8.8:47831',
+        'https://new-dock.duckdns.org:47831',
+        'http://100.100.2.2:47831',
+        'https://user:pass@100.100.2.2:47831',
+        'https://100.100.2.2:47831/path',
+        'https://100.100.2.2:443',
+        'https://100.100.2.2:47831?key=secret',
       ]) {
         await expectLater(phone.updateAddress(bad), throwsFormatException);
         await phone.rememberRoutes({'url': bad});
         expect(phone.pairing!['url'], saved['url']);
       }
-      await phone.rememberRoutes({
-        'url': 'https://example.com:47831',
-        'localUrl': 'https://other.example:47831',
-      });
-      expect(phone.pairing!['url'], saved['url']);
     },
   );
 
   test(
-    'manual recovery survives an older PC route until the PC is updated',
+    'a phone paired over Wi-Fi skips its old routes and moves to Tailscale',
     () async {
       final phone = OfflinePhone();
       addTearDown(phone.dispose);
       phone.pairing = {
-        'url': 'https://8.8.8.8:47831',
+        'url': 'https://192.168.1.4:47831',
+        'localUrl': 'https://192.168.1.4:47831',
         'pin': 'pin',
         'token': 'token',
       };
       await phone.devices.put(phone.pairing!, activate: true);
-      await phone.updateAddress('https://1.1.1.1:47831');
-      await phone.rememberRoutes({
-        'url': 'https://8.8.8.8:47831',
-        'localUrl': 'https://192.168.1.4:47831',
-      });
-      expect(
-        DockClient.endpoints(phone.pairing!).first,
-        'https://1.1.1.1:47831',
-      );
+      expect(DockClient.endpoints(phone.pairing!), isEmpty);
+      await phone.updateAddress('https://100.101.102.103:47831');
+      await phone.rememberRoutes({'url': 'https://192.168.1.4:47831'});
+      expect(DockClient.endpoints(phone.pairing!), [
+        'https://100.101.102.103:47831',
+      ]);
+      expect(phone.pairing!['token'], 'token');
     },
   );
 
-  test('connection failures identify private-only, changed IP, identity and revocation', () {
-    expect(
-      DockClient.connectionError(const SocketException('private detail'), {
-        'url': 'https://192.168.1.4:47831',
-      }),
-      contains('same Wi-Fi'),
-    );
-    expect(
-      DockClient.connectionError(const SocketException('private detail'), {
-        'url': 'https://8.8.8.8:47831',
-      }),
-      contains('replaced by Tailscale'),
-    );
+  test('connection failures point to Tailscale, identity and revocation', () {
+    for (final url in ['https://192.168.1.4:47831', 'https://8.8.8.8:47831']) {
+      expect(
+        DockClient.connectionError(const SocketException('private detail'), {
+          'url': url,
+        }),
+        contains('only through Tailscale'),
+      );
+    }
     expect(
       DockClient.connectionError(const SocketException('private detail'), {
         'url': 'https://100.101.102.103:47831',
@@ -145,6 +138,8 @@ void main() {
       final overrides = HttpOverrides.current;
       HttpOverrides.global = null;
       addTearDown(() => HttpOverrides.global = overrides);
+      DockClient.loopbackForTests = true;
+      addTearDown(() => DockClient.loopbackForTests = false);
       // Ephemeral local certificates only. No model or external network calls.
       final generated = await Process.run('node', [
         '-e',

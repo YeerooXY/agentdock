@@ -32,23 +32,32 @@ function deviceName(value) {
   return name;
 }
 class MobileCompanion extends EventEmitter {
-  constructor(root, safeStorage, { sessions, results, alerts, queue, prompts, getUsage, refreshUsage, getDefaults, getModels, getSettings, getKey, networkScript, program, network, testMode = false } = {}) {
+  constructor(root, safeStorage, { sessions, results, alerts, queue, prompts, getUsage, refreshUsage, getDefaults, getModels, getSettings, getKey, networkScript, program, network, testMode = false, isTailnet = isTailscale } = {}) {
     super(); this.file = path.join(root, 'mobile.json'); this.crypto = safeStorage;
     this.queue = queue; this.prompts = prompts;
     this.sessions = sessions; this.results = results; this.getUsage = getUsage; this.getDefaults = getDefaults; this.testMode = testMode;
     this.getModels = getModels;
     this.refreshUsage = refreshUsage;
     this.getSettings = getSettings;
+    // Tests substitute loopback; the app accepts only Tailscale's 100.64.0.0/10.
+    this.tailnet = isTailnet;
     this.attachments = new MobileAttachments();
     this.config = readJson(this.file, { enabled: false, host: '', port: 47831 });
     this.config.mappingId ||= crypto.randomUUID();
-    // Direct internet through the router was replaced by Tailscale. Keep the
-    // Wi-Fi address working and ask the user to choose Tailscale instead.
-    if (this.config.mode === 'internet') {
-      Object.assign(this.config, { mode: 'local', publicHost: '', externalPort: 47831, routerMode: 'manual', duckKeyId: '' });
-      this.notice = 'Direct internet access was replaced by Tailscale. Your phone still connects on the same Wi-Fi. Choose Anywhere with Tailscale in Phone setup, and remove the old port forward from your router.';
+    // Phones connect only through Tailscale. A saved Wi-Fi or direct-internet
+    // connection turns off until a Tailscale address is chosen; paired phones
+    // stay paired and keep this PC's identity.
+    if (this.config.host && !this.tailnet(this.config.host) || this.config.mode && this.config.mode !== 'tailscale') {
+      const router = this.config.mode === 'internet', keep = this.tailnet(this.config.host);
+      Object.assign(this.config, { mode: 'tailscale', publicHost: '', externalPort: 47831, routerMode: 'manual', duckKeyId: '' });
+      if (!keep) {
+        const configured = !!this.config.host;
+        Object.assign(this.config, { enabled: false, host: '' });
+        if (configured) this.config.notice = 'Phones now connect only through Tailscale, which other devices on your Wi-Fi cannot reach. Choose this PC’s Tailscale address below, then enter it in the phone app under Connection. Paired phones stay paired.' + (router ? ' Remove the old port forward from your router.' : '');
+      }
       atomicJson(this.file, this.config);
     }
+    this.notice = this.config.notice || '';
     this.network = network || new MobileNetwork({ getKey, script: networkScript, program, testMode, changed: () => this.emit('changed') });
     this.attempts = new Map(); this.attemptPeriod = Date.now(); this.attemptTotal = 0;
     this.private = { devices: [] }; this.clients = new Set(); this.streams = new Map(); this.liveAlerts = []; this.counters = { sent: 0, received: 0 }; this.error = ''; this.pairing = null; this.pendingPairing = null;
@@ -96,25 +105,25 @@ class MobileCompanion extends EventEmitter {
     if (!this.available()) throw new Error(encryptionUnavailable());
     this.config.encrypted = this.crypto.encryptString(JSON.stringify(this.private)).toString('base64'); atomicJson(this.file, this.config); this.emit('changed');
   }
-  snapshot() { const p = this.pendingPairing; return { notice: this.notice || '', name: this.name, enabled: !!this.server, host: this.config.host, port: this.config.port, mode: this.config.mode || 'local', publicHost: this.config.publicHost || '', externalPort: this.config.externalPort || 47831, routerMode: this.config.routerMode || 'manual', duckKeyId: this.config.duckKeyId || '', network: this.network.snapshot(), interfaces: interfaces(), error: this.error, devices: this.private.devices.map(({ id, name, at, directAlerts, lastInternetAt }) => ({ id, name, at, lastInternetAt, alerts: !!directAlerts, connected: [...this.clients].some(x => x.device.id === id) })), pairingExpires: this.pairing?.expires || 0, pendingPairing: p && p.expires > Date.now() && ['pending', 'approved'].includes(p.state) ? { id: p.id, name: p.name, code: p.code, expires: p.expires, state: p.state } : null, bytes: this.counters }; }
+  snapshot() { const p = this.pendingPairing; return { notice: this.notice || '', name: this.name, enabled: !!this.server, host: this.config.host, port: this.config.port, mode: 'tailscale', publicHost: this.config.publicHost || '', externalPort: this.config.externalPort || 47831, routerMode: this.config.routerMode || 'manual', duckKeyId: this.config.duckKeyId || '', network: this.network.snapshot(), interfaces: interfaces(), error: this.error, devices: this.private.devices.map(({ id, name, at, directAlerts, lastInternetAt }) => ({ id, name, at, lastInternetAt, alerts: !!directAlerts, connected: [...this.clients].some(x => x.device.id === id) })), pairingExpires: this.pairing?.expires || 0, pendingPairing: p && p.expires > Date.now() && ['pending', 'approved'].includes(p.state) ? { id: p.id, name: p.name, code: p.code, expires: p.expires, state: p.state } : null, bytes: this.counters }; }
   async configure({ enabled, host, name, port = 47831, ...remote }) {
     if (this.network.firewallMutation) throw new Error('Wait for the current firewall change to finish before changing the connection.');
     if (!enabled) { await this.stop(); this.config.enabled = false; this.persist(); return; }
-    if (!interfaces().some(x => x.address === host) || !isPrivate(host)) throw new Error('Choose this PC’s private network address.');
+    if (!interfaces().some(x => x.address === host) || !this.tailnet(host)) throw new Error('Choose this PC’s Tailscale address (100.x). Install Tailscale and sign in if none is listed.');
     if (!Number.isInteger(port) || port < 1024 || port > 65535) throw new Error('Use a port from 1024 to 65535.');
     if (!this.available()) throw new Error(encryptionUnavailable());
     const options = connectionOptions(remote);
     if (name !== undefined) options.name = deviceName(name);
-    if (options.mode === 'tailscale' && !isTailscale(host)) throw new Error('Choose this PC’s Tailscale address (100.x). Install Tailscale and sign in if none is listed.');
     const changed = host !== this.config.host || port !== this.config.port || ['mode', 'publicHost', 'externalPort'].some(key => options[key] !== this.config[key]);
     if (changed) { for (const device of this.private.devices) delete device.lastInternetAt; }
-    this.notice = '';
+    this.notice = ''; delete this.config.notice;
     await this.stop(); Object.assign(this.config, { enabled: true, host, port }, options); this.persist(); await this.start();
   }
   async start() {
     if (!this.config.enabled || this.server) return;
     if (!this.available()) throw new Error(encryptionUnavailable());
-    if (!interfaces().some(x => x.address === this.config.host)) { this.error = 'That network address is unavailable. Choose another address in Phone setup.'; this.emit('changed'); return; }
+    if (!this.tailnet(this.config.host)) { this.error = 'Phones connect only through Tailscale. Choose this PC’s Tailscale address in Phone setup.'; this.emit('changed'); return; }
+    if (!interfaces().some(x => x.address === this.config.host)) { this.error = 'This PC’s Tailscale address is unavailable. Turn on Tailscale on this PC, then try again.'; this.emit('changed'); return; }
     if (!this.private.identity) {
       const pems = await require('selfsigned').generate([{ name: 'commonName', value: 'Paddock' }], { keyType: 'ec', curve: 'P-256', algorithm: 'sha256', notBeforeDate: new Date(Date.now() - 60000), notAfterDate: new Date(Date.now() + 5 * 365 * 86400000) });
       this.private.identity = { cert: pems.cert, key: pems.private }; this.persist();
@@ -138,7 +147,7 @@ class MobileCompanion extends EventEmitter {
   acceptsPeer(req) {
     const address = req.socket.remoteAddress?.replace('::ffff:', '') || '';
     if (req.headers.origin) return false;
-    return this.config.mode === 'tailscale' ? isTailscale(address) : isPrivate(address);
+    return this.tailnet(address);
   }
   allowAttempt(req) {
     const now = Date.now();

@@ -22,12 +22,14 @@ function isTailscale(ip) {
   const [a, b] = ip.split('.').map(Number);
   return a === 100 && b >= 64 && b <= 127;
 }
-// Same Wi-Fi, or anywhere through Tailscale. Direct internet through a router
-// with Duck DNS was retired: Tailscale needs no open port or public address.
+// Phones connect only through Tailscale: an encrypted private network that
+// needs no open router port, and that other devices on a shared Wi-Fi cannot
+// reach. Same Wi-Fi and direct internet through a router were retired.
 function connectionOptions(input = {}) {
-  const mode = input.mode || 'local';
-  if (mode === 'internet') throw new Error('Direct internet was replaced by Tailscale. Choose Anywhere with Tailscale.');
-  if (!['local', 'tailscale'].includes(mode)) throw new Error('Choose same Wi-Fi or Tailscale.');
+  const mode = input.mode || 'tailscale';
+  if (mode === 'internet') throw new Error('Direct internet was replaced by Tailscale. Use this PC’s Tailscale address.');
+  if (mode === 'local') throw new Error('Same Wi-Fi connections were removed. Use this PC’s Tailscale address.');
+  if (mode !== 'tailscale') throw new Error('Phones connect through Tailscale.');
   return { mode, publicHost: '', externalPort: 47831, routerMode: 'manual', duckKeyId: '' };
 }
 function networkRelation(wan, observed) {

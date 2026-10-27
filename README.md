@@ -26,7 +26,7 @@ Updates are manual. Preview builds can see newer previews; stable builds only of
 1. Run the installer and choose where to install Paddock. It adds desktop and Start menu shortcuts.
 2. Choose your **project folder**. Tick any agents you want Paddock to install; already installed agents are detected.
 3. Choose your **default console**. Tick **Open this console when setup finishes** to launch it immediately.
-4. Optionally tick **Connect my Android phone next** and choose **Same Wi-Fi** or **Direct internet through my router**. Paddock walks you through the connection, router, Windows Firewall, pairing and optional alerts.
+4. Optionally tick **Connect my Android phone next**. Paddock walks you through the Tailscale connection, Windows Firewall, pairing and optional alerts.
 5. Sign in through that agent's console. After setup, **+** launches your saved choice. Run the wizard again from **Settings → Consoles → Set up agents**.
 
 Paddock includes Node.js and its package installer; you do not need a separate Node installation. PowerShell works immediately. Optional agents download from their official installers or npm packages and use your own accounts or API billing. Some agents have newer Windows requirements, shown in setup. Git and other project tools may still be needed by your chosen agent. Additional MCP servers may need their own software.
@@ -71,9 +71,7 @@ Use **Settings → Devices** to name your phone, add computers and switch betwee
 
 **Linux VM through SSH:** add a host in **Settings → Devices → Linux hosts**, verify its fingerprint on the VM, then check the connection. Choose it when opening a console. tmux keeps the remote session available after Paddock disconnects. A paired phone controls that same console through the PC. [SSH setup](docs/ssh-hosts.md).
 
-Phone and PC connect directly on the same Wi-Fi. For access away from home, choose **Direct internet**: Paddock checks your network, can forward a port on a compatible router, helps with Windows Firewall, and pairs your phone by QR code. This needs a reachable public IPv4 address. An upstream router or provider NAT may need a manual step; the wizard does not claim internet access works until a phone connects from outside. A private VPN you already use still works too.
-
-An optional free Duck DNS hostname follows a changing address; its token stays in Keys. If mobile data stops working, follow the [connection recovery steps](docs/android-setup.md#if-mobile-data-stops-connecting). No terminal traffic goes through a Paddock account or hosted relay. See the [setup and privacy guide](docs/android-setup.md) and [direct-internet verification](docs/direct-internet-review.md). Physical-phone internet access was verified on 18 October 2026; address changes still require a fresh test.
+The phone reaches your PC only through [Tailscale](https://tailscale.com/download), at home or away. Install it on both devices and sign in to the same account. Only devices on your Tailscale account can connect, so other devices on a shared Wi-Fi cannot reach Paddock, and no router port is opened. Paddock helps with Windows Firewall and pairs your phone by QR code. No terminal traffic goes through a Paddock account or hosted relay. See the [setup and privacy guide](docs/android-setup.md).
 
 ## Run from source
 

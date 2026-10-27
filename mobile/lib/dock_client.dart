@@ -157,9 +157,7 @@ class DockClient extends ChangeNotifier {
       foreground = true,
       streaming = true,
       dataSaver = true;
-  String selected = '',
-      status = 'Pair your PC to begin.',
-      inputError = '';
+  String selected = '', status = 'Pair your PC to begin.', inputError = '';
   // Set after a new pairing so the home screen can offer direct alerts once.
   bool offerAlerts = false;
   int received = 0, sent = 0, attempts = 0, serial = 0, generation = 0;
@@ -243,12 +241,17 @@ class DockClient extends ChangeNotifier {
       ),
     ) as Map<String, dynamic>;
     final uri = Uri.parse(invite['url'] as String);
-    final internet = invite['v'] == 2 && invite['mode'] == 'internet';
-    if ((!internet && invite['v'] != 1) ||
-        !validEndpoint(uri, internet: internet) ||
-        (invite.containsKey('localUrl') &&
-            (!internet ||
-                !validEndpoint(Uri.parse(invite['localUrl'] as String)))) ||
+    // Paddock connects only through Tailscale. Codes from a PC still set up
+    // for Wi-Fi or direct internet are refused with the way forward.
+    if (invite['v'] == 2 ||
+        invite['v'] == 1 && validEndpoint(uri) && !tailnetEndpoint(uri)) {
+      throw const FormatException(
+        'Your PC is not set up for Tailscale. In Paddock on the PC, open Phone setup, choose its Tailscale address, then show a new QR code.',
+      );
+    }
+    if (invite['v'] != 1 ||
+        !tailnetEndpoint(uri) ||
+        invite.containsKey('localUrl') ||
         !RegExp(r'^[a-f0-9]{64}$').hasMatch(invite['pin'] as String? ?? '') ||
         !RegExp(r'^[A-Za-z0-9_-]{43}$')
             .hasMatch(invite['secret'] as String? ?? '')) {
@@ -261,6 +264,26 @@ class DockClient extends ChangeNotifier {
       );
     }
     return invite;
+  }
+
+  /// Lets tests reach a loopback server in place of a Tailscale address.
+  @visibleForTesting
+  static bool loopbackForTests = false;
+
+  /// A Tailscale address (100.64.0.0/10), the only route Paddock accepts.
+  static bool tailnetEndpoint(Uri? uri) {
+    if (loopbackForTests && uri?.host == '127.0.0.1' && validEndpoint(uri!)) {
+      return true;
+    }
+    final b = uri == null
+        ? null
+        : InternetAddress.tryParse(uri.host)?.rawAddress;
+    return uri != null &&
+        b?.length == 4 &&
+        b![0] == 100 &&
+        b[1] >= 64 &&
+        b[1] <= 127 &&
+        validEndpoint(uri);
   }
 
   static bool validEndpoint(Uri uri, {bool internet = false}) {
@@ -310,11 +333,13 @@ class DockClient extends ChangeNotifier {
     return true;
   }
 
+  /// Saved routes the phone may try. Wi-Fi and internet routes saved before
+  /// Paddock became Tailscale-only are skipped, never contacted.
   static List<String> endpoints(Map<String, dynamic> config) => {
     if (config['manualUrl'] is String) config['manualUrl'] as String,
     if (config['localUrl'] is String) config['localUrl'] as String,
-    config['url'] as String,
-  }.toList();
+    if (config['url'] is String) config['url'] as String,
+  }.where((url) => tailnetEndpoint(Uri.tryParse(url))).toList();
 
   static String connectionError(Object error, Map<String, dynamic> config) {
     if (error is HandshakeException) {
@@ -335,19 +360,15 @@ class DockClient extends ChangeNotifier {
     if (tailnet) {
       return 'PC unreachable. Turn on Tailscale on this phone, signed in to the same account as your PC, and check that Paddock is running.';
     }
-    if (uri != null && validEndpoint(uri, internet: true)) {
-      return 'PC unreachable. Direct internet was replaced by Tailscale. On your PC, open Phone setup, choose Anywhere · Tailscale and pair again.';
-    }
-    return 'PC unreachable. Use the same Wi-Fi as your PC, or set up Tailscale in PC Phone setup to connect from anywhere.';
+    return 'Paddock now connects only through Tailscale. Turn on Tailscale on this phone and your PC, choose the PC’s Tailscale address in PC Phone setup, then enter it under Connection.';
   }
 
   Future<void> updateAddress(String value) async {
     final url = value.trim();
     final uri = Uri.tryParse(url);
-    if (uri == null ||
-        !(validEndpoint(uri) || validEndpoint(uri, internet: true))) {
+    if (!tailnetEndpoint(uri)) {
       throw const FormatException(
-        'Use an HTTPS address with a port from 1024 to 65535, without a path or password.',
+        'Use your PC’s Tailscale address with its port, like https://100.101.102.103:47831.',
       );
     }
     final previous = pairing;
@@ -364,18 +385,9 @@ class DockClient extends ChangeNotifier {
   Future<void> rememberRoutes(dynamic routes) async {
     final previous = pairing;
     if (previous == null || routes is! Map) return;
-    final url = routes['url'], localUrl = routes['localUrl'];
-    if (url is! String) return;
-    final uri = Uri.tryParse(url);
-    if (uri == null ||
-        !(validEndpoint(uri) || validEndpoint(uri, internet: true))) {
-      return;
-    }
-    if (localUrl != null &&
-        (localUrl is! String ||
-            !validEndpoint(Uri.tryParse(localUrl) ?? Uri()))) {
-      return;
-    }
+    final url = routes['url'];
+    const String? localUrl = null;
+    if (url is! String || !tailnetEndpoint(Uri.tryParse(url))) return;
     final name = routes['name'] is String ? routes['name'] : previous['name'];
     if (url == previous['url'] &&
         localUrl == previous['localUrl'] &&

@@ -83,7 +83,7 @@ class _ConnectionPageState extends State<ConnectionPage> {
               ),
               const SizedBox(height: 12),
               const Text(
-                'Away from home, turn on Tailscale on this phone and use the PC’s Tailscale address (100.x) with the port. Your saved PC identity still has to match.',
+                'Paddock connects only through Tailscale. Turn on Tailscale on this phone and enter the PC’s Tailscale address (100.x) with the port. Your saved PC identity still has to match.',
                 style: TextStyle(height: 1.5, color: muted),
               ),
               const SizedBox(height: 16),
