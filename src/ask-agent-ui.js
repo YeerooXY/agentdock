@@ -1,6 +1,6 @@
 import { formatAskContext, askSelectionChanged, defaultAskTarget } from './ask-agent.js';
 
-export function askAgentUI({ call, getState, targets, pasteContext, selection, showFile, escape: e }) {
+export function askAgentUI({ call, getState, targets, pasteContext, selection, showFile, toast, escape: e }) {
   const choices = new Map();
   const cwdKey = value => {
     const path = (value || '').replaceAll('\\', '/').replace(/\/$/, '');
@@ -18,7 +18,12 @@ export function askAgentUI({ call, getState, targets, pasteContext, selection, s
     node.style.left = `${Math.max(8, Math.min(point?.x ?? rect.left + 8, innerWidth - bounds.width - 8))}px`;
     node.style.top = `${Math.max(8, Math.min(point?.y ?? rect.top + 8, innerHeight - bounds.height - 8))}px`;
   }
-  function surface(r, role, label) {
+  function restore(r) {
+    if (!r.ask || !r.ask.isConnected) { close(r, false); return; }
+    try { r.ask.showPopover(); place(r, r.ask); }
+    catch { close(r, false); }
+  }
+  function surface(r, role, label, isSending = () => false) {
     close(r);
     const node = document.createElement('div');
     node.className = `ask-agent ask-agent-${role}`; node.popover = 'auto';
@@ -26,11 +31,12 @@ export function askAgentUI({ call, getState, targets, pasteContext, selection, s
     r.node.append(node); r.ask = node;
     const events = new AbortController(); r.askEvents = events;
     const dismiss = () => { if (r.ask === node) close(r, false); };
-    node.addEventListener('toggle', event => { if (event.newState === 'closed') dismiss(); });
+    node.addEventListener('toggle', event => { if (event.newState === 'closed' && !node.matches(':popover-open')) dismiss(); });
     document.addEventListener('pointerdown', event => { if (!node.contains(event.target)) dismiss(); }, { capture: true, signal: events.signal });
     document.addEventListener('scroll', event => { if (!node.contains(event.target)) dismiss(); }, { capture: true, signal: events.signal });
-    node.addEventListener('focusout', () => {
-      queueMicrotask(() => { if (!node.contains(document.activeElement)) dismiss(); });
+    node.addEventListener('focusout', event => {
+      const next = event.relatedTarget;
+      if (!isSending() && next instanceof Element && next !== document.body && !node.contains(next)) dismiss();
     });
     node.addEventListener('keydown', event => {
       event.stopPropagation();
@@ -45,7 +51,8 @@ export function askAgentUI({ call, getState, targets, pasteContext, selection, s
     const cwd = panel.cwd, key = cwdKey(cwd), sourceTicket = r.sourceTicket;
     const snapshot = { ...captured, file: r.file.file, folder: cwd.replace(/[\\/]$/, '').split(/[\\/]/).pop(), branch: r.report?.git?.after?.branch || r.report?.git?.branch || r.report?.branch,
       side: r.diff && r.file.before != null && r.file.after != null && r.file.mode !== 'file' ? 'after' : undefined };
-    const node = surface(r, 'dialog', 'Ask agent');
+    let sending = false, pending = null;
+    const node = surface(r, 'dialog', 'Ask agent', () => sending);
     node.innerHTML = `<strong>Ask agent…</strong><p>${e(snapshot.file)}:${snapshot.from}-${snapshot.to}<br>${e(snapshot.folder)}${snapshot.branch ? ` @ ${e(snapshot.branch)}` : ''}${snapshot.side ? ' · diff after side' : ''}</p><pre tabindex="0" aria-label="Selected code">${e(snapshot.text)}</pre><label>Instruction<textarea rows="3"></textarea></label><div class="ask-actions">${['Explain this', 'Look for a bug', 'Propose a fix'].map(x => `<button type="button" data-note="${x}">${x}</button>`).join('')}</div><label>Destination<select aria-label="Destination console"></select></label><p data-mismatch role="status"></p><p class="form-error" role="alert"></p><div data-stale hidden><p>The file changed since you selected this.</p><button type="button" data-keep>Keep captured version</button><button type="button" data-reselect>Reselect</button></div><div class="ask-actions"><button type="button" data-draft>Add to draft</button><button type="button" data-queue>Queue</button><button type="button" data-cancel>Cancel</button></div>`;
     const heading = node.querySelector('strong');
     heading.id = `ask-agent-heading-${r.id}`;
@@ -55,7 +62,6 @@ export function askAgentUI({ call, getState, targets, pasteContext, selection, s
     const target = node.querySelector('select'), note = node.querySelector('textarea'), error = node.querySelector('[role="alert"]');
     if (r.askReselect?.file === snapshot.file && r.askReselect.cwd === key) note.value = r.askReselect.note;
     r.askReselect = null;
-    let sending = false, pending = null;
     function update() {
       const list = targets();
       const preferred = defaultAskTarget(list, { rememberedId: choices.get(key), sourceKey: panel.codeSourceKey, cwd, platform: getState().platform });
@@ -94,6 +100,7 @@ export function askAgentUI({ call, getState, targets, pasteContext, selection, s
         choices.set(key, chosen.id);
         if (kind === 'queue') await call('queue.add', { id: chosen.id, text });
         else await pasteContext(chosen.id, text);
+        r.node.querySelector('[data-code-error]').textContent = '';
         if (r.ask === node) close(r);
       } catch (failure) { error.textContent = failure.message; }
       finally { sending = false; update(); }
@@ -113,8 +120,11 @@ export function askAgentUI({ call, getState, targets, pasteContext, selection, s
           if (r.ask !== node) return;
           if (sourceTicket !== r.sourceTicket) throw new Error('The source folder changed. Cancel and select the code again.');
           if (report) r.report = report;
-          r.askReselect = { file: snapshot.file, cwd: key, note: note.value };
           await showFile(r, current);
+          if (sourceTicket === r.sourceTicket && r.file === current) {
+            r.askReselect = { file: snapshot.file, cwd: key, note: note.value };
+            r.node.querySelector('[data-code-caption]').textContent = 'Select the lines again. Your note is kept.';
+          }
           if (r.ask === node) close(r);
         } catch (failure) { error.textContent = failure.message; }
       }
@@ -128,7 +138,11 @@ export function askAgentUI({ call, getState, targets, pasteContext, selection, s
     const buttons = [...node.querySelectorAll('button')];
     buttons[0].onclick = () => open(r, captured);
     buttons[1].onclick = async () => {
-      try { await call('clipboard.write', captured.text); }
+      try {
+        await call('clipboard.write', captured.text);
+        r.node.querySelector('[data-code-error]').textContent = '';
+        toast('Selected code copied.');
+      }
       catch (error) { r.node.querySelector('[data-code-error]').textContent = error.message; }
       finally { if (r.ask === node) close(r); }
     };
@@ -155,5 +169,5 @@ export function askAgentUI({ call, getState, targets, pasteContext, selection, s
       event.preventDefault(); event.stopPropagation(); menu(r, { x: event.clientX, y: event.clientY });
     });
   }
-  return { bind, close };
+  return { bind, close, restore };
 }

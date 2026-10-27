@@ -5,7 +5,7 @@ export function codePanelUI({ call, getState, selectedConsole, pasteContext, esc
   const records = new Map();
   const sources = () => getState().sessions.filter(x => x.alive && !x.dismissed && !x.remote && !['login', 'setup'].includes(x.purpose));
   const targets = () => sources().filter(x => !['shell', 'custom'].includes(x.provider));
-  const ask = askAgentUI({ call, getState, targets, pasteContext, selection, showFile, escape: e });
+  const ask = askAgentUI({ call, getState, targets, pasteContext, selection, showFile, toast, escape: e });
   const action = (name, text, extra = '') => `<button type="button" data-code-action="${name}" class="subtle" ${extra}>${text}</button>`;
   function card(panel) {
     return `<article class="session-card code-panel" data-console-id="${e(panel.id)}" data-slot="${panel.slot}"><header class="console-panel-header"><button class="console-grip" draggable="true" data-console-drag="${e(panel.id)}" aria-label="Move code panel" title="Drag to move. Alt + 1–9 moves to a slot.">${icon('api')}</button><span class="slot">${String(panel.slot).padStart(2, '0')}</span><strong>Code</strong><span class="code-readonly">Read only</span><button class="icon-button" data-action="toggle-console" data-id="${e(panel.id)}" aria-label="Expand code panel" title="Expand code panel">${icon('expand')}</button><button class="icon-button" data-code-action="close" aria-label="Close code panel" title="Close code panel">${icon('close')}</button></header><div class="code-panel-body"></div>${resizeHandles(panel.slot)}</article>`;
@@ -45,6 +45,7 @@ export function codePanelUI({ call, getState, selectedConsole, pasteContext, esc
     r.node.querySelector('[data-code-action="browse"]').setAttribute('aria-pressed', String(r.browse));
   }
   async function showFile(r, file) {
+    r.askReselect = null;
     const ticket = ++r.fileTicket;
     r.file = file; r.editor?.destroy(); r.editor = null;
     const host = r.node.querySelector('[data-code-editor]'); host.replaceChildren();
@@ -59,6 +60,7 @@ export function codePanelUI({ call, getState, selectedConsole, pasteContext, esc
     const view = await codeEditor(host, file, r.diff && canDiff, () => selected(r));
     if (ticket !== r.fileTicket || !records.has(r.id)) { view.destroy(); return; }
     r.editor = view; selected(r); listFiles(r);
+    r.node.querySelector('[data-code-error]').textContent = '';
   }
   async function load(r, refresh = false) {
     if (r.loading) { r.reload = true; return; } r.loading = true;
@@ -74,12 +76,12 @@ export function codePanelUI({ call, getState, selectedConsole, pasteContext, esc
         if (changed && report.changes.length) {
           const file = report.changes.find(x => x.file === r.file?.file) || report.changes[0];
           await showFile(r, await call('code.file', { id: r.id, path: file.file, reportId: report.id }));
-        } else if (changed) { r.editor?.destroy(); r.editor = null; r.file = null; ++r.fileTicket; r.node.querySelector('[data-code-editor]').textContent = 'Choose Browse files to inspect this project.'; r.node.querySelector('[data-code-filename]').textContent = ''; selected(r); }
+        } else if (changed) { r.askReselect = null; r.editor?.destroy(); r.editor = null; r.file = null; ++r.fileTicket; r.node.querySelector('[data-code-editor]').textContent = 'Choose Browse files to inspect this project.'; r.node.querySelector('[data-code-filename]').textContent = ''; selected(r); }
       }
     } catch (error) { r.node.querySelector('[data-code-error]').textContent = error.message; }
     finally { r.loading = false; r.node.querySelector('[data-code-action="refresh"]').disabled = false; if (r.reload) { r.reload = false; void load(r); } }
   }
-  async function browse(r, path = '') { r.directory = await call('code.browse', { id: r.id, path }); r.browse = true; listFiles(r); }
+  async function browse(r, path = '') { r.directory = await call('code.browse', { id: r.id, path }); r.browse = true; listFiles(r); r.node.querySelector('[data-code-error]').textContent = ''; }
   function mount(panel, host) {
     let r = records.get(panel.id);
     if (!r) {
@@ -104,16 +106,17 @@ export function codePanelUI({ call, getState, selectedConsole, pasteContext, esc
             if (value.context.length > 60000) throw new Error('Select fewer than 60,000 characters.');
             if (a === 'copy') { await call('clipboard.write', value.text); toast('Selected code copied.'); }
             else await pasteContext(node.querySelector('[data-code-target]').value, value.context);
+            node.querySelector('[data-code-error]').textContent = '';
           }
         } catch (error) { node.querySelector('[data-code-error]').textContent = error.message; }
       });
       node.querySelector('[data-code-source]').addEventListener('change', async event => {
         if (!event.target.value) { chooseOptions(r, panel); return; }
-        try { ++r.sourceTicket; await call('code.source', { id: r.id, sourceId: event.target.value }); r.browse = false; r.report = null; await load(r); }
+        try { r.askReselect = null; ++r.sourceTicket; await call('code.source', { id: r.id, sourceId: event.target.value }); r.browse = false; r.report = null; await load(r); }
         catch (error) { node.querySelector('[data-code-error]').textContent = error.message; }
       });
     }
-    if (r.node.parentElement !== host) host.append(r.node);
+    if (r.node.parentElement !== host) { host.append(r.node); ask.restore(r); }
     chooseOptions(r, panel);
     if (r.ask) r.updateAsk?.();
     const revision = `${panel.codeSourceKey}:${getState().codeRevision || 0}`;
