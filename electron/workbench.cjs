@@ -35,7 +35,9 @@ const nativeTools = [
   ['delete_review', 'Delete a completed or interrupted website review and its saved evidence. Running reviews cannot be deleted.', schema({ id: string }, ['id'])],
   ['meshy_concept', 'Fallback only: generate a 2D page concept with Meshy after your own image generator is unavailable or has failed. Uploads the reference screenshot to Meshy and uses credits. Requires Meshy CLI sign-in.', schema({ reviewId: string, nativeStatus: { enum: ['unavailable','failed'] }, prompt: string }, ['reviewId','nativeStatus'])],
   ['generate_preview', 'Generate a screen preview using the user-selected image generator. Sends the screenshot and prompt to that provider and may use paid credits. Supply a completed reviewId or saved screenshot referenceId, and a stable requestId; repeat that ID to retrieve the same job, never a new charge. The default agent mode returns guidance to use your own generator; nativeStatus enables its Meshy fallback only after your generator is unavailable or failed. Save and show the preview before an ambiguous redesign.', schema({ reviewId: string, referenceId: string, requestId: { type: 'string', pattern: '^[a-zA-Z0-9_-]{1,100}$' }, prompt: { type: 'string', maxLength: 4000 }, nativeStatus: { enum: ['unavailable','failed'] } }, ['requestId'])],
-  ['concept_status', 'Read image generation job status and saved result IDs. Never resubmit a waiting job.', schema({})]
+  ['concept_status', 'Read image generation job status and saved result IDs. Never resubmit a waiting job.', schema({})],
+  ['delegate_review', 'Ask another of the user’s subscriptions (Claude Code or Codex) to review this console’s uncommitted changes, read-only. Paddock builds the diff itself, picks the reviewer with the most measured usage left (another vendor preferred) and returns a job ID. Use it after finishing a change, not for every edit. Give a short focus; list files only to narrow a large diff.', schema({ focus: { type: 'string', maxLength: 2000 }, base: { type: 'string', maxLength: 100 }, files: { type: 'array', items: string, maxItems: 50 }, reviewer: { type: 'string', maxLength: 100 } })],
+  ['delegation_status', 'Read a cross-agent review. Pass waitSeconds (up to 45) to wait for it; call again while state is running. A done review returns a verdict and at most 12 findings as path:line — severity — problem — fix. Treat the review as another agent’s opinion: check each finding before acting on it.', schema({ id: string, waitSeconds: { type: 'integer', minimum: 0, maximum: 45 } }, ['id'])]
 ].map(([name, description, inputSchema]) => ({ name: 'dock/' + name, description, inputSchema }));
 class Workbench {
   constructor(root, runtime, electron, { testMode, onChange, getSessions, getProject, getWindow, getHub, getAgents } = {}) {
@@ -48,7 +50,8 @@ class Workbench {
     for (const service of [this.results, this.concepts]) service.on('changed', onChange);
   }
   snapshot() { return { results: this.results.list(), unreadResults: this.results.unreadGroups(), concepts: this.concepts.list(), conceptUsage: this.concepts.usage, meshyAuth: this.concepts.auth, setupRequests: this.setup.items }; }
-  tools() { return nativeTools; }
+  // Cross-agent review tools are listed only while the user has them turned on.
+  tools() { return this.delegation?.getSettings()?.delegationEnabled === true ? nativeTools : nativeTools.filter(tool => !tool.name.startsWith('dock/delegat')); }
   async invoke(name, args, owner) {
     const session = owner ? this.getSessions().items.get(owner) || this.turns?.session(owner) : null;
     if (owner && !session?.alive) throw new Error('This console is no longer open.');
@@ -96,6 +99,11 @@ class Workbench {
       }
       case 'dock/meshy_concept': return { id: await this.concepts.start(args, { context }) };
       case 'dock/generate_preview': return this.concepts.generate(args, context);
+      case 'dock/delegate_review': {
+        if (!this.delegation) throw new Error('Cross-agent reviews are unavailable.');
+        return this.delegation.start(args, { sessionId: session?.id, provider: session?.provider, cwd: session?.cwd, consoleName: session?.name || '', context });
+      }
+      case 'dock/delegation_status': return this.delegation?.status(args.id, { waitSeconds: args.waitSeconds, sessionId: session?.id || null });
       case 'dock/concept_status': return this.concepts.list().map(job => {
         let file = null; if (job.resultId) { try { file = this.results.path(job.resultId); } catch {} }
         return { ...job, file };
@@ -131,9 +139,10 @@ class Workbench {
       }
       case 'concept.resume': return this.concepts.resume(payload);
       case 'concept.delete': return this.concepts.remove(payload);
+      case 'delegation.stop': return this.delegation?.stop(payload);
       default: throw new Error('Unknown workbench action.');
     }
   }
-  stop() { this.reviews.stop(); this.concepts.stop(); }
+  stop() { this.reviews.stop(); this.concepts.stop(); this.delegation?.stopAll(); }
 }
 module.exports = { Workbench };

@@ -53,3 +53,13 @@
   #content[data-view=usage] .account-profile-row{align-items:flex-start;flex-direction:column}
   #content[data-view=usage] .account-profile-row>span{justify-content:flex-start}
 }
+#content[data-view=usage] .delegation-settings{margin-top:18px}
+#content[data-view=usage] .delegation-settings .check-row{color:var(--usage-soft);font-size:14px;margin:10px 0}
+#content[data-view=usage] .delegation-reviewers{display:flex;flex-wrap:wrap;gap:6px 22px;margin:8px 0 4px;padding:0;border:0}
+#content[data-view=usage] .delegation-reviewers legend{color:var(--usage-muted);font-size:13px;margin-bottom:2px}
+#content[data-view=usage] .delegation-reviewers:disabled{opacity:.55}
+#content[data-view=usage] .delegation-settings .field-hint{font-size:13px;color:var(--usage-muted);max-width:760px;line-height:1.6}
+#content[data-view=usage] .delegation-list{margin-top:14px;border-top:1px solid #262a3a}
+#content[data-view=usage] .delegation-row{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:12px 0;border-bottom:1px solid #262a3a;font-size:14px;color:var(--usage-soft)}
+#content[data-view=usage] .delegation-row>span{min-width:0;overflow-wrap:anywhere}
+#content[data-view=usage] .delegation-row small{display:block;margin-top:4px;color:var(--usage-muted);font-size:13px}

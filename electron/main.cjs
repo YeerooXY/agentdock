@@ -20,6 +20,8 @@ const { MessageUsage, apiMessages } = require('./message-usage.cjs');
 const { Updates } = require('./updates.cjs');
 const { loginPath } = require('./platform.cjs');
 const { Workbench } = require('./workbench.cjs');
+const { Delegation, REVIEWERS } = require('./delegation.cjs');
+const { resultGitContext } = require('./git-context.cjs');
 const { creativeTools } = require('./creative-tools.cjs');
 const { Turns } = require('./turns.cjs');
 const { MobileCompanion } = require('./mobile.cjs');
@@ -73,7 +75,7 @@ const projectsFolder = path.join(os.homedir(), 'Projects');
 const defaultFolder = fs.existsSync(projectsFolder) && fs.statSync(projectsFolder).isDirectory() ? projectsFolder : os.homedir();
 function snapshot() {
   return { platform: process.platform, mode, transitioning, trayHidden, sessions: sessions?.list() || [], codePanels: sessions?.codePanels() || [], queues: messageQueue?.snapshot() || {}, prompts: prompts?.list() || [], codeRevision: codePanel?.revision || 0, limits, accounts: ['codex', 'claude'].flatMap(provider => accounts?.choices(provider) || []), recent, accountError, refreshing, lastRefresh, agents: cliSetup?.snapshot() || [], agentSetupBusy: !!cliSetup?.running, skills: skillPacks?.snapshot() || { packs: [], busy: false },
-    usageAccounts: usageAccounts(), usageChecks: subscriptionUsage?.snapshot() || [],
+    usageAccounts: usageAccounts(), usageChecks: subscriptionUsage?.snapshot() || [], delegations: workbench?.delegation?.snapshot() || [],
     sshHosts: ssh?.list() || [], capabilities, projects: projects?.list() || [], messages: [...(messageUsage?.items || []), ...apiMessages(ledger || [])].sort((a,b) => b.at - a.at).slice(0, 200), mobile: mobile?.snapshot(), workbench: workbench?.snapshot(), vault: { available: vault?.available() || false, entries: vault?.list() || [] },
     ledger: ledger || [], summary: ledgerSummary(ledger || []), shared: hub?.snapshot(), updates: updates?.snapshot(), grid: sessions?.grid || settings?.grid, settings, storageError, workspaceError, shortcutAvailable,
     integrations: integrations?.snapshot(hub?.config.connections || [], vault?.list() || []), toolCatalog: mcpCatalog?.snapshot(hub?.config.connections || []) || [],
@@ -337,6 +339,19 @@ app.whenReady().then(async () => {
   mcpCatalog = new McpCatalog(root, runtime, { run: runProgram, downloads: new ManagedDownloads(root), onChange: publish });
   workbench = new Workbench(root, runtime, require('electron'), { testMode, onChange: publish, getSessions: () => sessions, getProject: () => settings.consoleDefaults.cwd, getWindow: () => window, getHub: () => hub, getAgents: () => cliSetup.snapshot() });
   projects = new Projects(root); projects.on('changed', publish); workbench.projects = projects;
+  // Reviewers are the user's own signed-in Claude Code and Codex accounts.
+  workbench.delegation = new Delegation(root, {
+    testMode, getSettings: () => settings,
+    getLimits: () => limits.map(item => ({ ...item, accountId: limitAccountId(item) })),
+    candidates: () => REVIEWERS.flatMap(provider => {
+      const executable = cliSetup.executable(provider), name = provider === 'claude' ? 'Claude Code' : 'Codex';
+      return executable ? accounts.choices(provider).filter(choice => !choice.profile || choice.loginCompletedAt)
+        .map(choice => ({ id: choice.id, provider, label: choice.profile ? `${name} · ${choice.label}` : name, executable })) : [];
+    }),
+    environment: (id, provider) => usageEnvironment(accounts.environment(id, provider, { baseEnv: process.env })),
+    saveResult: async (raw, context) => workbench.results.add(raw, await resultGitContext({}, context || {}, workbench.results.root))
+  });
+  workbench.delegation.on('changed', publish);
   projects.on('tracking-error', message => { storageError = message; publish(); });
   hub = new SharedHub(root, vault, { integrations, workbench, skills: () => skillPacks.snapshot().packs, confirm: confirmToolCall, isLaunchCurrent: owner => {
     const item = sessions?.items.get(owner?.sessionId);
@@ -796,6 +811,11 @@ app.whenReady().then(async () => {
             next.accountSwitchThreshold = threshold;
           }
           if (typeof payload?.autoSwitchAccounts === 'boolean') next.autoSwitchAccounts = payload.autoSwitchAccounts;
+          if (typeof payload?.delegationEnabled === 'boolean') next.delegationEnabled = payload.delegationEnabled;
+          if (payload?.delegationProviders !== undefined) {
+            if (!Array.isArray(payload.delegationProviders) || payload.delegationProviders.some(id => !REVIEWERS.includes(id))) throw new Error('Choose reviewers from Claude Code and Codex.');
+            next.delegationProviders = [...new Set(payload.delegationProviders)];
+          }
           if (typeof payload?.suggestProjects === 'boolean') next.suggestProjects = payload.suggestProjects;
           if (typeof payload?.sidebarCollapsed === 'boolean') next.sidebarCollapsed = payload.sidebarCollapsed;
           if (typeof payload?.vimControls === 'boolean') next.vimControls = payload.vimControls;
