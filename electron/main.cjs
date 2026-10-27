@@ -345,10 +345,14 @@ app.whenReady().then(async () => {
     getLimits: () => limits.map(item => ({ ...item, accountId: limitAccountId(item) })),
     candidates: () => REVIEWERS.flatMap(provider => {
       const executable = cliSetup.executable(provider), name = provider === 'claude' ? 'Claude Code' : 'Codex';
+      // Kiro has no Paddock account profiles; its own sign-in is used.
+      if (provider === 'kiro') return executable ? [{ id: 'kiro:default', provider, label: 'Kiro', executable }] : [];
       return executable ? accounts.choices(provider).filter(choice => !choice.profile || choice.loginCompletedAt)
         .map(choice => ({ id: choice.id, provider, label: choice.profile ? `${name} · ${choice.label}` : name, executable })) : [];
     }),
-    environment: (id, provider) => usageEnvironment(accounts.environment(id, provider, { baseEnv: process.env })),
+    environment: (id, provider) => usageEnvironment(provider === 'kiro'
+      ? Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.toLowerCase().startsWith('paddock_')))
+      : accounts.environment(id, provider, { baseEnv: process.env })),
     saveResult: async (raw, context) => workbench.results.add(raw, await resultGitContext({}, context || {}, workbench.results.root))
   });
   workbench.delegation.on('changed', publish);
@@ -813,7 +817,7 @@ app.whenReady().then(async () => {
           if (typeof payload?.autoSwitchAccounts === 'boolean') next.autoSwitchAccounts = payload.autoSwitchAccounts;
           if (typeof payload?.delegationEnabled === 'boolean') next.delegationEnabled = payload.delegationEnabled;
           if (payload?.delegationProviders !== undefined) {
-            if (!Array.isArray(payload.delegationProviders) || payload.delegationProviders.some(id => !REVIEWERS.includes(id))) throw new Error('Choose reviewers from Claude Code and Codex.');
+            if (!Array.isArray(payload.delegationProviders) || payload.delegationProviders.some(id => !REVIEWERS.includes(id))) throw new Error('Choose reviewers from Claude Code, Codex and Kiro.');
             next.delegationProviders = [...new Set(payload.delegationProviders)];
           }
           // Which subscriptions the Usage page lists; a display preference only.

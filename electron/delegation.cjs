@@ -10,10 +10,10 @@ const { EventEmitter } = require('node:events');
 const { permitted } = require('./code-panel.cjs');
 const { programLaunch } = require('./platform.cjs');
 
-const REVIEWERS = ['claude', 'codex'];
+const REVIEWERS = ['claude', 'codex', 'kiro'];
 const MAX_DIFF = 150_000, MAX_REPLY = 6000, MAX_FOCUS = 2000, MAX_FILES = 50;
 const MAX_RUNNING = 2, MAX_PER_HOUR = 20, FRESH_MS = 30 * 60_000, FULL_PERCENT = 90;
-const names = { claude: 'Claude Code', codex: 'Codex' };
+const names = { claude: 'Claude Code', codex: 'Codex', kiro: 'Kiro' };
 
 function git(cwd, args, run = execFile) {
   return new Promise((resolve, reject) => run('git', args, { cwd, windowsHide: true, maxBuffer: 8 * 1024 * 1024, timeout: 20000 }, (error, stdout) => error ? reject(error) : resolve(String(stdout))));
@@ -96,11 +96,14 @@ function pickReviewer({ candidates, limits, callerProvider, requested, now = Dat
   return scored[0];
 }
 
-function reviewerLaunch(provider, executable, { briefFile, outFile, model }) {
-  const prompt = `Read the review brief in ${briefFile} and follow it exactly.`;
+// Every reviewer reads the brief from stdin, so it never needs file access outside the project.
+function reviewerLaunch(provider, executable, { outFile, model, platform = process.platform }) {
   const args = provider === 'claude'
-    ? ['-p', prompt, '--output-format', 'json', '--add-dir', path.dirname(briefFile), '--tools', 'Read,Grep,Glob', '--strict-mcp-config', '--no-session-persistence', ...(model ? ['--model', model] : [])]
-    : ['exec', '--sandbox', 'read-only', '--ephemeral', '--skip-git-repo-check', '--color', 'never', '-o', outFile, ...(model ? ['-m', model] : []), prompt];
+    ? ['-p', '--output-format', 'json', '--tools', 'Read,Grep,Glob', '--strict-mcp-config', '--no-session-persistence', ...(model ? ['--model', model] : [])]
+    : provider === 'kiro'
+      ? ['chat', '--no-interactive', '--trust-tools=fs_read', ...(model ? ['--model', model] : [])]
+      // Codex's default Windows sandbox rejects every command, even reads; the unelevated one enforces read-only.
+      : ['exec', '--sandbox', 'read-only', ...(platform === 'win32' ? ['-c', 'windows.sandbox=unelevated'] : []), '--ephemeral', '--skip-git-repo-check', '--color', 'never', '-o', outFile, ...(model ? ['-m', model] : []), '-'];
   return programLaunch(executable, args);
 }
 
@@ -112,6 +115,11 @@ function parseReply(provider, stdout, outFile) {
     if (!data || data.is_error) throw new Error(String(data?.result || 'The reviewer returned no answer.').slice(0, 300));
     text = String(data.result || '');
     usage = { inputTokens: data.usage?.input_tokens ?? null, outputTokens: data.usage?.output_tokens ?? null, turns: data.num_turns ?? null };
+  } else if (provider === 'kiro') {
+    // Kiro prints its working notes first; the answer is the last VERDICT block.
+    text = stdout.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '');
+    const last = text.lastIndexOf('VERDICT:');
+    if (last >= 0) text = text.slice(last);
   } else {
     try { text = fs.readFileSync(outFile, 'utf8'); } catch { text = ''; }
   }
@@ -159,16 +167,15 @@ class Delegation extends EventEmitter {
     const picked = pickReviewer({ candidates: this.allowed(), limits: this.getLimits(), callerProvider: caller.provider, requested: args.reviewer, now: this.now() });
     const id = randomUUID(), folder = path.join(this.dir, id);
     fs.mkdirSync(folder, { recursive: true });
-    const briefFile = path.join(folder, 'brief.md'), outFile = path.join(folder, 'reply.md');
-    fs.writeFileSync(briefFile, reviewBrief({ focus, changes }), { mode: 0o600 });
+    const brief = reviewBrief({ focus, changes }), outFile = path.join(folder, 'reply.md');
     const job = { id, state: 'running', reviewer: { accountId: picked.choice.id, provider: picked.choice.provider, label: picked.choice.label }, why: picked.why,
       callerSessionId: caller.sessionId, consoleName: caller.consoleName || '', context: caller.context, focus, files: changes.files.length + changes.untracked.length,
       startedAt: this.now(), finishedAt: null, verdict: null, text: '', error: '', usage: null, resultId: null, waiters: [] };
     this.jobs.set(id, job); this.started.push(job.startedAt); this.emit('changed');
-    this.run_(job, { briefFile, outFile, folder });
+    this.run_(job, { brief, outFile, folder });
     return this.status(id);
   }
-  run_(job, { briefFile, outFile, folder }) {
+  run_(job, { brief, outFile, folder }) {
     const settings = this.getSettings() || {}, provider = job.reviewer.provider;
     const finish = (patch) => {
       if (job.state !== 'running') return;
@@ -182,8 +189,10 @@ class Delegation extends EventEmitter {
     try {
       const executable = this.candidates().find(c => c.id === job.reviewer.accountId)?.executable;
       if (!executable) throw new Error(`${names[provider]} is no longer installed.`);
-      const launch = reviewerLaunch(provider, executable, { briefFile, outFile, model: settings.delegationModels?.[provider] });
-      child = this.spawnProcess(launch.executable, launch.args, { cwd: job.context?.project || undefined, env: this.environment(job.reviewer.accountId, provider), windowsHide: true, shell: false, stdio: ['ignore', 'pipe', 'pipe'] });
+      const launch = reviewerLaunch(provider, executable, { outFile, model: settings.delegationModels?.[provider] });
+      child = this.spawnProcess(launch.executable, launch.args, { cwd: job.context?.project || undefined, env: this.environment(job.reviewer.accountId, provider), windowsHide: true, shell: false, stdio: ['pipe', 'pipe', 'pipe'] });
+      child.stdin?.on('error', () => {});
+      child.stdin?.end(brief);
     } catch (error) { finish({ state: 'failed', error: error.message }); return; }
     this.children.set(job.id, child);
     child.stdout?.on('data', chunk => { if (stdout.length < 2_000_000) stdout += chunk; });

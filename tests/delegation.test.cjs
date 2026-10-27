@@ -3,7 +3,7 @@ const test = require('node:test'), assert = require('node:assert/strict');
 const fs = require('node:fs'), os = require('node:os'), path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { EventEmitter } = require('node:events');
-const { Delegation, collectChanges, pickReviewer, reviewerLaunch, cleanFiles, reviewBrief } = require('../electron/delegation.cjs');
+const { Delegation, collectChanges, pickReviewer, reviewerLaunch, cleanFiles, reviewBrief, parseReply } = require('../electron/delegation.cjs');
 const { Workbench } = require('../electron/workbench.cjs');
 
 const now = 1_800_000_000_000;
@@ -27,15 +27,26 @@ test('the reviewer is the account with the most measured room, another vendor pr
   assert.throws(() => pickReviewer({ candidates: [codex], limits: full, callerProvider: 'claude', now }), /90%/);
 });
 
-test('reviewers start read-only, without Paddock tools, and read the brief from a file', () => {
-  const brief = path.join(os.tmpdir(), 'paddock-review', 'brief.md');
-  const c = reviewerLaunch('claude', '/usr/bin/claude.exe', { briefFile: brief, outFile: 'x' }).args;
+test('reviewers start read-only, without Paddock tools, and read the brief from stdin', () => {
+  const c = reviewerLaunch('claude', '/usr/bin/claude.exe', { outFile: 'x' }).args;
   assert.deepEqual(c.slice(c.indexOf('--tools'), c.indexOf('--tools') + 2), ['--tools', 'Read,Grep,Glob']);
   assert.ok(c.includes('--strict-mcp-config') && c.includes('--no-session-persistence') && c.includes('-p'));
-  assert.ok(!c.some(arg => /skip-permissions|bypass|yolo/i.test(arg)));
-  const x = reviewerLaunch('codex', '/usr/bin/codex.exe', { briefFile: brief, outFile: '/tmp/out.md' }).args;
+  assert.ok(!c.some(arg => /skip-permissions|bypass|yolo|add-dir/i.test(arg)));
+  const x = reviewerLaunch('codex', '/usr/bin/codex.exe', { outFile: '/tmp/out.md', model: 'gpt-6.1-sol', platform: 'win32' }).args;
   assert.deepEqual(x.slice(0, 3), ['exec', '--sandbox', 'read-only']);
-  assert.ok(x.includes('--ephemeral') && x.at(-1).includes(brief));
+  assert.ok(x.includes('windows.sandbox=unelevated'), 'Windows needs the unelevated sandbox to run read commands');
+  assert.ok(x.includes('--ephemeral') && x.at(-1) === '-' && x.includes('gpt-6.1-sol'));
+  assert.ok(!reviewerLaunch('codex', '/usr/bin/codex.exe', { outFile: 'o', platform: 'linux' }).args.includes('windows.sandbox=unelevated'));
+  const k = reviewerLaunch('kiro', '/usr/bin/kiro-cli.exe', { outFile: 'o' }).args;
+  assert.deepEqual(k, ['chat', '--no-interactive', '--trust-tools=fs_read']);
+  assert.ok(!k.some(arg => /trust-all|-a$/.test(arg)));
+});
+
+test('a Kiro reply keeps only its last verdict block', () => {
+  const esc = String.fromCharCode(27);
+  const noisy = ['Looking at the diff... VERDICT: changes-requested is possible', `${esc}[32mstill thinking${esc}[0m`, 'VERDICT: approve', 'FINDINGS:', '- none', ''].join('\n');
+  const reply = parseReply('kiro', noisy, '');
+  assert.equal(reply.verdict, 'approve'); assert.equal(reply.text, ['VERDICT: approve', 'FINDINGS:', '- none'].join('\n'));
 });
 
 test('file filters stay inside the project', () => {
@@ -66,6 +77,7 @@ function fakeCli() {
   const spawned = [];
   const spawnProcess = (executable, args, options) => {
     const child = new EventEmitter(); child.stdout = new EventEmitter(); child.stderr = new EventEmitter(); child.killed = false;
+    child.stdin = { written: '', on() {}, end(text) { this.written += text; } };
     child.kill = () => { child.killed = true; child.emit('close', null); };
     spawned.push({ executable, args, options, child }); return child;
   };
@@ -87,6 +99,7 @@ test('a review runs once per console, returns a short verdict and is saved in Re
   const started = await delegation.start({ focus: 'Off-by-one?' }, caller);
   assert.equal(started.state, 'running'); assert.equal(started.reviewer, 'Codex');
   assert.deepEqual(cli.spawned[0].options.env, { ACCOUNT: 'codex:default', PROVIDER: 'codex' });
+  assert.match(cli.spawned[0].child.stdin.written, /Off-by-one\?/); assert.match(cli.spawned[0].child.stdin.written, /VERDICT: approve \| changes-requested/);
   await assert.rejects(delegation.start({}, caller), /already has a review/);
   await assert.rejects(delegation.status(started.id, { sessionId: 'other' }), /No review/);
   // Codex writes its last message to the -o file.
