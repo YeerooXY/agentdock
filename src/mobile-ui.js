@@ -10,6 +10,17 @@ export function mobileUI({ call, getState, escape: e, icon, toast, navigate }) {
   const defaultHost = s => s.interfaces.find(x => x.tailscale)?.address || '';
   const options = (items, selected) => items.map(([value, label]) => `<option value="${e(value)}" ${value === selected ? 'selected' : ''}>${e(label)}</option>`).join('');
   function remember() { for (const input of dialog.querySelectorAll('[data-phone-name]')) phoneNames.set(input.dataset.phoneName, input.value); for (const input of dialog.querySelectorAll('[data-field]')) draft[input.dataset.field] = input.value; }
+  // The Connection step shows the PC, the encrypted Tailscale link and the
+  // phone, animated to match how far the connection has come.
+  const linkState = s => !s.interfaces.some(x => x.tailscale) ? 'missing' : !s.enabled ? 'found' : s.devices.some(d => d.connected) ? 'linked' : 'waiting';
+  const linkCaptions = { missing: 'Waiting for Tailscale on this PC.', found: 'Tailscale found. Enable the connection below.', waiting: 'Connection on. Waiting for your phone.', linked: 'Your phone is connected.' };
+  const linkPath = 'M134 50C178 18 214 92 262 58';
+  const linkArt = s => `<figure class="mobile-link" data-state="${linkState(s)}"><svg viewBox="0 0 340 114" aria-hidden="true" focusable="false"><g class="link-pc"><rect x="16" y="14" width="112" height="72" rx="8" class="device-body"/><rect x="24" y="22" width="96" height="56" rx="4" class="device-screen"/><path d="M40 40l10 8-10 8M56 58h16" class="device-glyph"/><path d="M72 86v12M52 100h40" class="device-stand"/></g><path d="${linkPath}" class="link-track"/><path d="${linkPath}" class="link-flow" pathLength="100"/><path d="M262 58C214 92 178 18 134 50" class="link-flow link-return" pathLength="100"/><g class="link-lock"><circle cx="197" cy="55" r="15"/><rect x="190" y="54" width="14" height="10" rx="2"/><path d="M193 54v-3a4 4 0 0 1 8 0v3"/></g><g class="link-phone"><circle cx="296" cy="58" r="30" class="phone-ring"/><rect x="274" y="10" width="44" height="96" rx="9" class="device-body"/><rect x="279" y="20" width="34" height="74" rx="4" class="device-screen"/><path d="M286 58l7 7 13-14" class="phone-check" pathLength="1"/></g></svg><figcaption role="status">${linkCaptions[linkState(s)]}</figcaption></figure>`;
+  function updateLink() {
+    const figure = dialog.querySelector('.mobile-link'), next = linkState(state());
+    if (!figure || figure.dataset.state === next) return;
+    figure.dataset.state = next; figure.querySelector('figcaption').textContent = linkCaptions[next];
+  }
   function connectionChanged() {
     const s = state();
     return draft.host !== s.host;
@@ -54,7 +65,7 @@ export function mobileUI({ call, getState, escape: e, icon, toast, navigate }) {
   function render() {
     const s = state(), addresses = s.interfaces.filter(x => x.tailscale);
     const pages = [
-      `<h2>Connect your phone</h2><div class="wb-toolbar"><button type="button" class="secondary" data-docs="android-download">Get the Android app ↗</button></div>
+      `<h2>Connect your phone</h2>${linkArt(s)}<div class="wb-toolbar"><button type="button" class="secondary" data-docs="android-download">Get the Android app ↗</button></div>
       ${s.notice ? `<p class="mobile-network-note" role="status">${e(s.notice)}</p>` : ''}
       <div class="mobile-name-row"><label>This PC’s name<input data-field="name" value="${e(draft.name)}" maxlength="64" autocomplete="off"></label>${button('rename-pc', 'Save name')}</div>
       <p>Your phone reaches this PC through Tailscale, an encrypted private network. Only devices signed in to your Tailscale account can connect, at home or away. No router port forwarding is needed.</p>
@@ -136,5 +147,6 @@ export function mobileUI({ call, getState, escape: e, icon, toast, navigate }) {
     if (invite && !state().pairingExpires) invite = null;
     if (dialog.open && !busy && step === 2 && changed) { remember(); render(); }
     if (networkChanged) renderFirewall();
+    if (dialog.open && step === 0) updateLink();
   } };
 }

@@ -57,3 +57,35 @@
 .diff-remove { color:#ffc0cf; background:#451c2e; }
 .diff-hunk { color:#b7cbff; }
 @media(max-width:600px) { .mobile-setup{padding:18px} .mobile-tabs button{font-size:12px;flex-basis:40%} .mobile-step{min-height:0} .mobile-fields{grid-template-columns:1fr;gap:0} }
+.mobile-link { margin:4px 0 18px; padding:14px 12px 10px; border:1px solid color-mix(in srgb,var(--accent-blue,#89b4ff) 24%,#2a2638); border-radius:14px; background:radial-gradient(ellipse at 50% 45%,color-mix(in srgb,var(--accent-blue,#89b4ff) 10%,transparent),transparent 70%),#05060c; text-align:center; }
+.mobile-link svg { display:block; width:100%; max-width:400px; height:auto; margin:0 auto; overflow:visible; }
+.mobile-link figcaption { margin-top:6px; color:#d6d4ea; font-size:14px; }
+.mobile-link .device-body { fill:#0b0d16; stroke:#4a4660; stroke-width:2; transition:stroke .5s }
+.mobile-link .device-screen { fill:#11131f; transition:fill .5s }
+.mobile-link .device-glyph { fill:none; stroke:#5d5a75; stroke-width:3; stroke-linecap:round; stroke-linejoin:round; transition:stroke .5s }
+.mobile-link .device-stand { fill:none; stroke:#4a4660; stroke-width:3; stroke-linecap:round }
+.link-track { fill:none; stroke:#3a3650; stroke-width:2; stroke-dasharray:3 6 }
+.link-flow { fill:none; stroke:var(--accent-blue,#89b4ff); stroke-width:3; stroke-linecap:round; stroke-dasharray:3 9; opacity:0; transition:opacity .5s; animation:link-flow 1.4s linear infinite }
+.link-return { stroke:var(--accent-pink,#f19cda); animation-delay:-.7s }
+.link-lock circle { fill:#0b0d16; stroke:#4a4660; stroke-width:2; transition:stroke .5s }
+.link-lock rect { fill:#4a4660; transition:fill .5s }
+.link-lock path { fill:none; stroke:#4a4660; stroke-width:2.5; transition:stroke .5s }
+.phone-ring { fill:none; stroke:var(--accent-blue,#89b4ff); stroke-width:2; opacity:0; transform-box:view-box; transform-origin:296px 58px }
+.phone-check { fill:none; stroke:#9de0bb; stroke-width:4; stroke-linecap:round; stroke-linejoin:round; stroke-dasharray:1; stroke-dashoffset:1 }
+.mobile-link[data-state=missing] .link-pc .device-screen { animation:link-scan 2.4s ease-in-out infinite }
+.mobile-link:not([data-state=missing]) .link-pc .device-body { stroke:var(--accent-blue,#89b4ff) }
+.mobile-link:not([data-state=missing]) .link-pc .device-screen { fill:color-mix(in srgb,var(--accent-blue,#89b4ff) 16%,#0b0d16) }
+.mobile-link:not([data-state=missing]) .device-glyph { stroke:var(--accent-blue,#89b4ff) }
+.mobile-link:is([data-state=waiting],[data-state=linked]) .link-flow:not(.link-return),.mobile-link[data-state=linked] .link-return { opacity:1 }
+.mobile-link:is([data-state=waiting],[data-state=linked]) .link-lock circle,.mobile-link:is([data-state=waiting],[data-state=linked]) .link-lock path { stroke:var(--accent-blue,#89b4ff) }
+.mobile-link:is([data-state=waiting],[data-state=linked]) .link-lock rect { fill:var(--accent-blue,#89b4ff) }
+.mobile-link[data-state=waiting] .phone-ring { animation:link-ring 1.8s ease-out infinite }
+.mobile-link[data-state=linked] .link-phone .device-body { stroke:var(--accent-pink,#f19cda) }
+.mobile-link[data-state=linked] .link-phone .device-screen { fill:color-mix(in srgb,var(--accent-pink,#f19cda) 14%,#0b0d16) }
+.mobile-link[data-state=linked] .phone-check { animation:link-check .6s .2s ease-out forwards }
+.mobile-link[data-state=linked] .link-lock { filter:drop-shadow(0 0 6px var(--accent-blue,#89b4ff)) }
+@keyframes link-flow { to { stroke-dashoffset:-12 } }
+@keyframes link-scan { 50% { fill:#1d1f30 } }
+@keyframes link-ring { 0% { opacity:.7; transform:scale(.6) } 100% { opacity:0; transform:scale(1.35) } }
+@keyframes link-check { to { stroke-dashoffset:0 } }
+@media(prefers-reduced-motion:reduce) { .mobile-link[data-state=linked] .phone-check { stroke-dashoffset:0 } }
