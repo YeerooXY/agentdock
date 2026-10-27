@@ -48,6 +48,10 @@ Android preview 13 adds **Wrap text**, text selection and copying, saved drafts 
 
 Preview 14 changes subscription meters to **percent left**, with provider colors and locally bundled icons where reviewed brand assets are available. A 62% bar means 62% remains. Unknown and stale values stay explicit; API cost still means estimated spending. This Android display change works with older PC hosts. Install Windows preview 14 separately when you want the same display in desktop Usage and the HUD. [Provider asset notes](provider-brand-assets.md).
 
+### CI builds are not releases
+
+Every push runs the **Android** job in GitHub Actions: `flutter analyze`, `flutter test` and a debug APK build. The APKs are kept as the `android-debug-apks` artifact for 7 days, for checking only. CI signs them with its own throwaway debug key, so they cannot install over a published Paddock release, and the phone's update check never offers them. Published releases are built and signed separately and appear on the GitHub Releases page.
+
 On the PC, use **Settings → Updates** to check, download and install a newer Windows build. The PC verifies the download's size and SHA-256 before offering installation. Update both devices when a release asks for matching versions. Checks are manual and contact GitHub; no terminal content or keys are sent. Preview builds offer newer previews as well as stable releases.
 
 ## Why Tailscale only
