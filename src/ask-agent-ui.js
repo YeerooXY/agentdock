@@ -26,14 +26,16 @@ export function askAgentUI({ call, getState, targets, pasteContext, selection, s
   function surface(r, role, label, isSending = () => false) {
     close(r);
     const node = document.createElement('div');
-    node.className = `ask-agent ask-agent-${role}`; node.popover = 'auto';
+    node.className = `ask-agent ask-agent-${role}`; node.popover = 'manual'; // WebKit light-dismisses an auto popover on the release of the right-click that opened it; outside clicks, scroll, focus loss and Esc close it below
     node.setAttribute('role', role); node.setAttribute('aria-label', label);
     r.node.append(node); r.ask = node;
     const events = new AbortController(); r.askEvents = events;
     const dismiss = () => { if (r.ask === node) close(r, false); };
     node.addEventListener('toggle', event => { if (event.newState === 'closed' && !node.matches(':popover-open')) dismiss(); });
     document.addEventListener('pointerdown', event => { if (!node.contains(event.target)) dismiss(); }, { capture: true, signal: events.signal });
-    document.addEventListener('scroll', event => { if (!node.contains(event.target)) dismiss(); }, { capture: true, signal: events.signal });
+    // Opening moves focus out of the editor, and CodeMirror may scroll its pane in response; only later scrolls dismiss.
+    const opened = performance.now();
+    document.addEventListener('scroll', event => { if (performance.now() - opened > 300 && !node.contains(event.target)) dismiss(); }, { capture: true, signal: events.signal });
     node.addEventListener('focusout', event => {
       const next = event.relatedTarget;
       if (!isSending() && next instanceof Element && next !== document.body && !node.contains(next)) dismiss();
@@ -90,7 +92,7 @@ export function askAgentUI({ call, getState, targets, pasteContext, selection, s
           if (r.ask !== node) return;
           if (sourceTicket !== r.sourceTicket) throw new Error('The source folder changed. Cancel and select the code again.');
           if (pending || askSelectionChanged(current?.after, snapshot)) {
-            pending = kind; node.querySelector('[data-stale]').hidden = false; node.querySelector('[data-keep]').focus(); return;
+            pending = kind; node.querySelector('[data-stale]').hidden = false; node.querySelector('[data-keep]').focus({ preventScroll: true }); return;
           }
         }
         const chosen = targets().find(x => x.id === target.value);
@@ -107,7 +109,7 @@ export function askAgentUI({ call, getState, targets, pasteContext, selection, s
     }
     node.addEventListener('click', async event => {
       const button = event.target.closest('button'); if (!button) return;
-      if (button.dataset.note) { note.value = button.dataset.note; note.focus(); }
+      if (button.dataset.note) { note.value = button.dataset.note; note.focus({ preventScroll: true }); }
       else if (button.hasAttribute('data-cancel')) close(r);
       else if (button.hasAttribute('data-draft')) void send('draft');
       else if (button.hasAttribute('data-queue')) void send('queue');
@@ -129,10 +131,10 @@ export function askAgentUI({ call, getState, targets, pasteContext, selection, s
         } catch (failure) { error.textContent = failure.message; }
       }
     });
-    update(); node.showPopover(); place(r, node); note.focus();
+    update(); node.showPopover(); place(r, node); note.focus({ preventScroll: true });
   }
-  function menu(r, point) {
-    const captured = selection(r); if (!captured) return;
+  function menu(r, point, captured = selection(r)) {
+    if (!captured) return;
     const node = surface(r, 'menu', 'Selected code');
     node.innerHTML = '<button type="button" role="menuitem">Ask agent…</button><button type="button" role="menuitem">Copy</button>';
     const buttons = [...node.querySelectorAll('button')];
@@ -149,7 +151,7 @@ export function askAgentUI({ call, getState, targets, pasteContext, selection, s
     node.addEventListener('keydown', event => {
       if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) { event.preventDefault(); buttons[document.activeElement === buttons[0] ? 1 : 0].focus(); }
     });
-    node.showPopover(); place(r, node, point); buttons[0].focus();
+    node.showPopover(); place(r, node, point); buttons[0].focus({ preventScroll: true });
   }
   function bind(r) {
     const host = r.node.querySelector('[data-code-editor]');
@@ -161,12 +163,19 @@ export function askAgentUI({ call, getState, targets, pasteContext, selection, s
         event.preventDefault(); event.stopPropagation(); menu(r);
       }
     }, true);
+    // Safari moves the selection on right-click before contextmenu fires, so remember it at pointerdown.
+    host.addEventListener('pointerdown', event => {
+      r.contextSnapshot = event.button === 2 && r.editor ? { captured: selection(r), range: r.editor.state.selection.main } : null;
+    }, true);
     host.addEventListener('contextmenu', event => {
-      if (!r.editor?.hasFocus || !selection(r) || event.target.closest('.cm-deletedChunk')) return;
+      const snapshot = r.contextSnapshot; r.contextSnapshot = null;
+      const captured = snapshot?.captured || (r.editor?.hasFocus ? selection(r) : null);
+      if (!r.editor || !captured || event.target.closest('.cm-deletedChunk')) return;
       const pos = r.editor.posAtCoords({ x: event.clientX, y: event.clientY });
-      const range = r.editor.state.selection.main;
+      const range = snapshot?.captured ? snapshot.range : r.editor.state.selection.main;
       if (pos == null || pos < range.from || pos > range.to) return;
-      event.preventDefault(); event.stopPropagation(); menu(r, { x: event.clientX, y: event.clientY });
+      if (!r.editor.state.selection.main.eq(range)) r.editor.dispatch({ selection: range });
+      event.preventDefault(); event.stopPropagation(); menu(r, { x: event.clientX, y: event.clientY }, captured);
     });
   }
   return { bind, close, restore };

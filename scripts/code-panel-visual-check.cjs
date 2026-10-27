@@ -63,7 +63,7 @@ let browser; const reports = [];
     const inputs = () => calls.filter(([m]) => m === 'session.input').length;
     const composer = page.locator('.ask-agent-dialog');
     await page.locator('.code-panel .cm-content').focus(); await page.keyboard.press('Control+Home'); await page.keyboard.press('Control+Shift+End');
-    await page.keyboard.press(name === 'mac' || name === 'iphone' ? 'Meta+Shift+A' : 'Control+Shift+A'); await composer.waitFor();
+    await page.keyboard.press('Control+Shift+A'); // the fixture reports Windows, so the app expects Ctrl await composer.waitFor();
     const viaShortcut = await composer.locator('p').first().textContent();
     const before = inputs(); await page.keyboard.press('Escape'); await composer.waitFor({ state: 'detached' });
     assert.equal(inputs(), before, `${name}: Esc sends nothing`);
