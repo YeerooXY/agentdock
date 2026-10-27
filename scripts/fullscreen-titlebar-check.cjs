@@ -15,16 +15,23 @@ const profiles = [['pc', chromium, { viewport: { width: 1440, height: 900 } }], 
 (async () => {
   await new Promise(r => server.listen(0, '127.0.0.1', r)); const errors = [];
   for (const [name, engine, options] of profiles) {
-    for (const mode of ['dashboard', 'fullscreen']) {
+    for (const mode of ['dashboard', 'fullscreen', 'expanded']) {
       const browser = await engine.launch(), context = await browser.newContext(options), state = structuredClone(base);
-      state.mode = mode; Object.assign(state.settings, { setupComplete: true });
-      await context.exposeFunction('fixtureCall', method => ({ ok: true, value: method === 'state' ? state : method === 'session.buffer' ? { data: '', sequence: 0 } : [] }));
+      state.mode = mode === 'expanded' ? 'fullscreen' : 'dashboard'; Object.assign(state.settings, { setupComplete: true });
+      let page;
+      await context.exposeFunction('fixtureCall', (method, payload) => {
+        if (method === 'mode') { state.mode = payload; setTimeout(() => page.evaluate(s => window.fixtureState(s), state).catch(() => {}), 5); }
+        return { ok: true, value: method === 'state' ? state : method === 'session.buffer' ? { data: '', sequence: 0 } : [] };
+      });
       await context.addInitScript(() => { window.dock = { call: (m, p) => window.fixtureCall(m, p), onState: fn => window.fixtureState = fn, onOutput: () => {}, onSelect: () => {}, onNotice: () => {} }; });
-      const page = await context.newPage(); page.on('pageerror', e => errors.push(`${name}: ${e.message}`));
+      page = await context.newPage(); page.on('pageerror', e => errors.push(`${name}: ${e.message}`));
       await page.goto(`http://127.0.0.1:${server.address().port}`); await page.locator('.titlebar').waitFor({ state: 'attached' });
       const bottom = async () => { await page.waitForTimeout(260); return page.locator('.titlebar').evaluate(x => Math.round(x.getBoundingClientRect().bottom)); };
       const workspaceTop = () => page.locator('#content').evaluate(x => Math.round(x.getBoundingClientRect().top));
-      if (mode === 'dashboard') {
+      if (mode === 'fullscreen') { await page.keyboard.press('F11'); await page.waitForTimeout(100); }
+      if (mode === 'expanded') {
+        if (await bottom() <= 0) errors.push(`${name}: title bar hidden in a fullscreen that F11 did not start`);
+      } else if (mode === 'dashboard') {
         if (await bottom() <= 0) errors.push(`${name}: title bar hidden outside fullscreen`);
         await page.screenshot({ path: path.join(out, `${name}-window.png`) });
       } else {
@@ -40,6 +47,8 @@ const profiles = [['pc', chromium, { viewport: { width: 1440, height: 900 } }], 
         if (await bottom() > 0) errors.push(`${name}: title bar stays after the pointer leaves`);
         await page.locator('.window-actions [data-action=fullscreen]').focus();
         if (await bottom() <= 0) errors.push(`${name}: keyboard focus does not reveal the title bar`);
+        await page.locator('#content').click({ position: { x: 600, y: 500 } }).catch(() => {}); await page.keyboard.press('F11');
+        if (await bottom() <= 0) errors.push(`${name}: title bar stays hidden after leaving F11 fullscreen`);
       }
       await browser.close();
     }

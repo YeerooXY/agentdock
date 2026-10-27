@@ -718,6 +718,7 @@ function updatePreview() {
     if ($('#hud-preview')) $('#hud-preview').textContent = terminalPreview(selected);
   }, 200);
 }
+let bareFullscreen = false; // set when F11, not a console expansion, entered fullscreen
 function receive(next) {
   ++stateReceiveVersion;
   const sessionEffects = [];
@@ -769,8 +770,12 @@ function receive(next) {
   document.body.dataset.pulse = 'off';
   lightingChanged();
   document.body.style.setProperty('--trim-width', (state.settings.trimWidth || 1) + 'px');
-  if (document.body.classList.contains('is-fullscreen') !== (state.mode === 'fullscreen')) {
-    document.body.classList.toggle('is-fullscreen', state.mode === 'fullscreen'); document.body.classList.remove('titlebar-peek'); scheduleFits();
+  // Only F11 fullscreen hides the title bar; expanding a console keeps it.
+  if (document.body.classList.contains('is-fullscreen') && state.mode !== 'fullscreen') bareFullscreen = false;
+  document.body.classList.toggle('is-fullscreen', state.mode === 'fullscreen');
+  const hideTitlebar = state.mode === 'fullscreen' && bareFullscreen;
+  if (document.body.classList.contains('titlebar-hidden') !== hideTitlebar) {
+    document.body.classList.toggle('titlebar-hidden', hideTitlebar); document.body.classList.remove('titlebar-peek'); scheduleFits();
   }
   document.body.classList.toggle('steady-cursor', !state.settings.cursorBlink);
   for (const record of terminals.values()) if (record.term.options.cursorBlink !== !!state.settings.cursorBlink) record.term.options.cursorBlink = !!state.settings.cursorBlink;
@@ -1731,12 +1736,12 @@ document.addEventListener('keydown', event => {
     event.preventDefault(); event.stopImmediatePropagation();
     if (!event.repeat) void openNew();
   }
-  if (event.key === 'F11') { event.preventDefault(); call('mode', state.mode === 'fullscreen' ? 'dashboard' : 'fullscreen'); }
+  if (event.key === 'F11') { event.preventDefault(); bareFullscreen = state.mode !== 'fullscreen'; call('mode', bareFullscreen ? 'fullscreen' : 'dashboard'); }
 }, true);
 
-// In fullscreen the title bar stays hidden until the pointer reaches the top edge.
+// In F11 fullscreen the title bar stays hidden until the pointer reaches the top edge.
 document.addEventListener('pointermove', event => {
-  if (!document.body.classList.contains('is-fullscreen')) return;
+  if (!document.body.classList.contains('titlebar-hidden')) return;
   if (event.clientY <= 4) document.body.classList.add('titlebar-peek');
   else if (!event.target.closest?.('.titlebar, .shell-picker, [popover]')) document.body.classList.remove('titlebar-peek');
 }, { passive: true });
