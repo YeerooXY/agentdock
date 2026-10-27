@@ -11,6 +11,9 @@ FakeDock managedDock() {
     {'id': 'game', 'name': 'Game'},
     {'id': 'tools', 'name': 'Tools'},
   ];
+  c.state['sessions'] = [
+    Map<String, Object?>.from((c.state['sessions'] as List).first as Map),
+  ];
   (c.state['sessions'] as List).first.addAll({
     'alive': true,
     'consoleKey': 'stable-console',
@@ -150,6 +153,30 @@ void main() {
     expect(find.text('Project'), findsNothing);
   });
 
+  testWidgets('management without a pinned console shows the stale message', (
+    tester,
+  ) async {
+    final c = managedDock();
+    addTearDown(c.dispose);
+    await tester.pumpWidget(DockApp(client: c));
+    final menu = tester.widget<PopupMenuButton<String>>(
+      find.byWidgetPredicate((widget) =>
+          widget is PopupMenuButton<String> &&
+          widget.tooltip == 'More options'),
+    );
+    for (final action in ['rename', 'project']) {
+      menu.onSelected!(action);
+      await tester.pumpAndSettle();
+      expect(find.text('This console changed. Open its menu again.'),
+          findsOneWidget);
+      ScaffoldMessenger.of(tester.element(find.byType(Scaffold).first))
+          .removeCurrentSnackBar();
+      await tester.pumpAndSettle();
+    }
+    expect(c.calls, isNot(contains('console.rename')));
+    expect(c.calls, isNot(contains('console.project')));
+  });
+
   testWidgets('host stale-console error is shown', (tester) async {
     final c = managedDock();
     addTearDown(c.dispose);
@@ -164,6 +191,54 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('This console changed. Open its menu again.'),
         findsOneWidget);
+  });
+
+  testWidgets('remote console management sends a null launch id', (tester) async {
+    final c = managedDock();
+    addTearDown(c.dispose);
+    c.state['sessions'][0]['launchId'] = null;
+    c.state['sessions'][0]['remote'] = {'hostId': 'vm'};
+    await tester.pumpWidget(DockApp(client: c));
+    await consoleAction(tester, 'Rename');
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+    expect(c.payloads[c.calls.lastIndexOf('console.rename')], {
+      'id': 'one',
+      'consoleKey': 'stable-console',
+      'launchId': null,
+      'name': 'Trader',
+    });
+    await consoleAction(tester, 'Project');
+    await tester.tap(find.text('No project'));
+    await tester.pumpAndSettle();
+    expect(c.payloads[c.calls.lastIndexOf('console.project')], {
+      'id': 'one',
+      'consoleKey': 'stable-console',
+      'launchId': null,
+      'projectId': null,
+    });
+  });
+
+  testWidgets('an archived project remains marked and can be unlinked', (
+    tester,
+  ) async {
+    final c = managedDock();
+    addTearDown(c.dispose);
+    c.state['sessions'][0]['projectId'] = 'archived';
+    await tester.pumpWidget(DockApp(client: c));
+    await consoleAction(tester, 'Project');
+    final archived = tester.widget<ListTile>(
+      find.widgetWithText(ListTile, 'Archived project'),
+    );
+    expect(archived.enabled, isFalse);
+    expect(archived.selected, isTrue);
+    expect(archived.trailing, isA<Icon>());
+    expect(tester.widget<ListTile>(find.widgetWithText(ListTile, 'No project'))
+        .selected, isFalse);
+    await tester.tap(find.text('No project'));
+    await tester.pumpAndSettle();
+    expect(c.payloads[c.calls.lastIndexOf('console.project')]['projectId'],
+        isNull);
   });
 
   testWidgets('a replaced launch cannot receive an open dialog action', (
@@ -187,8 +262,9 @@ void main() {
     final c = managedDock();
     addTearDown(c.dispose);
     await tester.pumpWidget(DockApp(client: c));
+    expect(find.text('Game'), findsOneWidget);
     await tester.tap(find.byTooltip('Switch console'));
     await tester.pumpAndSettle();
-    expect(find.text('Game'), findsOneWidget);
+    expect(find.text('Game'), findsWidgets);
   });
 }

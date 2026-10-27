@@ -35,7 +35,7 @@ class _ConsoleSwitcherState extends State<ConsoleSwitcher> {
     return (widget.client.state['projects'] as List? ?? [])
         .whereType<Map>()
         .where((project) => project['id'] == id)
-        .firstOrNull?['name'] as String?;
+        .firstOrNull?['name'] as String? ?? 'Archived project';
   }
   @override
   Widget build(BuildContext context) => PopupMenuButton<String>(
@@ -128,7 +128,7 @@ class _ConsoleSwitcherState extends State<ConsoleSwitcher> {
       ),
     ],
     child: Padding(
-      padding: const EdgeInsets.symmetric(vertical: 10),
+      padding: const EdgeInsets.symmetric(vertical: 6),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -141,15 +141,46 @@ class _ConsoleSwitcherState extends State<ConsoleSwitcher> {
               const SizedBox(width: 5),
             ],
           Flexible(
-            child: Text(
-              widget.name,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 18,
-                color: pink,
-                fontWeight: FontWeight.w600,
-              ),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final session = widget.client.sessions
+                    .where((s) => s['id'] == widget.client.selected)
+                    .firstOrNull;
+                final project = session == null ? null : projectName(session);
+                final scaler = MediaQuery.textScalerOf(context);
+                final showProject = project != null &&
+                    constraints.maxWidth >= 100 &&
+                    constraints.maxHeight >=
+                        scaler.scale(18) * 1.3 + scaler.scale(12) * 1.3;
+                return Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      widget.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 18,
+                        height: 1.3,
+                        color: pink,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    if (showProject)
+                      Text(
+                        project,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          height: 1.3,
+                          color: muted,
+                        ),
+                      ),
+                  ],
+                );
+              },
             ),
           ),
           const SizedBox(width: 4),

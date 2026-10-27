@@ -171,8 +171,25 @@ test('phone manages live console metadata with pinned launch identity', async t 
   assert.deepEqual(snapshot.projects, [{ id: 'game', name: 'Game', color: '#ff0000' }, { id: 'other', name: 'Other' }]);
   const target = { id: session.id, consoleKey: session.consoleKey, launchId: session.launchId };
   await c.call('subscribe', { id: session.id });
+  // Production history is immutable. Model a mutable result store here to
+  // verify the RPC forwards the new name after the session rename succeeds.
+  const storedResult = { consoleKey: 'stable-console', consoleName: session.name };
+  const resultRenames = [];
+  t.mock.method(f.results, 'renameConsole', (consoleKey, name) => {
+    assert.equal(session.name, name);
+    resultRenames.push({ consoleKey, name });
+    if (storedResult.consoleKey === consoleKey) storedResult.consoleName = name;
+  });
   await c.call('console.rename', { ...target, name: ' Review ' });
   assert.equal(session.name, 'Review');
+  assert.equal(storedResult.consoleName, 'Review');
+  assert.deepEqual(resultRenames, [{ consoleKey: 'stable-console', name: 'Review' }]);
+  const renameSession = f.sessions.rename;
+  f.sessions.rename = () => { throw new Error('Rename failed.'); };
+  await assert.rejects(c.call('console.rename', { ...target, name: 'Must not reach results' }), /Rename failed/);
+  assert.equal(storedResult.consoleName, 'Review');
+  assert.equal(resultRenames.length, 1);
+  f.sessions.rename = renameSession;
   for (const name of ['', '   ', 'x'.repeat(65), 'two\nlines', null, 42]) {
     await assert.rejects(c.call('console.rename', { ...target, name }), /name/);
   }

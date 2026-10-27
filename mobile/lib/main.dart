@@ -736,6 +736,14 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
                   pinnedAccountSession = null;
                   if (pinned != null) {
                     manageConsole(action, pinned, pc, generation);
+                  } else {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text(
+                          'This console changed. Open its menu again.',
+                        ),
+                      ),
+                    );
                   }
                   return;
                 }
@@ -1065,6 +1073,8 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
       if (name != null && mounted) await submit({'name': name});
     } else {
       final projects = (c.state['projects'] as List? ?? []).whereType<Map>();
+      final missingProject = session['projectId'] != null &&
+          !projects.any((project) => project['id'] == session['projectId']);
       final choice = await showModalBottomSheet<Map<String, dynamic>>(
         context: context,
         showDragHandle: true,
@@ -1076,6 +1086,13 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
           child: ListView(
             shrinkWrap: true,
             children: [
+              if (missingProject)
+                const ListTile(
+                  title: Text('Archived project'),
+                  enabled: false,
+                  selected: true,
+                  trailing: Icon(Icons.check),
+                ),
               for (final project in <Map>[
                 {'id': null, 'name': 'No project'},
                 ...projects,
