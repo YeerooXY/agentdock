@@ -78,6 +78,7 @@ const consoleProviders = () => [...(state?.agents?.length ? state.agents.map(x =
 const number = value => Number.isFinite(value) ? Intl.NumberFormat('en', { notation: value >= 10000 ? 'compact' : 'standard', maximumFractionDigits: 1 }).format(value) : '—';
 const labels = { open: 'Open', active: 'Thinking', ready: 'Ready', attention: 'Needs attention', error: 'Error', ended: 'Ended', recent: 'Recent', interrupted: 'Interrupted' };
 let state, page = 'consoles', selectedId = null, expandedId = null, expansionRequest = 0, expansionModeIntent = null, stateReceiveVersion = 0, renderedExpansion = null, renderedConsoleVisibility = false, selectedApi = 'openai', apiBusy = false, outputText = '', toastTimer;
+let usageAddOpen = false;
 let accountProfileDraft = { provider: 'codex', label: '', error: '' }, accountProfileFocus = null, accountProfileBusy = false, accountProfileCreated = null, accountProfileResetOnRender = false;
 let accountRenameOpener = null, accountRenameBusy = false;
 let apiDraft = { model: '', prompt: '', maxOutput: '1024', projectId: '' }, responseMeta = 'TEXT OUTPUT', responseError = '';
@@ -252,7 +253,7 @@ document.querySelectorAll('.sidebar [data-page]').forEach(button => {
 function pageHeading(eyebrow, title, description, action = '') {
   return `<div class="page-heading"><div><div class="eyebrow">${eyebrow}</div><h1>${title}</h1><p>${description}</p></div>${action}</div>`;
 }
-function quotaCard(provider, accountId, accountLabel, detailed = false) {
+function quotaCard(provider, accountId, accountLabel, detailed = false, hideable = false) {
   const values = state.limits.filter(x => x.provider === provider && (x.accountId || (provider === 'codex' ? 'codex:default' : provider === 'claude' && x.id === 'claude:account' ? 'claude:default' : x.id)) === accountId);
   const display = providerName(provider);
   const check = state.usageChecks?.find(item => item.accountId === accountId);
@@ -272,7 +273,7 @@ function quotaCard(provider, accountId, accountLabel, detailed = false) {
     ${windows.length && check?.message ? `<p class="section-note" role="status">${escape(check.message)}</p>` : ''}
     ${entry && ['codex', 'claude'].includes(provider) && !windows.some(w => w.minutes === 300) ? '<div class="missing-window">5-hour limit not reported</div>' : ''}
     ${entry && ['codex', 'claude'].includes(provider) && !windows.some(w => w.minutes === 10080) ? '<div class="missing-window">Weekly limit not reported</div>' : ''}
-    <div class="quota-foot">${entry ? `${stale ? 'Stale snapshot · ' : ''}${age(entry.observedAt)}` : 'No estimated limits'}${detailed && entry ? `<span>${escape(entry.source)}</span>` : ''}</div>
+    <div class="quota-foot">${entry ? `${stale ? 'Stale snapshot · ' : ''}${age(entry.observedAt)}` : 'No estimated limits'}${detailed && entry ? `<span>${escape(entry.source)}</span>` : ''}${hideable ? `<button class="subtle usage-hide" data-usage-hide="${escape(accountId)}" aria-label="Hide ${escape(accountLabel)} from Usage">Hide</button>` : ''}</div>
   </article>`;
   };
   return values.length ? values.map(card).join('') : card(null);
@@ -479,11 +480,17 @@ function ledgerTable() {
 function renderUsage() {
   const summary = state.summary;
   const subscriptions = [...(state.usageAccounts || state.accounts || [])].sort((a,b) => Number(!!(b.hasUsage || state.limits.some(x => (x.accountId || x.id) === b.id))) - Number(!!(a.hasUsage || state.limits.some(x => (x.accountId || x.id) === a.id))));
-  const accountCards = subscriptions.map(account => quotaCard(account.provider, account.id, account.label, true)).join('') + state.limits.filter(entry => !subscriptions.some(account => account.id === (entry.accountId || (entry.provider === 'codex' ? 'codex:default' : entry.id === 'claude:account' ? 'claude:default' : entry.id)))).map(entry => quotaCard(entry.provider, entry.accountId || entry.id, entry.name || providerName(entry.provider), true)).join('');
+  // Only set-up subscriptions are listed; the rest wait behind Add subscription.
+  const limitOnly = state.limits.filter(entry => !subscriptions.some(account => account.id === (entry.accountId || (entry.provider === 'codex' ? 'codex:default' : entry.id === 'claude:account' ? 'claude:default' : entry.id)))).map(entry => ({ id: entry.accountId || entry.id, provider: entry.provider, label: entry.name || providerName(entry.provider), hasUsage: true }));
+  const hidden = new Set(state.settings.usageHidden || []), shown = new Set(state.settings.usageShown || []);
+  const listed = [...subscriptions, ...limitOnly], visible = listed.filter(account => !hidden.has(account.id) && (account.hasUsage || account.inUse || shown.has(account.id)));
+  const addable = listed.filter(account => !visible.includes(account));
+  const accountCards = visible.map(account => quotaCard(account.provider, account.id, account.label, true, true)).join('') || '<p class="section-note usage-empty">No subscriptions yet. Add one to see its limits.</p>';
+  const addPanel = usageAddOpen ? `<div class="usage-add" id="usage-add-panel" role="group" aria-label="Add a subscription">${addable.length ? `<p>Installed agents</p><div class="usage-add-list">${addable.map(account => `<button type="button" class="secondary" data-usage-show="${escape(account.id)}">${accountMark(account.provider)}<span>${escape(account.label)}</span></button>`).join('')}</div>` : ''}<p>Another account</p><div class="usage-add-list"><button type="button" class="secondary" data-usage-new-account="codex">${accountMark('codex')}<span>Codex account</span></button><button type="button" class="secondary" data-usage-new-account="claude">${accountMark('claude')}<span>Claude Code account</span></button></div></div>` : '';
   const profileCards = (state.accounts || []).filter(account => account.profile).map(account => `<article class="account-profile-row"><div>${accountMark(account.provider)}<span><strong>${escape(account.label)}</strong><small>${providerName(account.provider)} · ${account.loginCompletedAt ? 'Signed in' : 'Sign-in needed'}</small></span></div><span><button class="subtle" data-action="account-login" data-id="${escape(account.id)}">${account.loginCompletedAt ? 'Sign in again' : 'Sign in'}</button><button class="subtle" data-action="account-rename" data-id="${escape(account.id)}" data-label="${escape(account.label)}">Rename</button><button class="subtle danger" data-action="account-remove" data-id="${escape(account.id)}" aria-label="Remove ${escape(account.label)}">Remove</button></span></article>`).join('');
   return pageHeading('', 'Usage', '', '<button class="secondary" data-action="refresh" ' + (state.refreshing ? 'disabled aria-busy="true"' : '') + '>' + icon('refresh') + (state.refreshing ? 'Checking accounts…' : 'Refresh') + '</button>') +
     '<div class="stats-row usage-stats"><div class="stat"><span>API requests · 30 days</span><strong>' + summary.requests + '</strong></div><div class="stat"><span>API tokens · 30 days</span><strong>' + (summary.unknownUsage && !summary.tokens ? '—' : number(summary.tokens) + (summary.unknownUsage ? '+' : '')) + '</strong></div></div>' +
-    `<section class="surface account-switch-settings"><div class="section-label"><div><h2>Subscriptions</h2><p>Account-wide limits, checked every two minutes.</p></div></div><div class="usage-grid">${accountCards}</div><h2>Account switching</h2><form id="account-profile-form" class="account-profile-form"><label>Provider<select name="provider" ${accountProfileCreated ? 'disabled' : ''}><option value="codex" ${accountProfileDraft.provider === 'codex' ? 'selected' : ''}>Codex</option><option value="claude" ${accountProfileDraft.provider === 'claude' ? 'selected' : ''}>Claude Code</option></select></label><label>Account name<input name="label" required maxlength="64" autocomplete="off" value="${escape(accountProfileDraft.label)}" ${accountProfileCreated ? 'disabled' : ''}></label><button class="secondary" type="submit" ${accountProfileBusy ? 'disabled' : ''}>${accountProfileCreated ? 'Retry sign-in' : 'Add account'}</button>${accountProfileCreated ? '<p class="field-hint">This account is saved. Retry sign-in to open its console.</p>' : ''}<p class="form-error" role="alert">${escape(accountProfileDraft.error)}</p></form><div class="account-profile-list">${profileCards || '<p class="section-note">No additional accounts.</p>'}</div><div class="account-switch-threshold"><label>Offer a switch at <input type="number" min="50" max="100" data-setting="accountSwitchThreshold" value="${state.settings.accountSwitchThreshold ?? 90}">%</label><label><input type="checkbox" data-setting="autoSwitchAccounts" ${state.settings.autoSwitchAccounts ? 'checked' : ''}>Switch automatically while idle</label><p class="field-hint">Automatic switching is off by default. It needs fresh usage for both accounts and an idle console.</p></div><p class="section-note">Use subscriptions within provider terms. Switching accounts must respect each provider’s rate limits and restrictions.</p></section>${delegationSection()}<section class="ledger-panel"><div class="section-label"><div><h2>API requests</h2><p>Requests made through Paddock.</p></div><button class="subtle" data-action="export">Export</button></div>${ledgerTable()}<div class="ledger-foot">${state.ledger.length > 100 ? 'Latest 100 shown. Export includes all records. ' : ''}Tool steps count as separate requests.</div></section>`;
+    `<section class="surface account-switch-settings"><div class="section-label"><div><h2>Subscriptions</h2><p>Account-wide limits, checked every two minutes.</p></div><button type="button" class="secondary" data-action="usage-add" aria-expanded="${usageAddOpen}" aria-controls="usage-add-panel">${icon('plus')}Add subscription</button></div>${addPanel}<div class="usage-grid">${accountCards}</div><h2>Account switching</h2><form id="account-profile-form" class="account-profile-form"><label>Provider<select name="provider" ${accountProfileCreated ? 'disabled' : ''}><option value="codex" ${accountProfileDraft.provider === 'codex' ? 'selected' : ''}>Codex</option><option value="claude" ${accountProfileDraft.provider === 'claude' ? 'selected' : ''}>Claude Code</option></select></label><label>Account name<input name="label" required maxlength="64" autocomplete="off" value="${escape(accountProfileDraft.label)}" ${accountProfileCreated ? 'disabled' : ''}></label><button class="secondary" type="submit" ${accountProfileBusy ? 'disabled' : ''}>${accountProfileCreated ? 'Retry sign-in' : 'Add account'}</button>${accountProfileCreated ? '<p class="field-hint">This account is saved. Retry sign-in to open its console.</p>' : ''}<p class="form-error" role="alert">${escape(accountProfileDraft.error)}</p></form><div class="account-profile-list">${profileCards || '<p class="section-note">No additional accounts.</p>'}</div><div class="account-switch-threshold"><label>Offer a switch at <input type="number" min="50" max="100" data-setting="accountSwitchThreshold" value="${state.settings.accountSwitchThreshold ?? 90}">%</label><label><input type="checkbox" data-setting="autoSwitchAccounts" ${state.settings.autoSwitchAccounts ? 'checked' : ''}>Switch automatically while idle</label><p class="field-hint">Automatic switching is off by default. It needs fresh usage for both accounts and an idle console.</p></div><p class="section-note">Use subscriptions within provider terms. Switching accounts must respect each provider’s rate limits and restrictions.</p></section>${delegationSection()}<section class="ledger-panel"><div class="section-label"><div><h2>API requests</h2><p>Requests made through Paddock.</p></div><button class="subtle" data-action="export">Export</button></div>${ledgerTable()}<div class="ledger-foot">${state.ledger.length > 100 ? 'Latest 100 shown. Export includes all records. ' : ''}Tool steps count as separate requests.</div></section>`;
 }
 function messageUsageTable() { return usageView.render(); }
 
@@ -1469,6 +1476,20 @@ document.addEventListener('keydown', event => {
 document.addEventListener('click', async event => {
   const button = event.target.closest('button'); if (!button) return;
   try {
+    if (button.dataset.usageShow || button.dataset.usageHide) {
+      const id = button.dataset.usageShow || button.dataset.usageHide, show = !!button.dataset.usageShow;
+      const shown = new Set(state.settings.usageShown || []), hidden = new Set(state.settings.usageHidden || []);
+      if (show) { shown.add(id); hidden.delete(id); } else { hidden.add(id); shown.delete(id); }
+      if (show) usageAddOpen = false;
+      await call('settings', { usageShown: [...shown], usageHidden: [...hidden] });
+      if (show) void call('refresh').catch(() => {});
+      toast(show ? 'Added to Usage. Checking its limits.' : 'Hidden from Usage. Add it again any time.'); return;
+    }
+    if (button.dataset.usageNewAccount) {
+      // renderPage reads the draft back from the form, so set the field itself.
+      usageAddOpen = false; const provider = $('#account-profile-form [name=provider]'); if (provider && !provider.disabled) provider.value = button.dataset.usageNewAccount; renderPage();
+      const form = $('#account-profile-form'); form?.scrollIntoView({ block: 'center', behavior: reducedMotion.matches ? 'auto' : 'smooth' }); form?.elements.label.focus({ preventScroll: true }); return;
+    }
     if (button.dataset.delegationStop) { button.disabled = true; await call('workbench.delegation.stop', button.dataset.delegationStop); return; }
     if (button.dataset.page) { navigatePage(button.dataset.page); $('#content').scrollTop = 0; return; }
     if (button.dataset.session) return await selectSession(button.dataset.session);
@@ -1546,6 +1567,7 @@ document.addEventListener('click', async event => {
       case 'minimize': await call('minimize'); break;
       case 'tray': await call('tray'); break;
       case 'refresh': await call('refresh'); break;
+      case 'usage-add': usageAddOpen = !usageAddOpen; renderPage(); $('#usage-add-panel button, [data-action=usage-add]')?.focus({ preventScroll: true }); break;
       case 'quit': await call('quit'); break;
       case 'end-session': await call('session.end', button.dataset.id || selectedId); break;
       case 'paste-screenshot': await pasteScreenshot(selectedId); break;

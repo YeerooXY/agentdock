@@ -816,6 +816,12 @@ app.whenReady().then(async () => {
             if (!Array.isArray(payload.delegationProviders) || payload.delegationProviders.some(id => !REVIEWERS.includes(id))) throw new Error('Choose reviewers from Claude Code and Codex.');
             next.delegationProviders = [...new Set(payload.delegationProviders)];
           }
+          // Which subscriptions the Usage page lists; a display preference only.
+          for (const key of ['usageShown', 'usageHidden']) if (payload?.[key] !== undefined) {
+            const ids = payload[key];
+            if (!Array.isArray(ids) || ids.length > 100 || ids.some(id => typeof id !== 'string' || !/^[a-z0-9-]{1,40}:[\w.-]{1,80}$/i.test(id))) throw new Error('Choose subscriptions from the list.');
+            next[key] = [...new Set(ids)];
+          }
           if (typeof payload?.suggestProjects === 'boolean') next.suggestProjects = payload.suggestProjects;
           if (typeof payload?.sidebarCollapsed === 'boolean') next.sidebarCollapsed = payload.sidebarCollapsed;
           if (typeof payload?.vimControls === 'boolean') next.vimControls = payload.vimControls;

@@ -63,3 +63,16 @@
 #content[data-view=usage] .delegation-row{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:12px 0;border-bottom:1px solid #262a3a;font-size:14px;color:var(--usage-soft)}
 #content[data-view=usage] .delegation-row>span{min-width:0;overflow-wrap:anywhere}
 #content[data-view=usage] .delegation-row small{display:block;margin-top:4px;color:var(--usage-muted);font-size:13px}
+/* Subscriptions: only set-up accounts are listed; others are added from this panel. */
+#content[data-view=usage] .account-switch-settings>.section-label{flex-wrap:wrap}
+#content[data-view=usage] .usage-add{border:1px solid var(--line);border-radius:8px;padding:14px;display:grid;grid-template-columns:minmax(0,1fr);gap:10px}
+#content[data-view=usage] .usage-add>p{font-size:14px;color:var(--usage-muted)}
+#content[data-view=usage] .usage-add-list{display:flex;flex-wrap:wrap;gap:8px}
+#content[data-view=usage] .usage-add-list button{font-size:14px;gap:10px;min-height:40px;max-width:100%}
+#content[data-view=usage] .usage-add-list button span{overflow:hidden;text-overflow:ellipsis}
+#content[data-view=usage] .usage-add-list .provider-icon{width:24px;height:24px;font-size:15px}
+#content[data-view=usage] .quota-foot .usage-hide{margin-left:auto;font-size:13px;padding:4px 8px}
+#content[data-view=usage] .usage-empty{font-size:14px;color:var(--usage-muted);grid-column:1/-1}
+#content[data-view=usage] .account-switch-settings{grid-template-columns:minmax(0,1fr)}
+#content[data-view=usage] .account-switch-settings>.section-label>div{min-width:0}
+#content[data-view=usage] .usage-add-list button{min-width:0}
