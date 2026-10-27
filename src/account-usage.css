@@ -9,7 +9,7 @@
 .quota-window .meter.warning>span{background:#efbc7a}
 .quota-window .meter.unknown{background:repeating-linear-gradient(135deg,#232638,#232638 5px,#303448 5px,#303448 7px)}
 .hud-usage .hud-account{display:flex;align-items:center;gap:7px;letter-spacing:0;font-size:10px;color:var(--provider-accent)}
-.hud-usage .hud-account>small{margin-left:auto}
+.hud-usage .hud-account>small{margin-left:auto;color:#8f98b0}
 .hud-account .account-mark{width:22px;height:22px;font-size:13px}
 .hud-account .account-mark img{width:20px;height:20px}
 .hud-usage b{color:var(--provider-accent)}
