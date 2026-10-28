@@ -7,6 +7,8 @@ import 'widget_test.dart' show FakeDock, enterChat;
 
 class CodeDock extends FakeDock {
   bool omitted = false;
+  String fileText = 'const first = 1;\nconst second = 2;\nreturn first + second;';
+  int breadcrumbDepth = 0;
   CodeDock() {
     state['capabilities'] = ['code.read'];
     state['sessions'][0]['consoleKey'] = 'source';
@@ -18,21 +20,23 @@ class CodeDock extends FakeDock {
     calls.add(method); payloads.add(Map.of(payload));
     if (method == 'code.read') {
       return {'path': 'src/example.js', 'folder': '/project',
-        'text': omitted ? null : 'const first = 1;\nconst second = 2;\nreturn first + second;',
+        'text': omitted ? null : fileText,
         'omitted': omitted ? 'Credential and generated files are excluded from the code panel.' : null,
         'size': 64, 'lines': omitted ? 0 : 3};
     }
     final nested = payload['path'] == '/project/src';
     return {'path': nested ? '/project/src' : '/project', 'parent': nested ? '/project' : null,
       'breadcrumbs': [{'name': 'project', 'path': '/project'},
-        if (nested) {'name': 'src', 'path': '/project/src'}],
+        if (nested) {'name': 'src', 'path': '/project/src'},
+        if (nested) for (var i = 0; i < breadcrumbDepth; i++)
+          {'name': 'nested-folder-$i', 'path': '/project/src/nested-folder-$i'}],
       'entries': [nested ? {'name': 'example.js', 'path': '/project/src/example.js', 'directory': false} :
         {'name': 'src', 'path': '/project/src', 'directory': true}], 'truncated': false};
   }
 }
 
-Future<void> openFile(WidgetTester tester, CodeDock c) async {
-  await tester.pumpWidget(MaterialApp(home: CodePage(client: c, consoleId: 'one')));
+Future<void> openFile(WidgetTester tester, CodeDock c, {ThemeData? theme}) async {
+  await tester.pumpWidget(MaterialApp(theme: theme, home: CodePage(client: c, consoleId: 'one')));
   await tester.pumpAndSettle();
   await tester.tap(find.text('src')); await tester.pumpAndSettle();
   await tester.tap(find.text('example.js')); await tester.pumpAndSettle();
@@ -57,6 +61,66 @@ Future<void> finishSheet(WidgetTester tester) async {
 }
 
 void main() {
+  testWidgets('long lines scroll through the last character with Material letter spacing', (tester) async {
+    tester.view.physicalSize = const Size(320, 740);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final c = CodeDock()..fileText = '${'long_line_' * 50}END';
+    addTearDown(c.dispose);
+    await openFile(tester, c, theme: ThemeData(
+      textTheme: const TextTheme(bodyMedium: TextStyle(letterSpacing: 3)),
+    ));
+    final line = find.text(c.fileText);
+    expect(tester.widget<Text>(line).style!.letterSpacing, 3);
+    final scroll = find.byKey(const ValueKey('code-lines-scroll'));
+    final position = tester.state<ScrollableState>(find.descendant(
+      of: scroll, matching: find.byType(Scrollable)).first).position;
+    expect(position.maxScrollExtent, greaterThan(0));
+    position.jumpTo(position.maxScrollExtent);
+    await tester.pumpAndSettle();
+    final viewport = tester.getRect(scroll);
+    final text = tester.getRect(line);
+    expect(text.right, lessThanOrEqualTo(viewport.right));
+    expect(text.right, greaterThan(viewport.left));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('deep breadcrumbs scroll horizontally on a small phone with enlarged text', (tester) async {
+    tester.view.physicalSize = const Size(320, 480);
+    tester.view.devicePixelRatio = 1;
+    tester.platformDispatcher.textScaleFactorTestValue = 2;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+    final c = CodeDock()..breadcrumbDepth = 20;
+    addTearDown(c.dispose);
+    await tester.pumpWidget(MaterialApp(home: CodePage(client: c, consoleId: 'one')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('src')); await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    final crumbs = find.byKey(const ValueKey('code-breadcrumbs'));
+    expect(tester.widget<SingleChildScrollView>(crumbs).scrollDirection, Axis.horizontal);
+    final firstTop = tester.getTopLeft(find.text('project')).dy;
+    await tester.ensureVisible(find.text('nested-folder-19'));
+    await tester.pumpAndSettle();
+    expect(tester.getTopLeft(find.text('nested-folder-19')).dy, firstTop);
+    expect(find.text('example.js').hitTestable(), findsOneWidget);
+    expect(find.byTooltip('Up').hitTestable(), findsOneWidget);
+    await tester.tap(find.text('nested-folder-19')); await tester.pumpAndSettle();
+    expect(c.payloads.last['path'], '/project/src/nested-folder-19');
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('remote-object consoles hide Code even when the host supports it', (tester) async {
+    final c = CodeDock(); addTearDown(c.dispose);
+    c.state['sessions'][0]['remote'] = {'hostId': 'vm', 'folder': '/workspace'};
+    await tester.pumpWidget(DockApp(client: c)); await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('More options')); await tester.pumpAndSettle();
+    expect(find.text('Code'), findsNothing);
+    expect(c.calls.where((method) => method.startsWith('code.')), isEmpty);
+  });
+
   testWidgets('browse, up, open file and find numbered lines', (tester) async {
     final c = CodeDock(); addTearDown(c.dispose);
     await openFile(tester, c);

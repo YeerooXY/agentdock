@@ -42,6 +42,7 @@ class _CodePageState extends State<CodePage> {
   List<String> content = [''];
   String? measuredText;
   TextScaler? measuredScale;
+  TextStyle? measuredStyle;
   double measuredWidth = 0, gutter = 72;
   final find = TextEditingController();
   bool get current => widget.client.connected && widget.client.foreground &&
@@ -143,11 +144,17 @@ class _CodePageState extends State<CodePage> {
         onPressed: () => load('code.list', listing['path'] as String? ?? '')),
     ]), body: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       const Padding(padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8), child: Text('Read only')),
-      if (!loading && file.isEmpty) Wrap(children: [
+      if (!loading && file.isEmpty) Row(children: [
         if (listing['parent'] != null) IconButton(tooltip: 'Up', icon: const Icon(Icons.arrow_upward),
           onPressed: () => load('code.list', listing['parent'] as String)),
-        for (final crumb in listing['breadcrumbs'] as List? ?? []) TextButton(
-          onPressed: () => load('code.list', crumb['path'] as String), child: Text(crumb['name'] as String)),
+        Expanded(child: SingleChildScrollView(
+          key: const ValueKey('code-breadcrumbs'),
+          scrollDirection: Axis.horizontal,
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            for (final crumb in listing['breadcrumbs'] as List? ?? []) TextButton(
+              onPressed: () => load('code.list', crumb['path'] as String),
+              child: Text(crumb['name'] as String, maxLines: 1, softWrap: false)),
+          ]))),
       ]),
       if (!loading && file['text'] != null) ...[
         Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: Text(file['path'] as String)),
@@ -168,11 +175,14 @@ class _CodePageState extends State<CodePage> {
           if (listing['truncated'] == true) const ListTile(title: Text('Showing the first 500 entries.')),
         ]) : file['text'] == null ? Padding(padding: const EdgeInsets.all(16), child: Text(file['omitted'] as String? ?? 'Preview unavailable.')) :
         LayoutBuilder(builder: (context, constraints) {
-          const style = TextStyle(fontFamily: 'monospace', fontSize: 14);
+          final style = DefaultTextStyle.of(context).style
+              .merge(const TextStyle(fontFamily: 'monospace', fontSize: 14))
+              .copyWith(inherit: false);
           final scale = MediaQuery.textScalerOf(context);
-          if (measuredText != file['text'] || measuredScale != scale) {
+          if (measuredText != file['text'] || measuredScale != scale || measuredStyle != style) {
             measuredText = file['text'] as String;
             measuredScale = scale;
+            measuredStyle = style;
             measuredWidth = 0;
             final numbers = TextPainter(text: TextSpan(text: '${content.length}  ', style: style),
               textDirection: TextDirection.ltr, textScaler: scale)..layout();
@@ -187,7 +197,8 @@ class _CodePageState extends State<CodePage> {
             }
           }
           final width = math.max(constraints.maxWidth, measuredWidth + gutter + 16);
-          return SingleChildScrollView(scrollDirection: Axis.horizontal, child: SizedBox(width: width,
+          return SingleChildScrollView(key: const ValueKey('code-lines-scroll'),
+            scrollDirection: Axis.horizontal, child: SizedBox(width: width,
             child: ListView.builder(itemCount: visible.length, itemBuilder: (context, index) {
               final i = visible[index], number = i + 1;
               final selected = anchor != null && number >= math.min(anchor!, end!) && number <= math.max(anchor!, end!);
@@ -198,8 +209,9 @@ class _CodePageState extends State<CodePage> {
                   child: Container(color: selected ? Theme.of(context).colorScheme.secondaryContainer : null,
                     constraints: const BoxConstraints(minHeight: 44), padding: const EdgeInsets.symmetric(vertical: 8),
                     child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      SizedBox(width: gutter, child: Text('$number  ', textAlign: TextAlign.right, style: style)),
-                      Text(content[i], style: style),
+                      SizedBox(width: gutter, child: Text('$number  ', textAlign: TextAlign.right,
+                        style: style, textDirection: TextDirection.ltr, textScaler: scale)),
+                      Text(content[i], style: style, textDirection: TextDirection.ltr, textScaler: scale),
                     ]))));
             })));
         })),

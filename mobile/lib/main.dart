@@ -808,7 +808,7 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
               },
               itemBuilder: (_) => [
                 if (page == 0 && menuSession != null) ...[
-                  if (supports('code.read') && menuSession['remote'] != true &&
+                  if (supports('code.read') && menuSession['remote'] == null &&
                       !['code', 'web'].contains(menuSession['purpose']))
                     PopupMenuItem(value: 'code', enabled: c.connected,
                       child: const Text('Code')),
