@@ -60,6 +60,44 @@ test('turn usage is capability gated', async t => {
   assert.deepEqual(await c.call('usage.turns'), { turns: [], before: null, projects: [] });
 });
 
+test('main turn callback merges log and API records and resolves API project names through the RPC', async t => {
+  const f = await fixture(t), paired = await f.pair(), c = client(f, paired.data.token);
+  t.after(() => c.ws.terminate()); await once(c.ws, 'open');
+  const { apiMessages } = require('../electron/message-usage.cjs');
+  const messageUsage = { items: [{ id: 'log-turn', at: 100, projectId: 'p', model: '', provider: 'codex', source: 'Codex log' }] };
+  const ledger = [
+    { id: 'request-1', messageId: 'api-turn', at: 200, projectId: 'p', model: 'API model', provider: 'openai', usage: { input: 15, output: 2, cached: 3 }, status: 'completed' },
+    { id: 'request-2', messageId: 'api-turn', at: 201, projectId: 'p', model: 'API model', provider: 'openai', usage: { input: 5, output: 4, cached: 1 }, status: 'completed' },
+  ];
+  assert.equal(apiMessages(ledger)[0].projectName, undefined);
+  // Evaluate the actual injected callback without launching Electron or accounts.
+  const main = fs.readFileSync(path.join(__dirname, '../electron/main.cjs'), 'utf8');
+  const callback = main.match(/getUsageTurns:\s*(\(\)\s*=>[\s\S]*?), refreshUsage:/);
+  assert.ok(callback, 'Main must provide the turn records callback');
+  f.m.getUsageTurns = require('node:vm').runInNewContext(`(${callback[1]})`, { messageUsage, ledger, apiMessages });
+  f.sessions.projects = { list: () => [{ id: 'p', name: 'Project' }] };
+  const page = await c.call('usage.turns', { projectId: 'p' });
+  assert.deepEqual(page.turns.map(row => row.id), ['api-turn', 'log-turn']);
+  assert.equal(page.turns[0].projectName, 'Project');
+  assert.equal(page.turns[0].source, 'Dock API');
+  assert.deepEqual(page.turns[0].usage, { input: 20, output: 6, cached: 4 });
+  assert.equal(page.turns[1].model, null);
+  messageUsage.items.push({ id: 'later-log', at: 300, projectId: 'p' });
+  assert.equal((await c.call('usage.turns')).turns[0].id, 'later-log');
+});
+
+test('turn reasons are bounded display strings and blank model labels are missing', () => {
+  const { turnPage } = require('../electron/mobile-usage.cjs');
+  const page = turnPage([{ id: 'turn', at: 1, model: '  ', quota: [
+    { minutes: 300, reason: 'x'.repeat(100) },
+    { minutes: 10080, reason: { prompt: 'SECRET' } },
+  ] }], []);
+  assert.equal(page.turns[0].model, null);
+  assert.equal(page.turns[0].quota[0].reason, 'x'.repeat(80));
+  assert.equal(page.turns[0].quota[1].reason, '');
+  assert.doesNotMatch(JSON.stringify(page), /SECRET|prompt/);
+});
+
 test('turn usage filters projects, paginates tied timestamps and bounds page size', async t => {
   const f = await fixture(t), paired = await f.pair(), c = client(f, paired.data.token);
   t.after(() => c.ws.terminate()); await once(c.ws, 'open');
@@ -94,14 +132,14 @@ test('turn usage copies only display fields including nested tokens and quota', 
     id: 'turn', at: 123, consoleName: 'Console', projectId: 'p', projectName: 'Old name', provider: 'codex', model: 'model', source: 'Codex log',
     prompt: 'PRIVATE PROMPT', path: '/private', credentials: 'SECRET',
     usage: { input: 12000, output: null, cached: 0, prompt: 'PRIVATE PROMPT' },
-    quota: [{ minutes: 300, changePercent: 3, prompt: 'PRIVATE PROMPT' }, { minutes: 10080, changePercent: null }],
+    quota: [{ minutes: 300, changePercent: 3, prompt: 'PRIVATE PROMPT' }, { minutes: 10080, changePercent: null, reason: 'Window reset' }],
   }, { id: 'api', at: 122, source: 'Dock API', quota: [], usage: null }];
   const page = await c.call('usage.turns');
   assert.deepEqual(Object.keys(page.turns[0]).sort(), ['id', 'at', 'consoleName', 'projectId', 'projectName', 'provider', 'model', 'source', 'usage', 'quota'].sort());
   assert.deepEqual(page.turns[0].usage, { input: 12000, output: null, cached: 0 });
   assert.deepEqual(page.turns[0].quota, [
-    { minutes: 300, changePercent: 3, scope: 'account', attribution: 'estimate' },
-    { minutes: 10080, changePercent: null, scope: 'account', attribution: 'estimate' },
+    { minutes: 300, changePercent: 3, reason: '', scope: 'account', attribution: 'estimate' },
+    { minutes: 10080, changePercent: null, reason: 'Window reset', scope: 'account', attribution: 'estimate' },
   ]);
   assert.equal(page.turns[0].projectName, 'Project');
   assert.equal(page.turns[1].source, 'Dock API');

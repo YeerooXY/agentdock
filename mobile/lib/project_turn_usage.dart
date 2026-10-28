@@ -25,7 +25,8 @@ String turnWindow(dynamic minutes) {
 
 class ProjectTurnUsage extends StatefulWidget {
   final DockClient client;
-  const ProjectTurnUsage({super.key, required this.client});
+  final int refreshRevision;
+  const ProjectTurnUsage({super.key, required this.client, this.refreshRevision = 0});
 
   @override
   State<ProjectTurnUsage> createState() => _ProjectTurnUsageState();
@@ -36,6 +37,8 @@ class _ProjectTurnUsageState extends State<ProjectTurnUsage> {
   String filter = '', error = '';
   String? before;
   bool loading = false, started = false;
+  bool wasConnected = false, refreshPending = false;
+  int transportGeneration = -1;
   int revision = 0;
   String connection = '';
   bool get supported => (widget.client.state['capabilities'] as List? ?? []).contains('usage.turns');
@@ -48,22 +51,43 @@ class _ProjectTurnUsageState extends State<ProjectTurnUsage> {
   }
 
   void changed() {
-    final next = '${widget.client.activePC}:${widget.client.generation}:$supported';
+    final connected = widget.client.connected;
+    final transportChanged = transportGeneration != widget.client.generation;
+    final reconnected = connected && !wasConnected;
+    transportGeneration = widget.client.generation;
+    wasConnected = connected;
+    final next = '${widget.client.activePC}:$supported';
     if (next != connection) {
       connection = next;
       revision++;
       turns = []; projects = []; before = null;
       filter = ''; error = ''; loading = false; started = false;
+      refreshPending = false;
     }
-    if (supported && widget.client.connected && !started) {
+    if (transportChanged || !connected) {
+      revision++;
+      loading = false;
+      refreshPending = false;
+    }
+    if (supported && connected && (!started || reconnected || transportChanged)) {
       started = true;
       load();
     }
     if (mounted) setState(() {});
   }
 
+  @override
+  void didUpdateWidget(covariant ProjectTurnUsage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.refreshRevision != oldWidget.refreshRevision && supported) load();
+  }
+
   Future<void> load({bool more = false}) async {
-    if (loading || !widget.client.connected) return;
+    if (!supported || !widget.client.connected) return;
+    if (loading) {
+      if (!more) refreshPending = true;
+      return;
+    }
     final current = ++revision;
     setState(() { loading = true; error = ''; });
     try {
@@ -80,7 +104,13 @@ class _ProjectTurnUsageState extends State<ProjectTurnUsage> {
     } catch (_) {
       if (mounted && revision == current) setState(() => error = 'Could not load turns. Try again.');
     } finally {
-      if (mounted && revision == current) setState(() => loading = false);
+      if (mounted && revision == current) {
+        setState(() => loading = false);
+        if (refreshPending) {
+          refreshPending = false;
+          load();
+        }
+      }
     }
   }
 
@@ -129,7 +159,7 @@ class _ProjectTurnUsageState extends State<ProjectTurnUsage> {
               for (final name in ['All', ...names.values, 'Unassigned'])
                 Align(alignment: AlignmentDirectional.centerStart, child: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis)),
             ],
-            onChanged: loading ? null : (value) {
+            onChanged: loading || !widget.client.connected ? null : (value) {
               setState(() { filter = value ?? ''; turns = []; before = null; });
               load();
             },
@@ -142,11 +172,12 @@ class _ProjectTurnUsageState extends State<ProjectTurnUsage> {
             Text(group.key == 'unassigned' ? 'Unassigned' : names[group.key] ?? 'Removed project', key: ValueKey('turn-project-${group.key}'), style: const TextStyle(fontWeight: FontWeight.w600)),
             for (final row in group.value) _TurnRow(row: row),
           ],
-          if (!loading && error.isEmpty && turns.isEmpty) const Padding(
+          if (widget.client.connected && started && !loading && error.isEmpty && turns.isEmpty) const Padding(
             padding: EdgeInsets.only(top: 12), child: Text('No recorded turns for this project.'),
           ),
           if (error.isNotEmpty) ...[
             Text(error, style: TextStyle(color: pink)),
+            if (turns.isNotEmpty) const Text('Showing previous turns. Data may be stale.'),
             TextButton(onPressed: () => load(more: before != null), child: const Text('Retry')),
           ],
           if (loading) const Padding(padding: EdgeInsets.all(12), child: Center(child: CircularProgressIndicator(semanticsLabel: 'Loading turns'))),
@@ -169,10 +200,11 @@ class _TurnRow extends StatelessWidget {
     final usage = row['usage'] is Map ? row['usage'] as Map : const {};
     final windows = (row['quota'] as List? ?? []).whereType<Map>();
     final at = usageDate(row['at']);
+    String? label(dynamic value) => value is String && value.trim().isNotEmpty ? value : null;
     return Padding(
       padding: const EdgeInsets.only(top: 14),
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        Text('${row['model'] ?? row['provider'] ?? 'Not reported'}'),
+        Text(label(row['model']) ?? label(row['provider']) ?? 'Not reported'),
         Text('${at == null ? 'Time unknown' : localUsageDate(context, at)} · ${row['consoleName'] ?? row['provider'] ?? 'Console'}', style: const TextStyle(color: muted)),
         Wrap(spacing: 12, runSpacing: 4, children: [
           Text('Input ${turnNumber(usage['input'])}'),
@@ -183,8 +215,8 @@ class _TurnRow extends StatelessWidget {
         else if (windows.isEmpty) const Text('Quota change: —')
         else for (final window in windows) Text(
           usagePercent(window['changePercent']) == null
-            ? 'Quota change: — of ${turnWindow(window['minutes'])}'
-            : '~${turnNumber(window['changePercent'])}% of ${turnWindow(window['minutes'])}',
+            ? 'Quota change: —${label(window['reason']) == null ? '' : ' (${window['reason']})'} of ${turnWindow(window['minutes'])}'
+            : 'Observed ~${turnNumber(window['changePercent'])}% of ${turnWindow(window['minutes'])}',
         ),
       ]),
     );

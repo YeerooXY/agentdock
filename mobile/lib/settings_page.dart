@@ -31,6 +31,7 @@ class _SettingsPageState extends State<SettingsPage> {
   bool wasConnected = false, refreshPending = false;
   double textScale = 1.0;
   Timer? usageTimer;
+  int turnRefreshRevision = 0;
 
   @override
   void initState() {
@@ -68,6 +69,7 @@ class _SettingsPageState extends State<SettingsPage> {
     setState(() {
       loading = true;
       usageError = '';
+      turnRefreshRevision++;
     });
     try {
       var next = await widget.client.request('usage', {
@@ -274,7 +276,11 @@ class _SettingsPageState extends State<SettingsPage> {
             },
           ),
         ),
-      ProjectTurnUsage(client: c),
+      ProjectTurnUsage(
+        key: const ValueKey('project-turn-usage'),
+        client: c,
+        refreshRevision: turnRefreshRevision,
+      ),
       if (usage?['threshold'] is num)
         Padding(
           padding: const EdgeInsets.only(top: 14),

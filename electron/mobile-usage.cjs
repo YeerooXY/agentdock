@@ -21,13 +21,14 @@ function turnPage(records, projects, { projectId, limit = 50, before } = {}) {
     .sort((a, b) => b.at - a.at || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0));
   const number = value => typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
   const percent = value => number(value) !== null && value <= 100 ? value : null;
-  const label = value => typeof value === 'string' ? value : null;
+  const label = value => typeof value === 'string' && value.trim() ? value : null;
   const turns = rows.slice(0, limit).map(row => ({
     id: row.id, at: row.at, consoleName: label(row.consoleName), projectId: label(row.projectId),
     projectName: label(names.get(row.projectId)), provider: label(row.provider), model: label(row.model), source: label(row.source),
     usage: { input: number(row.usage?.input), output: number(row.usage?.output), cached: number(row.usage?.cached) },
     quota: (Array.isArray(row.quota) ? row.quota : []).map(q => ({
       minutes: number(q.minutes), changePercent: percent(q.changePercent),
+      reason: typeof q.reason === 'string' ? q.reason.slice(0, 80) : '',
       scope: 'account', attribution: 'estimate',
     })),
   }));
