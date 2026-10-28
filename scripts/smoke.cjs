@@ -19,10 +19,12 @@ const artifacts = path.join(root, 'artifacts'); fs.mkdirSync(artifacts, { recurs
 let app;
 // Narrow consoles wrap long markers across rendered rows; compare without whitespace.
 const renderedText = text => text.replace(/\s+/g, '');
+// What the grid terminal actually shows, for failures on CI runners that hide logs.
+const terminalReport = async (page, invoke) => JSON.stringify(await page.evaluate(() => { const card = document.querySelector('.session-card:has(.xterm)'), rows = card?.querySelector('.xterm-rows'); return { cards: document.querySelectorAll('.session-card .xterm').length, width: Math.round(card?.getBoundingClientRect().width || 0), height: Math.round(card?.getBoundingClientRect().height || 0), rows: rows?.children.length || 0, innerWidth, text: (rows?.innerText || '').replace(/\s+/g, ' ').slice(-300) }; })) + ' buffer: ' + JSON.stringify(((await invoke('state')).sessions || []).map(x => ({ provider: x.provider, alive: x.alive, cols: x.cols, rows: x.rows, state: x.state }))) + ' backend tail: ' + JSON.stringify(await Promise.all(((await invoke('state')).sessions || []).filter(x => x.alive).map(async x => ((await invoke('session.buffer', x.id))?.data || '').replace(/\[[0-9;?]*[A-Za-z]/g, '').slice(-200))));
 async function eventually(predicate, message) {
   const end = Date.now() + 20000;
   while (Date.now() < end) { if (await predicate()) return; await new Promise(resolve => setTimeout(resolve, 100)); }
-  throw new Error(message || 'Timed out waiting for application state');
+  throw new Error((typeof message === 'function' ? await message() : message) || 'Timed out waiting for application state');
 }
 (async () => {
   const problems = [], checks = [];
@@ -148,7 +150,7 @@ async function eventually(predicate, message) {
   await page.locator('.xterm-helper-textarea').focus();
   await page.keyboard.type(shellCommand.join('PAD', 'DOCK_SMOKE_OK')); await page.keyboard.press('Enter');
   await eventually(async () => (await invoke('session.buffer', session.id)).data.includes('PADDOCK_SMOKE_OK'), 'Terminal command did not produce its expected output');
-  await eventually(async () => renderedText(await page.locator('.session-card .xterm-rows').innerText()).includes('PADDOCK_SMOKE_OK'));
+  await eventually(async () => renderedText(await page.locator('.session-card .xterm-rows').innerText()).includes('PADDOCK_SMOKE_OK'), async () => `PADDOCK_SMOKE_OK never rendered: ${await terminalReport(page, invoke)}`);
   const colorCommand = shellCommand.run(process.execPath, '-e', "console.log(require('node:util').styleText('green','DOCK_COLOR_OK'))") + '\r';
   await invoke('session.input', { id: session.id, data: colorCommand });
   await eventually(async () => page.locator('.session-card .xterm-rows span').evaluateAll(spans =>
@@ -189,7 +191,7 @@ async function eventually(predicate, message) {
   assert.equal(await liveName.inputValue(), 'Robonslaught dev');
   await page.locator('.session-card .xterm-helper-textarea').focus();
   await page.keyboard.type(shellCommand.join('GRID_', 'STILL_LIVE')); await page.keyboard.press('Enter');
-  await eventually(async () => renderedText(await page.locator('.session-card .xterm-rows').innerText()).includes('GRID_STILL_LIVE'));
+  await eventually(async () => renderedText(await page.locator('.session-card .xterm-rows').innerText()).includes('GRID_STILL_LIVE'), async () => `GRID_STILL_LIVE never rendered: ${await terminalReport(page, invoke)}`);
   assert.equal((await invoke('state')).sessions.filter(x => x.alive).length, 1);
   checks.push('Live grid terminal accepts input, keeps focus during updates, and reuses the same terminal fullscreen; returning to Consoles stays fullscreen');
   checks.push('Panel titles rename in place across grid, fullscreen and HUD without restarting terminals or changing launch defaults');
