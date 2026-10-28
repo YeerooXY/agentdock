@@ -28,4 +28,4 @@ An agent can ask another of your subscriptions to review its changes. It is off 
 
 ## Not in this version
 
-Delegating implementation work (planned next, in a separate worktree), other reviewer CLIs such as Gemini, and choosing a reviewer model per task in the app (the `delegationModels` setting exists but has no control yet).
+Other reviewer CLIs such as Gemini and choosing a reviewer model in the cross-agent review panel (the `delegationModels` setting exists but has no control yet). The [Tasks page](task-loop.md) supports implementation loops and explicit model assignments.

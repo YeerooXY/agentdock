@@ -86,7 +86,7 @@ function fixture(t, settings = {}) {
     getSettings: () => ({ delegationEnabled: true, ...settings }), candidates: () => [{ id: 'kiro:default', provider: 'kiro', label: 'Kiro', executable: '/mock/kiro' }], getLimits: () => [], environment: () => ({ TOKEN: 'PRIVATE_TOKEN_VALUE' }),
     openPanel: job => sessions.createReviewPanel(job),
     panelOpen: id => sessions.items.get(id)?.kind === 'review',
-    run: (_exe, args, _options, callback) => callback(null, args[0] === 'diff' ? (args.includes('--name-only') ? 'app.js\n' : '+PRIVATE_DIFF_TEXT\n') : ''),
+    run: (_exe, args, _options, callback) => callback(null, args.includes('diff') ? (args.includes('--name-only') ? 'app.js\n' : '+PRIVATE_DIFF_TEXT\n') : ''),
     spawnProcess: () => {
       const child = new EventEmitter(); child.stdout = new EventEmitter(); child.stderr = new EventEmitter();
       child.stdin = { on() {}, end(brief) { child.brief = brief; } }; child.kill = () => { child.killed = true; }; children.push(child); return child;

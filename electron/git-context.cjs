@@ -16,7 +16,7 @@ function cleanGit(value) {
     dirty: typeof value.dirty === 'boolean' ? value.dirty : null };
 }
 
-async function gitInfo(folder) {
+async function gitInfo(folder, { run = exec } = {}) {
   if (!folder) return null;
   try {
     // One status observation supplies HEAD, branch and working-tree state together.
@@ -25,8 +25,8 @@ async function gitInfo(folder) {
     // Both processes must settle even outside a repository. Returning after the
     // first rejection can leave the other process holding a folder on Windows.
     const probes = await Promise.allSettled([
-      exec('git', ['--no-optional-locks', '-C', folder, 'status', '--porcelain=v2', '--branch', '--untracked-files=normal', '-z'], options),
-      exec('git', ['--no-optional-locks', '-C', folder, 'rev-parse', '--show-toplevel'], options)
+      run('git', ['--no-optional-locks', '-c', 'core.fsmonitor=false', '-C', folder, 'status', '--porcelain=v2', '--branch', '--untracked-files=normal', '-z'], options),
+      run('git', ['--no-optional-locks', '-c', 'core.fsmonitor=false', '-C', folder, 'rev-parse', '--show-toplevel'], options)
     ]);
     if (probes.some(probe => probe.status !== 'fulfilled')) return null;
     const [status, root] = probes.map(probe => probe.value);

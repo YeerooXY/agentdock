@@ -17,7 +17,8 @@ const MAX_RUNNING = 2, MAX_PER_HOUR = 20, FRESH_MS = 30 * 60_000, FULL_PERCENT =
 const names = { claude: 'Claude Code', codex: 'Codex', kiro: 'Kiro' };
 
 function git(cwd, args, run = execFile) {
-  return new Promise((resolve, reject) => run('git', args, { cwd, windowsHide: true, maxBuffer: 8 * 1024 * 1024, timeout: 20000 }, (error, stdout) => error ? reject(error) : resolve(String(stdout))));
+  const safeArgs = args[0] === 'diff' ? ['diff', '--no-textconv', '--no-ext-diff', ...args.slice(1)] : args;
+  return new Promise((resolve, reject) => run('git', ['-c', 'core.fsmonitor=false', ...safeArgs], { cwd, windowsHide: true, maxBuffer: 8 * 1024 * 1024, timeout: 20000 }, (error, stdout) => error ? reject(error) : resolve(String(stdout))));
 }
 
 function cleanFiles(files) {
@@ -31,19 +32,23 @@ function cleanFiles(files) {
 }
 
 // The changes to review, with credential and generated files left out.
-async function collectChanges(cwd, { base = 'HEAD', files = [] } = {}, run = execFile) {
+async function collectChanges(cwd, { base = 'HEAD', files = [], exclude = [], allowEmpty = false, maxDiff = MAX_DIFF, maxUntracked = 100 } = {}, run = execFile) {
   if (typeof base !== 'string' || !/^[\w./@^~-]{1,100}$/.test(base) || base.startsWith('-')) throw new Error('Use a branch, tag or commit as the base.');
   try { await git(cwd, ['rev-parse', '--verify', '--quiet', base + '^{commit}'], run); }
-  catch { throw new Error(`The base ${base} is not a commit in this project.`); }
+  catch (error) {
+    if (error.killed || error.signal || /lock|timed? ?out|timeout/i.test(error.message || '') || !(error.code === 1 || /bad object|unknown revision|not a valid object/i.test(error.message || ''))) throw error;
+    throw Object.assign(new Error(`The base ${base} is not a commit in this project.`), { code: 'PADDOCK_BASELINE_MISSING' });
+  }
   const scope = files.length ? ['--', ...files] : [];
-  const changed = (await git(cwd, ['diff', '--name-only', '--no-renames', base, ...scope], run)).split('\n').filter(Boolean);
-  const untracked = (await git(cwd, ['ls-files', '--others', '--exclude-standard', ...scope], run)).split('\n').filter(Boolean);
+  const excluded = new Set(exclude);
+  const changed = (await git(cwd, ['diff', '--name-only', '-z', '--no-renames', base, ...scope], run)).split('\0').filter(file => file && !excluded.has(file));
+  const untracked = (await git(cwd, ['ls-files', '-z', '--others', '--exclude-standard', ...scope], run)).split('\0').filter(file => file && !excluded.has(file));
   const included = changed.filter(permitted), fresh = untracked.filter(permitted);
   const omitted = changed.length - included.length + untracked.length - fresh.length;
-  if (!included.length && !fresh.length) throw new Error(omitted ? 'Only private or generated files changed. Nothing to review.' : 'There are no changes to review.');
+  if (!allowEmpty && !included.length && !fresh.length) throw new Error(omitted ? 'Only private or generated files changed. Nothing to review.' : 'There are no changes to review.');
   const diff = included.length ? await git(cwd, ['diff', '--no-color', '--no-ext-diff', '--no-renames', base, '--', ...included], run) : '';
-  if (diff.length > MAX_DIFF) throw new Error(`The diff is ${Math.round(diff.length / 1000)} KB. Narrow the review to fewer files.`);
-  return { base, diff, files: included, untracked: fresh.slice(0, 100), omitted };
+  if (diff.length > maxDiff) throw Object.assign(new Error(`The diff is ${Math.round(diff.length / 1000)} KB. Narrow the review to fewer files.`), { code: 'PADDOCK_DIFF_TOO_LARGE' });
+  return { base, diff, files: included, untracked: fresh.slice(0, maxUntracked), omitted };
 }
 
 function reviewBrief({ focus, changes }) {
@@ -164,21 +169,25 @@ function progressLines(provider, line) {
   return [];
 }
 
+function redactText(text, environment = {}) {
+  const values = [...new Set(Object.values(environment).filter(x => typeof x === 'string' && x.length))].sort((a, b) => b.length - a.length);
+  if (values.length) text = String(text).replace(new RegExp(values.map(x => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'), 'g'), '[redacted]');
+  return stripAnsi(text).replace(/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)/g, '[redacted private key]')
+    .replace(/\b(?:sk-|gh[pousr]_|github_pat_|Bearer\s+)[\w.\-/+=]+/gi, '[redacted]')
+    .replace(/(?<![\w/+=-])[A-Za-z0-9_=-]{40,}(?![\w/+=-])/g, value => /[a-z]/.test(value) && /[A-Z]/.test(value) && /\d/.test(value) ? '[redacted]' : value)
+    .replace(/\b(?:[\w-]*(?:token|secret|password|api[_-]?key)[\w-]*)\s*[:=]\s*\S+/gi, '[redacted]');
+}
+
 function progressLog({ brief = '', environment = {}, append }) {
   // Boilerplate and short syntax also occur in legitimate findings. Only
   // suppress complete, substantial lines from the supplied focus/diff.
   const boilerplate = new Set(reviewBrief({ changes: { untracked: [], omitted: 0, diff: '' } }).split('\n').map(x => x.trim()));
   const privateLines = new Set(brief.split(/\r?\n/).map(x => x.trim()).filter(x => x.length >= 12 && !boilerplate.has(x)));
-  const values = [...new Set(Object.values(environment).filter(x => typeof x === 'string' && x.length))].sort((a, b) => b.length - a.length);
-  const privateValues = values.length ? new RegExp(values.map(x => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'), 'g') : null;
   return text => {
     for (let line of stripAnsi(text).split(/\r?\n/)) {
       line = line.trim();
       if (!line || privateLines.has(line)) continue;
-      if (privateValues) line = line.replace(privateValues, '[redacted]');
-      line = line.replace(/\b(?:sk-|gh[pousr]_|github_pat_|Bearer\s+)[\w.\-/+=]+/gi, '[redacted]')
-        .replace(/(?<![\w/+=-])[A-Za-z0-9_=-]{40,}(?![\w/+=-])/g, value => /[a-z]/.test(value) && /[A-Z]/.test(value) && /\d/.test(value) ? '[redacted]' : value)
-        .replace(/\b(?:[\w-]*(?:token|secret|password|api[_-]?key)[\w-]*)\s*[:=]\s*\S+/gi, '[redacted]');
+      line = redactText(line, environment);
       append(line.slice(0, 4000));
     }
   };
@@ -211,6 +220,9 @@ function killTree(child) {
     if (process.platform === 'win32' && Number.isInteger(child.pid)) {
       const taskkill = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'taskkill.exe');
       if (fs.existsSync(taskkill)) { const killer = spawn(taskkill, ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' }); killer.once('error', () => {}); killer.unref(); return; }
+    }
+    if (process.platform !== 'win32' && Number.isInteger(child.pid)) {
+      try { process.kill(-child.pid, 'SIGKILL'); return; } catch {}
     }
     child.kill();
   } catch {}
@@ -328,4 +340,4 @@ class Delegation extends EventEmitter {
   stopAll() { for (const id of [...this.finishers.keys()]) this.stop(id); }
 }
 
-module.exports = { Delegation, collectChanges, reviewBrief, pickReviewer, reviewerLaunch, parseReply, headroom, cleanFiles, REVIEWERS, progressLines, progressLog, appendLog, progressStream };
+module.exports = { Delegation, collectChanges, reviewBrief, pickReviewer, reviewerLaunch, parseReply, headroom, cleanFiles, REVIEWERS, progressLines, progressLog, appendLog, progressStream, killTree, redactText, git };

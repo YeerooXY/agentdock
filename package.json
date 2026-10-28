@@ -10,7 +10,7 @@
     "postinstall": "node scripts/fix-node-pty.cjs",
     "build": "vite build",
     "test": "node --test tests/*.test.cjs",
-    "test:desktop": "node scripts/smoke.cjs && node scripts/workbench-smoke.cjs && node scripts/layout-smoke.cjs && node scripts/setup-smoke.cjs",
+    "test:desktop": "node scripts/smoke.cjs && node scripts/workbench-smoke.cjs && node scripts/layout-smoke.cjs && node scripts/setup-smoke.cjs && node scripts/task-loop-smoke.cjs",
     "prepare:runtime": "node scripts/prepare-runtime.cjs",
     "pack": "npm run build && npm run prepare:runtime && electron-builder --dir --win --x64",
     "dist": "npm run build && npm run prepare:runtime && electron-builder --win --x64 --publish never && node scripts/checksum.cjs",

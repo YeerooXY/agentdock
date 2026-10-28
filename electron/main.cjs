@@ -21,6 +21,7 @@ const { Updates } = require('./updates.cjs');
 const { loginPath } = require('./platform.cjs');
 const { Workbench } = require('./workbench.cjs');
 const { Delegation, REVIEWERS } = require('./delegation.cjs');
+const { TaskLoop } = require('./task-loop.cjs');
 const { closeReviewPanel } = require('./review-panel.cjs');
 const { resultGitContext } = require('./git-context.cjs');
 const { creativeTools } = require('./creative-tools.cjs');
@@ -63,7 +64,7 @@ if (testMode && testDir) app.setPath('userData', testDir);
 else app.setPath('userData', userDataPath(app.getPath('appData'), app.getPath('userData')));
 if (!app.requestSingleInstanceLock() && !testMode) app.quit();
 let window, tray, vault, sessions, workspace, projects, messageUsage, updates, account, root, settings, ledger, notifications, hub, integrations, mcpCatalog, workbench, cliSetup, skillPacks, turns, mobile, workPower, ssh, screenshots, accounts, draftBridge;
-let codePanel, worktrees, messageQueue, prompts;
+let codePanel, worktrees, messageQueue, prompts, tasks;
 let mode = 'dashboard', quitting = false, refreshing = false, lastRefresh = 0, apiBusy = false, subscriptionUsage, usageRefresh;
 let modeTarget = null, modeTask, modeSequence = 0, transitioning = false;
 let trayHidden = false, windowDrag = null, hiddenBounds = null;
@@ -76,7 +77,7 @@ const projectsFolder = path.join(os.homedir(), 'Projects');
 const defaultFolder = fs.existsSync(projectsFolder) && fs.statSync(projectsFolder).isDirectory() ? projectsFolder : os.homedir();
 function snapshot() {
   return { platform: process.platform, mode, transitioning, trayHidden, sessions: sessions?.list() || [], codePanels: sessions?.codePanels() || [], queues: messageQueue?.snapshot() || {}, prompts: prompts?.list() || [], codeRevision: codePanel?.revision || 0, limits, accounts: ['codex', 'claude'].flatMap(provider => accounts?.choices(provider) || []), recent, accountError, refreshing, lastRefresh, agents: cliSetup?.snapshot() || [], agentSetupBusy: !!cliSetup?.running, skills: skillPacks?.snapshot() || { packs: [], busy: false },
-    usageAccounts: usageAccounts(), usageChecks: subscriptionUsage?.snapshot() || [], delegations: workbench?.delegation?.snapshot() || [],
+    usageAccounts: usageAccounts(), usageChecks: subscriptionUsage?.snapshot() || [], delegations: workbench?.delegation?.snapshot() || [], tasks: tasks?.snapshot() || [],
     sshHosts: ssh?.list() || [], capabilities, projects: projects?.list() || [], messages: [...(messageUsage?.items || []), ...apiMessages(ledger || [])].sort((a,b) => b.at - a.at).slice(0, 200), mobile: mobile?.snapshot(), workbench: workbench?.snapshot(), vault: { available: vault?.available() || false, entries: vault?.list() || [] },
     ledger: ledger || [], summary: ledgerSummary(ledger || []), shared: hub?.snapshot(), updates: updates?.snapshot(), grid: sessions?.grid || settings?.grid, settings, storageError, workspaceError, shortcutAvailable,
     integrations: integrations?.snapshot(hub?.config.connections || [], vault?.list() || []), toolCatalog: mcpCatalog?.snapshot(hub?.config.connections || []) || [],
@@ -343,11 +344,7 @@ app.whenReady().then(async () => {
   mcpCatalog = new McpCatalog(root, runtime, { run: runProgram, downloads: new ManagedDownloads(root), onChange: publish });
   workbench = new Workbench(root, runtime, require('electron'), { testMode, onChange: publish, getSessions: () => sessions, getProject: () => settings.consoleDefaults.cwd, getWindow: () => window, getHub: () => hub, getAgents: () => cliSetup.snapshot() });
   projects = new Projects(root); projects.on('changed', publish); workbench.projects = projects;
-  // Reviewers are the user's own signed-in Claude Code and Codex accounts.
-  workbench.delegation = new Delegation(root, {
-    testMode, getSettings: () => settings,
-    openPanel: job => sessions?.createReviewPanel(job),
-    panelOpen: id => sessions?.items.get(id)?.kind === 'review',
+  const taskAccounts = {
     getLimits: () => limits.map(item => ({ ...item, accountId: limitAccountId(item) })),
     candidates: () => REVIEWERS.flatMap(provider => {
       const executable = cliSetup.executable(provider), name = provider === 'claude' ? 'Claude Code' : 'Codex';
@@ -360,8 +357,21 @@ app.whenReady().then(async () => {
       ? Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.toLowerCase().startsWith('paddock_')))
       : accounts.environment(id, provider, { baseEnv: process.env })),
     saveResult: async (raw, context) => workbench.results.add(raw, await resultGitContext({}, context || {}, workbench.results.root))
-  });
+  };
+  workbench.delegation = new Delegation(root, { ...taskAccounts, testMode, getSettings: () => settings,
+    openPanel: job => sessions?.createReviewPanel(job), panelOpen: id => sessions?.items.get(id)?.kind === 'review' });
   workbench.delegation.on('changed', publish);
+  tasks = new TaskLoop(root, { ...taskAccounts, candidates: () => testMode ? [] : taskAccounts.candidates(),
+    repositories: () => {
+      const folders = projects.list().flatMap(project => project.folders.map(folder => ({ path: folder.path, label: `${project.name}${folder.label ? ` / ${folder.label}` : ''}: ${folder.path}` })));
+      for (const session of sessions?.items.values() || []) if (session.alive && !session.remote && !session.kind && session.cwd) folders.push({ path: session.cwd, label: `${session.name}: ${session.cwd}` });
+      return folders.filter((folder, index) => folders.findIndex(other => process.platform === 'win32' ? other.path.toLowerCase() === folder.path.toLowerCase() : other.path === folder.path) === index);
+    },
+    saveResult: async (raw, context) => raw.resultId && workbench.results.items.some(item => item.id === raw.resultId)
+      ? workbench.results.updateText(raw.resultId, raw)
+      : taskAccounts.saveResult(raw, context)
+  });
+  tasks.on('changed', publish);
   projects.on('tracking-error', message => { storageError = message; publish(); });
   hub = new SharedHub(root, vault, { integrations, workbench, skills: () => skillPacks.snapshot().packs, confirm: confirmToolCall, isLaunchCurrent: owner => {
     const item = sessions?.items.get(owner?.sessionId);
@@ -506,6 +516,11 @@ app.whenReady().then(async () => {
       if (typeof method === 'string' && method.startsWith('workbench.')) return { ok: true, value: await workbench.call(method.slice(10), payload) };
       switch (method) {
         case 'state': return { ok: true, value: snapshot() };
+        case 'tasks.candidates': return { ok: true, value: tasks.choices(payload?.implementer) };
+        case 'tasks.start': return { ok: true, value: await tasks.start(payload) };
+        case 'tasks.stop': return { ok: true, value: await tasks.stop(payload?.id) };
+        case 'tasks.accept': return { ok: true, value: await tasks.accept(payload?.id) };
+        case 'tasks.list': await tasks.refresh(); return { ok: true, value: tasks.snapshot() };
         case 'updates.check': return { ok: true, value: await updates.check() };
         case 'updates.download': if (testMode) throw new Error('Real update downloads are disabled in tests.'); return { ok: true, value: await updates.download() };
         case 'updates.install': {
@@ -948,6 +963,7 @@ app.on('before-quit', event => {
   cleanupStarted = true; quitting = true;
   workPower?.dispose();
   workspace?.freeze();
+  tasks?.interruptAll();
   workbench?.stop();
   // Drain ConPTY exits while the event loop is alive, before Electron tears down its workers.
   (async () => {

@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { execFileSync } = require('node:child_process');
+const { execFileSync, execFile } = require('node:child_process');
 const { gitInfo, resultGitContext } = require('../electron/git-context.cjs');
 const { Turns } = require('../electron/turns.cjs');
 const { Results } = require('../electron/results.cjs');
@@ -78,4 +78,16 @@ test('legacy code reports recover recorded revisions without consulting today’
   f.write('later'); f.commit();
   const recovered = new Results(f.store).list().find(x => x.id === saved.id);
   assert.equal(recovered.git.commit, commit); assert.equal(recovered.gitEnd.commit, commit);
+});
+
+test('Results metadata reads disable a repository-configured fsmonitor command', async t => {
+  const f = fixture(t); f.write('before'); const commit = f.commit();
+  f.git('config', 'core.fsmonitor', 'paddock-test-command-must-not-run');
+  const execute = require('node:util').promisify(execFile), seen = [];
+  const info = await gitInfo(f.project, { run: (program, args, options) => {
+    seen.push(args); assert.ok(args.includes('core.fsmonitor=false')); assert.ok(args.includes('--no-optional-locks'));
+    return execute(program, args, options);
+  } });
+  assert.equal(seen.length, 2); assert.equal(info.commit, commit); assert.equal(info.dirty, false);
+  assert.equal(f.git('config', '--get', 'core.fsmonitor'), 'paddock-test-command-must-not-run');
 });

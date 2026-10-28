@@ -28,6 +28,7 @@ import { consoleProjects } from './console-projects.js';
 import { consoleQueue } from './console-queue.js';
 import { webPanelUI } from './web-panel-ui.js';
 import { reviewPanelUI } from './review-panel-ui.js';
+import { taskLoopUI } from './task-loop-ui.js';
 import { imageGenerationUI } from './image-generation-ui.js';
 import { sshUI } from './ssh-ui.js';
 import './ssh.css';
@@ -91,7 +92,7 @@ const gridSize = () => state?.grid || { columns: 3, rows: 3 };
 const allPanels = () => [...(state?.sessions || []), ...(state?.codePanels || [])];
 const gridCapacity = () => gridSize().columns * gridSize().rows;
 let openingConsole = false;
-let explorer, codePanels, webPanels, reviewPanels, launchGesture, chooserOpener, vim, setup, workbench, layoutMotion, phone, projects, projectChats, messageQueue, imageGenerator, updates, usageView;
+let explorer, codePanels, webPanels, reviewPanels, launchGesture, chooserOpener, vim, setup, workbench, layoutMotion, phone, projects, projectChats, messageQueue, imageGenerator, updates, usageView, taskLoops;
 const nameSaves = new Map();
 const launchHint = 'title="Click to open. Hold or right-click to choose." aria-haspopup="dialog"';
 let renderedView = null, viewAnimation, windowMoving = false, pageBeforeSettings = 'consoles';
@@ -140,6 +141,7 @@ $('#app').innerHTML = `
       <button id="explorer-toggle" data-action="sidebar" aria-label="Explorer" title="Explorer" aria-controls="explorer-pane" aria-expanded="true">${icon('folder')}</button>
       <button data-page="consoles"><span class="notification-icon">${icon('terminal')}<span id="ready-count" class="notification-badge" hidden></span></span>Consoles <span id="nav-count">0</span></button>
       <button data-page="projects">${icon('folder')}Projects</button>
+      <button data-page="tasks">${icon('list')}Tasks</button>
       <button data-page="results"><span class="notification-icon">${icon('grid')}<span id="results-count" class="notification-badge" hidden></span></span>Results</button>
       <button data-page="usage">${icon('chart')}Usage</button>
       <button class="console-api-link" data-page="api">${icon('api')}API requests</button>
@@ -667,7 +669,7 @@ function renderPage() {
   document.querySelectorAll('.sidebar [data-page]').forEach(button => { if (button.classList.contains('selected') && !button.classList.contains('brand')) button.setAttribute('aria-current', 'page'); else button.removeAttribute('aria-current'); });
   explorer?.sync();
   if (consoleView) { renderConsoles(); return; }
-  const renderer = { projects: () => projects.render(), results: () => workbench.render('results'), usage: renderUsage, api: renderApi, tools: renderTools, instructions: renderInstructions, settings: renderSettingsCategory }[page] || renderSettingsCategory;
+  const renderer = { projects: () => projects.render(), tasks: () => taskLoops.render(), results: () => workbench.render('results'), usage: renderUsage, api: renderApi, tools: renderTools, instructions: renderInstructions, settings: renderSettingsCategory }[page] || renderSettingsCategory;
   const content = $('#content');
   const backgroundLayer = content.querySelector(':scope > .page-background-layer');
   content.innerHTML = (state.storageError ? `<div class="error-banner" role="alert">${escape(state.storageError)}</div>` : '') + (isSettingsPage(page) ? renderSettingsCategory() : renderer());
@@ -688,6 +690,7 @@ function renderPage() {
   if (backgroundLayer) content.prepend(backgroundLayer);
   ensureBackdropSky(content, 57);
   workbench?.mount();
+  taskLoops?.mount();
   if (settingsOpening && !windowMoving && !reducedMotion.matches) { viewAnimation?.cancel(); viewAnimation = $('.settings-overlay')?.animate([{ opacity: 0, transform: 'scale(1.03)' }, { opacity: 1, transform: 'scale(1)' }], { duration: 220, easing: 'cubic-bezier(.22,1,.36,1)' }); }
   if (page === 'appearance') { const preview = $('.settings-content .console-theme-preview'); if (preview) mountSky(preview, 99); }
   if ($('.settings-overlay')) mountSky($('.settings-overlay'), 77);
@@ -815,6 +818,7 @@ function receive(next) {
     fullscreenButton.setAttribute('aria-label', fullscreenButton.title);
   }
   workbench?.sync();
+  taskLoops?.sync();
   imageGenerator?.sync();
   setup?.receive();
   phone?.receive();
@@ -1975,5 +1979,6 @@ layoutMotion = consoleMotion({ render: renderConsoles, fit: scheduleFits });
 consoleDragging({ call, toast, motion: layoutMotion });
 consoleLayoutUI({ call, getState: () => state, motion: layoutMotion, toast });
 workbench = workbenchUI({ call, getState: () => state, getPage: () => page, renderPage, escape, toast, selectSession, navigate: navigatePage });
+taskLoops = taskLoopUI({ call, getState: () => state, getPage: () => page, renderPage, escape, toast, openResult: id => workbench.openResult(id) });
 toolFeatures({ call, getState: () => state, navigate: navigatePage, render: refreshToolSections, toast, escape });
 try { state = await call('state'); receive(state); renderPage(); } catch (error) { $('#content').textContent = error.message; }

@@ -113,6 +113,15 @@ class Results extends EventEmitter {
     const file = this.path(id); atomicJson(file, report);
     this.persist(this.items.map(x => x.id === id ? { ...x, size: fs.statSync(file).size } : x));
   }
+  updateText(id, raw) {
+    const item = this.items.find(x => x.id === id);
+    if (!item || item.ext !== '.md' || typeof raw.text !== 'string' || Buffer.byteLength(raw.text) > 2 * 1024 * 1024) throw new Error('The report could not be updated.');
+    const file = this.path(id), temp = file + '.tmp';
+    try { fs.writeFileSync(temp, raw.text, { mode: 0o600 }); fs.renameSync(temp, file); }
+    finally { try { fs.unlinkSync(temp); } catch {} }
+    const updated = { ...item, size: Buffer.byteLength(raw.text), status: raw.status, summary: short(raw.summary, 1500) };
+    this.persist(this.items.map(x => x.id === id ? updated : x)); return updated;
+  }
   async remove(ids) {
     if (this.deleting) throw new Error('Deletion is still in progress.');
     if (!Array.isArray(ids) || ids.length > 1000) throw new Error('Choose results to delete.');
