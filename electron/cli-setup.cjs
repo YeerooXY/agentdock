@@ -140,9 +140,9 @@ function installEnvironment(runtime, directory, agentId) {
 }
 
 class CliSetup {
-  constructor(root, runtime, { onChange = () => {}, testMode = false, detect, run = runInstaller, verify = verifyExecutable, download, platform = process.platform, build = Number(os.release().split('.')[2] || 0), home = os.homedir(), localAppData = process.env.LOCALAPPDATA, findProgram: findProgramOverride } = {}) {
+  constructor(root, runtime, { onChange = () => {}, onDetectError = () => {}, deferDetection = false, testMode = false, detect, run = runInstaller, verify = verifyExecutable, download, platform = process.platform, build = Number(os.release().split('.')[2] || 0), home = os.homedir(), localAppData = process.env.LOCALAPPDATA, findProgram: findProgramOverride } = {}) {
     this.downloads = new ManagedDownloads(root);
-    Object.assign(this, { root, runtime, onChange, testMode, run, verify, platform, build, home, localAppData, findProgram: findProgramOverride || findProgram });
+    Object.assign(this, { root, runtime, onChange, onDetectError, testMode, run, verify, platform, build, home, localAppData, findProgram: findProgramOverride || findProgram });
     this.directory = path.join(root, 'agents'); this.file = path.join(root, 'agent-setup.json');
     this.detectOverride = detect;
     this.download = download || (async url => {
@@ -154,12 +154,18 @@ class CliSetup {
     });
     this.jobs = readJson(this.file, {});
     for (const job of Object.values(this.jobs)) if (['queued', 'installing'].includes(job.state)) { job.state = 'error'; job.error = 'Setup was interrupted. Check again, then retry if needed.'; }
-    this.installed = new Map(); this.refresh();
+    this.installed = new Map(); if (!deferDetection) this.refresh();
   }
   locate(agent) {
     if (this.detectOverride) return this.detectOverride(agent.id);
-    if (agent.id === 'codex') return nativeCodex();
-    if (agent.id === 'claude') return findClaude()?.path || null;
+    if (agent.id === 'codex' || agent.id === 'claude') {
+      const dir = path.join(this.directory, agent.id, 'node_modules', '.bin');
+      for (const ext of this.platform === 'win32' ? ['.exe', '.cmd', '.ps1', ''] : ['']) {
+        const file = path.join(dir, agent.command + ext);
+        try { if (fs.statSync(file).isFile()) return file; } catch {}
+      }
+      return (agent.id === 'codex' ? nativeCodex() : findClaude()?.path) || this.findProgram(agent.command) || null;
+    }
     // `agent` is shared by Cursor and Grok. Only trust Cursor's unique
     // cursor-agent command outside its vendor-owned install directory.
     const names = agent.id === 'cursor' ? ['cursor-agent'] : [agent.command, ...(agent.aliases || [])];
@@ -187,7 +193,8 @@ class CliSetup {
   refresh() {
     let jobsChanged = false;
     for (const agent of catalog) {
-      const file = this.locate(agent);
+      let file = null;
+      try { file = this.locate(agent); } catch (error) { this.onDetectError(agent, error); }
       this.installed.set(agent.id, file);
       if (file && this.jobs[agent.id]?.state === 'error' && !this.jobs[agent.id].checkFailed) {
         this.jobs[agent.id] = { state: 'installed' }; jobsChanged = true;

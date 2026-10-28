@@ -54,6 +54,7 @@ const { AccountProfiles, defaultId } = require('./account-profiles.cjs');
 const { DraftBridge } = require('./draft-bridge.cjs');
 const { accountIdForLimit, thresholdCandidate, automaticSwitchEligible } = require('./account-switching-policy.cjs');
 const { SubscriptionUsage, readClaudeUsage, readCopilotUsage, readKiroUsage, readKimiUsage, readOpenCodeUsage, copilotExecutable, usageEnvironment, stopUsageReaders } = require('./subscription-usage.cjs');
+const { CrashReport, diagnose, redact, guardStartup } = require('./crash-report.cjs');
 app.setName('Paddock');
 const appModelId = APP_ID;
 if (process.platform === 'win32') app.setAppUserModelId(appModelId);
@@ -64,13 +65,58 @@ const testDir = process.argv.find(x => x.startsWith('--data-dir='))?.slice(11);
 if (testMode && process.platform === 'linux' && /^(gnome-libsecret|kwallet[56]?)$/.test(process.env.PADDOCK_TEST_PASSWORD_STORE || '')) app.commandLine.appendSwitch('password-store', process.env.PADDOCK_TEST_PASSWORD_STORE);
 if (testMode && testDir) app.setPath('userData', testDir);
 else app.setPath('userData', userDataPath(app.getPath('appData'), app.getPath('userData')));
-if (!app.requestSingleInstanceLock() && !testMode) app.quit();
+// A second launch hands over to the running Paddock; it must not count as a failed start.
+const secondInstance = !app.requestSingleInstanceLock() && !testMode;
+if (secondInstance) app.quit();
 let window, tray, vault, sessions, workspace, projects, messageUsage, updates, account, root, settings, ledger, notifications, hub, integrations, mcpCatalog, workbench, cliSetup, skillPacks, turns, mobile, workPower, ssh, screenshots, accounts, draftBridge;
 let codePanel, worktrees, messageQueue, prompts, tasks;
 let mode = 'dashboard', quitting = false, refreshing = false, lastRefresh = 0, apiBusy = false, subscriptionUsage, usageRefresh;
 let modeTarget = null, modeTask, modeSequence = 0, transitioning = false;
 let trayHidden = false, windowDrag = null, hiddenBounds = null;
 let limits = [], recent = [], accountError = null, capabilities = {}, storageError = null, workspaceError = null, shortcutAvailable = false;
+const crash = new CrashReport(app.getPath('userData'));
+let safeMode = false, windowReady = false, crashing = false, openCodeAvailable = true;
+async function startupStep(name, fn, options = {}) {
+  if (crashing) throw new Error('Startup stopped.');
+  const before = crash.notices.length;
+  const result = await crash.startupStep(name, fn, { ...options, safeMode });
+  if (crashing) throw new Error('Startup stopped.');
+  if (windowReady && crash.notices.length > before) { try { publish(); } catch {} }
+  return result;
+}
+function restart(safe, immediate = false) {
+  const args = process.argv.slice(1).filter(arg => arg !== '--safe-mode');
+  if (safe) args.push('--safe-mode');
+  app.relaunch({ args }); quitting = true;
+  if (immediate) app.exit(1); else app.quit();
+}
+async function startupCrash(error) {
+  if (crashing) return;
+  crashing = true;
+  crash.log('ERROR', `${crash.step}: ${error?.stack || error}`);
+  let report;
+  try { report = crash.report(error, { version: app.getVersion(), electron: process.versions.electron, node: process.versions.node, install: app.getAppPath() }); }
+  catch { dialog.showErrorBox("Paddock couldn't start", 'Paddock could not save a crash report. Check access to its data folder.'); app.exit(1); return; }
+  const detail = `${redact(error?.message || error, crash.home).replace(/[\r\n]+/g, ' ').slice(0, 500)}\nA report was saved to ${report.folder}.`;
+  while (true) {
+    const { response } = await dialog.showMessageBox({ type: 'error', title: "Paddock couldn't start", message: report.summary, detail, buttons: ['Diagnose with AI', 'Start in safe mode', 'Open report folder', 'Quit'], defaultId: 0, cancelId: 3, noLink: true });
+    if (response === 0) {
+      try { await diagnose(report.folder, { root: crash.root, dialog, shell }); }
+      catch (failure) { crash.log('ERROR', `diagnosis: ${failure?.stack || failure}`); await dialog.showMessageBox({ type: 'error', message: 'The AI agent could not be opened.', detail: 'Open the report folder to view the report.', buttons: ['OK'] }); }
+    } else if (response === 1) { restart(true, true); return; }
+    else if (response === 2) { await shell.openPath(report.folder); }
+    else { app.exit(1); return; }
+  }
+}
+function unexpected(error) {
+  if (!windowReady) { void startupCrash(error); return; }
+  crash.log('ERROR', `background work: ${error?.stack || error}`);
+  const message = 'A background task failed. Details are in the log.';
+  if (!crash.notices.includes(message)) crash.notices.push(message);
+  try { publish(); } catch {}
+}
+process.on('uncaughtException', unexpected);
+process.on('unhandledRejection', unexpected);
 const codexAccounts = new Map(), dismissedThresholdOffers = new Set(), automaticSwitchAttempts = new Set();
 const recentReader = new RecentCodex();
 const entryFile = path.join(__dirname, '..', 'dist', 'index.html');
@@ -78,10 +124,10 @@ const entryUrl = pathToFileURL(entryFile).href;
 const projectsFolder = path.join(os.homedir(), 'Projects');
 const defaultFolder = fs.existsSync(projectsFolder) && fs.statSync(projectsFolder).isDirectory() ? projectsFolder : os.homedir();
 function snapshot() {
-  return { platform: process.platform, mode, transitioning, trayHidden, sessions: sessions?.list() || [], codePanels: sessions?.codePanels() || [], queues: messageQueue?.snapshot() || {}, prompts: prompts?.list() || [], codeRevision: codePanel?.revision || 0, limits, accounts: ['codex', 'claude'].flatMap(provider => accounts?.choices(provider) || []), recent, accountError, refreshing, lastRefresh, agents: cliSetup?.snapshot() || [], agentSetupBusy: !!cliSetup?.running, skills: skillPacks?.snapshot() || { packs: [], busy: false },
+  return { platform: process.platform, mode, transitioning, trayHidden, sessions: sessions?.list() || [], codePanels: sessions?.codePanels() || [], queues: messageQueue?.snapshot() || {}, prompts: prompts?.list() || [], codeRevision: codePanel?.revision || 0, limits, accounts: ['codex', 'claude'].flatMap(provider => accounts?.choices(provider) || []), recent, accountError, refreshing, lastRefresh, agents: (cliSetup?.snapshot() || []).map(agent => agent.id === 'opencode' && !openCodeAvailable ? { ...agent, installed: false } : agent), agentSetupBusy: !!cliSetup?.running, skills: skillPacks?.snapshot() || { packs: [], busy: false },
     usageAccounts: usageAccounts(), usageChecks: subscriptionUsage?.snapshot() || [], delegations: workbench?.delegation?.snapshot() || [], tasks: tasks?.snapshot() || [],
     sshHosts: ssh?.list() || [], capabilities, projects: projects?.list() || [], projectProposals: projects?.proposals || [], messages: [...(messageUsage?.items || []), ...apiMessages(ledger || [])].sort((a,b) => b.at - a.at).slice(0, 200), mobile: mobile?.snapshot(), workbench: workbench?.snapshot(), vault: { available: vault?.available() || false, entries: vault?.list() || [] },
-    ledger: ledger || [], summary: ledgerSummary(ledger || []), shared: hub?.snapshot(), updates: updates?.snapshot(), grid: sessions?.grid || settings?.grid, settings, storageError, workspaceError, shortcutAvailable,
+    ledger: ledger || [], summary: ledgerSummary(ledger || []), shared: hub?.snapshot(), updates: updates?.snapshot(), grid: sessions?.grid || settings?.grid, settings, storageError, workspaceError, shortcutAvailable, safeMode, startupNotices: crash.notices,
     integrations: integrations?.snapshot(hub?.config.connections || [], vault?.list() || []), toolCatalog: mcpCatalog?.snapshot(hub?.config.connections || []) || [],
     toolLimits: Object.fromEntries((hub?.config.connections || []).map(x => [x.id, { models: policyLimits[x.id]?.models?.order || [], unit: budgetUnit(x.id) }])), defaultFolder, version: app.getVersion(), screenshot: screenshots?.snapshot() || null };
 }
@@ -208,7 +254,7 @@ function usageAccounts() {
     if (!['codex', 'claude'].includes(agent.id) && agent.installed) choices.push({ id: `${agent.id}:default`, provider: agent.id, label: agent.name });
   }
   for (const value of limits) {
-    if (value.provider === 'opencode' && !(cliSetup?.snapshot() || []).some(agent => agent.id === 'opencode' && agent.installed)) continue;
+    if (value.provider === 'opencode' && !safeMode && !(cliSetup?.snapshot() || []).some(agent => agent.id === 'opencode' && agent.installed)) continue;
     const id = limitAccountId(value);
     if (id && !choices.some(choice => choice.id === id)) choices.push({ id, provider: value.provider, label: value.name || value.provider });
   }
@@ -226,7 +272,7 @@ function saveUsage(account, values) {
   refreshSwitchOffers(); publish(); mobile?.scheduleState();
 }
 function refreshLimits() {
-  if (testMode || !subscriptionUsage) return Promise.resolve();
+  if (testMode || safeMode || !subscriptionUsage) return Promise.resolve();
   if (usageRefresh) return usageRefresh;
   refreshing = true; publish();
   usageRefresh = subscriptionUsage.refresh(usageAccounts()).then(checks => {
@@ -263,7 +309,7 @@ function getCodexAccount(id = defaultId('codex')) {
 }
 const limitAccountId = accountIdForLimit;
 function refreshSwitchOffers() {
-  if (!sessions || !accounts || !settings) return;
+  if (safeMode || !sessions || !accounts || !settings) return;
   const threshold = settings.accountSwitchThreshold ?? 90, now = Date.now();
   let changed = false;
   for (const item of sessions.items.values()) {
@@ -301,7 +347,10 @@ async function quit() {
   }
   quitting = true; app.quit();
 }
-app.whenReady().then(async () => {
+app.whenReady().then(() => guardStartup(async () => {
+  if (secondInstance) return;
+  crash.step = 'preparing the data folder';
+  safeMode = crash.begin(process.argv.includes('--safe-mode'));
   // The frameless UI supplies its own controls. Electron's default menu would
   // otherwise take editor keys such as Ctrl+W, Ctrl+R and Ctrl+A from terminals.
   Menu.setApplicationMenu(null);
@@ -314,16 +363,23 @@ app.whenReady().then(async () => {
     ]));
   }
   // Apps opened from the Dock or a desktop launcher get a minimal PATH.
-  if (process.platform !== 'win32' && !testMode) process.env.PATH = loginPath();
-  root = app.getPath('userData'); fs.mkdirSync(root, { recursive: true }); root = require('./platform.cjs').realRoot(root);
+  if (process.platform !== 'win32' && !testMode) await startupStep('Finding installed programs', () => { process.env.PATH = loginPath(); }, { optional: true });
+  await startupStep('preparing the data folder', () => { root = app.getPath('userData'); fs.mkdirSync(root, { recursive: true }); root = require('./platform.cjs').realRoot(root); });
+  crash.step = 'loading saved data'; crash.log('INFO', crash.step);
   accounts = new AccountProfiles(root);
   worktrees = new Worktrees(root);
   prompts = new PromptLibrary(root);
-  draftBridge = new DraftBridge(); await draftBridge.start();
+  draftBridge = new DraftBridge(); await startupStep('Draft bridge', () => draftBridge.start(), { optional: true });
   const runtime = runtimeFiles({ isPackaged: app.isPackaged, resourcesPath: process.resourcesPath, findProgram });
-  cliSetup = new CliSetup(root, runtime, { testMode, onChange: publish });
+  cliSetup = new CliSetup(root, runtime, { testMode, deferDetection: safeMode, onChange: publish, onDetectError: (agent, error) => {
+    crash.log('ERROR', `${agent.name} check: ${error?.stack || error}`);
+    const message = `${agent.name} check failed, so ${agent.name} is hidden for now. Details are in the log.`;
+    if (!crash.notices.includes(message)) crash.notices.push(message);
+    if (windowReady) publish();
+  } });
   skillPacks = new SkillPacks(root, { home: process.env.PADDOCK_SKILLS_HOME || os.homedir(), getAgents: () => cliSetup.snapshot(), downloads: new ManagedDownloads(root), onChange: publish });
-  const claude = findClaude();
+  let claude = null;
+  await startupStep('Claude Code check', () => { claude = findClaude(); }, { optional: true });
   const usageDirectory = path.join(root, 'usage-reader'); fs.mkdirSync(usageDirectory, { recursive: true });
   subscriptionUsage = new SubscriptionUsage({
     readers: {
@@ -336,7 +392,8 @@ app.whenReady().then(async () => {
     },
     onReading: saveUsage, onChange: () => { publish(); mobile?.scheduleState(); },
   });
-  capabilities = { codex: !!nativeCodex(), claude: !!claude, claudeLocation: claude?.label, node: !!runtime.node, shell: true };
+  capabilities = { codex: false, claude: !!claude, claudeLocation: claude?.label, node: !!runtime.node, shell: true };
+  await startupStep('Codex check', () => { capabilities.codex = !!nativeCodex(); }, { optional: true });
   const savedSettings = readJson(path.join(root, 'settings.json'), {});
   settings = initialSettings(savedSettings, defaultFolder, capabilities);
   if (savedSettings.resultsPolicyVersion !== settings.resultsPolicyVersion) persistSettings(settings);
@@ -365,11 +422,14 @@ app.whenReady().then(async () => {
   workbench.delegation = new Delegation(root, { ...taskAccounts, testMode, getSettings: () => settings,
     openPanel: job => sessions?.createReviewPanel(job), panelOpen: id => sessions?.items.get(id)?.kind === 'review' });
   workbench.delegation.on('changed', publish);
-  if (!testMode) openCodeSignedIn({ executable: cliSetup.executable('opencode') }); // warm the cached console check
+  if (!testMode) {
+    openCodeAvailable = false;
+    await startupStep('OpenCode check', () => { openCodeSignedIn({ executable: cliSetup.executable('opencode') }); openCodeAvailable = true; }, { optional: true, notice: 'OpenCode check failed, so OpenCode is hidden for now. Details are in the log.' });
+  }
   tasks = new TaskLoop(root, { ...taskAccounts, getSettings: () => settings, candidates: () => {
     if (testMode) return [];
     const choices = taskAccounts.candidates(), executable = cliSetup.executable('opencode');
-    if (executable && openCodeSignedIn({ executable })) choices.push({ id: 'opencode:default', provider: 'opencode', label: 'OpenCode', executable });
+    if (openCodeAvailable && executable && openCodeSignedIn({ executable })) choices.push({ id: 'opencode:default', provider: 'opencode', label: 'OpenCode', executable });
     return choices;
   },
     environment: (id, provider) => provider === 'opencode' ? usageEnvironment(Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.toLowerCase().startsWith('paddock_')))) : taskAccounts.environment(id, provider),
@@ -387,7 +447,7 @@ app.whenReady().then(async () => {
   hub = new SharedHub(root, vault, { integrations, workbench, skills: () => skillPacks.snapshot().packs, confirm: confirmToolCall, isLaunchCurrent: owner => {
     const item = sessions?.items.get(owner?.sessionId);
     return !!item?.alive && !item.switching && item.launchId === owner.launchId;
-  } }); await hub.start();
+  } }); await startupStep('Shared tools', () => hub.start(), { optional: true });
   ssh = new SshHosts(root);
   sessions = new Sessions(root, { ssh, hub, claude, runtime, cliSetup, projects, accounts, draftBridge, grid: settings.grid, codexScrollback: () => settings.codexScrollback !== false,
     isBusy: id => !!turns?.active.has(id), getThreadModel: (accountId, threadId) => getCodexAccount(accountId).threadModel(threadId), onLayout: ({ grid, plan }) => {
@@ -417,13 +477,13 @@ app.whenReady().then(async () => {
   mobile = new MobileCompanion(root, safeStorage, { codePanel, sessions, results: workbench.results, alerts: workbench.alerts, queue: messageQueue, prompts, getUsage: usageSnapshot, getUsageTurns: () => [...(messageUsage?.items || []), ...apiMessages(ledger || [])], refreshUsage: refreshLimits, getDefaults: () => ({ ...settings.consoleDefaults, permissions: settings.agentPermissions }), getModels: () => getCodexAccount(defaultId('codex')).models(), toolsStatus: true, getSettings: () => { const shared = hub.snapshot(), keys = vault.list(); return { shared, keys, integrations: integrations.snapshot(shared.connections, keys), setupRequests: workbench.snapshot().setupRequests, redact: value => hub.redact(value) }; }, getKey: id => vault.get(id), networkScript: app.isPackaged ? path.join(process.resourcesPath, 'mobile-network.ps1') : path.join(__dirname, 'mobile-network.ps1'), program: process.execPath, testMode });
   mobile.on('changed', publish);
   mobile.on('pairing-requested', () => { if (settings.notifications && !testMode) notifications?.show({ title: 'Approve a phone?', message: 'Compare the codes on your PC and phone before allowing access.', destination: 'phone-pairing' }); });
-  if (!testMode) mobile.start().catch(() => publish());
+  if (!testMode) void startupStep('Phone connection', () => mobile.start(), { optional: true }).catch(() => {});
   const savedLimits = readJson(path.join(root, 'limits.json'), [], {
     recoverCorrupt: true,
     onRecovery: () => { storageError = 'Cached usage limits were damaged. The original file was kept with a .corrupt suffix. Limits will refresh when available.'; }
   });
   limits = Array.isArray(savedLimits) ? savedLimits.map(item => item?.provider === 'codex' && !item.accountId ? { ...item, accountId: defaultId('codex') } : item) : [];
-  getCodexAccount(defaultId('codex'));
+  await startupStep('Codex sign-in check', () => getCodexAccount(defaultId('codex')), { optional: true });
   sessions.on('changed', publish);
   sessions.on('changed', refreshSwitchOffers);
   sessions.on('changed', () => { for (const item of sessions.items.values()) if (!item.alive && turns.active.has(item.id)) turns.finish(item.id).catch(() => {}); });
@@ -444,9 +504,14 @@ app.whenReady().then(async () => {
   // Smoke tests use an empty folder and no clipboard so results do not depend on the user's screenshots.
   screenshots = new Screenshots(root, testMode ? { nativeImage, folders: [path.join(root, 'test-screenshots')] } : { clipboard: clipboardReader(clipboard, nativeImage), nativeImage });
   screenshots.on('changed', publish);
-  screenshots.start();
-  workspace = new Workspace(root, sessions, safeStorage, { enabled: settings.restoreConsoles, onError: message => { workspaceError = message; publish(); } });
-  await workspace.restore();
+  await startupStep('Screenshot checks', () => screenshots.start(), { optional: true });
+  workspace = new Workspace(root, sessions, safeStorage, { enabled: settings.restoreConsoles, readOnly: safeMode, onDiagnostic: error => crash.log('ERROR', `Console restore: ${error?.stack || error}`), onError: message => {
+    workspaceError = message;
+    if (message) { crash.log('WARN', message); if (!windowReady && !crash.notices.includes(message)) crash.notices.push(message); }
+    publish();
+  } });
+  await startupStep('Console restore', () => workspace.restore(), { optional: true, notice: 'Consoles could not be reopened. The saved workspace was kept. Details are in the log.' });
+  crash.step = 'opening the window'; crash.log('INFO', crash.step);
   const windowIcon = path.join(__dirname, '..', 'assets', process.platform === 'win32' && !app.isPackaged ? 'icon.ico' : 'icon.png');
   // macOS keeps its own window buttons; other systems use Paddock's title bar.
   const chrome = process.platform === 'darwin' ? { titleBarStyle: 'hidden', trafficLightPosition: { x: 14, y: 14 } } : { frame: false };
@@ -457,7 +522,7 @@ app.whenReady().then(async () => {
     if (!app.isPackaged && !testMode) {
       try {
         developmentShortcuts({ shell, desktop: app.getPath('desktop'), programs: path.join(app.getPath('appData'), 'Microsoft', 'Windows', 'Start Menu', 'Programs'), projectDir: app.getAppPath(), icon });
-      } catch (error) { console.warn('Could not update Paddock shortcuts:', error.message); }
+      } catch (error) { crash.log('WARN', `shortcuts: ${error?.stack || error}`); }
     }
     window.setAppDetails({ appIconPath: icon, appIconIndex: 0,
       relaunchCommand: `"${process.execPath}"${app.isPackaged ? '' : ` "${app.getAppPath()}"`}`, relaunchDisplayName: 'Paddock' });
@@ -473,31 +538,41 @@ app.whenReady().then(async () => {
   window.webContents.session.setPermissionCheckHandler(() => false);
   window.webContents.on('render-process-gone', () => { if (!quitting) window.loadFile(entryFile); });
   window.on('close', event => { if (!quitting) { event.preventDefault(); hideToTray(); } });
-  window.on('focus', () => screenshots.refresh());
-  window.loadFile(entryFile);
-  window.once('ready-to-show', () => setMode(process.argv.includes('--hud') ? 'hud' : 'dashboard'));
+  window.on('focus', () => { if (!safeMode) void startupStep('Screenshot checks', () => screenshots.refresh(), { optional: true }); });
+  let readyShown = false, startupComplete = false;
+  const finishWindow = async () => {
+    if (!readyShown || !startupComplete || crashing || windowReady) return;
+    try { await setMode(process.argv.includes('--hud') && !safeMode ? 'hud' : 'dashboard'); crash.ready(); windowReady = true; }
+    catch (error) { void startupCrash(error); }
+  };
+  window.once('ready-to-show', () => { readyShown = true; void finishWindow(); });
   const iconFile = path.join(__dirname, '..', 'assets', 'icon.png');
-  if (fs.existsSync(iconFile)) {
+  await startupStep('System tray', () => { if (fs.existsSync(iconFile)) {
     tray = new Tray(nativeImage.createFromPath(iconFile)); tray.setToolTip('Paddock');
     tray.setContextMenu(Menu.buildFromTemplate([{ label: 'Open Paddock', click: revealWindow }, { label: 'Corner HUD', click: () => setMode('hud') }, { type: 'separator' }, { label: 'Quit Paddock', click: quit }]));
     tray.on('click', revealWindow); tray.on('double-click', revealWindow);
     tray.on('balloon-click', () => notifications?.balloonClick?.());
-  }
+  } }, { optional: true, skipInSafeMode: false });
   notifications = new DockNotifications({ Notification, getTray: () => tray, getWindow: () => window, getMode: () => modeTarget || mode,
     setMode, reveal: revealWindow, publish, getSessions: () => sessions.list(), icon: iconFile });
   workbench.alerts.on('notification', item => { if (settings.notifications && !testMode) notifications.show(item); });
-  shortcutAvailable = !testMode && globalShortcut.register('CommandOrControl+Alt+Space', () => trayHidden ? revealWindow() : setMode((modeTarget || mode) === 'hud' ? 'dashboard' : 'hud'));
-  for (let i = 1; !testMode && i <= 9; i++) globalShortcut.register(`CommandOrControl+Alt+${i}`, () => {
-    const item = sessions.list().find(x => (x.alive || x.restoreError) && consoleCells(x, sessions.grid).includes(i)); if (!item) return;
-    setMode('fullscreen'); window.webContents.send('dock:select', item.id);
-  });
-  if (!testMode) { recent = recentReader.scan(); refreshLimits(); }
-  setInterval(() => { sessions.scanEvents(); }, 1000).unref();
+  await startupStep('Keyboard shortcuts', () => {
+    shortcutAvailable = !testMode && globalShortcut.register('CommandOrControl+Alt+Space', () => trayHidden ? revealWindow() : setMode((modeTarget || mode) === 'hud' ? 'dashboard' : 'hud'));
+    for (let i = 1; !testMode && i <= 9; i++) globalShortcut.register(`CommandOrControl+Alt+${i}`, () => {
+      const item = sessions.list().find(x => (x.alive || x.restoreError) && consoleCells(x, sessions.grid).includes(i)); if (!item) return;
+      setMode('fullscreen'); window.webContents.send('dock:select', item.id);
+    });
+  }, { optional: true, skipInSafeMode: false });
   if (!testMode) {
-    setInterval(() => { recent = recentReader.scan(); sessions.updateUsage(recent); publish(); }, 12000).unref();
-    setInterval(refreshLimits, 120000).unref();
+    await startupStep('Recent chats', () => { recent = recentReader.scan(); }, { optional: true });
+    void startupStep('Usage checks', () => refreshLimits(), { optional: true }).catch(() => {});
   }
-  setInterval(refreshSwitchOffers, 60000).unref();
+  setInterval(() => { sessions.scanEvents(); }, 1000).unref();
+  if (!testMode && !safeMode) {
+    setInterval(() => { void startupStep('Recent chats', () => { recent = recentReader.scan(); sessions.updateUsage(recent); publish(); }, { optional: true }); }, 12000).unref();
+    setInterval(() => { void startupStep('Usage checks', refreshLimits, { optional: true }); }, 120000).unref();
+  }
+  if (!safeMode) setInterval(refreshSwitchOffers, 60000).unref();
   ipcMain.handle('dock:call', async (event, method, payload) => {
     if (event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame || event.senderFrame.url !== entryUrl) throw new Error('Untrusted client.');
     try {
@@ -527,6 +602,13 @@ app.whenReady().then(async () => {
       if (typeof method === 'string' && method.startsWith('workbench.')) return { ok: true, value: await workbench.call(method.slice(10), payload) };
       switch (method) {
         case 'state': return { ok: true, value: snapshot() };
+        case 'restart.normal': {
+          if (sessions.list().some(item => item.alive) && !testMode) {
+            const { response } = await dialog.showMessageBox(window, { type: 'question', message: 'End open consoles and restart normally?', detail: 'Consoles opened in safe mode are not saved.', buttons: ['Keep running', 'Restart normally'], defaultId: 0, cancelId: 0 });
+            if (response !== 1) break;
+          }
+          restart(false); break;
+        }
         case 'tasks.candidates': return { ok: true, value: tasks.choices(payload?.implementer, payload || {}) };
         case 'tasks.start': return { ok: true, value: await tasks.start(payload) };
         case 'tasks.stop': return { ok: true, value: await tasks.stop(payload?.id) };
@@ -844,7 +926,10 @@ app.whenReady().then(async () => {
           if (typeof payload?.notifications === 'boolean') next.notifications = payload.notifications;
           if (typeof payload?.confirmConsoleEnd === 'boolean') next.confirmConsoleEnd = payload.confirmConsoleEnd;
           if (typeof payload?.keepAwakeWhileWorking === 'boolean') next.keepAwakeWhileWorking = payload.keepAwakeWhileWorking;
-          if (typeof payload?.restoreConsoles === 'boolean') next.restoreConsoles = payload.restoreConsoles;
+          if (typeof payload?.restoreConsoles === 'boolean') {
+            if (safeMode && payload.restoreConsoles !== settings.restoreConsoles) throw new Error('Restart normally to change console restoration.');
+            next.restoreConsoles = payload.restoreConsoles;
+          }
           if (typeof payload?.codexScrollback === 'boolean') next.codexScrollback = payload.codexScrollback;
           if (typeof payload?.autoSaveResults === 'boolean') next.autoSaveResults = payload.autoSaveResults;
           if (payload?.accountSwitchThreshold !== undefined) {
@@ -966,7 +1051,10 @@ app.whenReady().then(async () => {
       return { ok: true };
     } catch (error) { return { ok: false, error: error.message || 'This action could not be completed.' }; }
   });
-}).catch(error => { dialog.showErrorBox('Paddock could not start', error.message); app.quit(); });
+  crash.step = 'opening the window'; crash.log('INFO', crash.step);
+  await window.loadFile(entryFile);
+  startupComplete = true; await finishWindow();
+}, startupCrash)).catch(error => { void startupCrash(error); });
 app.on('second-instance', () => setMode('dashboard'));
 // Clicking the Dock icon reopens a window hidden to the tray.
 app.on('activate', () => { if (window && !window.isVisible()) setMode('dashboard'); });

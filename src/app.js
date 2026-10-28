@@ -154,6 +154,7 @@ $('#app').innerHTML = `
   <aside id="explorer-pane" aria-label="Explorer"></aside>
   <div class="workspace">
     <header class="titlebar"><button id="sidebar-toggle" class="icon-button" data-action="sidebar" aria-label="Hide sidebar" title="Hide sidebar" aria-controls="sidebar" aria-expanded="true">${icon('menu')}</button><button id="launch-folder" class="launch-folder" data-action="launch-folder" aria-label="Choose launch folder">${icon('folder')}<span></span></button><button type="button" class="subtle code-open" data-code-action="create" title="Open a read-only code panel">${icon('api')}Code</button><button type="button" class="subtle code-open" data-web-action="create" title="Preview a local web server">${icon('globe')}Preview</button><div class="window-drag-handle" data-window-drag title="Drag to move. Double-click for fullscreen." aria-hidden="true"><span></span></div><div class="window-actions"><button data-action="hud" title="Collapse to corner HUD" aria-label="Collapse to corner HUD">${icon('corner')}</button><button data-action="minimize" aria-label="Minimize">${icon('minus')}</button><button data-action="fullscreen" aria-label="Fullscreen" title="Fullscreen">${icon('expand')}</button><button data-action="tray" aria-label="Hide in system tray" title="Hide in system tray">${icon('close')}</button></div></header>
+    <div id="startup-notices" aria-live="polite"></div>
     <main id="content" tabindex="-1"></main>
     <section id="consoles-page" class="console-grid-view" hidden aria-label="Consoles"><div class="consoles-only"><div class="session-grid"></div></div><button id="grid-add" class="primary" data-action="new" aria-label="Add console" title="Add console · Ctrl Shift N" hidden>${icon('plus')}</button></section>
     <div id="terminal-cache" hidden></div>
@@ -570,7 +571,7 @@ function renderSettingsCategory() {
   return settingsShell(page, `<div class="settings-layout${page === 'console-settings' ? ' settings-console-grid' : ''}">${content}</div>`, icon('close'), state.settings.trimStyle || 'classic');
 }
 function renderStartupSettings() {
-  return `<section class="surface"><h2>Startup</h2><label class="toggle-row"><span><strong>Restore previous consoles</strong><small>Reopen your panels and folders. Saved agent chats resume; shells and custom commands restart.</small></span><input type="checkbox" data-setting="restoreConsoles" ${state.settings.restoreConsoles ? 'checked' : ''}></label><label class="toggle-row"><span><strong>Keep scrollback in Codex consoles</strong><small>Codex runs inline, so you can scroll up and select text to copy. Applies to Codex consoles opened after the change.</small></span><input type="checkbox" data-setting="codexScrollback" ${state.settings.codexScrollback !== false ? 'checked' : ''}></label><p id="workspace-error" class="form-error" role="alert">${escape(state.workspaceError || '')}</p></section>`;
+  return `<section class="surface"><h2>Startup</h2><label class="toggle-row"><span><strong>Restore previous consoles</strong><small>${state.safeMode ? 'Restart normally to change this setting.' : 'Reopen your panels and folders. Saved agent chats resume; shells and custom commands restart.'}</small></span><input type="checkbox" data-setting="restoreConsoles" ${state.settings.restoreConsoles ? 'checked' : ''} ${state.safeMode ? 'disabled' : ''}></label><label class="toggle-row"><span><strong>Keep scrollback in Codex consoles</strong><small>Codex runs inline, so you can scroll up and select text to copy. Applies to Codex consoles opened after the change.</small></span><input type="checkbox" data-setting="codexScrollback" ${state.settings.codexScrollback !== false ? 'checked' : ''}></label><p id="workspace-error" class="form-error" role="alert">${escape(state.workspaceError || '')}</p></section>`;
 }
 function renderResultsSettings() {
   return `<section class="surface"><h2>Results</h2><p class="field-hint">Agents save the documents, images, designs, reports and exports you ask them to create. Add other files from Results.</p><label class="toggle-row"><span><strong>Also capture file changes</strong><small>Copy code diffs and changed images after each turn.</small></span><input type="checkbox" data-setting="autoSaveResults" ${state.settings.autoSaveResults === true ? 'checked' : ''}></label><p class="field-hint">Optional. Turning this off stops current captures. Requested outputs and files you add are still saved.</p></section>`;
@@ -761,6 +762,13 @@ function updatePreview() {
     if ($('#hud-preview')) $('#hud-preview').textContent = terminalPreview(selected);
   }, 200);
 }
+const dismissedStartupNotices = new Set();
+let startupNoticeMarkup = '';
+function renderStartupNotices() {
+  const notices = (state.startupNotices || []).map((message, index) => ({ message, index })).filter(item => !dismissedStartupNotices.has(item.index));
+  const markup = (state.safeMode ? `<div class="startup-notice"><span>Safe mode: your consoles weren't reopened and background checks are off. Consoles opened in safe mode won't be saved.</span><button type="button" class="secondary" data-action="restart-normal">Restart normally</button></div>` : '') + notices.map(item => `<div class="startup-notice"><span>${escape(item.message)}</span><button type="button" class="secondary" data-action="dismiss-startup-notice" data-index="${item.index}" aria-label="Dismiss notice">Dismiss</button></div>`).join('');
+  if (markup !== startupNoticeMarkup) { $('#startup-notices').innerHTML = markup; startupNoticeMarkup = markup; }
+}
 let bareFullscreen = false; // set when F11, not a console expansion, entered fullscreen
 function receive(next) {
   next = { ...next, sessions: Array.isArray(next.sessions) ? next.sessions : [], codePanels: Array.isArray(next.codePanels) ? next.codePanels : [], delegations: Array.isArray(next.delegations) ? next.delegations : [] };
@@ -793,6 +801,7 @@ function receive(next) {
   }
   if (selectedId && ![...next.sessions, ...(next.codePanels || [])].some(session => session.id === selectedId && isOpenConsole(session))) selectedId = null;
   state = next;
+  renderStartupNotices();
   document.body.style.setProperty('--grid-columns', gridSize().columns); document.body.style.setProperty('--grid-rows', gridSize().rows);
   document.body.dataset.trim = state.settings.trimStyle || 'classic';
   ensureBackdropSky($('#sidebar'), 56);
@@ -1649,6 +1658,8 @@ document.addEventListener('click', async event => {
       case 'refresh': await call('refresh'); break;
       case 'usage-add': usageAddOpen = !usageAddOpen; renderPage(); $('#usage-add-panel button, [data-action=usage-add]')?.focus({ preventScroll: true }); break;
       case 'quit': await call('quit'); break;
+      case 'restart-normal': await call('restart.normal'); break;
+      case 'dismiss-startup-notice': dismissedStartupNotices.add(Number(button.dataset.index)); renderStartupNotices(); break;
       case 'end-session': await call('session.end', button.dataset.id || selectedId); break;
       case 'paste-screenshot': await pasteScreenshot(selectedId); break;
       case 'retry-session': {

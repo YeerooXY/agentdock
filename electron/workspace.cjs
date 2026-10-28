@@ -9,21 +9,21 @@ const { cells, gridSize } = require('./console-layout.cjs');
 // Only launch details and exact conversation IDs are saved. Agent transcripts stay
 // with their CLI, and terminal input is never replayed into a restored process.
 class Workspace {
-  constructor(root, sessions, crypto, { enabled = true, onError = () => {} } = {}) {
+  constructor(root, sessions, crypto, { enabled = true, readOnly = false, onError = () => {}, onDiagnostic = () => {} } = {}) {
     this.file = path.join(root, 'workspace.json'); this.sessions = sessions; this.crypto = crypto;
-    this.enabled = enabled; this.onError = onError; this.frozen = false; this.loading = false;
+    this.enabled = enabled; this.readOnly = readOnly; this.onError = onError; this.onDiagnostic = onDiagnostic; this.frozen = false; this.loading = false;
     this.blocked = false; this.lastSaved = null; this.timer = null;
     sessions.on('changed', () => this.schedule());
   }
   available() { return this.crypto.isEncryptionAvailable() && this.crypto.getSelectedStorageBackend?.() !== 'basic_text'; }
   schedule() {
-    if (!this.enabled || this.frozen || this.loading || this.blocked || this.timer) return;
+    if (this.readOnly || !this.enabled || this.frozen || this.loading || this.blocked || this.timer) return;
     this.timer = setTimeout(() => { this.timer = null; this.save(); }, 150);
     this.timer.unref?.();
   }
   save() {
     clearTimeout(this.timer); this.timer = null;
-    if (!this.enabled || this.frozen || this.loading || this.blocked) return;
+    if (this.readOnly || !this.enabled || this.frozen || this.loading || this.blocked) return;
     try {
       const text = JSON.stringify(this.sessions.savedConsoles());
       if (text + JSON.stringify(this.sessions.grid) === this.lastSaved) return;
@@ -34,7 +34,7 @@ class Workspace {
     } catch (error) { this.onError(error.message); }
   }
   async restore() {
-    if (!this.enabled || this.started) return;
+    if (this.readOnly || !this.enabled || this.started) return;
     this.started = true; this.loading = true;
     try {
       const saved = readJson(this.file, null);
@@ -52,13 +52,15 @@ class Workspace {
       if (new Set(area).size !== area.length) throw new Error('Saved consoles overlap.');
       this.sessions.setGrid(grid);
       for (const entry of entries.sort((a, b) => a.slot - b.slot)) await this.sessions.restore(entry);
-    } catch {
+    } catch (error) {
       // A damaged or undecryptable save must not be overwritten by an empty dock.
       this.blocked = true;
+      this.onDiagnostic(error);
       this.onError('Previous consoles could not be loaded. The saved workspace was kept. Turn restoration off and on to start a new save.');
     } finally { this.loading = false; this.save(); }
   }
   setEnabled(enabled) {
+    if (this.readOnly) return;
     if (enabled === this.enabled) return;
     clearTimeout(this.timer); this.timer = null;
     if (!enabled) {
