@@ -66,7 +66,9 @@
   box-shadow:none; color:var(--theme-text); animation:none;
 }
 .consoles-only .session-card.empty:is(:hover,:focus-within) { background:transparent; box-shadow:none; border-color:transparent }
-.console-skin { position:absolute; inset:calc(-1 * var(--trim-width,1px)); z-index:-2; pointer-events:none; filter:drop-shadow(0 0 3px var(--theme-glow)) drop-shadow(0 0 12px var(--theme-glow)) }
+/* The glowing frame gets its own compositor layer and the terminal contains its
+   repaints: otherwise streaming output can repaint a dark strip over the frame. */
+.console-skin { position:absolute; inset:calc(-1 * var(--trim-width,1px)); z-index:-2; pointer-events:none; will-change:transform; filter:drop-shadow(0 0 3px var(--theme-glow)) drop-shadow(0 0 12px var(--theme-glow)) }
 .console-skin::before,.console-skin::after { content:''; position:absolute; pointer-events:none }
 .console-skin::before { inset:0; background:var(--frame-border); clip-path:var(--frame-shape) }
 .console-skin::after {
@@ -112,7 +114,7 @@
 .consoles-only .session-card[data-frame] :is(.console-panel-body,.terminal-instance) { background:transparent }
 .console-panel-body { margin-bottom:8px }
 .console-panel-body .terminal-instance { inset:9px 9px 4px 12px }
-.terminal-instance { z-index:1 }
+.terminal-instance { z-index:1; contain:paint }
 .terminal-instance .xterm-viewport { background-color:transparent }
 .panel-stars { z-index:-1; inset:44px 8px 10px; opacity:.8; border-radius:0 0 8px 8px }
 .session-card:not(.empty)>.panel-stars { opacity:.5 }
