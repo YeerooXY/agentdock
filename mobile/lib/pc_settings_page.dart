@@ -100,14 +100,26 @@ class _PCSettingsPageState extends State<PCSettingsPage> {
         padding: const EdgeInsets.all(16),
         children: [
           if (requests.isNotEmpty) ...[
-            Text('Waiting for you', style: TextStyle(fontSize: 22, color: pink)),
+            Semantics(
+              header: true,
+              child: Text(
+                'Waiting for you',
+                style: TextStyle(fontSize: 22, color: pink),
+              ),
+            ),
             for (final item in requests)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 12),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('${item['agent']}: ${item['name']}'),
+                    Semantics(
+                      container: true,
+                      header: true,
+                      label: 'Request: ${item['name']}. From ${item['agent']}.',
+                      excludeSemantics: true,
+                      child: Text('${item['agent']}: ${item['name']}'),
+                    ),
                     Text('${item['kind']}', style: const TextStyle(color: muted)),
                     const SizedBox(height: 6),
                     Text('${item['action']}'),
@@ -116,7 +128,13 @@ class _PCSettingsPageState extends State<PCSettingsPage> {
               ),
             const SizedBox(height: 12),
           ],
-          Text(widget.category, style: TextStyle(fontSize: 22, color: pink)),
+          Semantics(
+            header: true,
+            child: Text(
+              widget.category,
+              style: TextStyle(fontSize: 22, color: pink),
+            ),
+          ),
           if (!toolStatus)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 12),
@@ -147,9 +165,13 @@ class _PCSettingsPageState extends State<PCSettingsPage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      '${item['name'] ?? 'Tool'}',
-                      style: TextStyle(fontSize: 18, color: blue),
+                    Semantics(
+                      container: true,
+                      header: true,
+                      child: Text(
+                        '${item['name'] ?? 'Tool'}',
+                        style: TextStyle(fontSize: 18, color: blue),
+                      ),
                     ),
                     const SizedBox(height: 6),
                     Chip(
@@ -168,13 +190,15 @@ class _PCSettingsPageState extends State<PCSettingsPage> {
               ListTile(
                 contentPadding: EdgeInsets.zero,
                 title: Text('${item['name'] ?? item['id']}'),
-                subtitle: Text(
-                  widget.category == 'Tools'
-                      ? item['enabled'] == true
-                            ? 'Enabled'
-                            : 'Disabled'
-                      : '${item['protocol'] ?? item['id']}',
-                ),
+                subtitle: widget.category == 'Keys'
+                    ? null
+                    : Text(
+                        widget.category == 'Tools'
+                            ? item['enabled'] == true
+                                  ? 'Enabled'
+                                  : 'Disabled'
+                            : '${item['protocol'] ?? item['id']}',
+                      ),
               ),
         ],
       ),

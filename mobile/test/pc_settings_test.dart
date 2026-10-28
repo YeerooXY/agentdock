@@ -46,7 +46,7 @@ Future<void> showTools(
 
 void main() {
   for (final status in [
-    'Connected', 'Needs setup', 'Key missing', 'Failing', 'Off',
+    'Connected', 'Not checked', 'Needs setup', 'Key missing', 'Failing', 'Off',
   ]) {
     testWidgets('Tools shows the $status chip and PC action', (tester) async {
       final c = SettingsDock();
@@ -69,6 +69,7 @@ void main() {
   }
 
   testWidgets('setup requests appear before Tools with agent, request and action', (tester) async {
+    final semantics = tester.ensureSemantics();
     final c = SettingsDock();
     addTearDown(c.dispose);
     await showTools(tester, c, {
@@ -89,6 +90,29 @@ void main() {
         lessThan(tester.getTopLeft(find.text('Tools')).dy));
     expect(tester.getTopLeft(find.text('Agent Ada: Meshy key')).dy,
         lessThan(tester.getTopLeft(find.text('Meshy')).dy));
+    for (final heading in ['Waiting for you', 'Tools', 'Meshy']) {
+      expect(tester.getSemantics(find.text(heading)),
+          matchesSemantics(label: heading, isHeader: true));
+    }
+    final requestHeading = find.byWidgetPredicate((widget) => widget is Semantics &&
+        widget.properties.label == 'Request: Meshy key. From Agent Ada.');
+    expect(requestHeading, findsOneWidget);
+    expect(tester.getSemantics(requestHeading), matchesSemantics(
+      label: 'Request: Meshy key. From Agent Ada.', isHeader: true,
+    ));
+    semantics.dispose();
+  });
+
+  testWidgets('capable host with no tools and no setupRequests shows the Tools empty state', (tester) async {
+    final c = SettingsDock();
+    addTearDown(c.dispose);
+    await showTools(tester, c, {'tools': <dynamic>[]});
+    expect(find.text('Tools'), findsOneWidget);
+    expect(find.text('None configured.'), findsOneWidget);
+    expect(find.text('Waiting for you'), findsNothing);
+    expect(find.text('Edit these settings in Paddock on your PC.'), findsNothing);
+    expect(find.byType(Chip), findsNothing);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('old hosts keep enabled flags and hide status and requests', (tester) async {
@@ -139,9 +163,11 @@ void main() {
     await tester.pumpWidget(MaterialApp(
       home: Scaffold(body: PCSettingsPage(client: c, category: 'Keys')),
     ));
-    c.replies.single.complete({'keys': <dynamic>[]});
+    c.replies.single.complete({'keys': [{'name': 'Saved keys: 2'}]});
     await tester.pumpAndSettle();
     expect(find.text('View saved keys in Paddock on your PC.'), findsOneWidget);
+    expect(find.text('Saved keys: 2'), findsOneWidget);
+    expect(find.text('null'), findsNothing);
     expect(find.text('None configured.'), findsNothing);
   });
 
@@ -162,7 +188,7 @@ void main() {
         },
       ],
       'tools': [
-        for (final status in ['Connected', 'Needs setup', 'Key missing', 'Failing', 'Off'])
+        for (final status in ['Connected', 'Not checked', 'Needs setup', 'Key missing', 'Failing', 'Off'])
           {
             'name': 'Tool with a long name: $status', 'status': status,
             'error': error,
@@ -171,7 +197,7 @@ void main() {
       ],
     }, textScale: 2);
     expect(tester.takeException(), isNull);
-    for (final status in ['Connected', 'Needs setup', 'Key missing', 'Failing', 'Off']) {
+    for (final status in ['Connected', 'Not checked', 'Needs setup', 'Key missing', 'Failing', 'Off']) {
       await tester.scrollUntilVisible(find.widgetWithText(Chip, status), 250,
           scrollable: find.byType(Scrollable));
       expect(tester.takeException(), isNull);
