@@ -70,6 +70,12 @@ test('projects read RPCs advertise support, exclude archives and expose only sum
     id: 'project', name: 'Phone', color: '#89b4ff', status: 'active', goals: 'g'.repeat(2000), nextStep: 'Read plans',
     lastActiveAt: 123, progress: { done: 1, total: 2 }, consoles: [{ id: 'console-1', name: 'Console 1' }],
   }]);
+  // A store without normalized colors exercises the mobile fallback as well.
+  t.mock.method(store, 'list', () => store.items);
+  delete store.items[0].color;
+  const detail = await c.call('projects.detail', { id: 'project' });
+  assert.equal(detail.color, '#89b4ff');
+  assert.deepEqual(detail.consoles, [{ id: 'console-1', name: 'Console 1' }]);
   assert.deepEqual(f.sessions.writes, []);
 });
 

@@ -24,17 +24,61 @@ class _ProjectsPageState extends State<ProjectsPage> {
     'approved': 'Approved', 'proposal waiting': 'Proposal waiting',
     'not needed': 'Not needed', 'empty': 'Empty',
   };
+  static const statuses = {
+    'planning': 'Planning', 'active': 'Active', 'paused': 'Paused',
+    'complete': 'Complete', 'archived': 'Archived',
+  };
   List<dynamic>? projects;
   Map<String, dynamic>? detail;
   String? selected;
   String error = '';
   bool loading = false;
   int serial = 0;
+  late String pairedPC;
+  late int connectionGeneration;
+  late bool wasConnected;
 
   @override
   void initState() {
     super.initState();
+    pairedPC = widget.client.activePC;
+    connectionGeneration = widget.client.generation;
+    wasConnected = widget.client.connected;
+    widget.client.addListener(connectionChanged);
     load();
+  }
+
+  @override
+  void dispose() {
+    widget.client.removeListener(connectionChanged);
+    super.dispose();
+  }
+
+  void connectionChanged() {
+    final client = widget.client;
+    final pcChanged = pairedPC != client.activePC;
+    final generationChanged = connectionGeneration != client.generation;
+    final disconnected = wasConnected && !client.connected;
+    final reconnected = client.connected && (!wasConnected || generationChanged);
+    pairedPC = client.activePC;
+    connectionGeneration = client.generation;
+    wasConnected = client.connected;
+    if (pcChanged) {
+      serial++;
+      setState(() {
+        selected = null;
+        projects = null;
+        detail = null;
+        loading = false;
+        error = 'Connection changed. Refresh projects.';
+      });
+      return;
+    }
+    if (generationChanged || disconnected) {
+      serial++;
+      setState(() => loading = false);
+    }
+    if (reconnected && canReadProjects(client)) load();
   }
 
   Future<void> load() async {
@@ -68,12 +112,7 @@ class _ProjectsPageState extends State<ProjectsPage> {
   bool acceptResponse(int request, String pc, int generation) {
     if (!mounted || request != serial) return false;
     if (pc != widget.client.activePC || generation != widget.client.generation) {
-      setState(() {
-        loading = false;
-        projects = null;
-        detail = null;
-        error = 'Connection changed. Refresh projects.';
-      });
+      connectionChanged();
       return false;
     }
     return true;
@@ -88,15 +127,19 @@ class _ProjectsPageState extends State<ProjectsPage> {
   Future<void> openConsole(String id) async {
     final client = widget.client;
     if (!client.connected || !client.sessions.any((s) => s['id'] == id && s['alive'] == true)) {
-      setState(() => error = 'This console is no longer open. Refresh the project.');
+      consoleError('This console is no longer open. Refresh the project.');
       return;
     }
     try {
       await client.select(id);
       if (mounted) widget.onConsoleSelected();
     } catch (_) {
-      if (mounted) setState(() => error = 'Could not open console. Check the connection and try again.');
+      if (mounted) consoleError('Could not open console. Check the connection and try again.');
     }
+  }
+
+  void consoleError(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
@@ -118,7 +161,8 @@ class _ProjectsPageState extends State<ProjectsPage> {
           if (error.isNotEmpty) ...[
             Text(error),
             Align(alignment: Alignment.centerLeft, child: TextButton(onPressed: load, child: const Text('Retry'))),
-          ] else if (selected == null) ...[
+          ],
+          if (selected == null) ...[
             if (projects != null && projects!.isEmpty) const Text('No projects.'),
             for (final project in projects ?? []) projectCard(project as Map),
           ] else if (detail != null) ...projectDetail(detail!),
@@ -170,7 +214,7 @@ class _ProjectsPageState extends State<ProjectsPage> {
         children: [
           projectTitle(project),
           const SizedBox(height: 8),
-          Text('${project['status']}'),
+          Text(statuses[project['status']] ?? '${project['status']}'),
           if ('${project['nextStep'] ?? ''}'.isNotEmpty) ...[
             const SizedBox(height: 12), Text('${project['nextStep']}'),
           ],
@@ -182,7 +226,7 @@ class _ProjectsPageState extends State<ProjectsPage> {
 
   List<Widget> projectDetail(Map project) => [
     projectTitle(project),
-    Text('${project['status']}'),
+    Text(statuses[project['status']] ?? '${project['status']}'),
     heading('Goals'), Text('${project['goals'] ?? ''}'.isEmpty ? 'No goals.' : '${project['goals']}'),
     heading('Next step'), Text('${project['nextStep'] ?? ''}'.isEmpty ? 'No next step.' : '${project['nextStep']}'),
     heading('Milestones'), progress(project),

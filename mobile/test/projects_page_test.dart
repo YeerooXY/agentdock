@@ -8,7 +8,7 @@ import 'package:agent_dock_mobile/projects_page.dart';
 import 'widget_test.dart' show FakeDock;
 
 class ProjectsDock extends FakeDock {
-  bool empty = false, fail = false;
+  bool empty = false, fail = false, failConsole = false;
   Completer<dynamic>? delayed;
   final project = <String, dynamic>{
     'id': 'phone', 'name': 'Phone companion', 'color': '#89b4ff',
@@ -39,6 +39,7 @@ class ProjectsDock extends FakeDock {
 
   @override
   Future<dynamic> request(String method, [Map<String, dynamic> payload = const {}]) async {
+    if (method == 'subscribe' && failConsole) throw StateError('Console unavailable');
     if (method.startsWith('projects.')) {
       calls.add(method);
       payloads.add(Map.of(payload));
@@ -76,7 +77,7 @@ void main() {
     addTearDown(client.dispose);
     await showProjects(tester, client);
     expect(find.text('Phone companion'), findsOneWidget);
-    expect(find.text('planning'), findsOneWidget);
+    expect(find.text('Planning'), findsOneWidget);
     expect(find.text('Review the milestone acceptance criteria'), findsOneWidget);
     expect(find.text('1 of 2 milestones'), findsOneWidget);
     expect(tester.widget<CircleAvatar>(find.byType(CircleAvatar)).backgroundColor, const Color(0xff89b4ff));
@@ -88,6 +89,7 @@ void main() {
     addTearDown(client.dispose);
     await showProjects(tester, client);
     await openDetail(tester);
+    expect(find.text('Planning'), findsOneWidget);
     expect(find.text('Read project progress'), findsOneWidget);
     expect(find.text('Project cards'), findsOneWidget);
     expect(find.byIcon(Icons.check_box_outlined), findsOneWidget);
@@ -151,6 +153,117 @@ void main() {
     expect(find.widgetWithText(NavigationDestination, 'Projects'), findsNothing);
     expect(client.calls.where((m) => m.startsWith('projects.')), isEmpty);
   });
+
+  testWidgets('losing Projects capability returns to Console with streaming', (tester) async {
+    final client = ProjectsDock();
+    addTearDown(client.dispose);
+    await tester.pumpWidget(DockApp(client: client));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(NavigationDestination, 'Projects'));
+    await tester.pumpAndSettle();
+    expect(client.streaming, isFalse);
+    client.state['capabilities'] = [];
+    client.notifyListeners();
+    await tester.pumpAndSettle();
+    expect(find.byType(ProjectsPage), findsNothing);
+    expect(find.widgetWithText(NavigationDestination, 'Projects'), findsNothing);
+    expect(client.streaming, isTrue);
+    expect(tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex, 0);
+    expect(client.calls.last, 'subscribe');
+    expect(client.payloads.last['id'], client.selected);
+  });
+
+  for (final stale in [true, false]) {
+    testWidgets('${stale ? 'stale' : 'failed'} linked console preserves detail', (tester) async {
+      final client = ProjectsDock();
+      addTearDown(client.dispose);
+      await showProjects(tester, client);
+      await openDetail(tester);
+      if (stale) {
+        client.state['sessions'] = client.sessions.where((s) => s['id'] != 'two').toList();
+      } else {
+        client.failConsole = true;
+      }
+      await tester.scrollUntilVisible(find.text('Project console'), 250);
+      await tester.tap(find.text('Project console'));
+      await tester.pumpAndSettle();
+      expect(find.byType(SnackBar), findsOneWidget);
+      expect(find.text(stale
+          ? 'This console is no longer open. Refresh the project.'
+          : 'Could not open console. Check the connection and try again.'), findsOneWidget);
+      expect(find.text('Project console'), findsOneWidget);
+      expect(find.text('Retry'), findsNothing);
+      await tester.scrollUntilVisible(find.text('Goals'), -250);
+      expect(find.text('Read project progress'), findsOneWidget);
+    });
+  }
+
+  testWidgets('reconnect preserves detail and reloads automatically, ignoring old replies', (tester) async {
+    final client = ProjectsDock();
+    addTearDown(client.dispose);
+    await showProjects(tester, client);
+    await openDetail(tester);
+    final oldResponse = Completer<dynamic>();
+    final staleProject = {...client.project, 'goals': 'Stale goals'};
+    client.delayed = oldResponse;
+    // RefreshIndicator's arming distance scales with the viewport. Pull its
+    // scrollable far enough, then start and advance the snap animation before
+    // checking onRefresh. The delayed reply prevents pumpAndSettle here.
+    final scrollable = find.descendant(
+      of: find.byType(RefreshIndicator), matching: find.byType(ListView),
+    );
+    await tester.fling(scrollable, const Offset(0, 1400), 2500);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump();
+    expect(client.calls.where((m) => m == 'projects.detail').length, 2);
+    client.connected = false;
+    client.generation++;
+    client.notifyListeners();
+    await tester.pump();
+    expect(find.text('Read project progress'), findsOneWidget);
+    expect(find.text('Connection changed. Refresh projects.'), findsNothing);
+    client.delayed = null;
+    client.project['goals'] = 'Updated after reconnect';
+    client.connected = true;
+    client.generation++;
+    client.notifyListeners();
+    // The pull-to-refresh indicator still awaits the original request.
+    await tester.pump();
+    expect(find.text('Updated after reconnect'), findsOneWidget);
+    expect(client.calls.where((m) => m == 'projects.detail').length, 3);
+    oldResponse.complete(staleProject);
+    await tester.pumpAndSettle();
+    expect(find.text('Updated after reconnect'), findsOneWidget);
+    expect(find.text('Stale goals'), findsNothing);
+    expect(find.text('Connection changed. Refresh projects.'), findsNothing);
+  });
+
+  testWidgets('changing paired PC clears data and reports the change', (tester) async {
+    final client = ProjectsDock();
+    addTearDown(client.dispose);
+    await showProjects(tester, client);
+    await openDetail(tester);
+    client.pairing = {...client.pairing!, 'pin': 'another-pc'};
+    client.generation++;
+    client.notifyListeners();
+    await tester.pumpAndSettle();
+    expect(find.text('Connection changed. Refresh projects.'), findsOneWidget);
+    expect(find.text('Phone companion'), findsNothing);
+    expect(find.text('Read project progress'), findsNothing);
+  });
+
+  for (final status in {'active': 'Active', 'paused': 'Paused', 'complete': 'Complete'}.entries) {
+    testWidgets('list and detail show desktop status ${status.value}', (tester) async {
+      final client = ProjectsDock();
+      addTearDown(client.dispose);
+      client.project['status'] = status.key;
+      await showProjects(tester, client);
+      expect(find.text(status.value), findsOneWidget);
+      await openDetail(tester);
+      expect(find.text(status.value), findsOneWidget);
+    });
+  }
 
   testWidgets('back ignores a late detail response', (tester) async {
     final client = ProjectsDock();

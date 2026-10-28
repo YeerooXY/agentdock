@@ -170,6 +170,7 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
       }
     });
     c.addListener(syncDraft);
+    c.addListener(syncProjectAccess);
     syncDraft();
     media.setMethodCallHandler((call) async {
       if (call.method == 'screenshot' &&
@@ -190,6 +191,7 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     c.removeListener(syncDraft);
+    c.removeListener(syncProjectAccess);
     unawaited(c.drafts.flush());
     composer.dispose();
     composerScroll.dispose();
@@ -201,6 +203,12 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
 
   void terminalFocusChanged() {
     if (!terminalFocus.hasFocus) stopTerminalTyping();
+  }
+
+  void syncProjectAccess() {
+    if (!mounted || page != 4 || canReadProjects(c)) return;
+    setState(() => page = 0);
+    run(() => c.setStreaming(true));
   }
 
   void enterChatMode() {
@@ -643,7 +651,6 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
           .firstOrNull;
       final menuSession = pinnedAccountSession ?? current;
       final projectAccess = canReadProjects(c);
-      if (page == 4 && !projectAccess) page = 0;
       final destinations = [0, if (projectAccess) 4, 1, 2, 3];
       return Scaffold(
         appBar: AppBar(

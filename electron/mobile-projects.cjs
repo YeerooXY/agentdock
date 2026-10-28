@@ -26,6 +26,9 @@ function readProjects(sessions, id, detail = false) {
   return {
     ...summary(listed, sessions),
     milestones: (project.milestones || []).map(({ text, acceptance, done }) => ({ text, acceptance: acceptance || '', done: done === true })),
+    // Notes are stored as one string, joined with blank lines. Treat the last
+    // three paragraphs as an approximation of entries: a note may itself have
+    // blank lines, so this can return fragments. Keep the latest 4,000 chars.
     notes: (project.notes || '').split(/\r?\n\s*\r?\n/).filter(s => s.trim()).slice(-3).join('\n\n').slice(-4000),
     plan: {
       revision: project.plan?.revision ?? null,
