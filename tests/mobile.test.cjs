@@ -50,6 +50,84 @@ function client(f, auth) {
   return { ws, wait, messages, call };
 }
 
+test('projects read RPCs advertise support, exclude archives and expose only summary fields', async t => {
+  const f = await fixture(t), paired = await f.pair(), c = client(f, paired.data.token);
+  t.after(() => c.ws.terminate()); await once(c.ws, 'open');
+  const { Projects } = require('../electron/projects.cjs');
+  const store = new Projects(f.root);
+  store.items = [
+    { id: 'project', name: 'Phone', color: '#89b4ff', status: 'active', goals: 'g'.repeat(2100), nextStep: 'Read plans', lastActiveAt: 123,
+      milestones: [{ text: 'Overview', acceptance: 'Cards visible', done: true }, { text: 'Detail', done: false }],
+      folders: [{ path: f.root }], credentials: 'SECRET', vault: { key: 'PRIVATE' }, files: '/outside/private' },
+    { id: 'archive', name: 'Archived', status: 'archived', milestones: [] },
+  ];
+  f.sessions.projects = store;
+  Object.assign(f.sessions.items.get('console-1'), { projectId: 'project' });
+  Object.assign(f.sessions.items.get('console-2'), { projectId: 'project', alive: false });
+  Object.assign(f.sessions.items.get('console-3'), { projectId: 'project', dismissed: true });
+  assert.ok((await c.call('state')).capabilities.includes('projects.read'));
+  assert.deepEqual(await c.call('projects.list'), [{
+    id: 'project', name: 'Phone', color: '#89b4ff', status: 'active', goals: 'g'.repeat(2000), nextStep: 'Read plans',
+    lastActiveAt: 123, progress: { done: 1, total: 2 }, consoles: [{ id: 'console-1', name: 'Console 1' }],
+  }]);
+  assert.deepEqual(f.sessions.writes, []);
+});
+
+test('project detail trims recent notes and goals and summarizes planning without private context', async t => {
+  const f = await fixture(t), paired = await f.pair(), c = client(f, paired.data.token);
+  t.after(() => c.ws.terminate()); await once(c.ws, 'open');
+  const { Projects } = require('../electron/projects.cjs');
+  const planning = require('../electron/project-planning.cjs');
+  const store = new Projects(f.root), plan = planning.initial();
+  plan.revision = 7; plan.approvals.brief = 1; plan.skipped.research = 1;
+  plan.proposals.infrastructure = { section: 'infrastructure', data: { security: 'SECRET' } };
+  plan.references = [{ value: '/outside/secret', kind: 'file' }]; plan.files = { directory: '/outside/private' };
+  store.items = [{ id: 'project', name: 'Phone', status: 'planning', goals: 'g'.repeat(3000), notes: 'old\n\nsecond\n\nthird\n\nfourth',
+    milestones: [{ text: 'Overview', acceptance: 'Cards visible', done: true }], plan }];
+  f.sessions.projects = store;
+  const before = JSON.stringify(store.items);
+  const detail = await c.call('projects.detail', { id: 'project' });
+  assert.equal(detail.goals.length, 2000);
+  assert.equal(detail.notes, 'second\n\nthird\n\nfourth');
+  assert.deepEqual(detail.milestones, [{ text: 'Overview', acceptance: 'Cards visible', done: true }]);
+  assert.deepEqual(detail.plan, { revision: 7, sections: [
+    { name: 'brief', revision: 7, state: 'approved' }, { name: 'research', revision: 7, state: 'not needed' },
+    { name: 'infrastructure', revision: 7, state: 'proposal waiting' }, { name: 'roadmap', revision: 7, state: 'empty' },
+  ] });
+  assert.doesNotMatch(JSON.stringify(detail), /outside|SECRET|references|directory/);
+  assert.equal(JSON.stringify(store.items), before);
+  store.items[0].notes = 'old\n\n' + 'a'.repeat(2000) + '\n\n' + 'b'.repeat(2000) + '\n\nlatest';
+  const trimmed = await c.call('projects.detail', { id: 'project' });
+  assert.equal(trimmed.notes.length, 4000); assert.ok(trimmed.notes.endsWith('latest'));
+  assert.ok(!trimmed.notes.includes('old'));
+  delete store.items[0].plan;
+  const legacy = await c.call('projects.detail', { id: 'project' });
+  assert.equal(legacy.plan.revision, null);
+  assert.ok(legacy.plan.sections.every(s => s.state === 'empty' && s.revision === null));
+  // Planning.context also handles plans saved with the original single proposal field.
+  plan.proposal = plan.proposals.infrastructure; delete plan.proposals; store.items[0].plan = plan;
+  assert.equal((await c.call('projects.detail', { id: 'project' })).plan.sections[2].state, 'proposal waiting');
+});
+
+test('projects read rejects unknown, archived and invalid ids and gates unsupported stores', async t => {
+  const f = await fixture(t), paired = await f.pair(), c = client(f, paired.data.token);
+  t.after(() => c.ws.terminate()); await once(c.ws, 'open');
+  for (const store of [undefined, { list: () => [] }]) {
+    f.sessions.projects = store;
+    assert.ok(!(await c.call('state')).capabilities.includes('projects.read'));
+    await assert.rejects(c.call('projects.list'), /does not support Projects/);
+    await assert.rejects(c.call('projects.detail', { id: 'unknown' }), /does not support Projects/);
+  }
+  const { Projects } = require('../electron/projects.cjs');
+  f.sessions.projects = new Projects(f.root);
+  f.sessions.projects.items = [{ id: 'archive', status: 'archived', milestones: [] }];
+  for (const id of ['unknown', 'archive', null, {}, 42]) {
+    await assert.rejects(c.call('projects.detail', { id }), /Project not found or archived/);
+  }
+  await assert.rejects(c.call('projects.detail'), /Project not found or archived/);
+  assert.deepEqual(f.sessions.writes, []);
+});
+
 test('code reader is read-only, bounded, local and restricted to console roots', async t => {
   const f = await fixture(t), paired = await f.pair(), c = client(f, paired.data.token);
   t.after(() => c.ws.terminate()); await once(c.ws, 'open');

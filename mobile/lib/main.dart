@@ -8,6 +8,7 @@ import 'dock_client.dart';
 import 'dock_style.dart';
 import 'pair_page.dart';
 import 'results_page.dart';
+import 'projects_page.dart';
 import 'settings_page.dart';
 import 'update_panel.dart';
 import 'connection_panel.dart';
@@ -641,6 +642,9 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
           .where((s) => s['id'] == c.selected)
           .firstOrNull;
       final menuSession = pinnedAccountSession ?? current;
+      final projectAccess = canReadProjects(c);
+      if (page == 4 && !projectAccess) page = 0;
+      final destinations = [0, if (projectAccess) 4, 1, 2, 3];
       return Scaffold(
         appBar: AppBar(
           leadingWidth: 34,
@@ -700,6 +704,8 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
               : Text(
                   page == 1
                       ? 'Results'
+                      : page == 4
+                      ? 'Projects'
                       : page == 2
                       ? 'Usage'
                       : 'Settings',
@@ -922,6 +928,14 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
                     ? terminal(current)
                     : page == 1
                     ? ResultsPage(client: c)
+                    : page == 4
+                    ? ProjectsPage(
+                        client: c,
+                        onConsoleSelected: () {
+                          setState(() => page = 0);
+                          run(() => c.setStreaming(true));
+                        },
+                      )
                     : SettingsPage(client: c, usageOnly: page == 2),
               ),
             ],
@@ -931,21 +945,27 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
             ? null
             : NavigationBar(
                 height: 64,
-                labelBehavior: MediaQuery.textScalerOf(context).scale(14) > 22
+                labelBehavior: MediaQuery.textScalerOf(context).scale(14) > 22 ||
+                        (projectAccess && MediaQuery.sizeOf(context).width < 380)
                     ? NavigationDestinationLabelBehavior.onlyShowSelected
                     : NavigationDestinationLabelBehavior.alwaysShow,
-                selectedIndex: page,
+                selectedIndex: destinations.indexOf(page),
                 onDestinationSelected: (value) {
                   stopTerminalTyping();
                   composerFocus.unfocus();
-                  setState(() => page = value);
-                  run(() => c.setStreaming(value == 0));
+                  setState(() => page = destinations[value]);
+                  run(() => c.setStreaming(page == 0));
                 },
                 destinations: [
                   NavigationDestination(
                     icon: Icon(Icons.terminal, color: blue),
                     label: 'Console',
                   ),
+                  if (projectAccess)
+                    NavigationDestination(
+                      icon: Icon(Icons.folder_outlined, color: blue),
+                      label: 'Projects',
+                    ),
                   NavigationDestination(
                     icon: Badge(
                       isLabelVisible:
