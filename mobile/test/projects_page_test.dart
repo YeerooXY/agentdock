@@ -105,6 +105,20 @@ void main() {
     expect(client.payloads.last, {'id': 'phone'});
   });
 
+  testWidgets('detail lists approved decisions and how many await the PC', (tester) async {
+    final client = ProjectsDock();
+    addTearDown(client.dispose);
+    client.project['decisions'] = [
+      {'text': 'Use Godot 4, not Unity', 'reason': 'Smaller builds'},
+    ];
+    client.project['decisionsWaiting'] = 2;
+    await showProjects(tester, client);
+    await openDetail(tester);
+    await tester.scrollUntilVisible(find.text('Use Godot 4, not Unity'), 250);
+    expect(find.text('Smaller builds'), findsOneWidget);
+    expect(find.text('2 proposed by agents. Review them in Projects on your PC.'), findsOneWidget);
+  });
+
   testWidgets('linked console tap selects it and returns to Console', (tester) async {
     final client = ProjectsDock();
     addTearDown(client.dispose);

@@ -30,6 +30,8 @@ function readProjects(sessions, id, detail = false) {
     // three paragraphs as an approximation of entries: a note may itself have
     // blank lines, so this can return fragments. Keep the latest 4,000 chars.
     notes: (project.notes || '').split(/\r?\n\s*\r?\n/).filter(s => s.trim()).slice(-3).join('\n\n').slice(-4000),
+    decisions: (project.decisions || []).filter(d => d.status === 'approved').map(({ text, reason }) => ({ text, reason: reason || '' })),
+    decisionsWaiting: (project.decisions || []).filter(d => d.status === 'proposed').length,
     plan: {
       revision: project.plan?.revision ?? null,
       sections: planning.sections.map(section => {

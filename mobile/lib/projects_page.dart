@@ -244,6 +244,24 @@ class _ProjectsPageState extends State<ProjectsPage> {
           ])),
         ],
       )),
+    if (project['decisions'] is List) ...[
+      heading('Decisions'),
+      if ((project['decisions'] as List).isEmpty) const Text('No approved decisions.'),
+      for (final decision in (project['decisions'] as List).whereType<Map>())
+        Padding(padding: const EdgeInsets.only(top: 8), child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('${decision['text']}'),
+            if ('${decision['reason'] ?? ''}'.isNotEmpty)
+              Text('${decision['reason']}', style: const TextStyle(color: muted)),
+          ],
+        )),
+      if ((project['decisionsWaiting'] as num? ?? 0) > 0)
+        Padding(padding: const EdgeInsets.only(top: 8), child: Text(
+          '${project['decisionsWaiting']} proposed by agents. Review them in Projects on your PC.',
+          style: TextStyle(color: pink),
+        )),
+    ],
     heading('Recent notes'), Text('${project['notes'] ?? ''}'.isEmpty ? 'No notes.' : '${project['notes']}'),
     heading('Plan'),
     if (project['plan']?['revision'] != null) Text('Revision ${project['plan']['revision']}'),

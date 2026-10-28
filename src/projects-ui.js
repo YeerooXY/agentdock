@@ -27,6 +27,20 @@ export function projectsUI({ call, getState, escape: e, icon, toast, renderPage,
     return days < 1 ? 'Today' : days === 1 ? 'Yesterday' : `${days} days ago`;
   };
   const projects = () => getState().projects || [];
+  let editingDecision = '';
+  // Agents propose decisions; only approved ones reach their project context.
+  function decisions(p) {
+    const list = p.decisions || [], waiting = list.filter(d => d.status === 'proposed'), approved = list.filter(d => d.status === 'approved');
+    const row = d => editingDecision === d.id
+      ? `<li class="decision-row" data-decision-id="${e(d.id)}"><form class="decision-edit" data-decision-edit="${e(d.id)}"><label>Decision<input name="text" maxlength="500" required value="${e(d.text)}"></label><label>Reason<input name="reason" maxlength="1000" value="${e(d.reason || '')}"></label><div class="decision-actions"><button class="primary" type="submit">Save</button><button class="subtle" type="button" data-decision-cancel>Cancel</button></div></form></li>`
+      : `<li class="decision-row" data-decision-id="${e(d.id)}"><div><p>${e(d.text)}</p>${d.reason ? `<small>${e(d.reason)}</small>` : ''}${d.status === 'proposed' ? `<small class="decision-by">Proposed by ${e(d.by || 'an agent')}</small>` : ''}</div><div class="decision-actions">${d.status === 'proposed'
+        ? `<button class="primary" data-decision="approve">Approve</button><button class="subtle" data-decision="edit">Edit</button><button class="subtle" data-decision="reject">Reject</button>`
+        : `<button class="subtle" data-decision="edit">Edit</button><button class="subtle" data-decision="remove" aria-label="Remove decision: ${e(d.text)}">Remove</button>`}</div></li>`;
+    return `<details class="project-decisions" ${waiting.length || list.some(d => d.id === editingDecision) ? 'open' : ''}><summary>Decisions · ${approved.length}${waiting.length ? ` <span class="decision-waiting">${waiting.length} to review</span>` : ''}</summary>
+      ${waiting.length ? `<h3>Proposed by agents</h3><ul>${waiting.map(row).join('')}</ul>` : ''}
+      ${approved.length ? `<h3>Approved · every agent in this project follows these</h3><ul>${approved.map(row).join('')}</ul>` : '<p class="decision-empty">No decisions yet. Agents propose lasting choices here, or add one.</p>'}
+      <form class="decision-add" data-decision-add><label>Add a decision<input name="text" maxlength="500" required placeholder="For example: use tabs, not spaces"></label><label>Reason (optional)<input name="reason" maxlength="1000"></label><button class="secondary" type="submit">Add</button></form></details>`;
+  }
   function cards() {
     const items = projects().filter(p => (!category || p.category === category) && (!status || status === 'open' ? !status || ['active', 'planning'].includes(p.status) : p.status === status) && `${p.name} ${p.category} ${p.goals} ${p.nextStep}`.toLowerCase().includes(query.toLowerCase()));
     return items.length ? items.map(p => {
@@ -38,22 +52,24 @@ export function projectsUI({ call, getState, escape: e, icon, toast, renderPage,
         <div class="project-next"><span>Next step</span><p>${e(proposal ? 'Review the agent proposal' : waiting ? 'Review and approve the roadmap' : p.nextStep || 'No next step recorded.')}</p></div>
         <div class="project-progress"><span>${done} / ${total} milestones</span>${total ? `<progress max="${total}" value="${done}" aria-label="${e(p.name)} milestone progress"></progress>` : ''}</div>
         ${total ? `<details class="project-milestones"><summary>Milestones${waiting ? ' · Draft' : ''}</summary>${p.milestones.map((m, i) => `<label><input type="checkbox" data-project-milestone="${i}" ${m.done ? 'checked' : ''} ${waiting ? 'disabled' : ''}><span>${e(m.text)}${m.acceptance ? `<small>Done when: ${e(m.acceptance)}</small>` : ''}</span></label>`).join('')}</details>` : ''}
+        ${decisions(p)}
         <div class="project-last"><time title="${p.lastActiveAt ? e(new Date(p.lastActiveAt).toLocaleString()) : ''}">Last worked: ${since(p.lastActiveAt)}</time>${stale ? '<span class="project-return">Pick up again</span>' : ''}</div>
         <div class="project-folder-links">${p.folders.map((f, index) => `<button class="subtle" data-project-folder-open="${e(p.id)}" data-folder-index="${index}" title="${e(f.path)}">${icon('folder')}<span>${e(f.label || f.path)}</span></button>`).join('')}</div>
         ${p.plan?.files?.error ? `<p class="form-error">Project files need attention. Open Roadmap to retry.</p>` : ''}
         <div class="project-actions"><button class="${waiting ? 'secondary' : 'primary'}" data-project-open="${e(p.id)}">${icon('terminal')}Open console</button><button class="${waiting ? 'primary' : 'secondary'}" data-project-plan="${e(p.id)}">${proposal ? 'Review proposal' : p.plan ? 'Plan' : 'Plan project'}</button><button class="subtle" data-project-edit="${e(p.id)}">Edit</button></div></article>`;
     }).join('') : `<div class="surface project-empty"><h2>${projects().length ? 'No matching projects' : 'No projects'}</h2>${projects().length ? '<p>Try a different filter.</p>' : ''}<button class="primary" data-project-new>${icon('plus')}New project</button></div>`;
   }
-  function refreshCards() {
+  function refreshCards(force = false) {
     plan.refresh();
     const host = document.querySelector('#project-cards'); if (!host) return;
-    const fingerprint = JSON.stringify([projects(), query, category, status]);
+    const fingerprint = JSON.stringify([projects(), query, category, status, editingDecision]);
+    if (force) delete host.dataset.fingerprint;
     if (host.dataset.fingerprint === fingerprint) return;
     host.dataset.fingerprint = fingerprint;
-    const open = [...host.querySelectorAll('.project-milestones[open]')].map(x => x.closest('[data-project-id]').dataset.projectId);
+    const open = [...host.querySelectorAll('details[open]')].map(x => [x.closest('[data-project-id]').dataset.projectId, x.className]);
     const focused = document.activeElement, focusId = focused?.closest('[data-project-id]')?.dataset.projectId, milestone = focused?.dataset.projectMilestone;
     host.innerHTML = cards();
-    for (const id of open) { const details = host.querySelector(`[data-project-id="${id}"] details`); if (details) details.open = true; }
+    for (const [id, kind] of open) { const details = host.querySelector(`[data-project-id="${id}"] details.${kind}`); if (details) details.open = true; }
     if (focusId && milestone !== undefined) host.querySelector(`[data-project-id="${focusId}"] [data-project-milestone="${milestone}"]`)?.focus({ preventScroll: true });
   }
   function render() {
@@ -104,6 +120,12 @@ export function projectsUI({ call, getState, escape: e, icon, toast, renderPage,
       if (b.dataset.projectEdit) edit(b.dataset.projectEdit, undefined, b);
       if (b.dataset.projectOpen) await openNew(undefined, { projectId: b.dataset.projectOpen });
       if (b.dataset.projectPlan) await plan.open(b.dataset.projectPlan, b);
+      if (b.dataset.decision || b.hasAttribute('data-decision-cancel')) {
+        const id = b.closest('[data-project-id]').dataset.projectId, decisionId = b.closest('[data-decision-id]').dataset.decisionId;
+        if (b.hasAttribute('data-decision-cancel')) { editingDecision = ''; refreshCards(true); }
+        else if (b.dataset.decision === 'edit') { editingDecision = decisionId; refreshCards(true); document.querySelector(`[data-decision-edit="${decisionId}"] input`)?.focus(); }
+        else { b.disabled = true; await call('projects.decision', { id, decisionId, action: b.dataset.decision }); refreshCards(); toast(b.dataset.decision === 'approve' ? 'Decision approved. Agents in this project now follow it.' : b.dataset.decision === 'reject' ? 'Decision rejected.' : 'Decision removed.'); }
+      }
       if (b.dataset.projectFolderOpen) await call('projects.folder', { id: b.dataset.projectFolderOpen, index: Number(b.dataset.folderIndex) });
       if (b.hasAttribute('data-project-close')) dialog.close();
       if (b.hasAttribute('data-project-folder')) { const chosen = await call('pickFolder'); if (chosen) form.elements.folders.value = [form.elements.folders.value.trim(), chosen].filter(Boolean).join('\n'); }
@@ -111,6 +133,17 @@ export function projectsUI({ call, getState, escape: e, icon, toast, renderPage,
         if (!form.dataset.confirmDelete) { form.dataset.confirmDelete = 'true'; b.textContent = 'Confirm delete'; form.querySelector('.form-error').textContent = 'Deletes this project record. Project files and open consoles stay.'; return; }
         await call('projects.remove', form.dataset.id); dialog.close(); renderPage(); toast('Project deleted.');
       }
+    } catch (error) { toast(error.message, true); }
+  });
+  document.addEventListener('submit', async event => {
+    const add = event.target.closest('[data-decision-add]'), change = event.target.closest('[data-decision-edit]');
+    if (!add && !change) return;
+    event.preventDefault();
+    const data = Object.fromEntries(new FormData(event.target)), id = event.target.closest('[data-project-id]').dataset.projectId;
+    try {
+      if (add) await call('projects.decision', { id, action: 'add', text: data.text, reason: data.reason });
+      else await call('projects.decision', { id, decisionId: change.dataset.decisionEdit, action: 'edit', text: data.text, reason: data.reason });
+      editingDecision = ''; refreshCards(true); toast(add ? 'Decision added.' : 'Decision saved.');
     } catch (error) { toast(error.message, true); }
   });
   document.addEventListener('input', event => { if (event.target.hasAttribute('data-project-search')) { query = event.target.value; refreshCards(); } });

@@ -32,7 +32,7 @@ class Projects extends EventEmitter {
     const folders = raw.folders.map(x => ({ label: text(x.label || '', 64, 'Folder label'), path: folder(x.path) }));
     if (!Array.isArray(raw.milestones || []) || (raw.milestones || []).length > 100) throw new Error('Use up to 100 milestones.');
     const milestones = planning.milestones(raw.milestones || []);
-    const item = { id: before?.id || randomUUID(), name, category: text(raw.category || '', 60, 'Category'), goals: text(raw.goals || '', 10000, 'Goals'), approach: text(raw.approach || '', 10000, 'Plan'), notes: text(raw.notes || '', 20000, 'Notes'), nextStep: text(raw.nextStep || '', 1000, 'Next step'), status: raw.status || 'active', folders, milestones, createdAt: before?.createdAt || Date.now(), updatedAt: Date.now(), lastActiveAt: before?.lastActiveAt || null };
+    const item = { id: before?.id || randomUUID(), decisions: before?.decisions || [], name, category: text(raw.category || '', 60, 'Category'), goals: text(raw.goals || '', 10000, 'Goals'), approach: text(raw.approach || '', 10000, 'Plan'), notes: text(raw.notes || '', 20000, 'Notes'), nextStep: text(raw.nextStep || '', 1000, 'Next step'), status: raw.status || 'active', folders, milestones, createdAt: before?.createdAt || Date.now(), updatedAt: Date.now(), lastActiveAt: before?.lastActiveAt || null };
     item.color = projectColor(raw.color ?? before?.color, item.id);
     if (before?.plan) {
       planning.checkRevision(before, raw.revision);
@@ -124,6 +124,36 @@ class Projects extends EventEmitter {
     if (item.plan) updated.plan = { ...item.plan, revision: item.plan.revision + 1 };
     return this.store(updated);
   }
+  // Decisions are durable project choices and preferences. Agents can only
+  // propose one; the user approves, edits or rejects it in Projects.
+  proposeDecision(id, raw, agent) {
+    const item = this.get(id); if (!item) throw new Error('Link this chat to a project before proposing a decision.');
+    const decisions = item.decisions || [];
+    if (decisions.filter(d => d.status === 'proposed').length >= 20) throw new Error('20 decisions already await the user. Ask them to review Projects first.');
+    const entry = { id: randomUUID(), text: text(raw?.decision, 500, 'Decision'), reason: text(raw?.reason || '', 1000, 'Reason'), status: 'proposed', by: String(agent || 'An agent').slice(0, 80), at: Date.now() };
+    if (!entry.text) throw new Error('Describe the decision.');
+    if (decisions.some(d => d.status !== 'rejected' && d.text.toLowerCase() === entry.text.toLowerCase())) throw new Error('This decision is already recorded.');
+    return this.store({ ...item, decisions: [...decisions, entry], updatedAt: Date.now() });
+  }
+  decide(id, raw) {
+    const item = this.get(id); if (!item) throw new Error('Project not found.');
+    const decisions = (item.decisions || []).map(d => ({ ...d }));
+    const full = () => decisions.filter(d => d.status === 'approved').length >= 100;
+    if (raw?.action === 'add') {
+      if (full()) throw new Error('Use up to 100 decisions. Remove old ones first.');
+      const entry = { id: randomUUID(), text: text(raw.text, 500, 'Decision'), reason: text(raw.reason || '', 1000, 'Reason'), status: 'approved', by: 'You', at: Date.now(), decidedAt: Date.now() };
+      if (!entry.text) throw new Error('Describe the decision.');
+      return this.store({ ...item, decisions: [...decisions, entry], updatedAt: Date.now() });
+    }
+    const entry = decisions.find(d => d.id === raw?.decisionId); if (!entry) throw new Error('Decision not found.');
+    if (raw.action === 'remove') return this.store({ ...item, decisions: decisions.filter(d => d !== entry), updatedAt: Date.now() });
+    if (!['approve', 'reject', 'edit'].includes(raw.action)) throw new Error('Choose approve, reject, edit or remove.');
+    if (raw.action === 'approve' && entry.status !== 'approved' && full()) throw new Error('Use up to 100 decisions. Remove old ones first.');
+    if (raw.text !== undefined) { entry.text = text(raw.text, 500, 'Decision'); if (!entry.text) throw new Error('Describe the decision.'); }
+    if (raw.reason !== undefined) entry.reason = text(raw.reason, 1000, 'Reason');
+    if (raw.action !== 'edit') { entry.status = raw.action === 'approve' ? 'approved' : 'rejected'; entry.decidedAt = Date.now(); }
+    return this.store({ ...item, decisions, updatedAt: Date.now() });
+  }
   launch(raw) {
     if (!raw?.projectId) return { ...raw, projectId: null };
     const item = this.get(raw.projectId); if (!item) throw new Error('Project not found. Choose it again.');
@@ -140,7 +170,12 @@ class Projects extends EventEmitter {
   }
   summary(id) {
     const p = this.get(id); if (!p) return '';
-    return '\n\n## Current project\n' + JSON.stringify({ id: p.id, name: p.name, category: p.category, status: p.status, goals: p.goals, approach: p.approach, nextStep: p.nextStep, notes: p.notes, milestones: p.milestones, folders: p.folders, lastActiveAt: p.lastActiveAt }, null, 2) + '\nUse this project brief as context. Keep progress honest: only mark a milestone done after verifying it. Use dock/project_progress to record a completed milestone, a brief progress note or the next step. Refresh with dock_context at the start of each task.\n' + planning.instructions(p);
+    const decisions = (p.decisions || []).filter(d => d.status === 'approved').map(d => d.reason ? `${d.text} (${d.reason})` : d.text);
+    const waiting = (p.decisions || []).filter(d => d.status === 'proposed').length;
+    return '\n\n## Current project\n' + JSON.stringify({ id: p.id, name: p.name, category: p.category, status: p.status, goals: p.goals, approach: p.approach, nextStep: p.nextStep, notes: p.notes, milestones: p.milestones, folders: p.folders, lastActiveAt: p.lastActiveAt, decisions }, null, 2)
+      + '\nFollow the approved decisions: they record the user’s choices and preferences for this project. When the user makes a lasting choice (a preference, a rejected approach, a stack or convention), propose it with dock/project_decision; the user approves it in Projects.'
+      + (waiting ? ` ${waiting} proposed decision${waiting === 1 ? '' : 's'} await the user’s review; treat them as unapproved.` : '')
+      + '\nUse this project brief as context. Keep progress honest: only mark a milestone done after verifying it. Use dock/project_progress to record a completed milestone, a brief progress note or the next step. Refresh with dock_context at the start of each task.\n' + planning.instructions(p);
   }
 }
 module.exports = { Projects };
