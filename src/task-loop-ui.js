@@ -14,7 +14,8 @@ export function taskLoopUI({ call, getState, getPage, escape: e, renderPage, toa
   const time = value => value.elapsedMs == null && value.startedAt ? `data-task-elapsed="${value.startedAt}"` : '';
   const options = (items, value) => items.map(item => `<option value="${e(item.id ?? item.path)}" ${(item.id ?? item.path) === value ? 'selected' : ''}>${e(item.label)}</option>`).join('');
   const field = (name, label, attrs = '') => `<label for="task-${name}">${label}<input id="task-${name}" name="${name}" value="${e(draft[name])}" ${attrs}></label>`;
-  const select = (name, label, html, attrs = '') => `<label for="task-${name}">${label}<select id="task-${name}" name="${name}" ${attrs}>${html}</select></label>`;
+  // The label sits beside the select: a wrapping label would add the selected option to its name.
+  const select = (name, label, html, attrs = '') => `<div class="task-field"><label for="task-${name}">${label}</label><select id="task-${name}" name="${name}" ${attrs}>${html}</select></div>`;
   const staticOptions = (name, items) => items.map(([value, label]) => `<option value="${value}" ${draft[name] === value ? 'selected' : ''}>${label}</option>`).join('');
   function form() {
     if (!choices) return `<section class="surface" aria-busy="${loading}"><p role="status">${error ? e(error) : 'Loading repositories and accounts…'}</p>${error ? '<button type="button" data-task-action="reload">Retry</button>' : ''}</section>`;

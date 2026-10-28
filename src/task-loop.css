@@ -13,7 +13,8 @@
 .task-page h3 { font-size: 15px; margin: 20px 0 12px; }
 .task-page h4 { font-size: 13px; margin: 0; }
 .task-form, .task-detail { padding: 22px; min-width: 0; }
-.task-form label { display: grid; gap: 8px; margin: 18px 0 0; font-size: 13px; min-width: 0; }
+.task-form label, .task-field { display: grid; gap: 8px; margin: 18px 0 0; font-size: 13px; min-width: 0; }
+.task-field label { margin: 0; }
 .task-form :is(input, select, textarea) { width: 100%; min-width: 0; font-size: 13px; }
 .task-form textarea { resize: vertical; line-height: 1.5; }
 .task-form-pair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; }

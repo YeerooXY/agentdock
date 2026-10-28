@@ -19,7 +19,7 @@ function initRepo(repo) {
   git(repo, 'add', '.'); git(repo, 'commit', '-qm', 'base');
 }
 function fixture(t, script = [], overrides = {}) {
-  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'paddock-tasks-')), repo = path.join(temp, 'repo'), root = path.join(temp, 'data');
+  const temp = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'paddock-tasks-'))), repo = path.join(temp, 'repo'), root = path.join(temp, 'data');
   initRepo(repo);
   const spawned = [], saved = [], calls = [], errors = [], repositories = [{ path: repo, label: 'Test repository' }];
   const spawnProcess = (executable, args, options) => {
