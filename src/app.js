@@ -276,8 +276,8 @@ function quotaCard(provider, accountId, accountLabel, detailed = false, hideable
   const card = entry => {
     const windows = Array.isArray(entry?.windows) ? entry.windows : [];
     const stale = entry && (!Number.isFinite(entry.observedAt) || entry.observedAt > Date.now() || Date.now() - entry.observedAt > 5 * 60000 || windows.some(w => w.resetsAt && w.resetsAt <= Date.now()) || (check && !['current', 'refreshing'].includes(check.status)));
-    const status = check?.status === 'refreshing' ? 'Checking' : entry ? stale ? 'Cached' : 'Current' : ({ 'sign-in': 'Sign in', 'not-installed': 'Not installed', unsupported: 'Unavailable', limited: 'Try later', timeout: 'Timed out', unavailable: 'Unavailable' })[check?.status] || 'Not checked';
-    const message = check?.message || (provider === 'codex' && state.accountError) || 'Refresh to check account usage.';
+    const status = check?.status === 'refreshing' ? 'Checking' : entry ? stale ? 'Cached' : 'Current' : ({ 'sign-in': 'Sign in', 'missing-key': 'Add key', 'not-installed': 'Not installed', unsupported: 'Unavailable', limited: 'Try later', timeout: 'Timed out', unavailable: 'Unavailable' })[check?.status] || 'Not checked';
+    const message = check?.message || (provider === 'opencode' ? 'Account limits: add an OpenCode key in Keys to show them' : '') || (provider === 'codex' && state.accountError) || 'Refresh to check account usage.';
     return `<article class="quota-card ${detailed ? 'large' : ''}" style="--provider-accent:${accountIdentity(provider).color}">
     <div class="quota-heading">${accountMark(provider)}<strong>${escape(accountLabel)}${entry?.name && entry.name !== display && entry.name !== accountLabel ? ` · ${escape(entry.name)}` : ''}</strong>${entry?.plan ? `<span class="plan">${escape(entry.plan)}</span>` : ''}<span class="connection ${entry && !stale ? 'connected' : ''}" role="status">${status}</span></div>
     ${windows.length ? windows.map(w => {
@@ -289,6 +289,7 @@ function quotaCard(provider, accountId, accountLabel, detailed = false, hideable
     ${windows.length && check?.message ? `<p class="section-note" role="status">${escape(check.message)}</p>` : ''}
     ${entry && ['codex', 'claude'].includes(provider) && !windows.some(w => w.minutes === 300) ? '<div class="missing-window">5-hour limit not reported</div>' : ''}
     ${entry && ['codex', 'claude'].includes(provider) && !windows.some(w => w.minutes === 10080) ? '<div class="missing-window">Weekly limit not reported</div>' : ''}
+    ${provider === 'opencode' ? `<p class="section-note">Used on this PC (last 7 days): ${check?.localSpending?.week ? `$${check.localSpending.week.cost.toFixed(2)} · ${number(check.localSpending.week.input)} input, ${number(check.localSpending.week.output)} output, ${number(check.localSpending.week.cacheRead)} cache read tokens` : 'Unavailable'}</p>` : ''}
     <div class="quota-foot">${entry ? `${stale ? 'Stale snapshot · ' : ''}${age(entry.observedAt)}` : 'No estimated limits'}${detailed && entry ? `<span>${escape(entry.source)}</span>` : ''}${hideable ? `<button class="subtle usage-hide" data-usage-hide="${escape(accountId)}" aria-label="Hide ${escape(accountLabel)} from Usage">Hide</button>` : ''}</div>
   </article>`;
   };
@@ -501,7 +502,7 @@ function renderUsage() {
   const summary = state.summary;
   const subscriptions = [...(state.usageAccounts || state.accounts || [])].sort((a,b) => Number(!!(b.hasUsage || state.limits.some(x => (x.accountId || x.id) === b.id))) - Number(!!(a.hasUsage || state.limits.some(x => (x.accountId || x.id) === a.id))));
   // Only set-up subscriptions are listed; the rest wait behind Add subscription.
-  const limitOnly = state.limits.filter(entry => !subscriptions.some(account => account.id === (entry.accountId || (entry.provider === 'codex' ? 'codex:default' : entry.id === 'claude:account' ? 'claude:default' : entry.id)))).map(entry => ({ id: entry.accountId || entry.id, provider: entry.provider, label: entry.name || providerName(entry.provider), hasUsage: true }));
+  const limitOnly = state.limits.filter(entry => entry.provider !== 'opencode' && !subscriptions.some(account => account.id === (entry.accountId || (entry.provider === 'codex' ? 'codex:default' : entry.id === 'claude:account' ? 'claude:default' : entry.id)))).map(entry => ({ id: entry.accountId || entry.id, provider: entry.provider, label: entry.name || providerName(entry.provider), hasUsage: true }));
   const hidden = new Set(state.settings.usageHidden || []), shown = new Set(state.settings.usageShown || []);
   const listed = [...subscriptions, ...limitOnly], visible = listed.filter(account => !hidden.has(account.id) && (account.hasUsage || account.inUse || shown.has(account.id)));
   const addable = listed.filter(account => !visible.includes(account));

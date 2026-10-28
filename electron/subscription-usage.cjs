@@ -237,6 +237,51 @@ async function readCopilotUsage({ executable, accountId = 'copilot:default', env
   } finally { transport.close(); }
 }
 
+function opencodeReading(raw, accountId = 'opencode:default', at = Date.now()) {
+  const windows = [];
+  for (const [key, name, minutes] of [['rolling', '5-hour', 300], ['weekly', 'Weekly', 10080], ['monthly', 'Monthly', null]]) {
+    const item = raw?.usage?.[key];
+    const valid = item && ['ok', 'rate-limited'].includes(item.status) && percent(item.percent) !== null;
+    windows.push({ key, label: name, minutes, usedPercent: valid ? (item.status === 'rate-limited' ? 100 : item.percent) : null, resetsAt: date(item?.resetsAt) });
+  }
+  if (windows.every(window => window.usedPercent === null)) throw new UsageError('unavailable', 'OpenCode returned no readable account limits.');
+  return [{ id: accountId, accountId, provider: 'opencode', name: 'OpenCode', source: 'OpenCode Go account (unofficial endpoint)', observedAt: at, windows }];
+}
+function opencodeStats(raw) {
+  const text = String(raw).replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '');
+  const field = name => new RegExp('(?:^|[\\u2502\\n])\\s*' + name + '\\s+\\$?([\\d,.]+)\\s*([KMB]?)\\s*(?:\\u2502|$)', 'im').exec(text);
+  const cost = field('Total Cost'), input = field('Input'), output = field('Output'), cache = field('Cache Read');
+  const convert = match => match ? Number(match[1].replaceAll(',', '')) * ({ K: 1000, M: 1000000, B: 1000000000 }[match[2].toUpperCase()] || 1) : NaN;
+  const values = [cost, input, output, cache].map(convert);
+  if (values.some(value => !Number.isFinite(value) || value < 0)) return null;
+  return { cost: values[0], input: values[1], output: values[2], cacheRead: values[3] };
+}
+async function readOpenCodeAccount({ key, accountId, fetchUsage = fetch, timeoutMs = 20000 }) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetchUsage('https://opencode.ai/zen/go/v1/usage', { headers: { Authorization: 'Bearer ' + key, Accept: 'application/json' }, redirect: 'error', signal: controller.signal });
+    if (response.status === 401 || response.status === 403) throw new UsageError('sign-in', 'The saved OpenCode key was rejected.');
+    if (!response.ok) throw new UsageError('unavailable', 'OpenCode could not return current account usage.');
+    let size = 0; const chunks = [];
+    for await (const chunk of response.body) { const bytes = Buffer.from(chunk); size += bytes.length; if (size > 1024 * 1024) throw new UsageError('unavailable', 'The usage response was too large.'); chunks.push(bytes); }
+    return opencodeReading(JSON.parse(Buffer.concat(chunks).toString()), accountId);
+  } catch (error) {
+    if (error instanceof UsageError) throw error;
+    throw new UsageError(controller.signal.aborted ? 'timeout' : 'unavailable', controller.signal.aborted ? 'The usage check timed out. Try again.' : 'OpenCode could not return current account usage.');
+  } finally { clearTimeout(timer); }
+}
+async function readOpenCodeUsage({ executable, accountId = 'opencode:default', cwd, env, getKey, run, fetchUsage, timeoutMs } = {}) {
+  const stats = Promise.all([7, 1].map(async days => {
+    try { return opencodeStats(await runUsageCommand(executable, ['stats', '--days', String(days)], { cwd, env, run, timeoutMs })); } catch { return null; }
+  }));
+  let values, error, missing = false;
+  try { const key = getKey(); if (!key) missing = true; else values = await readOpenCodeAccount({ key, accountId, fetchUsage, timeoutMs }); }
+  catch (cause) { error = cause instanceof UsageError ? cause : new UsageError('unavailable', 'The saved OpenCode key could not be read.'); }
+  const [week, day] = await stats;
+  return { values, error, missing, localSpending: { week, day } };
+}
+
 // All providers enter the same refresh and freshness path. A missing reader is
 // an explicit capability state, never a fabricated zero or a silently hidden card.
 class SubscriptionUsage {
@@ -267,7 +312,13 @@ class SubscriptionUsage {
     }
     this.states.set(account.id, { ...base, status: 'refreshing', message: '' }); this.onChange();
     try {
-      const values = await reader(account);
+      const result = await reader(account);
+      const values = Array.isArray(result) ? result : result.values;
+      if (!Array.isArray(result)) {
+        base.localSpending = result.localSpending;
+        if (result.missing) { this.onReading(account, []); this.states.set(account.id, { ...base, observedAt: null, status: 'missing-key', message: 'Account limits: add an OpenCode key in Keys to show them' }); this.onChange(); return; }
+        if (result.error) throw result.error;
+      }
       if (!Array.isArray(values) || !values.length || values.some(value => value.accountId !== account.id || value.provider !== account.provider || !Number.isFinite(value.observedAt)))
         throw new UsageError('unavailable', 'The provider returned no account usage.');
       this.onReading(account, values);
@@ -284,4 +335,4 @@ function usageHelp(provider) {
   return native ? `This CLI has no connected background quota reader. Check ${native}.` : 'This CLI uses its selected provider’s allowance. Its account quota is not available through this CLI.';
 }
 function stopUsageReaders() { for (const child of ownedReaders) { try { child.kill(); } catch {} } ownedReaders.clear(); }
-module.exports = { UsageError, UsageTransport, SubscriptionUsage, usageEnvironment, responseError, claudeReading, copilotReading, copilotExecutable, readClaudeUsage, readCopilotUsage, runUsageCommand, kiroReading, readKiroUsage, kimiReading, readKimiUsage, usageHelp, stopUsageReaders };
+module.exports = { UsageError, UsageTransport, SubscriptionUsage, usageEnvironment, responseError, claudeReading, copilotReading, copilotExecutable, readClaudeUsage, readCopilotUsage, runUsageCommand, kiroReading, readKiroUsage, kimiReading, readKimiUsage, opencodeReading, opencodeStats, readOpenCodeAccount, readOpenCodeUsage, usageHelp, stopUsageReaders };

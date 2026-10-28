@@ -51,7 +51,7 @@ const { userDataPath } = require('./user-data.cjs');
 const { AccountProfiles, defaultId } = require('./account-profiles.cjs');
 const { DraftBridge } = require('./draft-bridge.cjs');
 const { accountIdForLimit, thresholdCandidate, automaticSwitchEligible } = require('./account-switching-policy.cjs');
-const { SubscriptionUsage, readClaudeUsage, readCopilotUsage, readKiroUsage, readKimiUsage, copilotExecutable, usageEnvironment, stopUsageReaders } = require('./subscription-usage.cjs');
+const { SubscriptionUsage, readClaudeUsage, readCopilotUsage, readKiroUsage, readKimiUsage, readOpenCodeUsage, copilotExecutable, usageEnvironment, stopUsageReaders } = require('./subscription-usage.cjs');
 app.setName('Paddock');
 const appModelId = APP_ID;
 if (process.platform === 'win32') app.setAppUserModelId(appModelId);
@@ -206,6 +206,7 @@ function usageAccounts() {
     if (!['codex', 'claude'].includes(agent.id) && agent.installed) choices.push({ id: `${agent.id}:default`, provider: agent.id, label: agent.name });
   }
   for (const value of limits) {
+    if (value.provider === 'opencode' && !(cliSetup?.snapshot() || []).some(agent => agent.id === 'opencode' && agent.installed)) continue;
     const id = limitAccountId(value);
     if (id && !choices.some(choice => choice.id === id)) choices.push({ id, provider: value.provider, label: value.name || value.provider });
   }
@@ -214,7 +215,7 @@ function usageAccounts() {
     || checks.some(check => check.accountId === choice.id && check.observedAt)
     || !!choice.loginCompletedAt;
   const active = choice => sessions?.list().some(item => item.alive && (item.accountId || `${item.provider}:default`) === choice.id);
-  return choices.map(choice => ({ ...choice, hasUsage: !!known(choice), inUse: !!active(choice) }))
+  return choices.map(choice => ({ ...choice, hasUsage: choice.provider === 'opencode' || !!known(choice), inUse: !!active(choice) }))
     .sort((a, b) => Number(b.hasUsage) - Number(a.hasUsage) || Number(b.inUse) - Number(a.inUse));
 }
 function saveUsage(account, values) {
@@ -239,7 +240,7 @@ function usageSnapshot() {
   const hidden = new Set(settings.usageHidden || []), shown = new Set(settings.usageShown || []);
   const visible = (id, used) => !hidden.has(id) && (used || shown.has(id) || limits.some(item => limitAccountId(item) === id));
   return {
-    limits: limits.map(item => ({ ...item, accountLabel: choices.find(choice => choice.id === limitAccountId(item))?.label || item.name, usageCheck: checks.find(check => check.accountId === limitAccountId(item)), visible: !hidden.has(limitAccountId(item)) })),
+    limits: limits.filter(item => item.provider !== 'opencode' || choices.some(choice => choice.id === limitAccountId(item))).map(item => ({ ...item, accountLabel: choices.find(choice => choice.id === limitAccountId(item))?.label || item.name, usageCheck: checks.find(check => check.accountId === limitAccountId(item)), visible: !hidden.has(limitAccountId(item)) })),
     accounts: choices.map(choice => ({ ...choice, usageCheck: checks.find(check => check.accountId === choice.id), visible: visible(choice.id, !!(choice.hasUsage || choice.inUse)) })),
     usageChecks: checks, refreshing, threshold: settings.accountSwitchThreshold, autoSwitch: settings.autoSwitchAccounts, summary: ledgerSummary(ledger || []),
   };
@@ -329,6 +330,7 @@ app.whenReady().then(async () => {
       copilot: choice => readCopilotUsage({ executable: copilotExecutable(cliSetup.executable('copilot')), accountId: choice.id, cwd: usageDirectory, env: usageEnvironment() }),
       kiro: choice => readKiroUsage({ executable: cliSetup.executable('kiro'), accountId: choice.id, cwd: path.join(usageDirectory, 'kiro'), env: usageEnvironment() }),
       kimi: choice => readKimiUsage({ executable: cliSetup.executable('kimi'), accountId: choice.id, cwd: usageDirectory, env: usageEnvironment() }),
+      opencode: choice => readOpenCodeUsage({ executable: cliSetup.executable('opencode'), accountId: choice.id, cwd: usageDirectory, env: usageEnvironment(), getKey: () => { const entry = vault.list().find(item => item.id.toLowerCase() === 'opencode' || item.label.toLowerCase() === 'opencode'); return entry ? vault.get(entry.id) : null; } }),
     },
     onReading: saveUsage, onChange: () => { publish(); mobile?.scheduleState(); },
   });

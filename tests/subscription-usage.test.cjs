@@ -177,3 +177,27 @@ test('Kiro Free native usage reports fractional credits in the current CLI forma
   assert.equal(value[0].windows[0].usedPercent, 15.9);
   assert.equal(value[0].observedAt, 123);
 });
+
+
+test('OpenCode account windows and local stats validate provider data', () => {
+  const { opencodeReading, opencodeStats } = require('../electron/subscription-usage.cjs');
+  const result = opencodeReading({ usage: { rolling: { status: 'ok', percent: 25, resetsAt: '2030-01-01T00:00:00Z' }, weekly: { status: 'rate-limited', percent: 12 }, monthly: { status: 'ok', percent: 101 } } }, 'opencode:default', 100)[0];
+  assert.deepEqual(result.windows.map(w => w.usedPercent), [25, 100, null]);
+  assert.deepEqual(result.windows.map(w => w.minutes), [300, 10080, null]);
+  assert.throws(() => opencodeReading({ usage: {} }), UsageError);
+  const sample = '\x1b[32m\u2502Total Cost                                        $1.79 \u2502\n\u2502Input                                            336.8K \u2502\n\u2502Output                                           130.4K \u2502\n\u2502Cache Read                                         3.2M \u2502\x1b[0m';
+  assert.deepEqual(opencodeStats(sample), { cost: 1.79, input: 336800, output: 130400, cacheRead: 3200000 });
+  assert.equal(opencodeStats('invalid'), null);
+});
+
+test('OpenCode rejects credentials without exposing secrets', async () => {
+  const { readOpenCodeAccount, SubscriptionUsage } = require('../electron/subscription-usage.cjs');
+  const key = 'secret-test-key';
+  let options;
+  const fetchUsage = async (url, opts) => { options = opts; assert.equal(url, 'https://opencode.ai/zen/go/v1/usage'); return { status: 401, ok: false }; };
+  await assert.rejects(readOpenCodeAccount({ key, fetchUsage }), error => error.code === 'sign-in' && error.message === 'The saved OpenCode key was rejected.' && !JSON.stringify(error).includes(key));
+  assert.equal(options.redirect, 'error');
+  const usage = new SubscriptionUsage({ readers: { opencode: async () => { throw new Error(key); } } });
+  await usage.refresh([{ id: 'opencode:default', provider: 'opencode' }]);
+  assert.equal(JSON.stringify(usage.snapshot()).includes(key), false);
+});
