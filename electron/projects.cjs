@@ -18,10 +18,42 @@ function folder(value) {
   return path.resolve(value);
 }
 class Projects extends EventEmitter {
-  constructor(root) { super(); this.file = path.join(root, 'projects.json'); this.items = readJson(this.file, []); }
+  constructor(root) { super(); this.file = path.join(root, 'projects.json'); this.items = readJson(this.file, []); this.proposalFile = path.join(root, 'project-proposals.json'); this.proposals = readJson(this.proposalFile, []); }
   list() { return this.items.map(x => ({ ...x, color: projectColor(x.color, x.id), progress: { done: x.milestones.filter(m => m.done).length, total: x.milestones.length } })).sort((a, b) => (b.lastActiveAt || b.createdAt) - (a.lastActiveAt || a.createdAt)); }
   get(id) { return this.items.find(x => x.id === id); }
   commit(items) { atomicJson(this.file, items); this.items = items; this.emit('changed'); }
+  commitProposals(items) { atomicJson(this.proposalFile, items); this.proposals = items; this.emit('changed'); }
+  checkFolders(folders) {
+    const key = value => { let resolved; try { resolved = fs.realpathSync(value); } catch { resolved = path.resolve(value); } return process.platform === 'win32' ? resolved.toLowerCase() : resolved; };
+    const paths = new Set(folders.map(f => key(f.path)));
+    const owner = this.items.find(p => p.folders.some(f => paths.has(key(f.path))));
+    if (owner) throw new Error(`Folder already belongs to project: ${owner.name}.`);
+  }
+  proposeProject(raw, session) {
+    if (this.proposals.length >= 5) throw new Error('5 project proposals already await review.');
+    const name = text(raw.name, 64, 'Name'); if (!name) throw new Error('Give the project a name.');
+    if (!Array.isArray(raw.folders) || raw.folders.length < 1 || raw.folders.length > 20) throw new Error('Add 1 to 20 project folders.');
+    const folders = raw.folders.map(value => ({ label: '', path: folder(value) }));
+    this.checkFolders(folders);
+    if (!Array.isArray(raw.milestones || []) || (raw.milestones || []).length > 100) throw new Error('Use up to 100 milestones.');
+    const milestones = planning.milestones(raw.milestones || []);
+    if (!Array.isArray(raw.decisions || []) || (raw.decisions || []).length > 100) throw new Error('Use up to 100 decisions.');
+    const decisions = (raw.decisions || []).map(d => { const value = text(d.decision, 500, 'Decision'); if (!value) throw new Error('Describe the decision.'); return { text: value, reason: text(d.reason || '', 1000, 'Reason') }; });
+    const proposal = { id: randomUUID(), name, folders, goals: text(raw.goals, 10000, 'Goals'), category: text(raw.category || '', 60, 'Category'), milestones, decisions, sessionId: session?.id || null, consoleName: String(session?.name || 'Agent').slice(0, 80), createdAt: Date.now() };
+    this.commitProposals([...this.proposals, proposal]); return proposal;
+  }
+  acceptProposal(id, sessions) {
+    const proposal = this.proposals.find(p => p.id === id); if (!proposal) throw new Error('Proposal not found.');
+    this.checkFolders(proposal.folders);
+    const project = this.save({ ...proposal, id: undefined, status: 'active' });
+    const now = Date.now();
+    const saved = this.store({ ...this.get(project.id), decisions: proposal.decisions.map(d => ({ ...d, id: randomUUID(), status: 'approved', by: 'You', at: now, decidedAt: now })) });
+    this.commitProposals(this.proposals.filter(p => p.id !== id));
+    const session = sessions?.items.get(proposal.sessionId);
+    if (session && !session.dismissed && (session.alive || session.restoreError)) sessions.assignProject(session.id, saved.id);
+    return saved;
+  }
+  dismissProposal(id) { if (!this.proposals.some(p => p.id === id)) throw new Error('Proposal not found.'); this.commitProposals(this.proposals.filter(p => p.id !== id)); }
   save(raw) {
     const before = raw.id ? this.get(raw.id) : null;
     if (raw.id && !before) throw new Error('Project not found.');
@@ -166,7 +198,7 @@ class Projects extends EventEmitter {
     const binding = { projectId: p?.id || null, projectName: p?.name || null, chatTitle: session.name || '', launchDirectory: session.cwd || '' };
     return '\n\n## Current chat binding\n' + JSON.stringify(binding, null, 2) + '\n' + (p
       ? 'This is the project explicitly linked to this chat. Use its ID and project context, even when the chat has a custom title. If a request points to a different project, ask the user to change the link before project-specific work. Refresh dock_context each turn; an earlier chat message or title does not override the current binding.\n'
-      : 'No saved project is linked to this chat. Do not guess one from the chat title or earlier conversation. Use the launch directory and the user’s explicit instructions; ask which project or folder they mean when the target is unclear. The console folder button lets the user choose a project.\n') + this.summary(p?.id);
+      : 'No saved project is linked to this chat. Do not guess one from the chat title or earlier conversation. Use the launch directory and the user’s explicit instructions; ask which project or folder they mean when the target is unclear. When the user works in a folder that is not a project, you may propose one with dock/propose_project; the user decides whether to create it. The console folder button lets the user choose a project.\n') + this.summary(p?.id);
   }
   summary(id) {
     const p = this.get(id); if (!p) return '';

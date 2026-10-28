@@ -27,6 +27,11 @@ export function projectsUI({ call, getState, escape: e, icon, toast, renderPage,
     return days < 1 ? 'Today' : days === 1 ? 'Yesterday' : `${days} days ago`;
   };
   const projects = () => getState().projects || [];
+  const proposals = () => getState().projectProposals || [];
+  function proposalSection() {
+    const items = proposals();
+    return items.length ? `<section aria-labelledby="project-proposals-title"><h2 id="project-proposals-title">Proposed by agents</h2><div class="project-cards">${items.map(p => `<article class="surface project-card"><h3>${e(p.name)}</h3><p>${e(p.goals)}</p><ul>${p.folders.map(f => `<li>${e(f.path)}</li>`).join('')}</ul><p>${p.milestones.length} milestones · ${e(p.consoleName)}</p>${p.milestones.length ? `<details><summary>Milestones</summary><ul>${p.milestones.map(m => `<li>${e(m.text)}${m.acceptance ? ` — ${e(m.acceptance)}` : ''}</li>`).join('')}</ul></details>` : ''}${p.decisions.length ? `<details open><summary>Decisions to approve</summary><ul>${p.decisions.map(d => `<li>${e(d.text)}${d.reason ? ` — ${e(d.reason)}` : ''}</li>`).join('')}</ul></details>` : ''}<div class="project-actions"><button class="primary" data-proposal-accept="${e(p.id)}">Create project</button><button class="subtle" data-proposal-dismiss="${e(p.id)}">Dismiss</button></div></article>`).join('')}</div></section>` : '';
+  }
   let editingDecision = '';
   // Agents propose decisions; only approved ones reach their project context.
   function decisions(p) {
@@ -62,6 +67,8 @@ export function projectsUI({ call, getState, escape: e, icon, toast, renderPage,
   }
   function refreshCards(force = false) {
     plan.refresh();
+    const proposalsHost = document.querySelector('#project-proposals');
+    if (proposalsHost) { const value = JSON.stringify(proposals()); if (proposalsHost.dataset.fingerprint !== value) { proposalsHost.dataset.fingerprint = value; proposalsHost.innerHTML = proposalSection(); } }
     const host = document.querySelector('#project-cards'); if (!host) return;
     const fingerprint = JSON.stringify([projects(), query, category, status, editingDecision]);
     if (force) delete host.dataset.fingerprint;
@@ -75,7 +82,7 @@ export function projectsUI({ call, getState, escape: e, icon, toast, renderPage,
   }
   function render() {
     const categories = [...new Set(projects().map(x => x.category).filter(Boolean))].sort();
-    return `<div class="page-heading"><h1>Projects</h1><button class="primary" data-project-new>${icon('plus')}New project</button></div><div class="project-filters"><label>Find a project<input data-project-search value="${e(query)}" type="search" placeholder="Name, goal or next step"></label><label>Category<select data-project-category><option value="">All categories</option>${categories.map(x => `<option ${x === category ? 'selected' : ''}>${e(x)}</option>`).join('')}</select></label><label>Status<select data-project-status>${[['open','Open projects'],['planning','Planning'],['active','Active'],['paused','Paused'],['complete','Complete'],['archived','Archived'],['','All projects']].map(([v, label]) => `<option value="${v}" ${v === status ? 'selected' : ''}>${label}</option>`).join('')}</select></label></div><div class="project-cards" id="project-cards">${cards()}</div>`;
+    return `<div class="page-heading"><h1>Projects</h1><button class="primary" data-project-new>${icon('plus')}New project</button></div><div id="project-proposals">${proposalSection()}</div><div class="project-filters"><label>Find a project<input data-project-search value="${e(query)}" type="search" placeholder="Name, goal or next step"></label><label>Category<select data-project-category><option value="">All categories</option>${categories.map(x => `<option ${x === category ? 'selected' : ''}>${e(x)}</option>`).join('')}</select></label><label>Status<select data-project-status>${[['open','Open projects'],['planning','Planning'],['active','Active'],['paused','Paused'],['complete','Complete'],['archived','Archived'],['','All projects']].map(([v, label]) => `<option value="${v}" ${v === status ? 'selected' : ''}>${label}</option>`).join('')}</select></label></div><div class="project-cards" id="project-cards">${cards()}</div>`;
   }
   function edit(id, callback, trigger = document.activeElement, seed = {}) {
     const p = projects().find(x => x.id === id); opener = trigger; afterSave = callback;
@@ -117,6 +124,7 @@ export function projectsUI({ call, getState, escape: e, icon, toast, renderPage,
   document.addEventListener('click', async event => {
     const b = event.target.closest('button'); if (!b) return;
     try {
+      if (b.dataset.proposalAccept || b.dataset.proposalDismiss) { b.disabled = true; const accept = !!b.dataset.proposalAccept; try { await call(accept ? 'projects.proposal.accept' : 'projects.proposal.dismiss', { id: b.dataset.proposalAccept || b.dataset.proposalDismiss }); refreshCards(); toast(accept ? 'Project created.' : 'Proposal dismissed.'); } finally { b.disabled = false; } }
       if (b.hasAttribute('data-project-new')) edit(undefined, undefined, b);
       if (b.dataset.projectEdit) edit(b.dataset.projectEdit, undefined, b);
       if (b.dataset.projectOpen) await openNew(undefined, { projectId: b.dataset.projectOpen });

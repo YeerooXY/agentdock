@@ -78,7 +78,7 @@ const defaultFolder = fs.existsSync(projectsFolder) && fs.statSync(projectsFolde
 function snapshot() {
   return { platform: process.platform, mode, transitioning, trayHidden, sessions: sessions?.list() || [], codePanels: sessions?.codePanels() || [], queues: messageQueue?.snapshot() || {}, prompts: prompts?.list() || [], codeRevision: codePanel?.revision || 0, limits, accounts: ['codex', 'claude'].flatMap(provider => accounts?.choices(provider) || []), recent, accountError, refreshing, lastRefresh, agents: cliSetup?.snapshot() || [], agentSetupBusy: !!cliSetup?.running, skills: skillPacks?.snapshot() || { packs: [], busy: false },
     usageAccounts: usageAccounts(), usageChecks: subscriptionUsage?.snapshot() || [], delegations: workbench?.delegation?.snapshot() || [], tasks: tasks?.snapshot() || [],
-    sshHosts: ssh?.list() || [], capabilities, projects: projects?.list() || [], messages: [...(messageUsage?.items || []), ...apiMessages(ledger || [])].sort((a,b) => b.at - a.at).slice(0, 200), mobile: mobile?.snapshot(), workbench: workbench?.snapshot(), vault: { available: vault?.available() || false, entries: vault?.list() || [] },
+    sshHosts: ssh?.list() || [], capabilities, projects: projects?.list() || [], projectProposals: projects?.proposals || [], messages: [...(messageUsage?.items || []), ...apiMessages(ledger || [])].sort((a,b) => b.at - a.at).slice(0, 200), mobile: mobile?.snapshot(), workbench: workbench?.snapshot(), vault: { available: vault?.available() || false, entries: vault?.list() || [] },
     ledger: ledger || [], summary: ledgerSummary(ledger || []), shared: hub?.snapshot(), updates: updates?.snapshot(), grid: sessions?.grid || settings?.grid, settings, storageError, workspaceError, shortcutAvailable,
     integrations: integrations?.snapshot(hub?.config.connections || [], vault?.list() || []), toolCatalog: mcpCatalog?.snapshot(hub?.config.connections || []) || [],
     toolLimits: Object.fromEntries((hub?.config.connections || []).map(x => [x.id, { models: policyLimits[x.id]?.models?.order || [], unit: budgetUnit(x.id) }])), defaultFolder, version: app.getVersion(), screenshot: screenshots?.snapshot() || null };
@@ -689,6 +689,8 @@ app.whenReady().then(async () => {
           break;
         }
         case 'projects.save': { const project = projects.save({ ...payload, guided: !payload.id }); publish(); return { ok: true, value: project }; }
+        case 'projects.proposal.accept': return { ok: true, value: projects.acceptProposal(payload.id, sessions) };
+        case 'projects.proposal.dismiss': projects.dismissProposal(payload.id); return { ok: true };
         case 'projects.decision': { const project = projects.decide(payload.id, payload); publish(); return { ok: true, value: project }; }
         case 'projects.plan.begin': return { ok: true, value: projects.beginPlan(payload.id) };
         case 'projects.plan.review': return { ok: true, value: projects.review(payload.id, payload) };

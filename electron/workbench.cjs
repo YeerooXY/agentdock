@@ -18,6 +18,7 @@ const nativeTools = [
   ['downloaded_tools', 'Read Paddock’s recorded tool downloads and their manual-cleanup list path. Arbitrary Git commands outside the managed helper are not tracked.', schema({})],
   ['website_guide', 'Read the reusable website design research for marketing sites, apps, shops and other web projects. Start with overview, then choose relevant topics. Includes wording, layout, color, fonts, motion, loading and cross-platform verification. Read-only; no network calls.', schema({ topic: { type: 'string', enum: Object.keys(websiteTopics) } })],
   ['project_progress', 'Update the current project only: add a factual progress note, set the next step, or check an existing milestone (zero-based index). Only mark verified work done. Guided plans require the current revision from project_plan for milestone updates.', schema({ note: string, nextStep: string, milestone: { type: 'integer', minimum: 0 }, done: { type: 'boolean' }, revision: { type: 'integer' } })],
+  ['propose_project', 'Propose a project for existing folders. The user decides whether to create it in Projects.', schema({ name: string, folders: { type: 'array', items: string }, goals: string, category: string, milestones: { type: 'array', items: schema({ text: string, acceptance: string }, ['text']) }, decisions: { type: 'array', items: schema({ decision: string, reason: string }, ['decision']) } }, ['name', 'folders', 'goals'])],
   ['project_decision', 'Propose a lasting decision or preference for the current project, such as a code style, a stack choice or an approach the user rejected, with a short reason. The user approves, edits or rejects it in Projects; approved decisions appear in every agent’s project context. Propose only what the user decided or clearly stated.', schema({ decision: string, reason: string }, ['decision'])],
   ['project_plan','Read one section of the current project plan, its revision, approvals, sections marked not needed, reference files and links, and later features. Defaults to the next section needing review. Sections are independent. Project selection belongs to the user.', schema({ section: { enum: ['brief', 'research', 'infrastructure', 'roadmap'] } })],
   ['propose_project_plan', 'Propose changes to one planning section after discussing it with the user. Each section holds at most one waiting proposal. This cannot approve a plan or activate a project. Changes remain separate until the user reviews them in Projects. Roadmap fields: scope (included), excluded (not included) and milestones. Read project_plan first for the field names and current revision.', schema({ section: { enum: ['brief', 'research', 'infrastructure', 'roadmap'] }, revision: { type: 'integer' }, changes: { type: 'object' } }, ['section', 'revision', 'changes'])],
@@ -65,6 +66,11 @@ class Workbench {
       }
       case 'dock/website_guide': return websiteGuide(args.topic);
       case 'dock/project_progress': return this.projects.progress(session?.projectId, args);
+      case 'dock/propose_project': {
+        const proposal = this.projects.proposeProject(args, session);
+        this.alerts.send({ title: 'Project proposed: ' + proposal.name, kind: 'question', sessionId: session?.id, destination: 'projects' });
+        return { proposalId: proposal.id, proposed: true, next: 'The user decides whether to create this project in Projects.' };
+      }
       case 'dock/project_decision': {
         const p = this.projects.proposeDecision(session?.projectId, args, session?.name);
         this.alerts.send({ title: p.name + ': decision to review', message: String(args.decision || '').slice(0, 140), kind: 'question', sessionId: session?.id, destination: 'projects' });
