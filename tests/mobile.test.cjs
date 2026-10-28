@@ -50,6 +50,66 @@ function client(f, auth) {
   return { ws, wait, messages, call };
 }
 
+test('turn usage is capability gated', async t => {
+  const f = await fixture(t), paired = await f.pair(), c = client(f, paired.data.token);
+  t.after(() => c.ws.terminate()); await once(c.ws, 'open');
+  assert.ok(!(await c.call('state')).capabilities.includes('usage.turns'));
+  await assert.rejects(c.call('usage.turns'), /unavailable/);
+  f.m.getUsageTurns = () => [];
+  assert.ok((await c.call('state')).capabilities.includes('usage.turns'));
+  assert.deepEqual(await c.call('usage.turns'), { turns: [], before: null, projects: [] });
+});
+
+test('turn usage filters projects, paginates tied timestamps and bounds page size', async t => {
+  const f = await fixture(t), paired = await f.pair(), c = client(f, paired.data.token);
+  t.after(() => c.ws.terminate()); await once(c.ws, 'open');
+  const records = Array.from({ length: 205 }, (_, index) => ({
+    id: String(index).padStart(3, '0'), at: 1000 + Math.floor(index / 2),
+    projectId: index % 3 === 0 ? null : index % 3 === 1 ? 'a' : 'b',
+    projectName: index % 3 === 1 ? 'Alpha' : 'Beta',
+  }));
+  f.m.getUsageTurns = () => records;
+  assert.equal((await c.call('usage.turns')).turns.length, 50);
+  assert.equal((await c.call('usage.turns', { limit: 999 })).turns.length, 200);
+  const all = [], payload = { limit: 7, projectId: 'a' };
+  do {
+    const page = await c.call('usage.turns', payload);
+    all.push(...page.turns); payload.before = page.before;
+  } while (payload.before);
+  assert.deepEqual(all.map(r => r.id), records.filter(r => r.projectId === 'a').reverse().map(r => r.id));
+  assert.equal(new Set(all.map(r => r.id)).size, all.length);
+  assert.ok((await c.call('usage.turns', { projectId: 'unassigned' })).turns.every(r => r.projectId === null));
+  assert.deepEqual((await c.call('usage.turns', { projectId: 'missing' })).turns, []);
+  for (const invalid of [{ limit: 0 }, { limit: 1.5 }, { projectId: {} }, { before: 'bad' }]) {
+    await assert.rejects(c.call('usage.turns', invalid), /Invalid/);
+  }
+  assert.deepEqual(f.sessions.writes, []);
+});
+
+test('turn usage copies only display fields including nested tokens and quota', async t => {
+  const f = await fixture(t), paired = await f.pair(), c = client(f, paired.data.token);
+  t.after(() => c.ws.terminate()); await once(c.ws, 'open');
+  f.sessions.projects = { list: () => [{ id: 'p', name: 'Project', folders: ['/private'], credentials: 'SECRET' }] };
+  f.m.getUsageTurns = () => [{
+    id: 'turn', at: 123, consoleName: 'Console', projectId: 'p', projectName: 'Old name', provider: 'codex', model: 'model', source: 'Codex log',
+    prompt: 'PRIVATE PROMPT', path: '/private', credentials: 'SECRET',
+    usage: { input: 12000, output: null, cached: 0, prompt: 'PRIVATE PROMPT' },
+    quota: [{ minutes: 300, changePercent: 3, prompt: 'PRIVATE PROMPT' }, { minutes: 10080, changePercent: null }],
+  }, { id: 'api', at: 122, source: 'Dock API', quota: [], usage: null }];
+  const page = await c.call('usage.turns');
+  assert.deepEqual(Object.keys(page.turns[0]).sort(), ['id', 'at', 'consoleName', 'projectId', 'projectName', 'provider', 'model', 'source', 'usage', 'quota'].sort());
+  assert.deepEqual(page.turns[0].usage, { input: 12000, output: null, cached: 0 });
+  assert.deepEqual(page.turns[0].quota, [
+    { minutes: 300, changePercent: 3, scope: 'account', attribution: 'estimate' },
+    { minutes: 10080, changePercent: null, scope: 'account', attribution: 'estimate' },
+  ]);
+  assert.equal(page.turns[0].projectName, 'Project');
+  assert.equal(page.turns[1].source, 'Dock API');
+  assert.deepEqual(page.turns[1].usage, { input: null, output: null, cached: null });
+  assert.deepEqual(page.projects, [{ id: 'p', name: 'Project' }]);
+  assert.doesNotMatch(JSON.stringify(page), /PRIVATE|SECRET|private|prompt|credentials|folders/);
+});
+
 test('projects read RPCs advertise support, exclude archives and expose only summary fields', async t => {
   const f = await fixture(t), paired = await f.pair(), c = client(f, paired.data.token);
   t.after(() => c.ws.terminate()); await once(c.ws, 'open');

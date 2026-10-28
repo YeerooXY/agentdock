@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'account_usage.dart';
+import 'project_turn_usage.dart';
 import 'dock_client.dart';
 import 'dock_style.dart';
 import 'help_link.dart';
@@ -273,6 +274,7 @@ class _SettingsPageState extends State<SettingsPage> {
             },
           ),
         ),
+      ProjectTurnUsage(client: c),
       if (usage?['threshold'] is num)
         Padding(
           padding: const EdgeInsets.only(top: 14),
