@@ -21,6 +21,7 @@ const { Updates } = require('./updates.cjs');
 const { loginPath } = require('./platform.cjs');
 const { Workbench } = require('./workbench.cjs');
 const { Delegation, REVIEWERS } = require('./delegation.cjs');
+const { closeReviewPanel } = require('./review-panel.cjs');
 const { resultGitContext } = require('./git-context.cjs');
 const { creativeTools } = require('./creative-tools.cjs');
 const { Turns } = require('./turns.cjs');
@@ -594,10 +595,12 @@ app.whenReady().then(async () => {
         case 'code.report': return { ok: true, value: await codePanel.report(payload?.id, payload?.refresh === true) };
         case 'code.browse': return { ok: true, value: await codePanel.browse(payload?.id, payload?.path) };
         case 'code.file': return { ok: true, value: await codePanel.file(payload?.id, payload?.path, payload?.reportId) };
-        case 'code.close': case 'web.close': case 'review.close': {
+        case 'review.close': {
+          closeReviewPanel(payload, { sessions, getSettings: () => settings, persistSettings }); break;
+        }
+        case 'code.close': case 'web.close': {
           const panel = method === 'code.close' ? codePanel.panel(payload) : sessions.items.get(payload), slotNames = { ...settings.slotNames };
           if (method === 'web.close' && panel?.kind !== 'web') throw new Error('Open a preview panel first.');
-          if (method === 'review.close' && panel?.kind !== 'review') throw new Error('Open a review panel first.');
           delete slotNames[panel.slot]; persistSettings({ ...settings, slotNames });
           sessions.end(payload); break;
         }

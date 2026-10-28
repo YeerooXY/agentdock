@@ -71,6 +71,11 @@ const profiles = [['pc', chromium, { viewport: { width: 1440, height: 1000 } }],
       page = await context.newPage(); page.on('pageerror', e => errors.push(`${name}/${scenario}: ${e.stack || e.message}`));
       await page.goto(`http://127.0.0.1:${server.address().port}`); await page.locator('[data-page=consoles]').first().click();
       const panel = page.locator('.review-panel'); await panel.waitFor(); await panel.scrollIntoViewIfNeeded();
+      const expectedIcon = scenario === 'approve' ? 'check' : finished ? 'close' : 'list';
+      if (await panel.locator('.console-grip').getAttribute('data-review-icon') !== expectedIcon) errors.push(`${name}/${scenario}: wrong state icon`);
+      if (await panel.locator('[data-review-action=close]').getAttribute('aria-label') !== 'Close review panel 01') errors.push(`${name}/${scenario}: close label lacks slot context`);
+      if (await panel.locator('[data-action=toggle-console]').getAttribute('aria-label') !== 'Expand review panel 01') errors.push(`${name}/${scenario}: expand label lacks slot context`);
+      if (!/^PT\d+S$/.test(await panel.locator('.review-elapsed').getAttribute('datetime') || '')) errors.push(`${name}/${scenario}: missing duration metadata`);
       if (await panel.locator('input,textarea').count()) errors.push(`${name}/${scenario}: review has input`);
       if (await panel.locator('[data-review-action=stop]:visible').count() !== (finished ? 0 : 1)) errors.push(`${name}/${scenario}: wrong Stop visibility`);
       if (await panel.locator('[data-review-action=result]:visible').count() !== (finished ? 1 : 0)) errors.push(`${name}/${scenario}: wrong result visibility`);
@@ -92,6 +97,7 @@ const profiles = [['pc', chromium, { viewport: { width: 1440, height: 1000 } }],
       }
       await panel.locator('[data-action=toggle-console]').click();
       await page.locator('.review-panel.console-expanded').waitFor();
+      if (await panel.locator('[data-action=toggle-console]').getAttribute('aria-label') !== 'Restore review panel 01 to grid') errors.push(`${name}/${scenario}: restore label lacks slot context`);
       await panel.screenshot({ path: path.join(out, `${name}-panel-${scenario}-expanded.png`) });
       await panel.locator('[data-action=toggle-console]').click();
       if (finished) {
@@ -107,11 +113,13 @@ const profiles = [['pc', chromium, { viewport: { width: 1440, height: 1000 } }],
         state.codePanels = [panelFixture]; await page.evaluate(next => window.fixtureState(next), state);
         await panel.locator('[data-review-action=stop]').click();
         await panel.locator('.review-state').filter({ hasText: 'Stopped' }).waitFor();
+        if (await panel.locator('.console-grip').getAttribute('data-review-icon') !== 'close') errors.push(`${name}: Stop did not update state icon`);
         if (job.state !== 'stopped' || calls.filter(x => x === 'workbench.delegation.stop').length !== 1) errors.push(`${name}: explicit Stop failed`);
         job.log = {}; await page.evaluate(next => window.fixtureState(next), state);
         if (await panel.locator('.review-log').textContent() !== '') errors.push(`${name}: invalid log array was rendered`);
         state.delegations = {}; await page.evaluate(next => window.fixtureState(next), state);
         await panel.locator('.review-state').filter({ hasText: 'Review unavailable' }).waitFor();
+        if (await panel.locator('.review-error').textContent() !== 'Close this panel.') errors.push(`${name}: unavailable review lacks recovery text`);
         state.codePanels = {}; await page.evaluate(next => window.fixtureState(next), state);
         await panel.waitFor({ state: 'detached' });
       }

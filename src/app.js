@@ -374,10 +374,11 @@ function syncExpandedConsole() {
       const expand = panel.querySelector('[data-action="toggle-console"]');
       if (expand) {
         const slot = panel.dataset.slot || '';
-        expand.setAttribute('aria-label', `Expand console ${slot}`);
+        const label = panel.classList.contains('review-panel') ? `Expand review panel ${String(slot).padStart(2, '0')}` : `Expand console ${slot}`;
+        expand.setAttribute('aria-label', label);
         expand.setAttribute('aria-keyshortcuts', '');
         expand.setAttribute('aria-expanded', 'false');
-        expand.title = 'Expand console';
+        expand.title = panel.classList.contains('review-panel') ? label : 'Expand console';
         expand.innerHTML = icon('expand');
       }
     }
@@ -425,7 +426,8 @@ function renderConsoles() {
       if (session.kind === 'web') webPanels.mount(session, panel.querySelector('.web-panel-body'));
       else if (session.kind === 'review') reviewPanels.mount(session, panel.querySelector('.review-panel-body'));
       else codePanels.mount(session, panel.querySelector('.code-panel-body'));
-      const expand = panel.querySelector('[data-action="toggle-console"]'); expand.innerHTML = icon(isExpanded ? 'restore' : 'expand'); expand.setAttribute('aria-label', isExpanded ? `Restore ${kind} panel to grid` : `Expand ${kind} panel`); expand.setAttribute('aria-expanded', String(isExpanded));
+      const context = session.kind === 'review' ? ` ${String(session.slot).padStart(2, '0')}` : '';
+      const expand = panel.querySelector('[data-action="toggle-console"]'); expand.innerHTML = icon(isExpanded ? 'restore' : 'expand'); expand.setAttribute('aria-label', isExpanded ? `Restore ${kind} panel${context} to grid` : `Expand ${kind} panel${context}`); expand.setAttribute('aria-expanded', String(isExpanded));
       panel.querySelectorAll('.console-grip,.console-resize').forEach(handle => { handle.disabled = !!expanded; });
       continue;
     }

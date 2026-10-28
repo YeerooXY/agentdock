@@ -165,16 +165,19 @@ function progressLines(provider, line) {
 }
 
 function progressLog({ brief = '', environment = {}, append }) {
-  const privateLines = brief.split(/\r?\n/).map(x => x.trim()).filter(Boolean);
+  // Boilerplate and short syntax also occur in legitimate findings. Only
+  // suppress complete, substantial lines from the supplied focus/diff.
+  const boilerplate = new Set(reviewBrief({ changes: { untracked: [], omitted: 0, diff: '' } }).split('\n').map(x => x.trim()));
+  const privateLines = new Set(brief.split(/\r?\n/).map(x => x.trim()).filter(x => x.length >= 12 && !boilerplate.has(x)));
   const values = [...new Set(Object.values(environment).filter(x => typeof x === 'string' && x.length))].sort((a, b) => b.length - a.length);
   const privateValues = values.length ? new RegExp(values.map(x => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'), 'g') : null;
   return text => {
     for (let line of stripAnsi(text).split(/\r?\n/)) {
       line = line.trim();
-      if (!line || privateLines.some(part => line.includes(part) || (line.length >= 12 && part.includes(line)))) continue;
+      if (!line || privateLines.has(line)) continue;
       if (privateValues) line = line.replace(privateValues, '[redacted]');
       line = line.replace(/\b(?:sk-|gh[pousr]_|github_pat_|Bearer\s+)[\w.\-/+=]+/gi, '[redacted]')
-        .replace(/\b[A-Za-z0-9_+/=-]{40,}\b/g, '[redacted]')
+        .replace(/(?<![\w/+=-])[A-Za-z0-9_=-]{40,}(?![\w/+=-])/g, value => /[a-z]/.test(value) && /[A-Z]/.test(value) && /\d/.test(value) ? '[redacted]' : value)
         .replace(/\b(?:[\w-]*(?:token|secret|password|api[_-]?key)[\w-]*)\s*[:=]\s*\S+/gi, '[redacted]');
       append(line.slice(0, 4000));
     }
@@ -221,8 +224,9 @@ class Delegation extends EventEmitter {
   }
   snapshot() {
     return [...this.jobs.values()].sort((a, b) => b.startedAt - a.startedAt)
-      .filter((job, index) => job.state === 'running' || index < 20 || (job.panelId && this.panelOpen(job.panelId)))
-      .map(({ id, state, reviewer, why, consoleName, startedAt, finishedAt, verdict, error, resultId, log, panelId, noFreeSlot }) => ({ id, state, reviewer, why, consoleName, startedAt, finishedAt, verdict, error, resultId, log: [...(log || [])], panelId, noFreeSlot }));
+      .map(job => ({ job, open: !!job.panelId && this.panelOpen(job.panelId) }))
+      .filter(({ job, open }, index) => job.state === 'running' || index < 20 || open)
+      .map(({ job: { id, state, reviewer, why, consoleName, startedAt, finishedAt, verdict, error, resultId, log, panelId, noFreeSlot }, open }) => ({ id, state, reviewer, why, consoleName, startedAt, finishedAt, verdict, error, resultId, log: state === 'running' || open ? [...(log || [])] : [], panelId, noFreeSlot }));
   }
   allowed() {
     const settings = this.getSettings() || {};
