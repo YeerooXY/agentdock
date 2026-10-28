@@ -455,7 +455,7 @@ async function eventually(predicate, message) {
   for (let i = 2; i <= 9; i++) await invoke('session.create', { provider: 'shell', cwd: root, name: `Console ${i}` });
   const full = await invoke('state'); assert.equal(full.sessions.filter(x => x.alive).length, 9);
   await eventually(async () => await page.locator('#consoles-page .xterm').count() === 9);
-  for (const live of full.sessions.filter(x => x.alive)) await invoke('session.input', { id: live.id, data: shellCommand.join('PANEL_', `${live.slot}_LIVE`) + '\r' });
+  for (const live of full.sessions.filter(x => x.alive)) await invoke('session.input', { id: live.id, data: shellCommand.shortPrompt(shellCommand.join('PANEL_', `${live.slot}_LIVE`)) + '\r' });
   await eventually(async () => {
     const contents = await page.locator('#consoles-page .session-card[data-console-id]').evaluateAll(cards => cards.map(card => ({ id: card.dataset.consoleId, text: card.querySelector('.xterm-rows')?.textContent || '' })));
     const live = full.sessions.filter(x => x.alive);
@@ -553,7 +553,7 @@ async function eventually(predicate, message) {
   assert.deepEqual(restored.map(x => [x.slot, x.provider, x.cwd, x.name]), previous.map(x => [x.slot, x.provider, x.cwd, x.name]));
   assert.ok(restored.every(x => !previous.some(old => old.id === x.id)), 'Restored terminals are fresh processes');
   assert.equal((await invoke('state')).workspaceError, null);
-  await invoke('session.input', { id: restored[0].id, data: shellCommand.join('RESTORE_', 'WORKS') + '\r' });
+  await invoke('session.input', { id: restored[0].id, data: shellCommand.shortPrompt(shellCommand.join('RESTORE_', 'WORKS')) + '\r' });
   await eventually(async () => (await invoke('session.buffer', restored[0].id)).data.includes('RESTORE_WORKS'));
   await capture({ path: path.join(artifacts, 'test-restored-consoles.png') });
   await invoke('session.end', restored[4].id);

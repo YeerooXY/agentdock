@@ -48,7 +48,7 @@ let app;
   await page.locator('[data-mobile=close]').first().click();
   const opened = (await call('state')).sessions.filter(x => x.alive);
   assert.equal(opened.length, 1); assert.equal(opened[0].cwd, work); assert.equal(opened[0].provider, 'shell');
-  await call('session.input', { id: opened[0].id, data: shellCommand.join('SETUP_', 'LAUNCH_OK') + '\r' });
+  await call('session.input', { id: opened[0].id, data: shellCommand.shortPrompt(shellCommand.join('SETUP_', 'LAUNCH_OK')) + '\r' });
   await page.waitForFunction(async id => (await window.dock.call('session.buffer', id)).value.data.includes('SETUP_LAUNCH_OK'), opened[0].id);
   await openPage(page, 'console-settings'); await page.locator('[data-action=agent-setup]').click();
   await page.keyboard.press('Escape'); assert.equal(await page.locator('#first-run').isVisible(), false);
