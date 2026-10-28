@@ -148,7 +148,7 @@ async function eventually(predicate, message) {
   checks.push('Saved console defaults launch with one click; invalid folders do not overwrite defaults');
   await eventually(async () => shellCommand.prompt((await invoke('session.buffer', session.id)).data), 'Shell prompt did not appear');
   await page.locator('.xterm-helper-textarea').focus();
-  await page.keyboard.type(shellCommand.join('PAD', 'DOCK_SMOKE_OK')); await page.keyboard.press('Enter');
+  await page.keyboard.type(shellCommand.shortPrompt(shellCommand.join('PAD', 'DOCK_SMOKE_OK'))); await page.keyboard.press('Enter');
   await eventually(async () => (await invoke('session.buffer', session.id)).data.includes('PADDOCK_SMOKE_OK'), 'Terminal command did not produce its expected output');
   await eventually(async () => renderedText(await page.locator('.session-card .xterm-rows').innerText()).includes('PADDOCK_SMOKE_OK'), async () => `PADDOCK_SMOKE_OK never rendered: ${await terminalReport(page, invoke)}`);
   const colorCommand = shellCommand.run(process.execPath, '-e', "console.log(require('node:util').styleText('green','DOCK_COLOR_OK'))") + '\r';
@@ -190,7 +190,7 @@ async function eventually(predicate, message) {
   assert.equal(await page.locator('.session-card.console-expanded').count(), 0);
   assert.equal(await liveName.inputValue(), 'Robonslaught dev');
   await page.locator('.session-card .xterm-helper-textarea').focus();
-  await page.keyboard.type(shellCommand.join('GRID_', 'STILL_LIVE')); await page.keyboard.press('Enter');
+  await page.keyboard.type(shellCommand.shortPrompt(shellCommand.join('GRID_', 'STILL_LIVE'))); await page.keyboard.press('Enter');
   await eventually(async () => renderedText(await page.locator('.session-card .xterm-rows').innerText()).includes('GRID_STILL_LIVE'), async () => `GRID_STILL_LIVE never rendered: ${await terminalReport(page, invoke)}`);
   assert.equal((await invoke('state')).sessions.filter(x => x.alive).length, 1);
   checks.push('Live grid terminal accepts input, keeps focus during updates, and reuses the same terminal fullscreen; returning to Consoles stays fullscreen');

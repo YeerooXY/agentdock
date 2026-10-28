@@ -19,4 +19,7 @@ const saveBridge = file => windows
   : `printf '{"url":"%s","token":"%s"}' "$PADDOCK_BRIDGE_URL" "$PADDOCK_BRIDGE_TOKEN" > ${sh(file)}`;
 // A ready prompt: "PS C:\..>" in PowerShell, "$ " or "% " in bash and zsh.
 const prompt = text => windows ? text.includes('PS ') : /[$%#] $/m.test(text.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, ''));
-module.exports = { windows, join, say, run, write, saveBridge, prompt };
+// CI hosts can have very long prompts; in a small console they wrap and push a marker out of view.
+// Set a two-character prompt in the same command line (bash reads PS1, zsh PROMPT).
+const shortPrompt = command => windows ? command : `PS1='$ ' PROMPT='$ '; ${command}`;
+module.exports = { windows, join, say, run, write, saveBridge, prompt, shortPrompt };

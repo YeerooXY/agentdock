@@ -65,7 +65,7 @@ async function resize(id, edge, dx, dy, cancel = false, snapshot) {
   await until(async () => (await call('state')).sessions.filter(x => x.alive).length === 1);
   const first = (await call('state')).sessions[0];
   assert.equal(first.name, 'Trader'); assert.equal(await page.locator('dialog[open]').count(), 0);
-  await call('session.input', { id: first.id, data: shellCommand.say('FROZEN_TERMINAL_PREVIEW_421') + '\r' });
+  await call('session.input', { id: first.id, data: shellCommand.shortPrompt(shellCommand.say('FROZEN_TERMINAL_PREVIEW_421')) + '\r' });
   await until(async () => (await call('session.buffer', first.id)).data.includes('FROZEN_TERMINAL_PREVIEW_421'));
   await page.locator('[data-action=new][data-slot="5"]').click({ button: 'right' });
   assert.equal(await page.locator('#one-off-console-form [name=name]').isVisible(), true);
