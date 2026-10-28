@@ -33,9 +33,13 @@ export function askAgentUI({ call, getState, targets, pasteContext, selection, s
     const dismiss = () => { if (r.ask === node) close(r, false); };
     node.addEventListener('toggle', event => { if (event.newState === 'closed' && !node.matches(':popover-open')) dismiss(); });
     document.addEventListener('pointerdown', event => { if (!node.contains(event.target)) dismiss(); }, { capture: true, signal: events.signal });
-    // Opening moves focus out of the editor, and CodeMirror may scroll its pane in response; only later scrolls dismiss.
+    // The menu closes on scroll. The composer holds a typed note, so it follows the panel instead: Safari
+    // fires scroll events when the console grid re-renders. Opening can also scroll CodeMirror's pane.
     const opened = performance.now();
-    document.addEventListener('scroll', event => { if (performance.now() - opened > 300 && !node.contains(event.target)) dismiss(); }, { capture: true, signal: events.signal });
+    document.addEventListener('scroll', event => {
+      if (performance.now() - opened <= 300 || node.contains(event.target)) return;
+      if (role === 'dialog') place(r, node); else dismiss();
+    }, { capture: true, signal: events.signal });
     node.addEventListener('focusout', event => {
       const next = event.relatedTarget;
       if (!isSending() && next instanceof Element && next !== document.body && !node.contains(next)) dismiss();
