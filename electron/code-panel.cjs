@@ -22,6 +22,12 @@ class CodePanel {
     this.baselines = new Map(); this.latest = new Map(); this.pending = new Map(); this.revision = 0;
   }
   panel(id) { const p = this.sessions.items.get(id); if (!p?.alive || p.kind !== 'code') throw new Error('Open a code panel first.'); return p; }
+  create(raw = {}, defaultCwd) {
+    const source = this.sessions.items.get(raw?.sourceId);
+    if (source?.remote || source?.remoteHostId || source?.kind) throw new Error('Choose a local agent console.');
+    const cwd = raw?.root !== undefined ? this.explorerRoot(raw.root) : source?.cwd || defaultCwd;
+    return this.sessions.createCodePanel({ cwd, codeSourceKey: source && raw?.root === undefined ? key(source) : null, slot: raw?.slot });
+  }
   explorerRoot(root) {
     if (typeof root !== 'string' || !path.isAbsolute(root) || root.includes('\0') || root.split(/[\\/]/).includes('..')) throw new Error('Choose an available local folder.');
     const roots = [...this.sessions.list().filter(s => s.alive && !s.remote && !s.remoteHostId && !s.kind).map(s => s.cwd), ...this.getProjects().flatMap(p => p.folders.map(f => f.path))];
@@ -32,8 +38,14 @@ class CodePanel {
     root = this.explorerRoot(root);
     if (typeof relative !== 'string' || relative.split(/[\\/]/).includes('..')) throw new Error('Choose a folder inside this root.');
     const panel = { cwd: root, codeSourceKey: null };
-    const { target, name } = await this.resolve(panel, relative);
-    const all = await fs.readdir(target, { withFileTypes: true });
+    let target, name, all;
+    try {
+      ({ target, name } = await this.resolve(panel, relative));
+      all = await fs.readdir(target, { withFileTypes: true });
+    } catch (error) {
+      if (['ENOENT', 'ENOTDIR'].includes(error.code)) throw new Error('Choose a folder inside this root.');
+      throw error;
+    }
     const entries = all.filter(x => !x.isSymbolicLink() && (x.isDirectory() || x.isFile()) && permitted([name, x.name].filter(Boolean).join('/')))
       .map(x => ({ name: x.name, path: [name, x.name].filter(Boolean).join('/'), directory: x.isDirectory() }))
       .sort((a, b) => Number(b.directory) - Number(a.directory) || a.name.localeCompare(b.name));

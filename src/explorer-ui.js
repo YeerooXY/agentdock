@@ -1,7 +1,7 @@
-export function explorerUI({ host, call, getState, selectedConsole, openFile, afterOpenFile = () => {}, escape: e, icon }) {
+export function explorerUI({ host, call, getState, selectedConsole, openFile, collapse, afterOpenFile = () => {}, escape: e, icon }) {
   const memory = new Map();
   let roots = [], root = '', context = '', generation = 0, width = 260, opening = false, focusPending = false;
-  host.innerHTML = `<header><strong>Explorer</strong><button data-explorer="refresh" title="Refresh" aria-label="Refresh Explorer">${icon('refresh')}</button><button data-explorer="collapse" title="Collapse all" aria-label="Collapse all folders">${icon('minus')}</button></header><select aria-label="Explorer root"></select><p class="explorer-status" role="status"></p><input type="search" aria-label="Filter loaded filenames" placeholder="Filter filenames"><div class="explorer-tree" role="tree" aria-label="Files"></div><p class="explorer-error" role="alert"></p><div class="explorer-resize" role="separator" tabindex="0" aria-label="Explorer width" aria-orientation="vertical" aria-valuemin="180" aria-valuemax="480"></div>`;
+  host.innerHTML = `<header><strong>Explorer</strong><button data-explorer="refresh" title="Refresh" aria-label="Refresh Explorer">${icon('refresh')}</button><button data-explorer="collapse" title="Collapse all" aria-label="Collapse all folders">${icon('minus')}</button></header><select aria-label="Explorer root"></select><p class="explorer-status" role="status"></p><input type="search" aria-label="Filter loaded filenames" placeholder="Filter filenames"><div class="explorer-tree" role="tree" aria-label="Files"></div><p class="explorer-empty"></p><p class="explorer-error" role="alert"></p><div class="explorer-resize" role="separator" tabindex="0" aria-label="Explorer width" aria-orientation="vertical" aria-valuemin="180" aria-valuemax="480"></div>`;
   const select = host.querySelector('select'), filter = host.querySelector('input'), tree = host.querySelector('[role=tree]'), status = host.querySelector('[role=status]'), error = host.querySelector('[role=alert]'), handle = host.querySelector('[role=separator]');
   const record = () => memory.get(root);
   function resize(value) {
@@ -12,6 +12,15 @@ export function explorerUI({ host, call, getState, selectedConsole, openFile, af
   }
   const saveWidth = () => call('settings', { explorerWidth: width }).catch(fail);
   function fail(reason) { error.textContent = reason.message; }
+  function updateStatus() {
+    const truncated = [...(record()?.loaded.values() || [])].some(listing => listing.truncated);
+    const text = root ? `Showing ${roots.find(x => x.path === root)?.label || root}${truncated ? ' · First 500 entries per folder' : ''}` : '';
+    if (status.textContent !== text) status.textContent = text;
+  }
+  function updateMessage() {
+    const r = record(), loading = root && !error.textContent && (!r?.loaded.has('') || r.pending.size > 0);
+    host.querySelector('.explorer-empty').textContent = loading ? 'Loading…' : tree.childElementCount || !root || error.textContent ? '' : filter.value ? 'No matching loaded files.' : 'No files.';
+  }
   function focusLoaded() {
     if (!focusPending || host.hidden || host.inert) return;
     const items = [...tree.querySelectorAll('[role=treeitem]')];
@@ -30,34 +39,33 @@ export function explorerUI({ host, call, getState, selectedConsole, openFile, af
   function draw(focusPath) {
     const r = record(); if (!r) { tree.innerHTML = ''; return; }
     const active = focusPath ?? tree.querySelector(':focus')?.dataset.path;
-    const query = filter.value.toLocaleLowerCase(); let count = 0, truncated = false;
+    const query = filter.value.toLocaleLowerCase();
     function rows(parent, depth) {
       const listing = r.loaded.get(parent); if (!listing) return '';
-      truncated ||= listing.truncated;
       return listing.entries.map(x => {
-        const children = x.directory && r.expanded.has(x.path) ? rows(x.path, depth + 1) : '';
+        const expanded = query ? r.loaded.has(x.path) : r.expanded.has(x.path);
+        const children = x.directory && expanded ? rows(x.path, depth + 1) : '';
         if (query && !x.name.toLocaleLowerCase().includes(query) && !children) return '';
-        ++count;
-        return `<div role="treeitem" tabindex="-1" aria-level="${depth}" aria-selected="${r.selected === x.path}" ${x.directory ? `aria-expanded="${r.expanded.has(x.path)}"` : ''} data-path="${e(x.path)}" ${x.directory ? 'data-directory' : ''} style="padding-left:${8 + (depth - 1) * 16}px" title="${e(x.path)}"><span aria-hidden="true">${x.directory ? (r.expanded.has(x.path) ? '▾' : '▸') : '·'}${icon(x.directory ? 'folder' : 'api')}</span><span>${e(x.name)}</span></div>${children}`;
+        return `<div role="treeitem" tabindex="-1" aria-level="${depth}" aria-selected="${r.selected === x.path}" ${x.directory ? `aria-expanded="${expanded}"` : ''} data-path="${e(x.path)}" ${x.directory ? 'data-directory' : ''} style="padding-left:${8 + (depth - 1) * 16}px" title="${e(x.path)}"><span aria-hidden="true">${x.directory ? (expanded ? '▾' : '▸') : '·'}${icon(x.directory ? 'folder' : 'api')}</span><span>${e(x.name)}</span></div>${children}`;
       }).join('');
     }
     tree.innerHTML = rows('', 1);
     const items = [...tree.querySelectorAll('[role=treeitem]')], target = items.find(x => x.dataset.path === active) || items.find(x => x.dataset.path === r.selected) || items[0];
     if (target) { target.tabIndex = 0; if (active !== undefined) target.focus(); }
-    if (!count) tree.textContent = query ? 'No matching loaded files.' : 'No files.';
-    status.textContent = `Showing ${roots.find(x => x.path === root)?.label || root}${truncated ? ' · First 500 entries per folder' : ''}`;
+    updateMessage();
     focusLoaded();
   }
   async function load(path = '') {
     const current = root, r = record(), ticket = generation;
     if (!r || r.loaded.has(path) || r.pending.has(path)) return;
-    r.pending.add(path); tree.setAttribute('aria-busy', 'true');
+    error.textContent = ''; r.pending.add(path); tree.setAttribute('aria-busy', 'true');
+    updateMessage();
     try {
       const result = await call('explorer.list', { root: current, path });
       if (ticket !== generation || root !== current) return;
-      r.loaded.set(path, result); error.textContent = ''; draw();
+      r.loaded.set(path, result); error.textContent = ''; updateStatus(); draw();
     } catch (reason) { if (ticket === generation) fail(reason); }
-    finally { r.pending.delete(path); if (ticket === generation) tree.removeAttribute('aria-busy'); }
+    finally { r.pending.delete(path); if (ticket === generation) { if (!r.pending.size) tree.removeAttribute('aria-busy'); updateMessage(); } }
   }
   async function restore(path = '') {
     const current = root, ticket = generation; await load(path);
@@ -68,7 +76,7 @@ export function explorerUI({ host, call, getState, selectedConsole, openFile, af
     ++generation; root = path; error.textContent = ''; tree.removeAttribute('aria-busy');
     if (!memory.has(root)) memory.set(root, { loaded: new Map(), pending: new Set(), expanded: new Set(), selected: '', width });
     // Requests from a previous root visit cannot prevent this visit from loading.
-    record().pending = new Set(); resize(record().width); draw(); if (root) void restore();
+    record().pending = new Set(); resize(record().width); updateStatus(); draw(); if (root) void restore();
   }
   function sync() {
     const state = getState(); if (!state) return;
@@ -83,7 +91,7 @@ export function explorerUI({ host, call, getState, selectedConsole, openFile, af
     // Preserve a root only within the same console's available folders.
     select.value = roots.some(x => x.path === root) ? root : roots[0]?.path || '';
     choose(select.value);
-    if (!roots.length) status.textContent = session?.remote ? 'Remote folders are unavailable.' : 'Select a local console.';
+    if (!roots.length) status.textContent = session?.remote || session?.remoteHostId ? 'Remote folders are unavailable.' : 'Select a local console.';
   }
   async function activate(item) {
     const r = record(), path = item.dataset.path;
@@ -109,9 +117,9 @@ export function explorerUI({ host, call, getState, selectedConsole, openFile, af
   select.addEventListener('change', () => choose(select.value));
   filter.addEventListener('input', () => draw());
   host.addEventListener('keydown', event => {
-    if (event.key === 'Escape') {
-      event.preventDefault(); document.querySelector('#explorer-toggle')?.focus();
-      void call('settings', { sidebarCollapsed: true }).catch(fail);
+    if (event.key === 'Escape' && !event.target.closest('input,select')) {
+      event.preventDefault();
+      void collapse().catch(fail);
     }
   });
   tree.addEventListener('click', event => { const item = event.target.closest('[role=treeitem]'); if (item) void activate(item); });

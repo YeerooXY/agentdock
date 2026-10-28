@@ -73,4 +73,8 @@ function ledgerSummary(entries, since = Date.now() - 30 * 86400000) {
     unknownUsage: rows.filter(x => !x.usage).length
   };
 }
-module.exports = { number, rateWindow, codexLimits, claudeLimits, normalizeUsage, estimateCost, validateProvider, validateRequest, ledgerSummary };
+function validateExplorerWidth(width) {
+  if (!Number.isInteger(width) || width < 180 || width > 480) throw new Error('Explorer width must be between 180 and 480 pixels.');
+  return width;
+}
+module.exports = { number, rateWindow, codexLimits, claudeLimits, normalizeUsage, estimateCost, validateProvider, validateRequest, ledgerSummary, validateExplorerWidth };

@@ -20,7 +20,7 @@
 #explorer-pane button svg { width:16px; height:16px }
 #explorer-pane :is(input,select) { width:100%; min-width:0; margin:0; font-size:12px; color:#d0d4e4 }
 #explorer-pane input::placeholder { color:#a9adc2; opacity:1 }
-.explorer-status,.explorer-error { font-size:12px; overflow-wrap:anywhere; margin:0; line-height:1.5 }
+.explorer-status,.explorer-error,.explorer-empty { font-size:12px; overflow-wrap:anywhere; margin:0; line-height:1.5 }
 .explorer-error { color:#ffb4ae }
 .explorer-tree { flex:1; min-height:0; overflow:auto; font-size:12px }
 .explorer-tree [role=treeitem] { display:flex; align-items:center; gap:6px; min-height:30px; padding-right:6px; cursor:pointer; border-radius:4px; outline-offset:-2px }
@@ -31,7 +31,8 @@
 .explorer-tree [aria-selected=true] { background:color-mix(in srgb,var(--accent) 20%,transparent); color:#fff }
 .explorer-resize { position:absolute; right:0; top:0; bottom:0; width:6px; cursor:col-resize; touch-action:none }
 .explorer-resize:is(:hover,:focus-visible) { background:var(--accent) }
-body[data-settings-open] #explorer-pane { display:none }
+#explorer-backdrop { position:fixed; inset:var(--titlebar-h,51px) 0 0 56px; z-index:58; background:#0005; border:0; border-radius:0; padding:0 }
+#explorer-backdrop[hidden],body[data-settings-open] #explorer-backdrop,body[data-settings-open] #explorer-pane { display:none }
 body[data-platform=darwin] #dashboard > #sidebar { padding-top:46px }
 @media(max-width:899px) {
   #dashboard:has(>#explorer-pane:not([hidden])) { --region-sidebar-width:56px }

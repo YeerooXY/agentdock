@@ -35,7 +35,7 @@ const { McpCatalog, catalog: recommendedTools } = require('./mcp-catalog.cjs');
 const { known: policyLimits, budgetUnit } = require('./tool-policy.cjs');
 const { ManagedDownloads } = require('./managed-downloads.cjs');
 const { SkillPacks } = require('./skill-packs.cjs');
-const { validateProvider, validateRequest, ledgerSummary, number } = require('./domain.cjs');
+const { validateProvider, validateRequest, ledgerSummary, number, validateExplorerWidth } = require('./domain.cjs');
 const { APP_ID, taskbarIcon, developmentShortcuts } = require('./windows-identity.cjs');
 const { CodePanel } = require('./code-panel.cjs');
 const { Screenshots, clipboardReader } = require('./screenshots.cjs');
@@ -569,10 +569,7 @@ app.whenReady().then(async () => {
         }
         case 'explorer.list': return { ok: true, value: await codePanel.list(payload?.root, payload?.path) };
         case 'code.create': {
-          const source = sessions.items.get(payload?.sourceId);
-          if (source?.remote || source?.kind === 'code') throw new Error('Choose a local agent console.');
-          const cwd = payload?.root !== undefined ? codePanel.explorerRoot(payload.root) : source?.cwd || settings.consoleDefaults.cwd;
-          const panel = sessions.createCodePanel({ cwd, codeSourceKey: source && payload?.root === undefined ? source.consoleKey || source.id : null, slot: payload?.slot });
+          const panel = codePanel.create(payload, settings.consoleDefaults.cwd);
           publish(); return { ok: true, value: panel };
         }
         case 'web.create': {
@@ -829,8 +826,7 @@ app.whenReady().then(async () => {
           }
           if (typeof payload?.suggestProjects === 'boolean') next.suggestProjects = payload.suggestProjects;
           if (payload?.explorerWidth !== undefined) {
-            if (!Number.isInteger(payload.explorerWidth) || payload.explorerWidth < 180 || payload.explorerWidth > 480) throw new Error('Explorer width must be between 180 and 480 pixels.');
-            next.explorerWidth = payload.explorerWidth;
+            next.explorerWidth = validateExplorerWidth(payload.explorerWidth);
           }
           if (typeof payload?.sidebarCollapsed === 'boolean') next.sidebarCollapsed = payload.sidebarCollapsed;
           if (typeof payload?.vimControls === 'boolean') next.vimControls = payload.vimControls;

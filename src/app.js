@@ -146,6 +146,7 @@ $('#app').innerHTML = `
     <span class="sidebar-edge" aria-hidden="true"></span>
     <div class="sidebar-bottom"><button data-page="settings">${icon('settings')}Settings</button></div>
   </aside>
+  <button id="explorer-backdrop" aria-label="Close Explorer" hidden></button>
   <aside id="explorer-pane" aria-label="Explorer"></aside>
   <div class="workspace">
     <header class="titlebar"><button id="sidebar-toggle" class="icon-button" data-action="sidebar" aria-label="Hide sidebar" title="Hide sidebar" aria-controls="sidebar" aria-expanded="true">${icon('menu')}</button><button id="launch-folder" class="launch-folder" data-action="launch-folder" aria-label="Choose launch folder">${icon('folder')}<span></span></button><button type="button" class="subtle code-open" data-code-action="create" title="Open a read-only code panel">${icon('api')}Code</button><button type="button" class="subtle code-open" data-web-action="create" title="Preview a local web server">${icon('globe')}Preview</button><div class="window-drag-handle" data-window-drag title="Drag to move. Double-click for fullscreen." aria-hidden="true"><span></span></div><div class="window-actions"><button data-action="hud" title="Collapse to corner HUD" aria-label="Collapse to corner HUD">${icon('corner')}</button><button data-action="minimize" aria-label="Minimize">${icon('minus')}</button><button data-action="fullscreen" aria-label="Fullscreen" title="Fullscreen">${icon('expand')}</button><button data-action="tray" aria-label="Hide in system tray" title="Hide in system tray">${icon('close')}</button></div></header>
@@ -251,13 +252,13 @@ const appearance = consoleAppearance({ call, getState: () => state });
 $('#screenshot-spot').addEventListener('dragstart', e => { e.dataTransfer.setData(SCREENSHOT_DRAG, '1'); e.dataTransfer.effectAllowed = 'copy'; });
 document.querySelectorAll('.sidebar [data-page]').forEach(button => {
   if (!button.hasAttribute('aria-label')) button.setAttribute('aria-label', button.textContent.replace(/\d+$/, '').trim());
-  button.title = button.getAttribute('aria-label');
-  const label = document.createElement('span'); label.className = 'rail-tooltip'; label.textContent = button.title;
+  const label = document.createElement('span'); label.className = 'rail-tooltip'; label.textContent = button.getAttribute('aria-label');
   for (const node of [...button.childNodes]) if (node.nodeType === Node.TEXT_NODE) node.remove();
   button.append(label);
 });
 $('#explorer-toggle').insertAdjacentHTML('beforeend', '<span class="rail-tooltip">Explorer</span>');
 document.querySelectorAll('.sidebar button').forEach(button => {
+  button.removeAttribute('title');
   const position = () => { const tooltip = button.querySelector('.rail-tooltip'); if (tooltip) tooltip.style.top = `${button.getBoundingClientRect().top + 8}px`; };
   button.addEventListener('pointerenter', position); button.addEventListener('focus', position);
 });
@@ -854,8 +855,13 @@ function receive(next) {
   if (!windowMoving) scheduleFits();
   vim?.refresh();
 }
+const explorerDrawer = window.matchMedia('(max-width:899px)');
+let drawerOpen = null;
+explorerDrawer.addEventListener('change', () => { if (state) applySidebar(); });
+$('#explorer-backdrop').addEventListener('click', () => { void closeExplorer().catch(error => toast(error.message, true)); });
 function applySidebar() {
-  const collapsed = !!state.settings.sidebarCollapsed, blocked = collapsed || !!expandedId;
+  if (drawerOpen === null) drawerOpen = !state.settings.sidebarCollapsed;
+  const collapsed = explorerDrawer.matches ? !drawerOpen : !!state.settings.sidebarCollapsed, blocked = collapsed || !!expandedId;
   const sidebar = $('#sidebar'), toggle = $('#sidebar-toggle'), titlebar = $('.titlebar'), content = $('#content');
   document.body.style.setProperty('--titlebar-h', titlebar.offsetHeight + 'px');
   const initialized = sidebar.hasAttribute('data-collapsed');
@@ -866,8 +872,9 @@ function applySidebar() {
   sidebar.setAttribute('aria-hidden', String(!!expandedId));
   const pane = $('#explorer-pane');
   const reopening = !blocked && (pane.hidden || pane.inert);
-  if (blocked && pane.contains(document.activeElement)) toggle.focus({ preventScroll: true });
+  if (blocked && (pane.contains(document.activeElement) || document.activeElement === $('#explorer-backdrop'))) $('#explorer-toggle').focus({ preventScroll: true });
   pane.inert = blocked; pane.hidden = blocked;
+  $('#explorer-backdrop').hidden = blocked || !explorerDrawer.matches || isSettingsPage(page);
   if (blocked) explorer?.cancelFocus();
   explorer?.sync();
   if (reopening) explorer?.focusTree();
@@ -889,17 +896,27 @@ function applySidebar() {
 }
 async function setExplorerCollapsed(collapsed) {
   const previous = !!state.settings.sidebarCollapsed;
+  const previousDrawer = drawerOpen;
+  drawerOpen = !collapsed;
   // Visibility and focus change together, before the settings IPC round trip.
   state.settings = { ...state.settings, sidebarCollapsed: collapsed };
   applySidebar();
   try { await call('settings', { sidebarCollapsed: collapsed }); }
   catch (error) {
     if (state.settings.sidebarCollapsed === collapsed) {
+      drawerOpen = previousDrawer;
       state.settings = { ...state.settings, sidebarCollapsed: previous };
       applySidebar();
     }
     throw error;
   }
+}
+function toggleExplorer() {
+  return setExplorerCollapsed(explorerDrawer.matches ? !!drawerOpen : !state.settings.sidebarCollapsed);
+}
+async function closeExplorer() {
+  if (explorerDrawer.matches) { drawerOpen = false; applySidebar(); }
+  else await setExplorerCollapsed(true);
 }
 const acknowledgments = new Set();
 async function acknowledgeSession(id) {
@@ -1581,7 +1598,7 @@ document.addEventListener('click', async event => {
       case 'vim-help': vim.showHelp(); break;
       case 'sidebar':
         button.disabled = true;
-        try { await setExplorerCollapsed(!state.settings.sidebarCollapsed); }
+        try { await toggleExplorer(); }
         finally { button.disabled = false; }
         break;
       case 'reset-tool': $('#tool-form').reset(); $('#tool-form').elements.id.readOnly = false; $('#tool-form-title').textContent = 'Add a tool'; toolFields(); break;
@@ -1874,7 +1891,7 @@ async function vimAction(action, value) {
     if (page === 'consoles') focusVimSlot(vim.slot); else $('#content').focus({ preventScroll: true });
     return;
   }
-  if (action === 'sidebar') { await setExplorerCollapsed(!state.settings.sidebarCollapsed); return; }
+  if (action === 'sidebar') { await toggleExplorer(); return; }
   if (action === 'fullscreen') { await call('mode', state.mode === 'fullscreen' ? 'dashboard' : 'fullscreen'); return; }
   if (action === 'dock') { await call('mode', 'hud'); focusVimSlot(vim.slot); return; }
   const session = coveredSlots().get(value);
@@ -1909,7 +1926,7 @@ codePanels = codePanelUI({ call, getState: () => state, selectedConsole: () => s
     record.term.paste(text); toast('Context added to the console draft.');
   }
 });
-explorer = explorerUI({ host: $('#explorer-pane'), call, getState: () => state, selectedConsole: () => selectedId, escape, icon,
+explorer = explorerUI({ host: $('#explorer-pane'), call, getState: () => state, selectedConsole: () => selectedId, escape, icon, collapse: closeExplorer,
   openFile: async (root, path) => {
     const normalize = value => {
       const name = value?.replaceAll('\\', '/').replace(/\/$/, '');
@@ -1917,15 +1934,20 @@ explorer = explorerUI({ host: $('#explorer-pane'), call, getState: () => state, 
     };
     let panel = state.codePanels?.find(p => {
       const source = state.sessions.find(s => (s.consoleKey || s.id) === p.codeSourceKey);
-      return p.alive && p.kind === 'code' && !source?.remote && normalize(source?.cwd || p.cwd) === normalize(root);
+      return p.alive && p.kind === 'code' && !source?.remote && !source?.remoteHostId && normalize(source?.cwd || p.cwd) === normalize(root);
     });
     if (!panel) panel = await call('code.create', { root });
-    // Read back the published state so the panel is mounted before opening the file.
-    receive(await call('state')); navigatePage('consoles');
+    if (page !== 'consoles' || expandedId) navigatePage('consoles');
+    const deadline = performance.now() + 2500;
+    while (!codePanels.isMounted(panel.id)) {
+      if (performance.now() >= deadline) throw new Error('Code panel could not be placed in the console grid. Free a slot and try again.');
+      await new Promise(resolve => requestAnimationFrame(resolve));
+      if (state.codePanels?.some(p => p.id === panel.id)) renderConsoles();
+    }
     await codePanels.openFile(panel.id, path);
   },
   afterOpenFile: async () => {
-    if (window.innerWidth < 900) await setExplorerCollapsed(true);
+    if (explorerDrawer.matches) await closeExplorer();
   }
 });
 phone = mobileUI({ call, escape, icon, getState: () => state, toast, navigate: navigatePage });

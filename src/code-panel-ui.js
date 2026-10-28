@@ -40,9 +40,9 @@ export function codePanelUI({ call, getState, selectedConsole, pasteContext, esc
     list.innerHTML = (r.browse && r.directory?.path ? action('up', '↑ Parent folder') : '') + items.map(x => `<button type="button" data-code-path="${e(x.path || x.file)}" ${x.directory ? 'data-directory' : ''} ${r.file?.file === (x.path || x.file) ? 'aria-current="true"' : ''} title="${e(x.path || x.file)}"><span>${x.directory ? '▸ ' : ''}${e(x.name || x.file)}</span>${x.type ? `<small>${e(x.type)}</small>` : ''}</button>`).join('');
     if (!items.length) list.innerHTML += `<p>${r.browse ? 'No previewable files in this folder.' : 'No changed files. Browse files or wait for the next turn.'}</p>`;
     const report = r.report;
-    r.node.querySelector('[data-code-caption]').textContent = r.browse ? r.directory?.path || 'Project files' : report ? `${report.mode === 'turn' ? 'Last turn' : 'Working tree'} · ${report.changes.length} ${report.changes.length === 1 ? 'file' : 'files'}` : 'Loading changes…';
+    r.node.querySelector('[data-code-caption]').textContent = r.externalFile ? 'File' : r.browse ? r.directory?.path || 'Project files' : report ? `${report.mode === 'turn' ? 'Last turn' : 'Working tree'} · ${report.changes.length} ${report.changes.length === 1 ? 'file' : 'files'}` : 'Loading changes…';
     r.node.querySelector('[data-code-notes]').textContent = r.browse ? r.directory?.truncated ? 'Showing the first 500 entries.' : '' : report?.notes?.join(' ') || '';
-    r.node.querySelector('[data-code-action="changes"]').setAttribute('aria-pressed', String(!r.browse));
+    r.node.querySelector('[data-code-action="changes"]').setAttribute('aria-pressed', String(!r.browse && !r.externalFile));
     r.node.querySelector('[data-code-action="browse"]').setAttribute('aria-pressed', String(r.browse));
   }
   async function showFile(r, file) {
@@ -72,7 +72,8 @@ export function codePanelUI({ call, getState, selectedConsole, pasteContext, esc
       const report = await call('code.report', { id: r.id, refresh });
       if (ticket !== r.sourceTicket || !records.has(r.id)) return;
       const changed = r.report?.id !== report.id; r.report = report;
-      if (!r.browse) {
+      if (r.externalFile) listFiles(r);
+      else if (!r.browse) {
         listFiles(r);
         if (changed && report.changes.length) {
           const file = report.changes.find(x => x.file === r.file?.file) || report.changes[0];
@@ -82,7 +83,7 @@ export function codePanelUI({ call, getState, selectedConsole, pasteContext, esc
     } catch (error) { r.node.querySelector('[data-code-error]').textContent = error.message; }
     finally { r.loading = false; r.node.querySelector('[data-code-action="refresh"]').disabled = false; if (r.reload) { r.reload = false; void load(r); } }
   }
-  async function browse(r, path = '') { r.directory = await call('code.browse', { id: r.id, path }); r.browse = true; listFiles(r); r.node.querySelector('[data-code-error]').textContent = ''; }
+  async function browse(r, path = '') { r.directory = await call('code.browse', { id: r.id, path }); r.browse = true; r.externalFile = false; listFiles(r); r.node.querySelector('[data-code-error]').textContent = ''; }
   function mount(panel, host) {
     let r = records.get(panel.id);
     if (!r) {
@@ -97,9 +98,9 @@ export function codePanelUI({ call, getState, selectedConsole, pasteContext, esc
           if (b.hasAttribute('data-code-path')) {
             if (b.hasAttribute('data-directory')) await browse(r, b.dataset.codePath);
             else await showFile(r, await call('code.file', { id: r.id, path: b.dataset.codePath, ...(!r.browse ? { reportId: r.report.id } : {}) }));
-          } else if (a === 'refresh') { r.browse ? await browse(r, r.directory?.path) : await load(r, true); }
+          } else if (a === 'refresh') { if (r.externalFile && r.file) await showFile(r, await call('code.file', { id: r.id, path: r.file.file })); else r.browse ? await browse(r, r.directory?.path) : await load(r, true); }
           else if (a === 'browse') await browse(r);
-          else if (a === 'changes') { r.browse = false; r.report = null; await load(r); }
+          else if (a === 'changes') { r.externalFile = false; r.browse = false; r.report = null; await load(r); }
           else if (a === 'up') await browse(r, r.directory.path.split('/').slice(0, -1).join('/'));
           else if ((a === 'diff' || a === 'full') && r.file) { r.diff = a === 'diff'; await showFile(r, r.file); }
           else if (a === 'copy' || a === 'send') {
@@ -113,7 +114,7 @@ export function codePanelUI({ call, getState, selectedConsole, pasteContext, esc
       });
       node.querySelector('[data-code-source]').addEventListener('change', async event => {
         if (!event.target.value) { chooseOptions(r, panel); return; }
-        try { r.askReselect = null; ++r.sourceTicket; await call('code.source', { id: r.id, sourceId: event.target.value }); r.browse = false; r.report = null; await load(r); }
+        try { r.askReselect = null; ++r.sourceTicket; await call('code.source', { id: r.id, sourceId: event.target.value }); r.externalFile = false; r.browse = false; r.report = null; await load(r); }
         catch (error) { node.querySelector('[data-code-error]').textContent = error.message; }
       });
     }
@@ -135,9 +136,9 @@ export function codePanelUI({ call, getState, selectedConsole, pasteContext, esc
   async function openFile(panelId, path) {
     const r = records.get(panelId);
     if (!r) throw new Error('Code panel is not available.');
-    ++r.sourceTicket; r.browse = true; r.diff = false;
-    await browse(r, path.split('/').slice(0, -1).join('/'));
+    ++r.sourceTicket; r.diff = false; r.externalFile = true;
     await showFile(r, await call('code.file', { id: panelId, path }));
   }
-  return { card, mount, sync, openFile };
+  function isMounted(id) { const r = records.get(id), panel = r?.node.closest('.session-card'); return !!(r?.node.isConnected && panel && !panel.hidden); }
+  return { card, mount, sync, openFile, isMounted };
 }
