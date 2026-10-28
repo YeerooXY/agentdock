@@ -86,19 +86,47 @@ class _PCSettingsPageState extends State<PCSettingsPage> {
       'Tools': 'tools',
     }[widget.category];
     final items = key == null ? <dynamic>[] : data?[key] as List? ?? [];
+    final toolStatus = widget.category == 'Tools' &&
+        widget.client.supportsResult('tools.status');
+    final keysOnPC = widget.category == 'Keys' &&
+        widget.client.supportsResult('tools.status');
+    final requests = toolStatus
+        ? (data?['setupRequests'] as List? ?? []).whereType<Map>().toList()
+        : <Map>[];
     return RefreshIndicator(
       onRefresh: load,
       child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.all(16),
         children: [
+          if (requests.isNotEmpty) ...[
+            Text('Waiting for you', style: TextStyle(fontSize: 22, color: pink)),
+            for (final item in requests)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('${item['agent']}: ${item['name']}'),
+                    Text('${item['kind']}', style: const TextStyle(color: muted)),
+                    const SizedBox(height: 6),
+                    Text('${item['action']}'),
+                  ],
+                ),
+              ),
+            const SizedBox(height: 12),
+          ],
           Text(widget.category, style: TextStyle(fontSize: 22, color: pink)),
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 12),
-            child: Text(
-              'Edit these settings in Paddock on your PC.',
-              style: TextStyle(color: muted),
+          if (!toolStatus)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              child: Text(
+                keysOnPC
+                    ? 'View saved keys in Paddock on your PC.'
+                    : 'Edit these settings in Paddock on your PC.',
+                style: const TextStyle(color: muted),
+              ),
             ),
-          ),
           if (loading) const LinearProgressIndicator(),
           if (error.isNotEmpty) ...[
             Text(error, style: TextStyle(color: pink)),
@@ -109,20 +137,45 @@ class _PCSettingsPageState extends State<PCSettingsPage> {
           if (!loading &&
               error.isEmpty &&
               widget.category != 'Instructions' &&
+              !keysOnPC &&
               items.isEmpty)
             const Text('None configured.'),
           for (final item in items)
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              title: Text('${item['name'] ?? item['id']}'),
-              subtitle: Text(
-                widget.category == 'Tools'
-                    ? item['enabled'] == true
-                          ? 'Enabled'
-                          : 'Disabled'
-                    : '${item['protocol'] ?? item['id']}',
+            if (toolStatus)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '${item['name'] ?? 'Tool'}',
+                      style: TextStyle(fontSize: 18, color: blue),
+                    ),
+                    const SizedBox(height: 6),
+                    Chip(
+                      label: Text('${item['status'] ?? 'Needs setup'}'),
+                    ),
+                    if ((item['error'] as String? ?? '').isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      Text('${item['error']}', style: TextStyle(color: pink)),
+                    ],
+                    const SizedBox(height: 6),
+                    Text('${item['action'] ?? ''}'),
+                  ],
+                ),
+              )
+            else
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text('${item['name'] ?? item['id']}'),
+                subtitle: Text(
+                  widget.category == 'Tools'
+                      ? item['enabled'] == true
+                            ? 'Enabled'
+                            : 'Disabled'
+                      : '${item['protocol'] ?? item['id']}',
+                ),
               ),
-            ),
         ],
       ),
     );

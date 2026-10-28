@@ -370,6 +370,24 @@ test('paired phones receive confirmed agent settings and configuration names wit
   assert.deepEqual(f.sessions.writes, [], 'Reading choices never sends console input');
 });
 
+test('tools.status advertises and exposes read-only status only when enabled', async t => {
+  const f = await fixture(t), paired = await f.pair(), c = client(f, paired.data.token);
+  t.after(() => c.ws.terminate()); await once(c.ws, 'open');
+  f.m.getSettings = () => ({ shared: { connections: [{ name: 'Tool', enabled: true, status: { ok: true } }] },
+    setupRequests: [{ kind: 'tool', consoleName: 'Agent Ada', config: { name: 'Requested tool', command: 'private-command' } }],
+    keys: [{ id: 'private-key-id', label: 'Private vault entry' }] });
+  assert.ok(!(await c.call('state')).capabilities.includes('tools.status'));
+  assert.equal((await c.call('settings.summary')).tools[0].status, undefined);
+  f.m.toolsStatus = true;
+  assert.ok((await c.call('state')).capabilities.includes('tools.status'));
+  const value = await c.call('settings.summary');
+  assert.equal(value.tools[0].status, 'Connected');
+  assert.equal(value.setupRequests[0].agent, 'Agent Ada');
+  assert.deepEqual(value.keys, []);
+  assert.doesNotMatch(JSON.stringify(value), /private-command|private-key-id|Private vault entry/);
+  assert.deepEqual(f.sessions.writes, []);
+});
+
 test('saved phone names are independent; remote rename cannot target another phone', async t => {
   const f = await fixture(t);
   f.m.rename({ name: 'Studio PC' });
