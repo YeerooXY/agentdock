@@ -96,6 +96,7 @@ let explorer, codePanels, webPanels, reviewPanels, launchGesture, chooserOpener,
 const nameSaves = new Map();
 const launchHint = 'title="Click to open. Hold or right-click to choose." aria-haspopup="dialog"';
 let renderedView = null, viewAnimation, windowMoving = false, pageBeforeSettings = 'consoles';
+const viewFade = [{ opacity: 0, transform: 'translateY(4px)' }, { opacity: 1, transform: 'translateY(0)' }], viewFadeTiming = { duration: 160, easing: 'cubic-bezier(.22,1,.36,1)' };
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
 document.addEventListener('visibilitychange', () => { document.body.dataset.visualPaused = String(document.hidden); });
 reducedMotion.addEventListener('change', event => {
@@ -657,13 +658,13 @@ function renderPage() {
   // Moving between Settings categories keeps the heading and tabs still; only the panel fades.
   const settingsSwitch = changed && isSettingsPage(renderedView) && isSettingsPage(page);
   renderedView = view;
+  let pageFade = false;
   if (changed && !settingsSwitch) {
     viewAnimation?.cancel();
     if (!windowMoving && state.mode !== 'hud' && !reducedMotion.matches) {
-      viewAnimation = $(consoleView ? '#consoles-page' : '#content').animate(
-        [{ opacity: 0, transform: 'translateY(4px)' }, { opacity: 1, transform: 'translateY(0)' }],
-        { duration: 160, easing: 'cubic-bezier(.22,1,.36,1)' }
-      );
+      // Pages fade in after rendering, without the shared background (see below).
+      if (consoleView) viewAnimation = $('#consoles-page').animate(viewFade, viewFadeTiming);
+      else pageFade = true;
     }
   }
   document.querySelectorAll('[data-page]').forEach(button => button.classList.toggle('selected', button.dataset.page === page || button.closest('.sidebar-bottom') && isSettingsPage(page)));
@@ -690,6 +691,11 @@ function renderPage() {
   // seeded particles, shooting-star schedule and elapsed phase survive redraws.
   if (backgroundLayer) content.prepend(backgroundLayer);
   ensureBackdropSky(content, 57);
+  // The background layer is shared by every page; fading it made each switch look like a reload.
+  if (pageFade) {
+    const fades = [...content.children].filter(el => !el.classList.contains('page-background-layer')).map(el => el.animate(viewFade, viewFadeTiming));
+    viewAnimation = { cancel: () => fades.forEach(fade => fade.cancel()) };
+  }
   workbench?.mount();
   taskLoops?.mount();
   if (settingsOpening && !windowMoving && !reducedMotion.matches) { viewAnimation?.cancel(); viewAnimation = $('.settings-overlay')?.animate([{ opacity: 0, transform: 'scale(1.03)' }, { opacity: 1, transform: 'scale(1)' }], { duration: 220, easing: 'cubic-bezier(.22,1,.36,1)' }); }
