@@ -4,7 +4,7 @@
 function settingsSummary({ shared = {}, keys = [], integrations = [], setupRequests = [], capabilities = [], redact = value => value } = {}) {
   const summary = {
     apis: (shared.profiles || []).map(({ id, name, protocol }) => ({ id, name, protocol })),
-    keys: [{ name: `Saved keys: ${keys.length}` }],
+    keys: [{ name: `Saved keys: ${keys.length}`, protocol: '' }],
     tools: (shared.connections || []).map(({ id, name, enabled }) => ({ id, name, enabled: !!enabled })),
     instructions: typeof shared.instructions === 'string' ? shared.instructions.slice(0, 20000) : '',
   };
@@ -48,7 +48,8 @@ function settingsSummary({ shared = {}, keys = [], integrations = [], setupReque
     return text
       .replace(/\b[a-z][a-z0-9+.-]*:\/\/[^\s<>"']+/gi, '[redacted]')
       .replace(/["'](?:[A-Za-z]:[\\/]|\\|\/|%[A-Z_]+%[\\/])[^"'\r\n]*["']/gi, '[redacted]')
-      .replace(/(^|[\s(])(?:[A-Za-z]:[\\/]|\\[^\\\s]|\\\\|\/[^/\s]|%[A-Z_]+%[\\/])[^<>"'\r\n]*/gim, '$1[redacted]')
+      .replace(/(^|[^\w])(?:[A-Za-z]:[\\/]|\\[^\\\s]|\\\\|%[A-Z_]+%[\\/])[^<>"'\r\n]*/gim, '$1[redacted]')
+      .replace(/(^|[\s(=:\[,])\/[^/\s][^<>"'\r\n]*/gm, '$1[redacted]')
       .replace(/\b(?:Bearer|Basic)\s+[^\s,;]+/gi, '[redacted]')
       .replace(/(?:["']?[\w.-]*(?:token|secret|password|credential|authorization|key)[\w.-]*["']?\s*[:=]\s*)(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s,;}]+)/gi, '[redacted]')
       .replace(/\b(?:sk-|xai-|gh[pousr]_|github_pat_|npm_|AIza|AKIA)[\w.-]+/g, '[redacted]')

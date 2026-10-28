@@ -13,7 +13,7 @@ test('phone settings expose only configuration labels and shared instructions', 
     profiles: [{ id: 'api', name: 'API', protocol: 'responses', url: 'https://SECRET', keyId: 'PRIVATE' }],
     connections: [{ id: 'tool', name: 'Tool', enabled: true, envKeys: { TOKEN: 'SECRET' }, command: 'PRIVATE' }], instructions: 'Shared instructions',
   } });
-  assert.deepEqual(value.keys, [{ name: 'Saved keys: 1' }]);
+  assert.deepEqual(value.keys, [{ name: 'Saved keys: 1', protocol: '' }]);
   assert.deepEqual(value.apis, [{ id: 'api', name: 'API', protocol: 'responses' }]);
   assert.deepEqual(value.tools, [{ id: 'tool', name: 'Tool', enabled: true }]);
   assert.equal(value.instructions, 'Shared instructions');
@@ -79,7 +79,7 @@ test('diagnostics remove credentials, paths, environment names and command lines
         command: 'npx', args: ['private-package'], envKeys: { VAULT_TOKEN: { key: 'saved-credential' } },
         status: { ok: false, error } }] } });
     assert.doesNotMatch(JSON.stringify(value), /alice|pass@example|short-secret|Private Folder|server\.exe|private\/server|server\\share|abc\.def|two word secret|another-secret|aBcDeFg|saved-credential|VAULT_TOKEN|plain-saved-value|private-package|Private entry/);
-    assert.deepEqual(value.keys, [{ name: 'Saved keys: 1' }]);
+    assert.deepEqual(value.keys, [{ name: 'Saved keys: 1', protocol: '' }]);
     assert.ok(value.tools[0].error.length <= 200);
     assert.deepEqual(Object.keys(value.tools[0]), ['name', 'enabled', 'status', 'error', 'action']);
   }
@@ -167,11 +167,40 @@ test('key request names use the kind label for absent, defaulted or redacted nam
   assert.doesNotMatch(JSON.stringify(value), /private-key-id|\[redacted\]/);
 });
 
+test('diagnostics redact paths after assignment and punctuation without removing slash wording', () => {
+  for (const error of [
+    String.raw`cwd=C:\Users\alice\x`,
+    String.raw`[C:\Users\alice\x]`,
+    'path:/home/alice/x',
+    String.raw`file,C:\Users\alice\x`,
+    String.raw`path:C:\Users\alice\x`,
+    String.raw`cwd=\\server\alice\x`,
+    String.raw`[%USERPROFILE%\AppData\alice\x]`,
+    String.raw`path:\Users\alice\x`,
+  ]) {
+    const value = settingsSummary({ capabilities, shared: { connections: [{
+      name: 'Tool', status: { ok: false, error },
+    }] } });
+    assert.match(value.tools[0].error, /\[redacted\]/);
+    assert.doesNotMatch(value.tools[0].error, /Users|alice|home|server|USERPROFILE|AppData/);
+  }
+  const error = 'Check Add-ons/Preferences and/or retry.';
+  const value = settingsSummary({ capabilities, shared: { connections: [{ name: 'Tool', status: { ok: false, error } }] } });
+  assert.equal(value.tools[0].error, error);
+});
+
+test('capability-off key count supplies an empty subtitle for older phones', () => {
+  const value = settingsSummary({ capabilities: [], keys: [{ id: 'private-id', label: 'Private label' }] });
+  assert.deepEqual(value.keys, [{ name: 'Saved keys: 1', protocol: '' }]);
+  assert.equal(value.keys[0].protocol ?? value.keys[0].id, '');
+  assert.doesNotMatch(JSON.stringify(value), /private-id|Private label/);
+});
+
 test('keys expose only a count with or without tools.status, including zero saved keys', () => {
   for (const capabilityList of [[], capabilities]) {
     for (const keys of [[], [{ id: 'sk-secret-id', label: 'Secret label', value: 'Secret value' }]]) {
       const value = settingsSummary({ capabilities: capabilityList, keys });
-      assert.deepEqual(value.keys, [{ name: `Saved keys: ${keys.length}` }]);
+      assert.deepEqual(value.keys, [{ name: `Saved keys: ${keys.length}`, protocol: '' }]);
       assert.doesNotMatch(JSON.stringify(value), /sk-secret-id|Secret label|Secret value/);
     }
   }

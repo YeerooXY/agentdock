@@ -364,7 +364,7 @@ test('paired phones receive confirmed agent settings and configuration names wit
   assert.deepEqual(Object.fromEntries(['providerSessionId', 'model', 'effort', 'settingsAt'].map(key => [key, snapshot.sessions[0][key]])), { providerSessionId: 'chat-one', model: 'gpt-6.1-sol', effort: 'medium', settingsAt: 1234 });
   assert.deepEqual((await c.call('console.models', { provider: 'codex' })).models[0].efforts, ['medium', 'max']);
   const settings = await c.call('settings.summary');
-  assert.deepEqual(settings.keys, [{ name: 'Saved keys: 1' }]);
+  assert.deepEqual(settings.keys, [{ name: 'Saved keys: 1', protocol: '' }]);
   assert.equal(settings.instructions, 'Shared instructions');
   assert.ok(!/PRIVATE|private endpoint|private command|envKeys/.test(JSON.stringify(settings)));
   assert.deepEqual(f.sessions.writes, [], 'Reading choices never sends console input');
@@ -383,7 +383,7 @@ test('tools.status advertises and exposes read-only status only when enabled', a
   const value = await c.call('settings.summary');
   assert.equal(value.tools[0].status, 'Connected');
   assert.equal(value.setupRequests[0].agent, 'Agent Ada');
-  assert.deepEqual(value.keys, [{ name: 'Saved keys: 1' }]);
+  assert.deepEqual(value.keys, [{ name: 'Saved keys: 1', protocol: '' }]);
   assert.doesNotMatch(JSON.stringify(value), /private-command|private-key-id|Private vault entry/);
   assert.deepEqual(f.sessions.writes, []);
 });
