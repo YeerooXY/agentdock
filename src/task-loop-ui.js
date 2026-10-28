@@ -2,15 +2,17 @@ import './task-loop.css';
 
 export function taskLoopUI({ call, getState, getPage, escape: e, renderPage, toast, openResult }) {
   let choices = null, selected = '', showForm = false, loading = false, busy = false, error = '', detailStamp = '', listStamp = '', announcement = '', request = 0;
-  const draft = { repo: '', title: '', criteria: '', implementer: '', model: '', effort: '', reviewer: '', reviewerModel: '', checks: '', workflow: 'current', maxRounds: '3', timeLimitMinutes: '30' };
+  const draft = { repo: '', title: '', criteria: '', size: '', implementer: '', model: '', effort: '', reviewer: '', reviewerModel: '', checks: '', workflow: 'current', maxRounds: '3', timeLimitMinutes: '30' };
+  const manual = { size: false, implementer: false, model: false, reviewer: false, reviewerModel: false };
+  let choicesTimer;
   const running = job => ['implementing', 'checking', 'reviewing'].includes(job.state);
   const jobs = () => getState()?.tasks || [];
   const status = value => ({ 'needs-you': 'Needs you', 'not-set': 'Not set', 'changes-requested': 'Changes requested', approve: 'Approved', unclear: 'No clear verdict', done: 'Done' }[value] || value?.replace(/^./, letter => letter.toUpperCase()) || 'Not run');
   const chip = value => `<span class="task-status" data-status="${e(value)}">${e(status(value))}</span>`;
   const elapsed = value => value == null ? 'Running' : `${Math.floor(value / 60000)}m ${Math.floor(value / 1000) % 60}s`;
   const count = value => value == null ? 'not reported' : Number(value).toLocaleString();
-  const usage = value => value ? `${count(value.inputTokens)} input / ${count(value.outputTokens)} output tokens${value.cachedInputTokens != null ? ` / ${count(value.cachedInputTokens)} cached input` : ''}` : 'Usage not reported';
-  const reviewerHint = () => (choices.suggestion ? `Suggested: ${choices.why}` : choices.why) + (draft.reviewer ? ' The changed code is sent to the reviewer’s vendor.' : '');
+  const usage = value => value ? `${count(value.inputTokens)} input / ${count(value.outputTokens)} output tokens${value.cachedInputTokens != null ? ` / ${count(value.cachedInputTokens)} cached input` : ''}${value.reportedCost != null ? ` / OpenCode reported cost $${value.reportedCost}` : ''}` : 'Usage not reported';
+  const reviewerHint = () => draft.reviewer ? 'The changed code is sent to the reviewer’s vendor.' : 'No review selected.';
   const time = value => value.elapsedMs == null && value.startedAt ? `data-task-elapsed="${value.startedAt}"` : '';
   const options = (items, value) => items.map(item => `<option value="${e(item.id ?? item.path)}" ${(item.id ?? item.path) === value ? 'selected' : ''}>${e(item.label)}</option>`).join('');
   const field = (name, label, attrs = '') => `<label for="task-${name}">${label}<input id="task-${name}" name="${name}" value="${e(draft[name])}" ${attrs}></label>`;
@@ -26,8 +28,11 @@ export function taskLoopUI({ call, getState, getPage, escape: e, renderPage, toa
       ${select('repo', 'Repository', '<option value="">Select a folder</option>' + options(choices.repos, draft.repo), 'required')}
       ${field('title', 'Title', 'required maxlength="200" autocomplete="off"')}
       <label for="task-criteria">Acceptance criteria<textarea id="task-criteria" name="criteria" rows="4" maxlength="12000" required>${e(draft.criteria)}</textarea></label>
-      <div class="task-form-pair">${select('implementer', 'Implementer', options(choices.implementers, draft.implementer), 'required')}${field('model', 'Model (optional)', 'maxlength="120" placeholder="CLI default"')}</div>
-      <div class="task-form-pair">${select('reviewer', 'Reviewer', '<option value="">No review</option>' + options(choices.reviewers, draft.reviewer), 'aria-describedby="task-reviewer-reason"')}${field('reviewerModel', 'Reviewer model (optional)', `maxlength="120" placeholder="CLI default" ${!draft.reviewer ? 'disabled' : ''}`)}</div>
+      ${select('size', 'Estimated size', staticOptions('size', [['small', 'Small'], ['medium', 'Medium'], ['large', 'Large']]), 'aria-describedby="task-size-reasons"')}
+      <p id="task-size-reasons" class="field-hint">${e(choices.estimate.reasons.join(' '))}</p>
+      <p class="field-hint" role="status">${e(assignmentReasons())}</p>
+      <div class="task-form-pair">${select('implementer', 'Implementer', '<option value="">Choose an agent</option>' + options(choices.implementers, draft.implementer), 'required')}${field('model', 'Model', 'maxlength="120" placeholder="CLI default; required for OpenCode"')}</div>
+      <div class="task-form-pair">${select('reviewer', 'Reviewer', '<option value="">No review</option>' + options((choices.allReviewers || choices.reviewers).filter(choice => choice.id !== draft.implementer), draft.reviewer), 'aria-describedby="task-reviewer-reason"')}${field('reviewerModel', 'Reviewer model', `maxlength="120" placeholder="CLI default; required for OpenCode" ${!draft.reviewer ? 'disabled' : ''}`)}</div>
       <p id="task-reviewer-reason" class="field-hint">${e(reviewerHint())}</p>
       ${field('checks', 'Checks command (optional)', 'maxlength="4000" placeholder="npm test" spellcheck="false" aria-describedby="task-checks-help"')}
       <p id="task-checks-help" class="field-hint">Runs in the work folder with a 15-minute timeout.</p>
@@ -37,6 +42,14 @@ export function taskLoopUI({ call, getState, getPage, escape: e, renderPage, toa
       <p class="form-error" id="task-form-error" role="alert" ${error ? 'tabindex="-1"' : ''}>${e(error)}</p>
       <div class="task-actions"><button type="submit" class="primary" ${busy || unavailable ? 'disabled' : ''}>${busy ? 'Starting…' : 'Start'}</button>${jobs().length ? '<button type="button" data-task-action="cancel-form">Cancel</button>' : ''}</div>
     </form>`;
+  }
+  function assignmentReasons() {
+    const { implementer, reviewer, reasons, warnings } = choices.assignment;
+    const implMatches = implementer && draft.implementer === implementer.accountId && draft.model === implementer.model;
+    const reviewMatches = reviewer && draft.reviewer === reviewer.accountId && draft.reviewerModel === reviewer.model;
+    const impl = implMatches ? reasons[0] : draft.implementer ? 'Implementer selected by you.' : 'Choose an implementer.';
+    const review = reviewMatches ? reasons[implementer ? 1 : 0] : draft.reviewer ? 'Reviewer selected by you.' : 'No reviewer selected.';
+    return [impl, review, ...warnings.filter(warning => warning !== 'No preferred implementer is available.' || !draft.implementer).filter(warning => warning !== 'No independent reviewer is available.' || !draft.reviewer)].filter(Boolean).join(' ');
   }
   function list() {
     return jobs().length ? jobs().map(job => `<li><button type="button" data-task-action="select" data-id="${e(job.id)}" aria-current="${job.id === selected && !showForm ? 'true' : 'false'}"><strong>${e(job.title)}</strong>${chip(job.state)}<small>${job.rounds.length}/${job.maxRounds} rounds</small></button></li>`).join('') : '<li class="field-hint">No tasks yet.</li>';
@@ -74,24 +87,33 @@ export function taskLoopUI({ call, getState, getPage, escape: e, renderPage, toa
     detailStamp = ''; listStamp = ''; announcement = '';
     return `<div class="task-page"><header class="page-heading"><h1>Tasks</h1><div class="task-actions"><button type="button" data-task-action="refresh">Refresh</button><button type="button" class="primary" data-task-action="new">New task</button></div></header><p id="task-announcement" class="task-announcement" role="status" aria-live="polite" aria-atomic="true"></p><div class="task-layout"><nav aria-label="Repository tasks"><ul class="task-list">${list()}</ul></nav><div id="task-content">${showForm ? form() : detail(jobs().find(job => job.id === selected))}</div></div></div>`;
   }
-  async function loadChoices(resetReviewer = false) {
-    if (loading && !resetReviewer) return;
+  async function loadChoices() {
     const version = ++request; loading = true;
     try {
-      const next = await call('tasks.candidates', { implementer: draft.implementer });
+      const next = await call('tasks.candidates', { implementer: manual.implementer ? draft.implementer : '', title: draft.title, criteria: draft.criteria, size: manual.size ? draft.size : '' });
       if (version !== request) return;
-      const first = !choices; choices = next; error = '';
-      if (!choices.implementers.some(choice => choice.id === draft.implementer)) draft.implementer = choices.implementers[0]?.id || '';
+      choices = next; error = '';
+      if (!manual.size) draft.size = next.estimate.size;
+      if (!manual.implementer) {
+        const proposed = next.assignment.implementer?.accountId || '';
+        if (!manual.reviewer || !draft.reviewer || proposed !== draft.reviewer) draft.implementer = proposed;
+      }
+      if (!choices.implementers.some(choice => choice.id === draft.implementer)) draft.implementer = '';
+      if (!manual.model) draft.model = draft.implementer === next.assignment.implementer?.accountId ? next.assignment.implementer.model : '';
+      if (!manual.reviewer) draft.reviewer = next.assignment.reviewer?.accountId || '';
+      if (draft.reviewer === draft.implementer || !(choices.allReviewers || choices.reviewers).some(choice => choice.id === draft.reviewer)) draft.reviewer = '';
+      if (!manual.reviewerModel) draft.reviewerModel = draft.reviewer === next.assignment.reviewer?.accountId ? next.assignment.reviewer.model : '';
       if (!choices.repos.some(choice => choice.path === draft.repo)) draft.repo = choices.repos[0]?.path || '';
-      if (first || resetReviewer || (draft.reviewer && !choices.reviewers.some(choice => choice.id === draft.reviewer))) draft.reviewer = choices.suggestion || '';
     } catch (failure) { if (version === request) error = failure.message; }
     finally {
       if (version === request) {
         loading = false;
         if (getPage() === 'tasks' && showForm) {
-          const activeName = document.activeElement?.closest('#task-form') ? document.activeElement.name : null;
+          const active = document.activeElement?.closest('#task-form') ? document.activeElement : null, activeName = active?.name;
+          const start = active?.selectionStart, end = active?.selectionEnd;
           document.querySelector('#task-content').innerHTML = form();
-          if (activeName) document.querySelector('#task-form')?.elements.namedItem(activeName)?.focus();
+          const restored = activeName && document.querySelector('#task-form')?.elements.namedItem(activeName);
+          if (restored) { restored.focus(); if (typeof start === 'number' && typeof restored.setSelectionRange === 'function') restored.setSelectionRange(start, end); }
         }
       }
     }
@@ -129,12 +151,18 @@ export function taskLoopUI({ call, getState, getPage, escape: e, renderPage, toa
     for (const node of content.querySelectorAll('[data-task-elapsed]')) node.textContent = elapsed(Math.max(0, Date.now() - Number(node.dataset.taskElapsed)));
   }
   document.addEventListener('input', event => {
-    if (event.target.closest('#task-form') && event.target.name in draft) draft[event.target.name] = event.target.value;
+    if (!event.target.closest('#task-form') || !(event.target.name in draft)) return;
+    const name = event.target.name; draft[name] = event.target.value;
+    if (name in manual) manual[name] = true;
+    if (['title', 'criteria', 'size', 'implementer', 'model', 'reviewer', 'reviewerModel'].includes(name)) {
+      ++request; clearTimeout(choicesTimer); choicesTimer = setTimeout(() => loadChoices(), 250);
+    }
   });
   document.addEventListener('change', event => {
     if (!event.target.closest('#task-form')) return;
     draft[event.target.name] = event.target.value;
-    if (event.target.name === 'implementer') loadChoices(true);
+    if (event.target.name in manual) manual[event.target.name] = true;
+    if (['title', 'criteria', 'size', 'implementer', 'model', 'reviewer', 'reviewerModel'].includes(event.target.name)) { clearTimeout(choicesTimer); loadChoices(); }
     if (event.target.name === 'reviewer') {
       document.querySelector('#task-reviewerModel').disabled = !draft.reviewer;
       document.querySelector('#task-reviewer-reason').textContent = reviewerHint();

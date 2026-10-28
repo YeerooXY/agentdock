@@ -55,6 +55,7 @@
 }
 #content[data-view=usage] .delegation-settings{margin-top:18px}
 #content[data-view=usage] .delegation-settings .check-row{color:var(--usage-soft);font-size:14px;margin:10px 0}
+#routing-form{display:grid;gap:12px;max-width:760px}#routing-form label:not(.check-row){display:grid;gap:6px;min-width:0}#routing-form textarea,#routing-form input:not([type=checkbox]){width:100%;max-width:100%;box-sizing:border-box}#routing-form button{justify-self:start}
 #content[data-view=usage] .delegation-reviewers{display:flex;flex-wrap:wrap;gap:6px 22px;margin:8px 0 4px;padding:0;border:0}
 #content[data-view=usage] .delegation-reviewers legend{color:var(--usage-muted);font-size:13px;margin-bottom:2px}
 #content[data-view=usage] .delegation-reviewers:disabled{opacity:.55}

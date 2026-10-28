@@ -9,6 +9,8 @@ const { SshHosts } = require('./ssh-hosts.cjs');
 const { CodexAccount, RecentCodex, findProgram, nativeCodex, findClaude, consoleModels } = require('./adapters.cjs');
 const { runtimeFiles } = require('./runtime.cjs');
 const { initialSettings } = require('./settings.cjs');
+const { validateRouting } = require('./task-routing.cjs');
+const { openCodeSignedIn } = require('./opencode-auth.cjs');
 const { frameStyles, lightingStyles, updatedSlotTrims, moveSlotTrims } = require('./console-appearance.cjs');
 const { CliSetup } = require('./cli-setup.cjs');
 const { catalog: cliCatalog, byId: cliAgents } = require('./cli-catalog.cjs');
@@ -363,7 +365,14 @@ app.whenReady().then(async () => {
   workbench.delegation = new Delegation(root, { ...taskAccounts, testMode, getSettings: () => settings,
     openPanel: job => sessions?.createReviewPanel(job), panelOpen: id => sessions?.items.get(id)?.kind === 'review' });
   workbench.delegation.on('changed', publish);
-  tasks = new TaskLoop(root, { ...taskAccounts, candidates: () => testMode ? [] : taskAccounts.candidates(),
+  if (!testMode) openCodeSignedIn({ executable: cliSetup.executable('opencode') }); // warm the cached console check
+  tasks = new TaskLoop(root, { ...taskAccounts, getSettings: () => settings, candidates: () => {
+    if (testMode) return [];
+    const choices = taskAccounts.candidates(), executable = cliSetup.executable('opencode');
+    if (executable && openCodeSignedIn({ executable })) choices.push({ id: 'opencode:default', provider: 'opencode', label: 'OpenCode', executable });
+    return choices;
+  },
+    environment: (id, provider) => provider === 'opencode' ? usageEnvironment(Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.toLowerCase().startsWith('paddock_')))) : taskAccounts.environment(id, provider),
     repositories: () => {
       const folders = projects.list().flatMap(project => project.folders.map(folder => ({ path: folder.path, label: `${project.name}${folder.label ? ` / ${folder.label}` : ''}: ${folder.path}` })));
       for (const session of sessions?.items.values() || []) if (session.alive && !session.remote && !session.kind && session.cwd) folders.push({ path: session.cwd, label: `${session.name}: ${session.cwd}` });
@@ -518,7 +527,7 @@ app.whenReady().then(async () => {
       if (typeof method === 'string' && method.startsWith('workbench.')) return { ok: true, value: await workbench.call(method.slice(10), payload) };
       switch (method) {
         case 'state': return { ok: true, value: snapshot() };
-        case 'tasks.candidates': return { ok: true, value: tasks.choices(payload?.implementer) };
+        case 'tasks.candidates': return { ok: true, value: tasks.choices(payload?.implementer, payload || {}) };
         case 'tasks.start': return { ok: true, value: await tasks.start(payload) };
         case 'tasks.stop': return { ok: true, value: await tasks.stop(payload?.id) };
         case 'tasks.accept': return { ok: true, value: await tasks.accept(payload?.id) };
@@ -830,6 +839,7 @@ app.whenReady().then(async () => {
         case 'profiles.remove': hub.removeProfile(payload); publish(); break;
         case 'settings': {
           const next = { ...settings };
+          if (payload?.routing !== undefined) next.routing = validateRouting(payload.routing);
           if (typeof payload?.hudAlwaysOnTop === 'boolean') next.hudAlwaysOnTop = payload.hudAlwaysOnTop;
           if (typeof payload?.notifications === 'boolean') next.notifications = payload.notifications;
           if (typeof payload?.confirmConsoleEnd === 'boolean') next.confirmConsoleEnd = payload.confirmConsoleEnd;

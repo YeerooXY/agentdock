@@ -9,6 +9,26 @@ const { realRoot, programLaunch, powershell, userShell } = require('./platform.c
 const { permitted } = require('./code-panel.cjs');
 const { usageEnvironment } = require('./subscription-usage.cjs');
 const { collectChanges, reviewBrief, pickReviewer, reviewerLaunch, parseReply, progressStream, progressLog, appendLog, killTree, redactText, REVIEWERS, git: runGit } = require('./delegation.cjs');
+const { defaults: routingDefaults, estimateEffort, suggestAssignment } = require('./task-routing.cjs');
+const TASK_PROVIDERS = [...REVIEWERS, 'opencode'];
+
+function openCodeEvent(state, event) {
+  if (event.type === 'text' && typeof event.part?.text === 'string') state.text = event.part.text.slice(-6000);
+  if (event.type === 'step_finish') {
+    const part = event.part || {}, tokens = part.tokens || {};
+    state.length ||= part.reason === 'length';
+    state.usage ||= { inputTokens: null, outputTokens: null, cachedInputTokens: null, reportedCost: null };
+    for (const [key, value] of [['inputTokens', tokens.input], ['outputTokens', tokens.output], ['cachedInputTokens', tokens.cache?.read], ['reportedCost', part.cost]]) if (Number.isFinite(value) && value >= 0) state.usage[key] = (state.usage[key] ?? 0) + value;
+  }
+}
+function openCodeEvents(stdout) {
+  const state = { text: '', length: false, usage: null };
+  for (const line of stdout.split(/\r?\n/)) { try { openCodeEvent(state, JSON.parse(line)); } catch {} }
+  return state;
+}
+function openCodeLaunch(executable, { model, workFolder, promptFile }) {
+  return programLaunch(executable, ['run', '-m', model, '--dir', workFolder, '--format', 'json', '-f', promptFile, 'Read the attached file and follow it.']);
+}
 
 const RUNNING = new Set(['implementing', 'checking', 'reviewing']);
 const REFRESHABLE = new Set(['passed', 'needs-you']), REFRESH_LIMIT = 2, MAX_HISTORY = 20, VERIFICATION_AGE = 7 * 24 * 60 * 60_000;
@@ -48,7 +68,7 @@ function checkLaunch(command, platform = process.platform) {
     : { executable: userShell(), args: ['-c', command] };
 }
 function usageText(usage) {
-  return usage ? `${usage.inputTokens ?? 'not reported'} input, ${usage.outputTokens ?? 'not reported'} output tokens${usage.cachedInputTokens != null ? `, ${usage.cachedInputTokens} cached input` : ''}` : 'not reported';
+  return usage ? `${usage.inputTokens ?? 'not reported'} input, ${usage.outputTokens ?? 'not reported'} output tokens${usage.cachedInputTokens != null ? `, ${usage.cachedInputTokens} cached input` : ''}${usage.reportedCost != null ? `, OpenCode reported cost $${usage.reportedCost}` : ''}` : 'not reported';
 }
 function findings(reply) {
   const parsed = reply.text.split(/\r?\n/).filter(line => /^-\s+.+:\d+\s+[—–-]\s+(high|medium|low)\s+[—–-]\s+.+/i.test(line)).slice(0, 12).map(line => line.slice(0, 1000));
@@ -65,9 +85,9 @@ function killAndWait(child, kill, timeoutMs) {
 }
 
 class TaskLoop extends EventEmitter {
-  constructor(root, { candidates = () => [], repositories = () => [], getLimits = () => [], environment = () => ({}), saveResult, spawnProcess = spawn, run = execFile, now = Date.now, killProcess = killTree, platform = process.platform, stopTimeoutMs = 2000 } = {}) {
+  constructor(root, { candidates = () => [], repositories = () => [], getLimits = () => [], getSettings = () => ({}), environment = () => ({}), saveResult, spawnProcess = spawn, run = execFile, now = Date.now, killProcess = killTree, platform = process.platform, stopTimeoutMs = 2000 } = {}) {
     super();
-    Object.assign(this, { root, candidates, repositories, getLimits, environment, saveResult, spawnProcess, run, now, killProcess, platform, stopTimeoutMs });
+    Object.assign(this, { root, candidates, repositories, getLimits, getSettings, environment, saveResult, spawnProcess, run, now, killProcess, platform, stopTimeoutMs });
     this.dir = path.join(root, 'tasks'); this.jobs = new Map(); this.children = new Map(); this.cancellers = new Map(); this.pending = new Map(); this.refreshing = new Map(); this.refreshedAt = new Map(); this.reserved = new Set(); this.records = new Map();
     this.fileCache = new Map(); this.cancelling = new Set(); this.cancellations = new Map();
     fs.mkdirSync(this.dir, { recursive: true });
@@ -88,9 +108,11 @@ class TaskLoop extends EventEmitter {
       }
     }
   }
-  choices(implementerId) {
-    const accounts = this.candidates().filter(choice => REVIEWERS.includes(choice.provider));
-    const implementer = accounts.find(choice => choice.id === implementerId) || accounts[0];
+  choices(implementerId, { title = '', criteria = '', size } = {}) {
+    const accounts = this.candidates().filter(choice => TASK_PROVIDERS.includes(choice.provider));
+    const estimate = estimateEffort({ title, criteria });
+    const assignment = suggestAssignment({ size: ['small', 'medium', 'large'].includes(size) ? size : estimate.size, candidates: accounts, limits: this.getLimits(), rules: this.getSettings().routing || routingDefaults, now: this.now(), selectedImplementer: implementerId });
+    const implementer = accounts.find(choice => choice.id === implementerId) || accounts.find(choice => choice.id === assignment.implementer?.accountId);
     let suggestion = null, why = '';
     const reviewers = accounts.filter(choice => choice.id !== implementer?.id);
     if (reviewers.length) {
@@ -100,7 +122,7 @@ class TaskLoop extends EventEmitter {
       } catch (error) { why = error.message; }
     } else why = 'No other signed-in account is available.';
     const publicChoice = ({ id, provider, label }) => ({ id, provider, label });
-    return { implementers: accounts.map(publicChoice), reviewers: reviewers.map(publicChoice), suggestion, why, repos: this.repositories() };
+    return { implementers: accounts.map(publicChoice), reviewers: reviewers.map(publicChoice), allReviewers: accounts.map(publicChoice), suggestion, why, repos: this.repositories(), estimate, assignment };
   }
   persist(job) { atomicJson(path.join(this.dir, `${job.id}.json`), job); }
   changed(job) { this.persist(job); this.emit('changed'); }
@@ -123,12 +145,13 @@ class TaskLoop extends EventEmitter {
     if (!['current', 'worktree'].includes(workflow)) throw new Error('Choose Current branch or Separate worktree.');
     if (!Number.isInteger(maxRounds) || maxRounds < 1 || maxRounds > 5) throw new Error('Use 1 to 5 rounds.');
     if (!Number.isInteger(timeLimitMinutes) || timeLimitMinutes < 5 || timeLimitMinutes > 120) throw new Error('Use a time limit of 5 to 120 minutes.');
-    const accounts = this.candidates().filter(choice => REVIEWERS.includes(choice.provider));
+    const accounts = this.candidates().filter(choice => TASK_PROVIDERS.includes(choice.provider));
     const assignment = (raw, role) => {
       const account = accounts.find(choice => choice.id === raw?.accountId);
       if (!account) throw new Error(`Choose an installed, signed-in ${role} account.`);
       const model = input(raw.model ?? '', 120, 'a model');
       if (model && (!/^[\w.:/-]{1,120}$/.test(model) || model.startsWith('-'))) throw new Error('Use a model name with letters, numbers, dots, colons, slashes, underscores or dashes.');
+      if (account.provider === 'opencode' && !/^(?:opencode-go\/[\w.-]+|opencode\/[\w.-]+-free)$/.test(model)) throw new Error('Choose an OpenCode Go or OpenCode free model.');
       const effort = raw.effort ?? '';
       if (effort && (role !== 'implementer' || account.provider !== 'codex' || !['minimal', 'low', 'medium', 'high', 'xhigh'].includes(effort))) throw new Error('Choose a supported Codex reasoning effort: minimal, low, medium, high or xhigh.');
       return { accountId: account.id, provider: account.provider, label: account.label, model, ...(role === 'implementer' ? { effort } : {}) };
@@ -292,16 +315,39 @@ class TaskLoop extends EventEmitter {
   }
   async provider(job, step, brief, review) {
     const outFile = path.join(this.dir, `${job.id}.reply.md`);
+    let tempDir;
     try {
       const choice = this.candidates().find(choice => choice.id === step.accountId);
       if (!choice?.executable) throw new ProviderError(`${step.label} is no longer installed or signed in.`);
-      const env = this.environment(step.accountId, step.provider);
-      const launch = review ? reviewerLaunch(step.provider, choice.executable, { outFile, model: step.model, platform: this.platform }) : implementerLaunch(step.provider, choice.executable, { ...step, platform: this.platform });
-      const result = await this.process(job, launch, { environment: env, brief, provider: step.provider, step });
+      const env = { ...this.environment(step.accountId, step.provider) };
+      let launch, before;
+      if (step.provider === 'opencode') {
+        const tempRoot = path.join(this.root, 'task-temp'); fs.mkdirSync(tempRoot, { recursive: true });
+        tempDir = fs.mkdtempSync(path.join(tempRoot, 'opencode-'));
+        const promptFile = path.join(tempDir, 'prompt.txt'), configFile = path.join(tempDir, 'config.json');
+        fs.writeFileSync(promptFile, brief, { mode: 0o600 });
+        const permission = { edit: review ? 'deny' : 'allow', bash: 'deny', webfetch: 'deny', websearch: 'deny', external_directory: 'deny' };
+        fs.writeFileSync(configFile, JSON.stringify({ permission }), { mode: 0o600 });
+        for (const key of Object.keys(env)) if (/^opencode_/i.test(key)) delete env[key];
+        env.OPENCODE_CONFIG = configFile; env.OPENCODE_PERMISSION = JSON.stringify(permission);
+        launch = openCodeLaunch(choice.executable, { model: step.model, workFolder: job.workFolder, promptFile });
+        before = await this.fingerprint(job);
+      } else launch = review ? reviewerLaunch(step.provider, choice.executable, { outFile, model: step.model, platform: this.platform }) : implementerLaunch(step.provider, choice.executable, { ...step, platform: this.platform });
+      const result = await this.process(job, launch, { environment: env, brief: step.provider === 'opencode' ? '' : brief, provider: step.provider, step });
       if (!RUNNING.has(job.state)) return {};
       if (result.code !== 0 || result.providerError) {
         const hint = /log ?in|sign ?in|auth|credential/i.test(result.stdout + result.output) ? ` Sign in to ${step.label} in a console first.` : '';
         throw new ProviderError(`${step.label} ${result.code ? `exited with code ${result.code}` : 'could not finish the request'}.${hint}`);
+      }
+      if (step.provider === 'opencode') {
+        const parsed = result.openCode;
+        if (parsed.length && before === await this.fingerprint(job)) throw new ProviderError('The model hit its output limit.');
+        const text = redactText(parsed.text, env).trim();
+        if (review) {
+          if (!text) throw new ProviderError(`${step.label} returned no valid review answer.`);
+          return { text, verdict: /VERDICT:\s*approve\b/i.test(text) ? 'approve' : /VERDICT:\s*changes-requested/i.test(text) ? 'changes-requested' : 'unclear', usage: parsed.usage };
+        }
+        return { summary: text || 'No summary reported.' };
       }
       if (review) {
         try {
@@ -316,11 +362,12 @@ class TaskLoop extends EventEmitter {
       if (step.provider === 'kiro') return { summary: tail(redactText(result.stdout, env).trim(), 4000) || 'No summary reported.' };
       return { summary: result.summary || 'No summary reported.' };
     } catch (error) { throw error instanceof ProviderError ? error : new ProviderError(`${step.label} could not complete the request.`); }
-    finally { try { fs.unlinkSync(outFile); } catch {} }
+    finally { try { fs.unlinkSync(outFile); } catch {} if (tempDir) fs.rmSync(tempDir, { recursive: true, force: true }); }
   }
   process(job, launch, { environment, brief = '', provider, check = false, step, timeoutMs } = {}) {
     return new Promise((resolve, reject) => {
       let child, finished = false, stdout = '', output = '', pending = '', summary = '', providerError = false, deadlineHit = false, exitSeen = false, stopping, timer, progressTimer;
+      const openCode = { text: '', length: false, usage: null };
       const decoder = new StringDecoder('utf8'), errDecoder = new StringDecoder('utf8');
       const privateEnvironment = check ? Object.fromEntries(Object.entries(environment).filter(([key]) => /token|secret|password|key/i.test(key))) : environment;
       const append = progressLog({ brief, environment, append: line => appendLog(job, line) });
@@ -331,6 +378,7 @@ class TaskLoop extends EventEmitter {
         for (const line of lines) {
           let event; try { event = JSON.parse(line); } catch { continue; }
           if (!event || typeof event !== 'object') continue;
+          if (provider === 'opencode') { openCodeEvent(openCode, event); step.usage = openCode.usage; }
           if (provider === 'codex' && event.type === 'turn.completed' && event.usage) {
             const previous = step.usage, reported = {};
             for (const [target, source] of [['inputTokens', 'input_tokens'], ['outputTokens', 'output_tokens'], ['cachedInputTokens', 'cached_input_tokens']]) reported[target] = Number.isFinite(event.usage[source]) && (!previous || Number.isFinite(previous[target])) ? (previous?.[target] || 0) + event.usage[source] : null;
@@ -352,7 +400,7 @@ class TaskLoop extends EventEmitter {
         output = tail(redactText(output + errDecoder.end(), privateEnvironment), check ? 8000 : 4000);
         step.elapsedMs = this.now() - step.startedAt;
         this.children.delete(job.id); this.cancellers.delete(job.id);
-        if (error) { step.state = 'failed'; reject(error); } else resolve({ code, timedOut, stdout, output, summary, providerError, exitConfirmed: exitSeen });
+        if (error) { step.state = 'failed'; reject(error); } else resolve({ code, timedOut, stdout, output, summary, openCode, providerError, exitConfirmed: exitSeen });
       };
       const stopChild = ({ wait = false } = {}) => {
         if (!wait) { this.killProcess(child); complete(null); return; }
@@ -545,4 +593,4 @@ class TaskLoop extends EventEmitter {
   }
 }
 
-module.exports = { TaskLoop, implementerLaunch, checkLaunch, RUNNING, usageText };
+module.exports = { TaskLoop, implementerLaunch, openCodeLaunch, openCodeEvents, checkLaunch, RUNNING, usageText };

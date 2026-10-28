@@ -3,12 +3,13 @@ const test = require('node:test'), assert = require('node:assert/strict');
 const fs = require('node:fs'), os = require('node:os'), path = require('node:path');
 const { EventEmitter } = require('node:events');
 const { execFile, execFileSync } = require('node:child_process');
-const { TaskLoop, implementerLaunch, checkLaunch } = require('../electron/task-loop.cjs');
+const { TaskLoop, implementerLaunch, openCodeEvents, checkLaunch } = require('../electron/task-loop.cjs');
 const { collectChanges } = require('../electron/delegation.cjs');
 
 const codex = { id: 'codex:default', provider: 'codex', label: 'Codex', executable: '/fake/codex.exe' };
 const claude = { id: 'claude:default', provider: 'claude', label: 'Claude Code', executable: '/fake/claude.exe' };
 const kiro = { id: 'kiro:default', provider: 'kiro', label: 'Kiro', executable: '/fake/kiro-cli.exe' };
+const opencode = { id: 'opencode:default', provider: 'opencode', label: 'OpenCode', executable: '/fake/opencode.exe' };
 const approve = 'VERDICT: approve\nFINDINGS:\n- none';
 const requested = 'VERDICT: changes-requested\nFINDINGS:\n- app.js:2 — high — wrong result — return 2';
 const git = (repo, ...args) => execFileSync('git', args, { cwd: repo, encoding: 'utf8', stdio: 'pipe' });
@@ -59,6 +60,49 @@ function fixture(t, script = [], overrides = {}) {
   return { loop, start, done, root, repo, temp, options, spawned, saved, calls, repositories, script };
 }
 const edit = cwd => fs.writeFileSync(path.join(cwd, 'app.js'), 'const a = 1;\nconst b = 2;\n');
+test('OpenCode uses a temporary prompt and permission config, and reads events', async t => {
+  const events = [
+    { type: 'text', part: { text: 'First' } },
+    { type: 'step_finish', part: { reason: 'stop', tokens: { input: 10, output: 2, cache: { read: 3 } }, cost: 0.01 } },
+    { type: 'text', part: { text: 'Updated app.js.' } },
+    { type: 'step_finish', part: { reason: 'stop', tokens: { input: 4, output: 1 }, cost: 0.02 } }
+  ].map(JSON.stringify).join('\n') + '\n';
+  const f = fixture(t, [{ output: events, edit, inspect: invocation => {
+    assert.deepEqual(invocation.args.slice(0, 5), ['run', '-m', 'opencode-go/test', '--dir', f.repo]);
+    const file = invocation.args[invocation.args.indexOf('-f') + 1];
+    assert.ok(file.startsWith(f.root)); assert.ok(!file.startsWith(f.repo));
+    assert.match(fs.readFileSync(file, 'utf8'), /b must be 2/);
+    assert.ok(!invocation.args.some(arg => arg.includes('b must be 2')));
+    assert.deepEqual(JSON.parse(fs.readFileSync(invocation.options.env.OPENCODE_CONFIG, 'utf8')).permission, { edit: 'allow', bash: 'deny', webfetch: 'deny', websearch: 'deny', external_directory: 'deny' });
+    assert.deepEqual(JSON.parse(invocation.options.env.OPENCODE_PERMISSION), JSON.parse(fs.readFileSync(invocation.options.env.OPENCODE_CONFIG, 'utf8')).permission);
+    assert.deepEqual(Object.keys(invocation.options.env).filter(key => /^opencode_/i.test(key)).sort(), ['OPENCODE_CONFIG', 'OPENCODE_PERMISSION']);
+  } }], { candidates: () => [opencode, claude], environment: () => ({ OPENCODE_CONFIG_CONTENT: 'unsafe', OPENCODE_PERMISSION: 'unsafe', opencode_other: 'unsafe', OTHER: 'kept' }) });
+  const job = await f.done(await f.start({ implementer: { accountId: opencode.id, model: 'opencode-go/test' }, reviewer: null, checks: '' }));
+  assert.equal(job.state, 'passed'); assert.equal(job.rounds[0].implement.summary, 'Updated app.js.');
+  assert.equal(job.rounds[0].implement.usage.inputTokens, 14); assert.equal(job.rounds[0].implement.usage.outputTokens, 3);
+  assert.equal(job.rounds[0].implement.usage.cachedInputTokens, 3); assert.ok(Math.abs(job.rounds[0].implement.usage.reportedCost - 0.03) < 1e-9);
+  assert.equal(openCodeEvents(events).text, 'Updated app.js.');
+});
+test('OpenCode output limit without edits fails the task', async t => {
+  const f = fixture(t, [{ output: JSON.stringify({ type: 'step_finish', part: { reason: 'length' } }) + '\n' }], { candidates: () => [opencode] });
+  const job = await f.done(await f.start({ implementer: { accountId: opencode.id, model: 'opencode/test-free' }, reviewer: null, checks: '' }));
+  assert.equal(job.state, 'failed'); assert.equal(job.error, 'The model hit its output limit.');
+});
+test('OpenCode reviewer receives edit deny', async t => {
+  const f = fixture(t, [{ type: 'implement', edit }, { output: JSON.stringify({ type: 'text', part: { text: approve } }) + '\n', inspect: invocation => {
+    assert.equal(JSON.parse(fs.readFileSync(invocation.options.env.OPENCODE_CONFIG, 'utf8')).permission.edit, 'deny');
+  } }], { candidates: () => [codex, opencode] });
+  const job = await f.done(await f.start({ reviewer: { accountId: opencode.id, model: 'opencode/test-free' }, checks: '' }));
+  assert.equal(job.state, 'passed'); assert.equal(job.rounds[0].review.verdict, 'approve');
+});
+test('OpenCode accumulates usage beyond the retained output tail', async t => {
+  const event = JSON.stringify({ type: 'step_finish', part: { tokens: { input: 9, output: 4 }, cost: 0.1 } }) + '\n';
+  const filler = (JSON.stringify({ type: 'other', data: 'x'.repeat(1000) }) + '\n').repeat(2100);
+  const reply = JSON.stringify({ type: 'text', part: { text: 'Done.' } }) + '\n';
+  const f = fixture(t, [{ output: event + filler + reply, edit }], { candidates: () => [opencode] });
+  const job = await f.done(await f.start({ implementer: { accountId: opencode.id, model: 'opencode-go/test' }, reviewer: null, checks: '' }));
+  assert.equal(job.rounds[0].implement.usage.inputTokens, 9); assert.equal(job.rounds[0].implement.usage.reportedCost, 0.1);
+});
 async function until(check) {
   const deadline = Date.now() + 10000;
   while (!check() && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 5));
