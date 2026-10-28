@@ -38,3 +38,6 @@ body[data-platform=darwin] #dashboard > #sidebar { padding-top:46px }
   #dashboard:has(>#explorer-pane:not([hidden])) { --region-sidebar-width:56px }
   #explorer-pane { position:fixed; left:56px; top:var(--titlebar-h,51px); bottom:0; max-width:calc(100vw - 56px); z-index:59; box-shadow:12px 0 32px #0009 }
 }
+/* The activity rail stays usable while a console is expanded, so expanded panels and the fixed title bar start beside it. */
+#consoles-page.has-expanded-console .session-grid>.session-card.console-expanded { left:56px!important }
+body.console-expanded .titlebar,body.titlebar-hidden .titlebar { left:56px }

@@ -58,7 +58,9 @@ function makeState() {
 const coversViewport = panel => panel.evaluate(el => {
   const rect = el.getBoundingClientRect();
   const top = document.querySelector('.titlebar').getBoundingClientRect().height;
-  return rect.left <= 1 && Math.abs(rect.top - top) <= 1 && Math.abs(rect.right - innerWidth) <= 1 && Math.abs(rect.bottom - innerHeight) <= 1;
+  // Expanded panels start beside the activity rail, which stays usable and must not cover terminal text.
+  const rail = document.querySelector('#sidebar')?.getBoundingClientRect().right || 0;
+  return Math.abs(rect.left - rail) <= 1 && Math.abs(rect.top - top) <= 1 && Math.abs(rect.right - innerWidth) <= 1 && Math.abs(rect.bottom - innerHeight) <= 1;
 });
 const profileResults = [];
 let browser;
