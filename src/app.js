@@ -146,7 +146,7 @@ $('#app').innerHTML = `
     <span class="sidebar-edge" aria-hidden="true"></span>
     <div class="sidebar-bottom"><button data-page="settings">${icon('settings')}Settings</button></div>
   </aside>
-  <button id="explorer-backdrop" aria-label="Close Explorer" hidden></button>
+  <button id="explorer-backdrop" aria-label="Close Explorer" tabindex="-1" hidden></button>
   <aside id="explorer-pane" aria-label="Explorer"></aside>
   <div class="workspace">
     <header class="titlebar"><button id="sidebar-toggle" class="icon-button" data-action="sidebar" aria-label="Hide sidebar" title="Hide sidebar" aria-controls="sidebar" aria-expanded="true">${icon('menu')}</button><button id="launch-folder" class="launch-folder" data-action="launch-folder" aria-label="Choose launch folder">${icon('folder')}<span></span></button><button type="button" class="subtle code-open" data-code-action="create" title="Open a read-only code panel">${icon('api')}Code</button><button type="button" class="subtle code-open" data-web-action="create" title="Preview a local web server">${icon('globe')}Preview</button><div class="window-drag-handle" data-window-drag title="Drag to move. Double-click for fullscreen." aria-hidden="true"><span></span></div><div class="window-actions"><button data-action="hud" title="Collapse to corner HUD" aria-label="Collapse to corner HUD">${icon('corner')}</button><button data-action="minimize" aria-label="Minimize">${icon('minus')}</button><button data-action="fullscreen" aria-label="Fullscreen" title="Fullscreen">${icon('expand')}</button><button data-action="tray" aria-label="Hide in system tray" title="Hide in system tray">${icon('close')}</button></div></header>
@@ -856,11 +856,10 @@ function receive(next) {
   vim?.refresh();
 }
 const explorerDrawer = window.matchMedia('(max-width:899px)');
-let drawerOpen = null;
-explorerDrawer.addEventListener('change', () => { if (state) applySidebar(); });
+let drawerOpen = false;
+explorerDrawer.addEventListener('change', () => { if (explorerDrawer.matches) drawerOpen = false; if (state) applySidebar(); });
 $('#explorer-backdrop').addEventListener('click', () => { void closeExplorer().catch(error => toast(error.message, true)); });
 function applySidebar() {
-  if (drawerOpen === null) drawerOpen = !state.settings.sidebarCollapsed;
   const collapsed = explorerDrawer.matches ? !drawerOpen : !!state.settings.sidebarCollapsed, blocked = collapsed || !!expandedId;
   const sidebar = $('#sidebar'), toggle = $('#sidebar-toggle'), titlebar = $('.titlebar'), content = $('#content');
   document.body.style.setProperty('--titlebar-h', titlebar.offsetHeight + 'px');
@@ -1939,10 +1938,11 @@ explorer = explorerUI({ host: $('#explorer-pane'), call, getState: () => state, 
     if (!panel) panel = await call('code.create', { root });
     if (page !== 'consoles' || expandedId) navigatePage('consoles');
     const deadline = performance.now() + 2500;
+    let rendered = false;
     while (!codePanels.isMounted(panel.id)) {
       if (performance.now() >= deadline) throw new Error('Code panel could not be placed in the console grid. Free a slot and try again.');
       await new Promise(resolve => requestAnimationFrame(resolve));
-      if (state.codePanels?.some(p => p.id === panel.id)) renderConsoles();
+      if (!rendered && !layoutMotion?.active && state.codePanels?.some(p => p.id === panel.id)) { rendered = true; renderConsoles(); }
     }
     await codePanels.openFile(panel.id, path);
   },

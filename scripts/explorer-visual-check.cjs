@@ -22,22 +22,22 @@ let browser;
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   for (const [name, engine, options] of profiles) {
     browser = await engine.launch(); const context = await browser.newContext(options), calls = [], errors = [], state = structuredClone(base);
-    state.mode = 'dashboard'; state.settings.setupComplete = true; state.settings.suggestProjects = false; state.settings.sidebarCollapsed = true;
+    state.mode = 'dashboard'; state.settings.setupComplete = true; state.settings.suggestProjects = false; state.settings.sidebarCollapsed = name !== 'desktop-760';
     state.settings.explorerWidth = 260; state.settings.vimControls = true; state.codePanels = []; state.codeRevision = 0;
     state.projects = [{ id: 'project', name: 'Example', folders: [{ label: 'App', path: root }, { label: 'Docs', path: root + '/docs' }], milestones: [], progress: { done: 0, total: 0 } }];
     state.sessions = [{ ...base.sessions[0], id: 'source', consoleKey: 'source-key', projectId: 'project', cwd: root, alive: true, dismissed: false, remote: null, remoteHostId: null, state: 'open', purpose: 'agent', provider: 'codex', name: 'Example', slot: 1, width: 1, height: 1, launchId: null }];
     const unlinkedConsole = { ...state.sessions[0], projectId: null, name: 'Standalone' };
     const remoteConsole = { ...unlinkedConsole, remoteHostId: 'ssh-fixture', cwd: '/remote/project', name: 'SSH' };
-    const original = structuredClone(state.sessions); let page;
+    const original = structuredClone(state.sessions); let page, reportFiles = false;
     await context.exposeFunction('fixtureCall', async (method, payload) => {
       calls.push([method, payload]); let value = [];
       if (method === 'state') value = state;
       if (method === 'session.buffer') value = { data: 'Fixture console\r\n', sequence: 0 };
       if (method === 'explorer.list') value = { entries: payload.path === 'src' ? [{ name: 'nested.js', path: 'src/nested.js', directory: false }] : [{ name: 'src', path: 'src', directory: true }, { name: 'readme.txt', path: 'readme.txt', directory: false }], truncated: false };
       if (method === 'code.create') { value = { id: 'code-one', kind: 'code', alive: true, state: 'open', slot: 2, width: 2, height: 2, name: 'Code', cwd: payload.root, codeSourceKey: null }; state.codePanels.push(value); }
-      if (method === 'code.report') value = { id: 'empty', mode: 'working', changes: [], notes: [] };
+      if (method === 'code.report') value = { id: reportFiles ? 'changes' : 'empty', mode: 'working', changes: reportFiles ? [{ file: 'readme.txt', type: 'modified' }] : [], notes: [] };
       if (method === 'code.browse') value = { path: payload.path, items: [{ name: 'nested.js', path: 'src/nested.js', directory: false }] };
-      if (method === 'code.file') value = { file: payload.path, before: null, after: 'export const fixture = true;\n', mode: 'file' };
+      if (method === 'code.file') value = { file: payload.path, before: payload.reportId ? 'Previous fixture\n' : null, after: 'export const fixture = true;\n', mode: payload.reportId ? 'working' : 'file' };
       if (method === 'settings') Object.assign(state.settings, payload);
       if (['settings', 'code.create'].includes(method)) setTimeout(() => page.evaluate(s => window.fixtureState(s), state).catch(() => {}), 5);
       return { ok: true, value };
@@ -48,6 +48,11 @@ let browser;
     await page.goto(`http://127.0.0.1:${server.address().port}`);
     const narrow = await page.evaluate(() => innerWidth < 900);
     await page.locator('.terminal-instance textarea').focus();
+    if (narrow) {
+      assert.equal(await page.locator('#explorer-pane').isHidden(), true, 'starting narrow leaves the drawer closed, including at 760 px with Explorer enabled');
+      assert.equal(await page.locator('#explorer-backdrop').isHidden(), true);
+    }
+    assert.equal(await page.locator('#explorer-backdrop').getAttribute('tabindex'), '-1', 'backdrop stays out of the tab order');
     const consoleCount = await page.locator('.terminal-instance').count();
     await page.locator('#explorer-toggle').click();
     const folder = page.locator('[role=treeitem][data-path=src]'); await folder.waitFor();
@@ -100,6 +105,17 @@ let browser;
     });
     await page.getByRole('searchbox', { name: 'Filter loaded filenames' }).fill('nested');
     assert.equal(await page.locator('[role=treeitem]').count(), 2, 'filter includes loaded entries in collapsed folders');
+    await page.locator('[data-path=src]').focus(); await page.keyboard.press('ArrowRight');
+    assert.equal(await page.evaluate(() => document.activeElement.dataset.path), 'src/nested.js', 'filtered ArrowRight follows the rendered expanded state');
+    await page.keyboard.press('ArrowLeft'); await page.keyboard.press('ArrowLeft');
+    assert.equal(await page.locator('[data-path=src]').getAttribute('aria-expanded'), 'false');
+    assert.equal(await page.locator('[data-path="src/nested.js"]').count(), 0, 'filtered ArrowLeft collapses the folder');
+    await page.keyboard.press('Enter');
+    assert.equal(await page.locator('[data-path=src]').getAttribute('aria-expanded'), 'true', 'Enter expands the filtered folder');
+    await page.locator('[data-path=src]').click();
+    assert.equal(await page.locator('[data-path=src]').getAttribute('aria-expanded'), 'false', 'click collapses the filtered folder');
+    await page.locator('[data-path=src]').click();
+    await page.getByRole('searchbox', { name: 'Filter loaded filenames' }).focus();
     const settingsBeforeEscape = calls.filter(([m]) => m === 'settings').length;
     await page.keyboard.press('Escape');
     assert.equal(await page.locator('#explorer-pane').isVisible(), true, 'Escape in the filter keeps Explorer open');
@@ -149,8 +165,18 @@ let browser;
     await page.waitForFunction(count => window.fixtureFiles > count, beforeRetry);
     if (narrow) {
       await page.locator('#explorer-pane').waitFor({ state: 'hidden' });
-      await page.locator('#explorer-toggle').click();
     }
+    reportFiles = true; ++state.codeRevision;
+    await page.evaluate(s => window.fixtureState(s), state);
+    await page.locator('[data-code-path="readme.txt"]').click();
+    await page.waitForFunction(() => document.querySelector('[data-code-filename]')?.textContent === 'readme.txt');
+    await page.locator('[data-code-action=diff]').click();
+    const reportCalls = calls.filter(([m]) => m === 'code.report').length;
+    await page.locator('.code-panel [data-code-action=refresh]').click();
+    assert.ok(calls.filter(([m]) => m === 'code.report').length > reportCalls, 'internal file selection restores report refresh');
+    assert.equal(calls.filter(([m]) => m === 'code.file').at(-1)[1].reportId, 'changes', 'internal files retain their diff source');
+    assert.equal(await page.locator('[data-code-action=diff]').getAttribute('aria-pressed'), 'true');
+    if (narrow) await page.locator('#explorer-toggle').click();
     state.sessions[0] = unlinkedConsole;
     await page.evaluate(s => window.fixtureState(s), state);
     assert.equal(await page.locator('[aria-label="Explorer root"] option:checked').textContent(), 'Console folder · Standalone');

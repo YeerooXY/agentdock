@@ -1,5 +1,6 @@
 export function explorerUI({ host, call, getState, selectedConsole, openFile, collapse, afterOpenFile = () => {}, escape: e, icon }) {
   const memory = new Map();
+  const filterCollapsed = new Set();
   let roots = [], root = '', context = '', generation = 0, width = 260, opening = false, focusPending = false;
   host.innerHTML = `<header><strong>Explorer</strong><button data-explorer="refresh" title="Refresh" aria-label="Refresh Explorer">${icon('refresh')}</button><button data-explorer="collapse" title="Collapse all" aria-label="Collapse all folders">${icon('minus')}</button></header><select aria-label="Explorer root"></select><p class="explorer-status" role="status"></p><input type="search" aria-label="Filter loaded filenames" placeholder="Filter filenames"><div class="explorer-tree" role="tree" aria-label="Files"></div><p class="explorer-empty"></p><p class="explorer-error" role="alert"></p><div class="explorer-resize" role="separator" tabindex="0" aria-label="Explorer width" aria-orientation="vertical" aria-valuemin="180" aria-valuemax="480"></div>`;
   const select = host.querySelector('select'), filter = host.querySelector('input'), tree = host.querySelector('[role=tree]'), status = host.querySelector('[role=status]'), error = host.querySelector('[role=alert]'), handle = host.querySelector('[role=separator]');
@@ -43,10 +44,10 @@ export function explorerUI({ host, call, getState, selectedConsole, openFile, co
     function rows(parent, depth) {
       const listing = r.loaded.get(parent); if (!listing) return '';
       return listing.entries.map(x => {
-        const expanded = query ? r.loaded.has(x.path) : r.expanded.has(x.path);
-        const children = x.directory && expanded ? rows(x.path, depth + 1) : '';
+        const expanded = query ? r.loaded.has(x.path) && !filterCollapsed.has(x.path) : r.expanded.has(x.path);
+        const children = x.directory && (query || expanded) ? rows(x.path, depth + 1) : '';
         if (query && !x.name.toLocaleLowerCase().includes(query) && !children) return '';
-        return `<div role="treeitem" tabindex="-1" aria-level="${depth}" aria-selected="${r.selected === x.path}" ${x.directory ? `aria-expanded="${expanded}"` : ''} data-path="${e(x.path)}" ${x.directory ? 'data-directory' : ''} style="padding-left:${8 + (depth - 1) * 16}px" title="${e(x.path)}"><span aria-hidden="true">${x.directory ? (expanded ? '▾' : '▸') : '·'}${icon(x.directory ? 'folder' : 'api')}</span><span>${e(x.name)}</span></div>${children}`;
+        return `<div role="treeitem" tabindex="-1" aria-level="${depth}" aria-selected="${r.selected === x.path}" ${x.directory ? `aria-expanded="${expanded}"` : ''} data-path="${e(x.path)}" ${x.directory ? 'data-directory' : ''} style="padding-left:${8 + (depth - 1) * 16}px" title="${e(x.path)}"><span aria-hidden="true">${x.directory ? (expanded ? '▾' : '▸') : '·'}${icon(x.directory ? 'folder' : 'api')}</span><span>${e(x.name)}</span></div>${expanded ? children : ''}`;
       }).join('');
     }
     tree.innerHTML = rows('', 1);
@@ -73,7 +74,7 @@ export function explorerUI({ host, call, getState, selectedConsole, openFile, co
     for (const entry of record()?.loaded.get(path)?.entries || []) if (entry.directory && record().expanded.has(entry.path)) await restore(entry.path);
   }
   function choose(path) {
-    ++generation; root = path; error.textContent = ''; tree.removeAttribute('aria-busy');
+    ++generation; root = path; filterCollapsed.clear(); error.textContent = ''; tree.removeAttribute('aria-busy');
     if (!memory.has(root)) memory.set(root, { loaded: new Map(), pending: new Set(), expanded: new Set(), selected: '', width });
     // Requests from a previous root visit cannot prevent this visit from loading.
     record().pending = new Set(); resize(record().width); updateStatus(); draw(); if (root) void restore();
@@ -96,7 +97,11 @@ export function explorerUI({ host, call, getState, selectedConsole, openFile, co
   async function activate(item) {
     const r = record(), path = item.dataset.path;
     if (item.hasAttribute('data-directory')) {
-      if (r.expanded.has(path)) r.expanded.delete(path);
+      if (filter.value) {
+        if (item.getAttribute('aria-expanded') === 'true') filterCollapsed.add(path);
+        else { filterCollapsed.delete(path); await load(path); }
+      }
+      else if (r.expanded.has(path)) r.expanded.delete(path);
       else { r.expanded.add(path); await load(path); }
       draw(path);
     } else {
@@ -115,7 +120,7 @@ export function explorerUI({ host, call, getState, selectedConsole, openFile, co
     }
   }
   select.addEventListener('change', () => choose(select.value));
-  filter.addEventListener('input', () => draw());
+  filter.addEventListener('input', () => { filterCollapsed.clear(); draw(); });
   host.addEventListener('keydown', event => {
     if (event.key === 'Escape' && !event.target.closest('input,select')) {
       event.preventDefault();
@@ -133,17 +138,23 @@ export function explorerUI({ host, call, getState, selectedConsole, openFile, co
     if (event.key === 'Home') target = items[0];
     if (event.key === 'End') target = items.at(-1);
     if (event.key === 'ArrowRight' && item.hasAttribute('data-directory')) {
-      event.preventDefault(); if (!record().expanded.has(path)) await activate(item); else target = items[index + 1];
+      event.preventDefault();
+      if (item.getAttribute('aria-expanded') !== 'true') await activate(item);
+      else if (Number(items[index + 1]?.getAttribute('aria-level')) > Number(item.getAttribute('aria-level'))) target = items[index + 1];
     }
     if (event.key === 'ArrowLeft') {
       event.preventDefault();
-      if (record().expanded.has(path)) { record().expanded.delete(path); draw(path); }
+      if (item.getAttribute('aria-expanded') === 'true') await activate(item);
       else target = items.find(x => x.dataset.path === path.split('/').slice(0, -1).join('/'));
     }
     if (target) { event.preventDefault(); items.forEach(x => x.tabIndex = -1); target.tabIndex = 0; target.focus(); }
   });
   host.querySelector('[data-explorer=refresh]').onclick = () => { if (record()) { ++generation; record().loaded.clear(); record().pending.clear(); void restore(); } };
-  host.querySelector('[data-explorer=collapse]').onclick = () => { record()?.expanded.clear(); draw(); };
+  host.querySelector('[data-explorer=collapse]').onclick = () => {
+    record()?.expanded.clear();
+    if (filter.value) for (const path of record()?.loaded.keys() || []) if (path) filterCollapsed.add(path);
+    draw();
+  };
   handle.addEventListener('keydown', event => {
     if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
     event.preventDefault(); resize(event.key === 'Home' ? 180 : event.key === 'End' ? 480 : width + (event.key === 'ArrowRight' ? 10 : -10)); void saveWidth();

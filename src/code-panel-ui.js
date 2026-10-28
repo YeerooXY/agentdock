@@ -97,7 +97,11 @@ export function codePanelUI({ call, getState, selectedConsole, pasteContext, esc
           const a = b.dataset.codeAction;
           if (b.hasAttribute('data-code-path')) {
             if (b.hasAttribute('data-directory')) await browse(r, b.dataset.codePath);
-            else await showFile(r, await call('code.file', { id: r.id, path: b.dataset.codePath, ...(!r.browse ? { reportId: r.report.id } : {}) }));
+            else {
+              const file = await call('code.file', { id: r.id, path: b.dataset.codePath, ...(!r.browse ? { reportId: r.report.id } : {}) });
+              r.externalFile = false;
+              await showFile(r, file);
+            }
           } else if (a === 'refresh') { if (r.externalFile && r.file) await showFile(r, await call('code.file', { id: r.id, path: r.file.file })); else r.browse ? await browse(r, r.directory?.path) : await load(r, true); }
           else if (a === 'browse') await browse(r);
           else if (a === 'changes') { r.externalFile = false; r.browse = false; r.report = null; await load(r); }
