@@ -9,6 +9,40 @@ final _rule = RegExp(r'^[─━═╌┄┈\-_╭╮╰╯┌┐└┘├┤┬�
 /// A line drawn only with horizontal box or dash characters, no text.
 bool terminalRule(String line) => _rule.hasMatch(line.trim());
 
+/// The empty cell after a double-width character. Other empty cells are gaps a
+/// TUI skipped with cursor moves and read as spaces.
+bool wideTail(BufferLine line, int x) => x > 0 && line.getWidth(x - 1) == 2;
+
+/// Symbols Android's monospace fonts lack, mapped to close shapes they have.
+const readingGlyphs = {0x23f4: 0x25c2, 0x23f5: 0x25b8};
+
+/// Plain text with the same gaps, glyphs and wrap joins as the reading view.
+String terminalReadingText(Terminal terminal) {
+  final out = StringBuffer();
+  final lines = terminal.buffer.lines;
+  for (var y = 0; y < lines.length; y++) {
+    final line = lines[y];
+    if (y > 0 && !line.isWrapped) out.write('\n');
+    var gap = 0;
+    for (var x = 0; x < line.length; x++) {
+      final cp = line.getCodePoint(x);
+      if (cp == 0) {
+        if (!wideTail(line, x)) gap++;
+        continue;
+      }
+      out.write(' ' * gap);
+      gap = 0;
+      out.writeCharCode(line.getAttributes(x) & CellAttr.invisible != 0
+          ? 32
+          : readingGlyphs[cp] ?? cp);
+    }
+    if (gap > 0 && y + 1 < lines.length && lines[y + 1].isWrapped) {
+      out.write(' ' * gap);
+    }
+  }
+  return out.toString().trimRight();
+}
+
 /// Read the parsed cells so escape sequences, links and controls never become
 /// markup. Group adjacent equal styles rather than allocating a span per cell.
 TextSpan terminalReadingSpan(Terminal terminal, TerminalTheme theme) {
@@ -78,9 +112,17 @@ TextSpan terminalReadingSpan(Terminal terminal, TerminalTheme theme) {
       }
       end = min(end, start + ruleWidth);
     }
+    var gap = 0;
     for (var x = 0; x < end; x++) {
       final cp = line.getCodePoint(x);
-      if (cp == 0) continue;
+      if (cp == 0) {
+        if (!wideTail(line, x)) gap++;
+        continue;
+      }
+      if (gap > 0) {
+        text.write(' ' * gap);
+        gap = 0;
+      }
       final flags = line.getAttributes(x);
       final foreground = line.getForeground(x),
           background = line.getBackground(x);
@@ -120,8 +162,13 @@ TextSpan terminalReadingSpan(Terminal terminal, TerminalTheme theme) {
         }
       }
       text.write(
-        flags & CellAttr.invisible != 0 ? ' ' : String.fromCharCode(cp),
+        flags & CellAttr.invisible != 0
+            ? ' '
+            : String.fromCharCode(readingGlyphs[cp] ?? cp),
       );
+    }
+    if (gap > 0 && y + 1 < lines.length && lines[y + 1].isWrapped) {
+      text.write(' ' * gap);
     }
   }
   flush();

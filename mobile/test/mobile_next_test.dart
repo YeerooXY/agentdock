@@ -7,8 +7,8 @@ import 'package:xterm/xterm.dart';
 import 'package:agent_dock_mobile/main.dart';
 import 'package:agent_dock_mobile/console_drafts.dart';
 import 'package:agent_dock_mobile/dock_client.dart';
+import 'package:agent_dock_mobile/agent_selection.dart';
 import 'package:agent_dock_mobile/terminal_styles.dart';
-import 'package:agent_dock_mobile/terminal_reading.dart';
 
 import 'widget_test.dart' show FakeDock, enterChat;
 import 'mobile_actions_test.dart' show ActionsDock;
@@ -103,6 +103,26 @@ void main() {
       );
     },
   );
+
+  test('cursor-skipped cells read as spaces; wide characters stay joined', () {
+    final terminal = Terminal()..resize(12, 6);
+    terminal.write(
+      'saved\x1b[1Cas\x1b[1Cyour\x1b[2Cdefault\r\n中文\x1b[1Cok\r\n⏵⏵\x1b[1Cauto\r\nend',
+    );
+    final lines = terminalReadingText(terminal).split('\n');
+    expect(lines, ['saved as your  default', '中文 ok', '▸▸ auto', 'end']);
+    expect(
+      terminalReadingSpan(terminal, terminalTheme).toPlainText(),
+      terminalReadingText(terminal),
+    );
+  });
+
+  test('model labels name GPT and Claude models', () {
+    expect(modelLabel('gpt-6.1-terra'), '6.1 Terra');
+    expect(modelLabel('claude-opus-5-5'), 'Opus 5.5');
+    expect(modelLabel('claude-fable-5-1'), 'Fable 5.1');
+    expect(modelLabel('custom-model'), 'custom-model');
+  });
 
   test(
     'draft positions persist alongside legacy text and are removed with the PC',

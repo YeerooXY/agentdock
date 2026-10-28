@@ -16,9 +16,13 @@ String effortLabel(String value) => value == 'xhigh'
     : '${value[0].toUpperCase()}${value.substring(1)}';
 
 String modelLabel(String value) {
-  final match = RegExp(r'^gpt-(\d+(?:\.\d+)?)-(sol|astra|luna)$')
+  final gpt = RegExp(r'^gpt-(\d+(?:\.\d+)?)-(sol|terra|astra|luna)$')
       .firstMatch(value);
-  return match == null ? value : '${match[1]} ${effortLabel(match[2]!)}';
+  if (gpt != null) return '${gpt[1]} ${effortLabel(gpt[2]!)}';
+  final claude = RegExp(r'^claude-([a-z]+)-(\d+)-(\d+)$').firstMatch(value);
+  return claude == null
+      ? value
+      : '${effortLabel(claude[1]!)} ${claude[2]}.${claude[3]}';
 }
 
 // A menu disappearing does not confirm a setting. Read the explicit CLI response.

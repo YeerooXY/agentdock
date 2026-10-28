@@ -4,12 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:xterm/xterm.dart';
 
 import 'terminal_styles.dart';
+export 'terminal_styles.dart' show terminalReadingText;
 import 'console_drafts.dart';
-
-/// Render parsed text, never raw ANSI bytes or a second resized terminal.
-/// Keep hard newlines/indentation and join only terminal soft wraps.
-String terminalReadingText(Terminal terminal) =>
-    terminal.buffer.getText().trimRight();
 
 class TerminalReadingView extends StatefulWidget {
   final Terminal terminal;
