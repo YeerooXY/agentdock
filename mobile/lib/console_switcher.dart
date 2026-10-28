@@ -11,6 +11,7 @@ class ConsoleSwitcher extends StatefulWidget {
   final DockClient client;
   final String name;
   final bool showAgentMark;
+  final bool showProjectName;
   final VoidCallback onOpened;
   final ValueChanged<String> onSelected;
   const ConsoleSwitcher({
@@ -18,6 +19,7 @@ class ConsoleSwitcher extends StatefulWidget {
     required this.client,
     required this.name,
     this.showAgentMark = true,
+    this.showProjectName = true,
     required this.onOpened,
     required this.onSelected,
   });
@@ -75,17 +77,19 @@ class _ConsoleSwitcherState extends State<ConsoleSwitcher> {
             curve: Curves.easeOutCubic,
           ),
     itemBuilder: (_) => [
-      const PopupMenuItem(
-        value: ConsoleSwitcher.allConsoles,
-        child: Row(
-          children: [
-            Icon(Icons.grid_view),
-            SizedBox(width: 12),
-            Flexible(child: Text('All consoles')),
-          ],
+      if (MediaQuery.sizeOf(context).shortestSide < 600) ...[
+        const PopupMenuItem(
+          value: ConsoleSwitcher.allConsoles,
+          child: Row(
+            children: [
+              Icon(Icons.grid_view),
+              SizedBox(width: 12),
+              Flexible(child: Text('All consoles')),
+            ],
+          ),
         ),
-      ),
-      const PopupMenuDivider(),
+        const PopupMenuDivider(),
+      ],
       for (final session in widget.client.sessions)
         PopupMenuItem(
           value: session['id'] as String,
@@ -158,7 +162,8 @@ class _ConsoleSwitcherState extends State<ConsoleSwitcher> {
                 final session = widget.client.sessions
                     .where((s) => s['id'] == widget.client.selected)
                     .firstOrNull;
-                final project = session == null ? null : projectName(session);
+                final project = session == null || !widget.showProjectName
+                    ? null : projectName(session);
                 final scaler = MediaQuery.textScalerOf(context);
                 final showProject = project != null &&
                     constraints.maxWidth >= 100 &&

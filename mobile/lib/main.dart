@@ -652,6 +652,8 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
       final current = c.sessions
           .where((s) => s['id'] == c.selected)
           .firstOrNull;
+      final tablet = MediaQuery.sizeOf(context).shortestSide >= 600;
+      final overviewShown = !tablet && (showConsoleOverview || current == null);
       final menuSession = pinnedAccountSession ?? current;
       final projectAccess = canReadProjects(c);
       final destinations = [0, if (projectAccess) 4, 1, 2, 3];
@@ -665,7 +667,7 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
           ),
           leading: Padding(
             padding: const EdgeInsets.all(6),
-            child: current == null
+            child: overviewShown || current == null
                 ? const DockMark()
                 : AgentMark(current['provider'] as String, size: 24),
           ),
@@ -675,19 +677,18 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
                     Expanded(
                       child: ConsoleSwitcher(
                         client: c,
-                        name: (showConsoleOverview &&
-                                    MediaQuery.sizeOf(context).shortestSide < 600) ||
-                                current == null
+                        name: overviewShown || current == null
                             ? 'All consoles'
                             : current['name'] as String,
                         showAgentMark: false,
+                        showProjectName: !overviewShown,
                         onOpened: () {
                           stopTerminalTyping();
                           composerFocus.unfocus();
                         },
                         onSelected: (id) {
                           if (id == ConsoleSwitcher.allConsoles) {
-                            setState(() => showConsoleOverview = true);
+                            if (!tablet) setState(() => showConsoleOverview = true);
                           } else if (id == '+') {
                             newConsole();
                           } else if (c.sessions.any((s) => s['id'] == id)) {
@@ -697,11 +698,12 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
                         },
                       ),
                     ),
-                    StatusDot(
-                      state: !c.connected
-                          ? 'disconnected'
-                          : current?['state'] as String? ?? 'active',
-                    ),
+                    if (!overviewShown)
+                      StatusDot(
+                        state: !c.connected
+                            ? 'disconnected'
+                            : current?['state'] as String? ?? 'active',
+                      ),
                     const SizedBox(width: 5),
                     Icon(Icons.desktop_windows, size: 14, color: blue),
                     const SizedBox(width: 3),
@@ -739,7 +741,7 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
               tooltip: 'More options',
               icon: Icon(Icons.more_vert, color: pink),
               onOpened: () {
-                pinnedAccountSession = current == null
+                pinnedAccountSession = overviewShown || current == null
                     ? null
                     : Map<String, dynamic>.from(current);
                 pinnedAccountPC = c.activePC;
@@ -830,7 +832,7 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
                 if (current != null) consoleAction(action, current);
               },
               itemBuilder: (_) => [
-                if (page == 0 && menuSession != null) ...[
+                if (page == 0 && !overviewShown && menuSession != null) ...[
                   if (supports('code.read') && menuSession['remote'] == null &&
                       !['code', 'web'].contains(menuSession['purpose']))
                     PopupMenuItem(value: 'code', enabled: c.connected,
@@ -1010,8 +1012,12 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
   );
   Widget consoleWorkspace(Map<String, dynamic>? current) {
     final tablet = MediaQuery.sizeOf(context).shortestSide >= 600;
+    final overviewShown = !tablet && (showConsoleOverview || current == null);
+    final overviewVisible = tablet || overviewShown;
+    final paneWidth = min(360.0, MediaQuery.sizeOf(context).width * .4);
     final overview = ConsoleOverview(
       client: c,
+      active: overviewVisible,
       onNewConsole: newConsole,
       onSelected: (id) {
         stopTerminalTyping();
@@ -1020,24 +1026,32 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
         run(() => c.select(id));
       },
     );
-    return Row(
-      key: ValueKey(tablet ? 'console-two-pane' : 'console-single-pane'),
+    // Both children retain the same element path across the tablet breakpoint.
+    // Offstage keeps the terminal's full phone width while browsing consoles.
+    return Stack(
+      key: const ValueKey('console-workspace'),
       children: [
-        if (tablet) ...[
-          SizedBox(
-            width: min(360, MediaQuery.sizeOf(context).width * .4),
+        Positioned.fill(
+          left: tablet ? paneWidth + 1 : 0,
+          child: Offstage(
+            offstage: overviewShown,
+            child: terminal(current),
+          ),
+        ),
+        Positioned(
+          left: 0, top: 0, bottom: 0,
+          right: tablet ? null : 0,
+          width: tablet ? paneWidth : null,
+          child: Offstage(
+            offstage: !overviewVisible,
             child: overview,
           ),
-          const VerticalDivider(width: 1),
-        ],
-        Expanded(
-          // Keep the phone terminal and composer mounted while browsing.
-          child: IndexedStack(
-            index: !tablet && (showConsoleOverview || current == null) ? 0 : 1,
-            children: [
-              if (tablet) const SizedBox.shrink() else overview,
-              terminal(current),
-            ],
+        ),
+        Positioned(
+          left: paneWidth, top: 0, bottom: 0, width: 1,
+          child: Offstage(
+            offstage: !tablet,
+            child: const VerticalDivider(width: 1),
           ),
         ),
       ],
