@@ -18,6 +18,7 @@ import 'agent_identity.dart';
 import 'console_actions.dart';
 import 'console_switcher.dart';
 import 'console_drafts.dart';
+import 'code_page.dart';
 import 'live_agent_controls.dart';
 import 'agent_selection.dart';
 import 'terminal_keys.dart';
@@ -729,6 +730,27 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
                 pinnedAccountGeneration = -1;
               },
               onSelected: (action) {
+                if (action == 'code') {
+                  final source = pinnedAccountSession;
+                  if (source != null && c.activePC == pinnedAccountPC &&
+                      c.generation == pinnedAccountGeneration && c.connected) {
+                    Navigator.of(context).push(MaterialPageRoute<void>(
+                      builder: (_) => CodePage(client: c, consoleId: source['id'] as String),
+                    )).then((_) {
+                      if (!mounted || draftKey == null) return;
+                      final value = c.drafts.get(draftKey!);
+                      if (composer.text != value) {
+                        restoringDraft = true;
+                        composer.value = TextEditingValue(text: value,
+                          selection: TextSelection.collapsed(offset: value.length));
+                        restoringDraft = false;
+                        setState(() {});
+                      }
+                    });
+                  }
+                  pinnedAccountSession = null;
+                  return;
+                }
                 if (action == 'rename' || action == 'project') {
                   final pinned = pinnedAccountSession;
                   final pc = pinnedAccountPC;
@@ -786,6 +808,10 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
               },
               itemBuilder: (_) => [
                 if (page == 0 && menuSession != null) ...[
+                  if (supports('code.read') && menuSession['remote'] != true &&
+                      !['code', 'web'].contains(menuSession['purpose']))
+                    PopupMenuItem(value: 'code', enabled: c.connected,
+                      child: const Text('Code')),
                   if (supports('console.manage')) ...[
                     PopupMenuItem(
                       value: 'rename',

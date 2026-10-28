@@ -32,7 +32,7 @@ function deviceName(value) {
   return name;
 }
 class MobileCompanion extends EventEmitter {
-  constructor(root, safeStorage, { sessions, results, alerts, queue, prompts, getUsage, refreshUsage, getDefaults, getModels, getSettings, getKey, networkScript, program, network, testMode = false, isTailnet = isTailscale } = {}) {
+  constructor(root, safeStorage, { sessions, results, alerts, queue, prompts, getUsage, refreshUsage, getDefaults, getModels, getSettings, getKey, codePanel, networkScript, program, network, testMode = false, isTailnet = isTailscale } = {}) {
     super(); this.file = path.join(root, 'mobile.json'); this.crypto = safeStorage;
     this.queue = queue; this.prompts = prompts;
     this.sessions = sessions; this.results = results; this.getUsage = getUsage; this.getDefaults = getDefaults; this.testMode = testMode;
@@ -42,6 +42,7 @@ class MobileCompanion extends EventEmitter {
     // Tests substitute loopback; the app accepts only Tailscale's 100.64.0.0/10.
     this.tailnet = isTailnet;
     this.attachments = new MobileAttachments();
+    this.code = new (require('./mobile-code.cjs').MobileCode)(sessions, codePanel);
     this.config = readJson(this.file, { enabled: false, host: '', port: 47831 });
     this.config.mappingId ||= crypto.randomUUID();
     // Phones connect only through Tailscale. A saved Wi-Fi or direct-internet
@@ -241,7 +242,7 @@ class MobileCompanion extends EventEmitter {
     const localUrl = `https://${this.config.host}:${this.config.port}`;
     const connection = { url: localUrl };
     connection.name = this.name;
-    return { connection, projects: (typeof this.sessions.projects?.list === 'function' ? this.sessions.projects.list() || [] : []).filter(x => x.status !== 'archived').map(({ id, name, color }) => ({ id, name, ...(color ? { color } : {}) })), capabilities: ['results.thumbnails', 'results.actions', 'console.agents', 'console.files', 'console.close', 'console.projects', 'console.models', 'console.ssh', 'console.manage', 'console.switch', 'console.setup', 'alerts.direct', 'console.attachments', ...(this.queue ? ['console.queue'] : []), ...(this.prompts ? ['prompts', 'prompts.edit'] : [])], capacity: (this.sessions.grid?.columns || 3) * (this.sessions.grid?.rows || 3), sessions: this.sessions.list().filter(x => !x.dismissed).map(({ id, slot, name, provider, alive, state, cols, rows, consoleKey, projectId, remote, updatedAt, providerSessionId, model, modelId, effort, settingsAt, launchId, accountId, accountLabel, switchTargets, switching, purpose, draftSupported, switchOffer }) => ({ id, slot, name, provider, alive, state, cols, rows, consoleKey, projectId, remote, updatedAt, providerSessionId, model: modelId || model || null, modelName: model || null, effort: effort || null, settingsAt: settingsAt || null, launchId: launchId || null, accountId: accountId || null, accountLabel: accountLabel || null, switchTargets: switchTargets || [], switching: !!switching, purpose: purpose || 'agent', draftSupported: draftSupported === true, switchOffer: switchOffer || null })), queues: this.queue?.snapshot() || {}, prompts: this.prompts?.list() || [], alerts: this.liveAlerts, unreadResults: this.results.unreadGroups(), resultVersion: digest(this.results.list().map(x => x.id + ':' + x.seenAt + ':' + x.changeCount).join(',')).slice(0, 16) };
+    return { connection, projects: (typeof this.sessions.projects?.list === 'function' ? this.sessions.projects.list() || [] : []).filter(x => x.status !== 'archived').map(({ id, name, color }) => ({ id, name, ...(color ? { color } : {}) })), capabilities: ['code.read', 'results.thumbnails', 'results.actions', 'console.agents', 'console.files', 'console.close', 'console.projects', 'console.models', 'console.ssh', 'console.manage', 'console.switch', 'console.setup', 'alerts.direct', 'console.attachments', ...(this.queue ? ['console.queue'] : []), ...(this.prompts ? ['prompts', 'prompts.edit'] : [])], capacity: (this.sessions.grid?.columns || 3) * (this.sessions.grid?.rows || 3), sessions: this.sessions.list().filter(x => !x.dismissed).map(({ id, slot, name, provider, alive, state, cols, rows, consoleKey, projectId, remote, updatedAt, providerSessionId, model, modelId, effort, settingsAt, launchId, accountId, accountLabel, switchTargets, switching, purpose, draftSupported, switchOffer }) => ({ id, slot, name, provider, alive, state, cols, rows, consoleKey, projectId, remote, updatedAt, providerSessionId, model: modelId || model || null, modelName: model || null, effort: effort || null, settingsAt: settingsAt || null, launchId: launchId || null, accountId: accountId || null, accountLabel: accountLabel || null, switchTargets: switchTargets || [], switching: !!switching, purpose: purpose || 'agent', draftSupported: draftSupported === true, switchOffer: switchOffer || null })), queues: this.queue?.snapshot() || {}, prompts: this.prompts?.list() || [], alerts: this.liveAlerts, unreadResults: this.results.unreadGroups(), resultVersion: digest(this.results.list().map(x => x.id + ':' + x.seenAt + ':' + x.changeCount).join(',')).slice(0, 16) };
   }
   scheduleState() {
     if (!this.server || this.stateTimer) return;
@@ -371,6 +372,21 @@ class MobileCompanion extends EventEmitter {
       case 'settings.summary': {
         if (!this.getSettings) throw new Error('PC settings are unavailable. Update Paddock on your PC.');
         return settingsSummary(this.getSettings());
+      }
+      case 'code.list': case 'code.read': {
+        const session = this.sessions.items.get(payload.consoleId);
+        if (client.selected !== payload.consoleId) throw new Error('Select an open console first.');
+        if (client.codeRequest) throw new Error('Wait for the code request.');
+        client.codeRequest = true;
+        try {
+          const roots = JSON.stringify(this.code.roots(session));
+          const value = await this.code.call(method, session, payload.path);
+          if (client.ws.readyState !== WebSocket.OPEN || !this.clients.has(client) ||
+              !this.private.devices.includes(client.device) || client.selected !== payload.consoleId ||
+              this.sessions.items.get(payload.consoleId) !== session || session.dismissed ||
+              JSON.stringify(this.code.roots(session)) !== roots) throw new Error('Console or connection changed. Reopen Code.');
+          return value;
+        } finally { client.codeRequest = false; }
       }
       case 'console.files': {
         const session = this.sessions.items.get(payload.id);

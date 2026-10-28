@@ -50,6 +50,67 @@ function client(f, auth) {
   return { ws, wait, messages, call };
 }
 
+test('code reader is read-only, bounded, local and restricted to console roots', async t => {
+  const f = await fixture(t), paired = await f.pair(), c = client(f, paired.data.token);
+  t.after(() => c.ws.terminate()); await once(c.ws, 'open');
+  const folder = path.join(f.root, 'project');
+  fs.mkdirSync(path.join(folder, 'src'), { recursive: true });
+  fs.writeFileSync(path.join(folder, 'src', 'hello.js'), 'first\nsecond\n');
+  fs.writeFileSync(path.join(folder, '.env'), 'PRIVATE=hidden');
+  fs.writeFileSync(path.join(folder, 'large.txt'), Buffer.alloc(256 * 1024 + 1, 'x'));
+  fs.writeFileSync(path.join(folder, 'binary.dat'), Buffer.from([65, 0, 66]));
+  fs.writeFileSync(path.join(folder, 'private.txt'), '-----BEGIN RSA PRIVATE KEY-----');
+  const session = f.sessions.items.get('console-1'); session.cwd = folder;
+  assert.ok((await c.call('state')).capabilities.includes('code.read'));
+  await c.call('subscribe', { id: session.id });
+  const call = (method, file) => c.call(method, { consoleId: session.id, path: file });
+  const listing = await call('code.list', '');
+  assert.equal(listing.entries[0].name, 'src');
+  assert.equal(listing.entries[0].directory, true);
+  assert.ok(!listing.entries.some(x => x.name === '.env'));
+  const nested = await call('code.list', listing.entries[0].path);
+  const read = await call('code.read', nested.entries[0].path);
+  assert.equal(read.path, 'src/hello.js');
+  assert.equal(read.folder, folder);
+  assert.equal(read.text, 'first\nsecond\n');
+  assert.equal(read.lines, 3);
+  assert.equal(read.size, 13);
+  for (const method of ['code.list', 'code.read']) {
+    for (const traversal of ['../outside', 'src/../hello.js', '..\\outside', path.join(f.root, 'outside')]) {
+      await assert.rejects(call(method, traversal), /inside this project/);
+    }
+  }
+  for (const [file, reason] of [['.env', /excluded/], ['private.txt', /no code preview/], ['binary.dat', /no code preview/], ['large.txt', /256 KB/]]) {
+    const value = await call('code.read', file);
+    assert.equal(value.text, null); assert.equal(value.lines, 0); assert.match(value.omitted, reason);
+  }
+  assert.equal((await call('code.read', 'large.txt')).size, 256 * 1024 + 1);
+  session.remote = true;
+  for (const method of ['code.list', 'code.read']) await assert.rejects(call(method, ''), /local console/);
+  session.remote = false; session.remoteHostId = 'ssh';
+  await assert.rejects(call('code.read', 'src/hello.js'), /local console/);
+  assert.deepEqual(f.sessions.writes, []);
+  assert.equal(fs.readFileSync(path.join(folder, '.env'), 'utf8'), 'PRIVATE=hidden');
+});
+
+test('code reader lists only its project folders and retains the explorer entry cap', async t => {
+  const f = await fixture(t), paired = await f.pair(), c = client(f, paired.data.token);
+  t.after(() => c.ws.terminate()); await once(c.ws, 'open');
+  const folders = ['a', 'b', 'other'].map(name => path.join(f.root, name));
+  for (const folder of folders) fs.mkdirSync(folder);
+  for (let i = 0; i < 501; i++) fs.writeFileSync(path.join(folders[0], `${i}.txt`), 'x');
+  const session = f.sessions.items.get('console-1');
+  session.cwd = folders[0]; session.projectId = 'project';
+  f.sessions.projects = { list: () => [{ id: 'project', folders: folders.slice(0, 2).map(path => ({ path })) }] };
+  f.sessions.items.get('console-2').cwd = folders[2];
+  await c.call('subscribe', { id: session.id });
+  const call = value => c.call('code.list', { consoleId: session.id, path: value });
+  assert.deepEqual((await call('')).entries.map(x => x.path), folders.slice(0, 2));
+  const list = await call(folders[0]);
+  assert.equal(list.entries.length, 500); assert.equal(list.truncated, true);
+  await assert.rejects(call(folders[2]), /inside this project/);
+});
+
 test('phone advertises result actions and bounded image previews with validated input', async t => {
   const f = await fixture(t), paired = await f.pair(), c = client(f, paired.data.token);
   t.after(() => c.ws.terminate()); await once(c.ws, 'open');
