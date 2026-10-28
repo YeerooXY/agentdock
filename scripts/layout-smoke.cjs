@@ -134,7 +134,9 @@ async function resize(id, edge, dx, dy, cancel = false, snapshot) {
   const handle = page.locator(`[data-console-drag="${first.id}"]`), bounds = await handle.boundingBox();
   await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2); await page.mouse.down(); await page.mouse.move(bounds.x + 20, bounds.y + 15); await page.mouse.move(bounds.x + 150, bounds.y + 80, { steps: 8 });
   await page.locator('.console-drag-preview').waitFor();
-  assert.ok((await page.locator('.console-drag-preview').textContent()).includes('FROZEN_TERMINAL_PREVIEW_421'));
+  const previewText = await page.locator('.console-drag-preview').textContent();
+  const previewInfo = await page.evaluate(id => { const card = document.querySelector(`.session-card[data-console-id="${id}"]`), box = card?.getBoundingClientRect(); return { width: Math.round(box?.width || 0), innerWidth, explorer: !!document.querySelector('#explorer-pane:not([hidden])')?.offsetWidth }; }, first.id);
+  assert.ok(previewText.includes('FROZEN_TERMINAL_PREVIEW_421'), `drag preview lacks the frozen terminal text: ${JSON.stringify({ ...previewInfo, text: previewText.replace(/\s+/g, ' ').slice(-240) })}`);
   assert.equal(await page.locator('.console-drag-preview').getAttribute('aria-hidden'), 'true');
   await capture('drag-preview'); await page.keyboard.press('Escape'); await page.mouse.up();
   await page.locator('.console-drag-preview').waitFor({ state: 'detached' });
