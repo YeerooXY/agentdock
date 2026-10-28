@@ -81,6 +81,10 @@ class _ResultsPageState extends State<ResultsPage> {
       if (mounted) {
         setState(() {
           items = result as List;
+          final projects = items!.map(projectKey).toSet();
+          final consoles = items!.map(consoleKey).toSet();
+          if (!projects.contains(filters['project'])) filters.remove('project');
+          if (!consoles.contains(filters['console'])) filters.remove('console');
           error = '';
         });
       }
@@ -95,7 +99,7 @@ class _ResultsPageState extends State<ResultsPage> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Delete this turn’s results?'),
+        title: Text('Delete ${group.length} saved ${group.length == 1 ? 'result' : 'results'} from this turn?'),
         content: const Text(
           'Saved copies will be removed. Your project files stay where they are.',
         ),
@@ -150,7 +154,7 @@ class _ResultsPageState extends State<ResultsPage> {
     return Column(children: [ListTile(
       contentPadding: EdgeInsets.zero,
       leading: Icon(Icons.photo_library_outlined, color: blue),
-      title: Text('${pictures.length} pictures'),
+      title: Text(pictures.length == 1 ? '1 picture' : '${pictures.length} pictures'),
       subtitle: Text('$viewed of ${pictures.length} viewed'),
       trailing: Icon(Icons.chevron_right, color: pink),
       onTap: () async {
@@ -197,9 +201,11 @@ class _ResultsPageState extends State<ResultsPage> {
   @override
   Widget build(BuildContext context) {
     final groups = <String, List<dynamic>>{};
-    for (final item in (items ?? []).where(matches)) {
+    final fullGroups = <String, List<dynamic>>{};
+    for (final item in items ?? []) {
       final key = turnKey(item);
-      groups.putIfAbsent(key, () => []).add(item);
+      fullGroups.putIfAbsent(key, () => []).add(item);
+      if (matches(item)) groups.putIfAbsent(key, () => []).add(item);
     }
     final chats = <String, List<List<dynamic>>>{};
     for (final group in groups.values) {
@@ -222,7 +228,7 @@ class _ResultsPageState extends State<ResultsPage> {
           if (items != null && chats.isEmpty && error.isEmpty)
             Padding(
               padding: EdgeInsets.all(32),
-              child: Text(active.isEmpty ? 'No results.' : 'No results for ${active.join('; ')}.'),
+              child: Text(active.isEmpty ? 'Finished work will appear here.' : 'No results for ${active.join('; ')}.'),
             ),
           for (final chat in chats.values) ...[
             Padding(
@@ -249,7 +255,7 @@ class _ResultsPageState extends State<ResultsPage> {
                         children: [
                           Expanded(
                             child: Text(
-                              group
+                              fullGroups[turnKey(group.first)]!
                                           .where(
                                             (x) =>
                                                 x['kind'] != 'code' &&
@@ -272,9 +278,7 @@ class _ResultsPageState extends State<ResultsPage> {
                               child: Badge(label: Text('New')),
                             ),
                           IconButton(
-                            onPressed: () => remove((items ?? []).where(
-                              (x) => turnKey(x) == turnKey(group.first),
-                            ).toList()),
+                            onPressed: () => remove(fullGroups[turnKey(group.first)]!),
                             icon: Icon(Icons.delete_outline, color: blue),
                             tooltip: 'Delete this turn’s results',
                           ),
@@ -468,7 +472,7 @@ class _ResultDetailState extends State<ResultDetail> {
 
   int get imageIndex => widget.images.indexWhere((x) => x['id'] == item['id']);
   Future<void> act(bool deleting) async {
-    if (acting) return;
+    if (acting || (!deleting && item['seenAt'] != null)) return;
     final id = item['id'];
     setState(() => acting = true);
     try {
@@ -483,7 +487,7 @@ class _ResultDetailState extends State<ResultDetail> {
         ));
         if (confirmed != true || !mounted) return;
         final result = await widget.client.request('results.delete', {'ids': [id]});
-        if (!(result['deleted'] as List).contains(id) || (result['failed'] as List).isNotEmpty) {
+        if ((result['failed'] as List).isNotEmpty) {
           throw StateError('The saved copy could not be deleted. Try again.');
         }
         widget.client.forgetResultThumbnail(id as String);
@@ -523,9 +527,10 @@ class _ResultDetailState extends State<ResultDetail> {
             tooltip: 'Result actions',
             enabled: !acting,
             onSelected: (value) => act(value == 'delete'),
-            itemBuilder: (_) => const [
-              PopupMenuItem(value: 'seen', child: Text('Mark viewed')),
-              PopupMenuItem(value: 'delete', child: Text('Delete')),
+            itemBuilder: (_) => [
+              if (item['seenAt'] == null)
+                const PopupMenuItem(value: 'seen', child: Text('Mark viewed')),
+              const PopupMenuItem(value: 'delete', child: Text('Delete')),
             ],
           ),
       ],
@@ -563,14 +568,16 @@ class _ResultDetailState extends State<ResultDetail> {
                       itemCount: widget.images.length,
                       itemBuilder: (_, i) => Padding(
                         padding: const EdgeInsets.only(right: 8),
-                        child: Semantics(selected: i == imageIndex, child: InkWell(
+                        child: Semantics(
+                          label: 'Image ${i + 1} of ${widget.images.length}${widget.images[i]['seenAt'] != null ? ', viewed' : ''}',
+                          selected: i == imageIndex, child: InkWell(
                           onTap: acting ? null : () => switchImage(i),
                           child: Container(
                             decoration: BoxDecoration(border: Border.all(
                               color: i == imageIndex ? pink : Colors.transparent, width: 2)),
                             child: Column(children: [
                               ResultThumbnail(client: widget.client, item: widget.images[i]),
-                              Text(widget.images[i]['seenAt'] != null ? 'Viewed' : '${i + 1}'),
+                              Text('${i + 1}${widget.images[i]['seenAt'] != null ? ' · Viewed' : ''}'),
                             ]),
                           ),
                         )),
