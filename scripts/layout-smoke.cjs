@@ -155,7 +155,7 @@ async function resize(id, edge, dx, dy, cancel = false, snapshot) {
   await firstPanel.locator('[data-action="toggle-console"]').click();
   await until(async () => (await call('state')).mode === 'fullscreen' && !(await call('state')).transitioning);
   await firstPanel.waitFor({ state: 'visible' });
-  await until(async () => await firstPanel.evaluate(el => { const r = el.getBoundingClientRect(), top = document.querySelector('.titlebar').getBoundingClientRect().bottom; return r.left <= 1 && Math.abs(r.top - top) <= 1 && Math.abs(r.right - innerWidth) <= 1 && Math.abs(r.bottom - innerHeight) <= 1; }));
+  await until(async () => await firstPanel.evaluate(el => { const r = el.getBoundingClientRect(), top = document.querySelector('.titlebar').getBoundingClientRect().bottom, rail = document.querySelector('#sidebar')?.getBoundingClientRect().right || 0; return Math.abs(r.left - rail) <= 1 && Math.abs(r.top - top) <= 1 && Math.abs(r.right - innerWidth) <= 1 && Math.abs(r.bottom - innerHeight) <= 1; }));
   await capture('expanded-console');
   await signal(first);
   await firstPanel.locator('.xterm-screen').click();
