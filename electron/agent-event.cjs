@@ -37,6 +37,10 @@ async function accept(raw) {
       if (mode === 'codex-notify' && input.type !== 'agent-turn-complete') return;
       if (name === 'Notification' && !['permission_prompt', 'idle_prompt', 'elicitation_dialog'].includes(input.notification_type)) return;
       event.state = statuses[name] || statuses[mode];
+      // A short line for the alert, read from what the agent itself reported.
+      if (['ready', 'attention', 'error'].includes(event.state)) {
+        try { const summary = require('./alert-summary.cjs').hookSummary(mode === 'codex-notify' ? mode : name, input); if (summary) event.summary = summary; } catch {}
+      }
       if (name === 'UserPromptSubmit') {
         try {
           const reading = readJson(eventFile('usage'), {});
@@ -56,7 +60,7 @@ async function accept(raw) {
           }
         } catch {}
       }
-      // Await the baseline before the agent can edit. No prompts or answers leave this helper.
+      // Await the baseline before the agent can edit. The bridge call carries no prompts or answers.
       const tool = event.state === 'active' ? 'dock/start_turn' : ['ready', 'error', 'ended'].includes(event.state) ? 'dock/finish_turn' : null;
       if (tool && process.env.PADDOCK_BRIDGE_URL && process.env.PADDOCK_BRIDGE_TOKEN) {
         try {

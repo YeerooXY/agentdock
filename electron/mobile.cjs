@@ -88,7 +88,7 @@ class MobileCompanion extends EventEmitter {
     this.notification = item => {
       // A bounded, volatile delivery window supports already-paired phone builds.
       // It has no read state, persistence or notification-management API.
-      this.liveAlerts = [...this.liveAlerts.slice(-49), { id: item.id, title: item.title, at: item.at }];
+      this.liveAlerts = [...this.liveAlerts.slice(-49), { id: item.id, title: item.title, message: String(item.message || '').slice(0, 200), kind: item.kind, at: item.at, sessionId: item.sessionId || null }];
       this.scheduleState();
     };
     sessions.on('output', this.output); sessions.on('resize', this.resized); sessions.on('changed', this.changed); results.on('changed', this.changed); alerts?.on('notification', this.notification); queue?.on('changed', this.changed); prompts?.on?.('changed', this.changed);

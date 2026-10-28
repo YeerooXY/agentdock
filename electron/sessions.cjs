@@ -777,7 +777,7 @@ class Sessions extends EventEmitter {
           if (event.contextPercent !== undefined) item.contextPercent = event.contextPercent;
           if (event.state && item.alive) {
             item.state = event.state; item.updatedAt = event.at;
-            if (['ready', 'attention'].includes(event.state)) this.emit('attention', { ...this.list().find(x => x.id === item.id), turnId: event.turnId || null });
+            if (['ready', 'attention'].includes(event.state)) this.emit('attention', { ...this.list().find(x => x.id === item.id), turnId: event.turnId || null, summary: typeof event.summary === 'string' ? event.summary.slice(0, 200) : '' });
           }
           if (event.limits) this.emit('limits', event.limits);
           changed = true;

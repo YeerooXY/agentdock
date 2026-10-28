@@ -866,8 +866,10 @@ class DockClient extends ChangeNotifier {
                 unawaited(
                   background
                       .invokeMethod('notify', {
-                        'key': key,
+                        // One notification per console: a newer alert replaces its older one.
+                        'key': '$activePC:${event['sessionId'] ?? event['id']}',
                         'title': event['title'],
+                        'text': event['message'] is String ? event['message'] : '',
                       })
                       .catchError((_) {}),
                 );
@@ -1113,6 +1115,8 @@ class DockClient extends ChangeNotifier {
     foreground = value;
     socket?.pingInterval = Duration(seconds: value ? 15 : 60);
     if (value) {
+      // Opening Paddock reviews the alerts; clear them from the shade.
+      unawaited(background.invokeMethod('clear').catchError((_) {}));
       connect();
       if (connected) unawaited(subscribe().catchError((_) {}));
     } else {

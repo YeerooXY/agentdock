@@ -344,7 +344,7 @@ test('live completion alerts reach paired phones without a stored inbox', async 
   const alert = f.alerts.send({ title: 'Review ready', kind: 'ready', sessionId: 'console-1', key: 'completed-turn' });
   f.alerts.send({ title: 'Duplicate', key: 'completed-turn' });
   const delivered = await c.wait(x => x.type === 'state' && x.state.alerts.some(a => a.id === alert.id));
-  assert.deepEqual(delivered.state.alerts, [{ id: alert.id, title: 'Review ready', at: alert.at }]);
+  assert.deepEqual(delivered.state.alerts, [{ id: alert.id, title: 'Review ready', message: '', kind: 'ready', at: alert.at, sessionId: 'console-1' }]);
   assert.equal(fs.existsSync(path.join(f.root, 'inbox.json')), false);
   await c.call('acknowledge', { id: 'console-1' });
   assert.equal(f.sessions.items.get('console-1').state, 'open');

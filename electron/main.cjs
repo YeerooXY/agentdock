@@ -422,7 +422,7 @@ app.whenReady().then(async () => {
     if (id) saveUsage({ id }, [{ ...value, accountId: id }]);
   });
   sessions.on('attention', session => {
-    workbench.alerts.send(completionNotice({ key: `${session.id}:${session.updatedAt}:${session.state}`, title: session.name + (session.state === 'ready' ? ' is ready' : ' needs you'), kind: session.state === 'ready' ? 'ready' : 'question' }, { sessionId: session.id, consoleKey: session.consoleKey || session.id, turnId: session.turnId }, workbench.results.list()));
+    workbench.alerts.send(completionNotice({ key: `${session.id}:${session.updatedAt}:${session.state}`, title: session.name + (session.state === 'ready' ? ' is ready' : ' needs you'), message: session.summary || '', kind: session.state === 'ready' ? 'ready' : 'question' }, { sessionId: session.id, consoleKey: session.consoleKey || session.id, turnId: session.turnId }, workbench.results.list()));
   });
   const seenExits = new Set();
   sessions.on('changed', () => {

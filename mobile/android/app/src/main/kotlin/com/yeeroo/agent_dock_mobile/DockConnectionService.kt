@@ -57,18 +57,29 @@ object BackgroundConnection {
                         }
                         "stop" -> { context.stopService(Intent(context, DockConnectionService::class.java)); result.success(null) }
                         "status" -> {
-                            label = (call.argument<String>("name") ?: "Dock connection").take(100)
-                            if (running) context.getSystemService(NotificationManager::class.java).notify(7100, ongoing(context))
+                            // Re-posting an unchanged ongoing notification brings it back after the user hides it.
+                            val next = (call.argument<String>("name") ?: "Dock connection").take(100)
+                            if (next != label) {
+                                label = next
+                                if (running) context.getSystemService(NotificationManager::class.java).notify(7100, ongoing(context))
+                            }
+                            result.success(null)
+                        }
+                        "clear" -> {
+                            val manager = context.getSystemService(NotificationManager::class.java)
+                            for (active in manager.activeNotifications) if (active.tag == "dock-ready") manager.cancel(active.tag, active.id)
                             result.success(null)
                         }
                         "notify" -> {
                             if (running) {
                                 val key = call.argument<String>("key") ?: ""
                                 val title = (call.argument<String>("title") ?: "Paddock").take(140)
+                                // What the agent reported; the generic line only when it said nothing.
+                                val text = (call.argument<String>("text") ?: "").take(200).ifBlank { "Open Paddock to review." }
                                 val open = launch(context)
                                 val builder = if (Build.VERSION.SDK_INT >= 26) Notification.Builder(context, "agent_dock_ready") else Notification.Builder(context)
                                 val notification = builder.setSmallIcon(R.drawable.ic_notification)
-                                    .setContentTitle(title).setContentText("Open Paddock to review.")
+                                    .setContentTitle(title).setContentText(text).setStyle(Notification.BigTextStyle().bigText(text))
                                     .setContentIntent(open).setAutoCancel(true)
                                     .setVisibility(Notification.VISIBILITY_PRIVATE).build()
                                 context.getSystemService(NotificationManager::class.java).notify("dock-ready", key.hashCode(), notification)
