@@ -17,6 +17,8 @@ fs.mkdirSync(testParent, { recursive: true });
 const dataDir = fs.mkdtempSync(path.join(testParent, 'desktop-'));
 const artifacts = path.join(root, 'artifacts'); fs.mkdirSync(artifacts, { recursive: true });
 let app;
+// Narrow consoles wrap long markers across rendered rows; compare without whitespace.
+const renderedText = text => text.replace(/\s+/g, '');
 async function eventually(predicate, message) {
   const end = Date.now() + 20000;
   while (Date.now() < end) { if (await predicate()) return; await new Promise(resolve => setTimeout(resolve, 100)); }
@@ -146,7 +148,7 @@ async function eventually(predicate, message) {
   await page.locator('.xterm-helper-textarea').focus();
   await page.keyboard.type(shellCommand.join('PAD', 'DOCK_SMOKE_OK')); await page.keyboard.press('Enter');
   await eventually(async () => (await invoke('session.buffer', session.id)).data.includes('PADDOCK_SMOKE_OK'), 'Terminal command did not produce its expected output');
-  await eventually(async () => (await page.locator('.session-card .xterm-rows').innerText()).includes('PADDOCK_SMOKE_OK'));
+  await eventually(async () => renderedText(await page.locator('.session-card .xterm-rows').innerText()).includes('PADDOCK_SMOKE_OK'));
   const colorCommand = shellCommand.run(process.execPath, '-e', "console.log(require('node:util').styleText('green','DOCK_COLOR_OK'))") + '\r';
   await invoke('session.input', { id: session.id, data: colorCommand });
   await eventually(async () => page.locator('.session-card .xterm-rows span').evaluateAll(spans =>
@@ -187,7 +189,7 @@ async function eventually(predicate, message) {
   assert.equal(await liveName.inputValue(), 'Robonslaught dev');
   await page.locator('.session-card .xterm-helper-textarea').focus();
   await page.keyboard.type(shellCommand.join('GRID_', 'STILL_LIVE')); await page.keyboard.press('Enter');
-  await eventually(async () => (await page.locator('.session-card .xterm-rows').innerText()).includes('GRID_STILL_LIVE'));
+  await eventually(async () => renderedText(await page.locator('.session-card .xterm-rows').innerText()).includes('GRID_STILL_LIVE'));
   assert.equal((await invoke('state')).sessions.filter(x => x.alive).length, 1);
   checks.push('Live grid terminal accepts input, keeps focus during updates, and reuses the same terminal fullscreen; returning to Consoles stays fullscreen');
   checks.push('Panel titles rename in place across grid, fullscreen and HUD without restarting terminals or changing launch defaults');
