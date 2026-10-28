@@ -39,10 +39,20 @@ function copyPackage(name, from, destination) {
   }
 }
 const hash = data => crypto.createHash('sha256').update(data).digest('hex');
+// CI runners occasionally abort the connection early; the checksum below still
+// verifies whatever finally arrives.
 async function download(url) {
-  const response = await fetch(url, { signal: AbortSignal.timeout(120000) });
-  if (!response.ok) throw new Error(`Could not download ${url}: ${response.status}`);
-  return Buffer.from(await response.arrayBuffer());
+  for (let attempt = 1; ; attempt++) {
+    try {
+      const response = await fetch(url, { signal: AbortSignal.timeout(120000) });
+      if (!response.ok) throw new Error(`Could not download ${url}: ${response.status}`);
+      return Buffer.from(await response.arrayBuffer());
+    } catch (error) {
+      if (attempt >= 3) throw error;
+      console.warn(`Download attempt ${attempt} failed (${error.message}); retrying.`);
+      await new Promise(resolve => setTimeout(resolve, attempt * 3000));
+    }
+  }
 }
 (async () => {
   if (!target) throw new Error(`No bundled Node.js build for ${process.platform}-${arch}.`);

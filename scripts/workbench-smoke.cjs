@@ -61,7 +61,8 @@ async function eventually(check, message='Timed out') {const end=Date.now()+4500
   assert.equal('inbox' in (await call('state')).workbench, false);
   const bridgeFile=path.join(profile,'fixture-bridge.json');
   await call('session.input',{id:one.id,data:shellCommand.saveBridge(bridgeFile)+'\r'});
-  await eventually(()=>fs.existsSync(bridgeFile));
+  // The shell may still be writing the file when it first appears.
+  await eventually(()=>{try{JSON.parse(fs.readFileSync(bridgeFile,'utf8').replace(/^﻿/,''));return true;}catch{return false;}});
   const grant=JSON.parse(fs.readFileSync(bridgeFile,'utf8').replace(/^\uFEFF/,''));
   async function tool(name,args={}) {
     const response=await fetch(grant.url,{method:'POST',headers:{Authorization:'Bearer '+grant.token,'Content-Type':'application/json'},body:JSON.stringify({name:'dock_call',arguments:{tool:name,arguments:args}})});

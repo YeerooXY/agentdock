@@ -444,7 +444,8 @@ async function eventually(predicate, message) {
   const occupied = await page.evaluate(() => window.dock.call('session.create', { slot: 8 }));
   assert.equal(occupied.ok, false); assert.match(occupied.error, /already open/);
   await invoke('session.end', eighth.id);
-  await eventually(async () => !(await invoke('state')).sessions.find(x => x.id === eighth.id).alive);
+  await eventually(async () => !(await invoke('state')).sessions.find(x => x.id === eighth.id).alive,
+    async () => 'Ended console stayed alive: ' + JSON.stringify((({ alive, state, exitCode, updatedAt }) => ({ alive, state, exitCode, updatedAt, now: Date.now() }))((await invoke('state')).sessions.find(x => x.id === eighth.id))));
   await invoke('mode', 'dashboard');
   await openPage(page, 'consoles');
   assert.equal(await page.locator('.session-card.empty[data-slot="8"]').count(), 1);
