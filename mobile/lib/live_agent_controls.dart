@@ -49,7 +49,11 @@ class _LiveAgentControlsState extends State<LiveAgentControls> {
   bool get idle =>
       current &&
       terminal != null &&
-      ['open', 'ready', 'idle'].contains(session['state']) &&
+      // The PC marks a console working on any Enter (a trust prompt, an empty
+      // line, an earlier /model) until a turn ends, so trust the screen too.
+      (['open', 'ready', 'idle'].contains(session['state']) ||
+          (['active', 'attention'].contains(session['state']) &&
+              !agentWorking(activeTerminalText(terminal!)))) &&
       hasEmptyAgentPrompt(terminal!, provider);
   Map<String, dynamic>? get chosen =>
       models.where((x) => x['id'] == model).firstOrNull;
@@ -164,23 +168,11 @@ class _LiveAgentControlsState extends State<LiveAgentControls> {
     }
   }
 
-  int optionIndex(AgentMenu live, String value, {String? name}) {
-    final labels = {
-      value.toLowerCase(),
-      if (name != null) name.toLowerCase(),
-      if (value == 'xhigh') 'extra high',
-    };
-    return live.options.indexWhere(
-      (text) => labels.any(
-        (label) => RegExp(
-          '(^|[^a-z0-9])${RegExp.escape(label)}(?=[^a-z0-9]|\$)',
-          caseSensitive: false,
-        ).hasMatch(text),
-      ),
-    );
-  }
+  int optionIndex(AgentMenu live, String value, {String? name}) =>
+      menuOptionIndex(live, value, name: name);
 
-  Future<void> choose(AgentMenu expected, int index) async {
+  /// [open] presses Enter to open a submenu even where s means session only.
+  Future<void> choose(AgentMenu expected, int index, {bool open = false}) async {
     if (index < 0) {
       throw StateError(
         'The agent does not offer this choice. Refresh the chooser.',
@@ -203,7 +195,7 @@ class _LiveAgentControlsState extends State<LiveAgentControls> {
     }
     final before = activeTerminalText(terminal!);
     checked();
-    await c.input(now.sessionOnly ? 's' : '\r', id: id);
+    await c.input(now.sessionOnly && !open ? 's' : '\r', id: id);
     await waitFor(() => activeTerminalText(terminal!) != before);
   }
 
@@ -252,8 +244,20 @@ class _LiveAgentControlsState extends State<LiveAgentControls> {
               ).hasMatch(menu!.title) &&
               !menu!.title.toLowerCase().contains('model and effort'),
         );
-        final live = menu!;
-        await choose(live, optionIndex(live, effort!));
+        var live = menu!;
+        var index = optionIndex(live, effort!);
+        // Codex lists Max and Ultra under "More reasoning…".
+        final more = live.options.indexWhere(
+          (text) => text.toLowerCase().contains('more reasoning'),
+        );
+        if (index < 0 && more >= 0) {
+          final parent = live.signature;
+          await choose(live, more, open: true);
+          await waitFor(() => menu != null && menu!.signature != parent);
+          live = menu!;
+          index = optionIndex(live, effort!);
+        }
+        await choose(live, index);
       } else if (provider == 'claude' &&
           effort != null &&
           effort != initial.effort) {

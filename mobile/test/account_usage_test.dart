@@ -117,6 +117,26 @@ void main() {
     },
   );
 
+  testWidgets('subscriptions the PC marks not set up are not listed', (
+    tester,
+  ) async {
+    final client = UsageClient();
+    addTearDown(client.dispose);
+    client.usage = {
+      'accounts': [
+        {'id': 'claude:default', 'provider': 'claude', 'label': 'Claude Main', 'visible': true},
+        {'id': 'gemini:default', 'provider': 'gemini', 'label': 'Gemini Unused', 'visible': false},
+        {'id': 'codex:default', 'provider': 'codex', 'label': 'Codex Older Host'},
+      ],
+      'limits': [],
+    };
+    await showUsage(tester, client);
+    expect(find.textContaining('Claude Main'), findsWidgets);
+    expect(find.textContaining('Codex Older Host'), findsWidgets);
+    expect(find.textContaining('Gemini Unused'), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+  });
+
   testWidgets(
     'native window names and unlimited allowances render without false percentages',
     (tester) async {

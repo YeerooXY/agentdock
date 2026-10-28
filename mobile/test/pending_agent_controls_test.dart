@@ -156,6 +156,36 @@ void main() {
       '\r',
     ]);
   });
+  testWidgets('a console left marked working by an Enter applies when idle on screen', (
+    tester,
+  ) async {
+    final c = FakeDock();
+    addTearDown(c.dispose);
+    simulate(c);
+    c.state['sessions'][0]['state'] = 'active';
+    await open(tester, c);
+    await effort(tester);
+    await tester.tap(find.text('Apply'));
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pumpAndSettle();
+    expect(c.inputs.first['data'], '/model');
+    expect(c.agentSelection('one').effort, 'high');
+  });
+  testWidgets('a running turn still blocks Apply', (tester) async {
+    final c = FakeDock();
+    addTearDown(c.dispose);
+    c.state['sessions'][0]['state'] = 'active';
+    await open(tester, c);
+    await effort(tester);
+    paint(c, '• Working (5s • esc to interrupt)\r\n› ');
+    await tester.tap(find.text('Apply'));
+    await tester.pumpAndSettle();
+    expect(c.inputs, isEmpty);
+    expect(
+      find.text('Wait for the agent and clear its terminal input first.'),
+      findsOneWidget,
+    );
+  });
   testWidgets('existing prompt input is preserved', (tester) async {
     final c = FakeDock();
     addTearDown(c.dispose);

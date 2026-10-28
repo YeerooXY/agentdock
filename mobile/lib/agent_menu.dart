@@ -77,6 +77,30 @@ class AgentMenu {
   }
 }
 
+/// Index of the option whose label names [value] or [name], or -1.
+/// Matches the label column only: descriptions such as "Max and Ultra consume
+/// usage limits faster" must not select "More reasoning…".
+int menuOptionIndex(AgentMenu menu, String value, {String? name}) {
+  final labels = {
+    value.toLowerCase(),
+    if (name != null) name.toLowerCase(),
+    if (value == 'xhigh') 'extra high',
+  };
+  return menu.options.indexWhere((option) {
+    final text = option.split(RegExp(r'\s{2,}')).first;
+    return labels.any(
+      (label) => RegExp(
+        '(^|[^a-z0-9])${RegExp.escape(label)}(?=[^a-z0-9]|\$)',
+        caseSensitive: false,
+      ).hasMatch(text),
+    );
+  });
+}
+
+/// Codex and Claude Code both show "esc to interrupt" while a turn runs.
+bool agentWorking(String screen) =>
+    RegExp(r'esc to interrupt', caseSensitive: false).hasMatch(screen);
+
 bool hasEmptyAgentPrompt(Terminal terminal, String provider) {
   if (!['codex', 'claude'].contains(provider)) return false;
   final buffer = terminal.buffer;

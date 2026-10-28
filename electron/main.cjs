@@ -234,9 +234,12 @@ function refreshLimits() {
 }
 function usageSnapshot() {
   const choices = usageAccounts(), checks = subscriptionUsage?.snapshot() || [];
+  // Same rule as the desktop Usage page: set-up subscriptions only, unless hidden.
+  const hidden = new Set(settings.usageHidden || []), shown = new Set(settings.usageShown || []);
+  const visible = (id, used) => !hidden.has(id) && (used || shown.has(id) || limits.some(item => limitAccountId(item) === id));
   return {
-    limits: limits.map(item => ({ ...item, accountLabel: choices.find(choice => choice.id === limitAccountId(item))?.label || item.name, usageCheck: checks.find(check => check.accountId === limitAccountId(item)) })),
-    accounts: choices.map(choice => ({ ...choice, usageCheck: checks.find(check => check.accountId === choice.id) })),
+    limits: limits.map(item => ({ ...item, accountLabel: choices.find(choice => choice.id === limitAccountId(item))?.label || item.name, usageCheck: checks.find(check => check.accountId === limitAccountId(item)), visible: !hidden.has(limitAccountId(item)) })),
+    accounts: choices.map(choice => ({ ...choice, usageCheck: checks.find(check => check.accountId === choice.id), visible: visible(choice.id, !!(choice.hasUsage || choice.inUse)) })),
     usageChecks: checks, refreshing, threshold: settings.accountSwitchThreshold, autoSwitch: settings.autoSwitchAccounts, summary: ledgerSummary(ledger || []),
   };
 }

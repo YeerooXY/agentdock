@@ -140,11 +140,14 @@ class _SettingsPageState extends State<SettingsPage> {
   @override
   Widget build(BuildContext context) {
     final c = widget.client;
+    // The PC marks subscriptions that are not set up (or hidden) visible: false.
     final limits = (usage?['limits'] is List ? usage!['limits'] as List : [])
-        .whereType<Map>();
+        .whereType<Map>()
+        .where((x) => x['visible'] != false);
     final accounts =
         (usage?['accounts'] is List ? usage!['accounts'] as List : [])
-            .whereType<Map>();
+            .whereType<Map>()
+            .where((x) => x['visible'] != false);
     final summary = usage?['summary'];
     final usagePanels = <Widget>[
       LayoutBuilder(
