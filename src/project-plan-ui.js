@@ -57,7 +57,7 @@ export function projectPlanUI({ call, getState, escape: e, icon, toast, renderPa
   function notes(p) {
     if (section !== 'roadmap') return '';
     const items = planSections.slice(0, 3).map(([id, title]) => p.plan.approvals[id] ? '' : p.plan.skipped?.[id] ? `${title}: not needed` : `${title}: not reviewed (optional)`).filter(Boolean);
-    return `<div class="plan-notes">${items.map(x => `<span>${e(x)}</span>`).join('')}<span>${p.plan.approvals.roadmap ? 'Roadmap approved · project active' : 'Approving the roadmap starts the project'}</span></div>`;
+    return `<div class="plan-notes">${items.map(x => `<span>${e(x)}</span>`).join('')}<span>${p.plan.approvals.roadmap ? 'Roadmap approved' : p.plan.skipped?.roadmap ? 'Roadmap not needed' : 'Roadmap draft'}</span></div>`;
   }
   function diff(p, proposal) {
     const before = dataFor(p, section), rows = [];
@@ -97,11 +97,12 @@ export function projectPlanUI({ call, getState, escape: e, icon, toast, renderPa
     revision = cached?.revision ?? p.plan.revision; shownRevision = p.plan.revision; dirty = !!cached;
     if (cached) editing = true;
     const d = cached?.data || dataFor(p, section), [tone, label] = statusOf(p, section), meta = planSections.find(([id]) => id === section);
-    const skippable = section !== 'roadmap';
+    const skippable = true;
     dialog.innerHTML = `<div class="plan-shell">${side(p)}<main class="plan-main">
       <div class="plan-head"><div><p class="plan-badge ${tone}">${label}</p><h3 tabindex="-1">${meta[1]}</h3><p>${meta[2]}</p></div>
         <div class="plan-actions"><button type="button" class="secondary" data-plan-discuss>${icon('terminal')}Discuss with agent</button>${editing ? '' : `<button type="button" class="secondary" data-plan-edit>Edit</button>${skippable ? `<button type="button" class="subtle" data-plan-skip>${p.plan.skipped?.[section] ? 'Mark as needed' : 'Not needed'}</button>` : ''}<button type="button" class="primary" data-plan-approve ${p.plan.approvals[section] ? 'disabled' : ''}>${p.plan.approvals[section] ? 'Approved' : section === 'roadmap' ? 'Approve roadmap' : 'Approve'}</button>`}</div></div>
       <p class="plan-conflict" role="status" hidden>This plan changed while you were editing. <button type="button" class="subtle" data-plan-reload>Load the saved version</button> Copy any unsaved text first.</p>
+      ${p.status === 'planning' && !editing ? '<p class="field-hint">Mark open plan sections not needed and set this project to Active. Waiting proposals stay.</p><button type="button" class="secondary" data-plan-underway>Already under way</button>' : ''}
       ${notes(p)}
       ${p.plan.files?.error ? `<p class="form-error">${e(p.plan.files.error)} <button type="button" class="subtle" data-plan-sync>Retry saving files</button></p>` : ''}
       ${proposal && !editing ? diff(p, proposal) : ''}
@@ -181,7 +182,7 @@ export function projectPlanUI({ call, getState, escape: e, icon, toast, renderPa
       }
       const action = event.submitter?.value || 'save';
       await review(action, draft());
-      toast(action === 'approve' ? section === 'roadmap' && project().status === 'active' ? 'Roadmap approved. Project active.' : 'Section approved.' : 'Draft saved.');
+      toast(action === 'approve' ? 'Section approved.' : 'Draft saved.');
       dialog.querySelector('.plan-head h3')?.focus();
     } catch (err) { error(err.message); }
     finally { busy = false; dialog.querySelectorAll('button').forEach(b => { if (buttons.includes(b)) b.disabled = false; }); }
@@ -194,8 +195,9 @@ export function projectPlanUI({ call, getState, escape: e, icon, toast, renderPa
       else if (b.dataset.planStep) { remember(); editing = false; section = b.dataset.planStep; render(); dialog.querySelector(`[data-plan-step="${section}"]`).focus(); }
       else if (b.hasAttribute('data-plan-edit') || b.dataset.planAdd) { editing = true; focusKey = b.dataset.planAdd === 'milestones' ? null : b.dataset.planAdd || FIELDS[section][0][0]; render(); if (b.dataset.planAdd === 'milestones') dialog.querySelector('[data-plan-milestone-add]').click(); }
       else if (b.hasAttribute('data-plan-cancel')) { drafts.delete(key()); dirty = false; editing = false; render(); dialog.querySelector('.plan-head h3').focus(); }
-      else if (b.hasAttribute('data-plan-approve')) { await review('approve'); toast(section === 'roadmap' && project().status === 'active' ? 'Roadmap approved. Project active.' : 'Section approved.'); }
+      else if (b.hasAttribute('data-plan-approve')) { await review('approve'); toast('Section approved.'); }
       else if (b.hasAttribute('data-plan-skip')) { await review(p.plan.skipped?.[section] ? 'unskip' : 'skip'); }
+      else if (b.hasAttribute('data-plan-underway')) { await call('projects.plan.underway', { id: projectId, revision: p.plan.revision }); render(); renderPage(); toast('Project active.'); }
       else if (b.hasAttribute('data-plan-reload')) { drafts.delete(key()); dirty = false; editing = false; render(); }
       else if (b.hasAttribute('data-plan-reject')) { await review('reject'); toast('Proposal rejected.'); }
       else if (b.hasAttribute('data-plan-accept')) { await review('save', proposalsOf(p.plan)[section].data); toast('Proposal accepted. Approve the section when ready.'); }

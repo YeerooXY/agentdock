@@ -20,8 +20,7 @@ function milestones(values) {
 function initial() {
   return { version: 1, revision: 1, approvals: {}, brief: { audience: '', success: '' }, research: { purpose: 'public', alternatives: '', niche: '', evidence: '' }, infrastructure: { experience: 'guided', platform: 'web', language: '', stack: '', reason: '', alternative: '', tradeoff: '', hosting: '', data: '', security: '', operations: '' }, scope: '', excluded: '', laterFeatures: [], proposals: {}, skipped: {}, references: [], files: null };
 }
-// Sections are reviewed independently. Approving the roadmap starts the project;
-// other sections are optional and can be marked Not needed.
+// Sections are reviewed independently.
 const approved = p => !!p.plan?.approvals.roadmap;
 // Plans saved before per-section proposals kept a single proposal field.
 function proposals(plan) { return plan.proposals || (plan.proposal ? { [plan.proposal.section]: plan.proposal } : {}); }
@@ -62,10 +61,18 @@ function checkRevision(p, revision) {
   if (revision !== p.plan.revision) throw new Error('The project changed. Reload this section before saving. Your entered text is still available.');
 }
 const labels = { goals: 'the goal', stack: 'the tools', scope: 'what is included' };
-// A changed section needs review again. Only a changed roadmap pauses the project.
+// A changed section needs review again.
 function invalidate(p, section) {
   delete p.plan.approvals[section];
-  if (section === 'roadmap' && ['active', 'complete'].includes(p.status)) p.status = 'planning';
+}
+function underway(p, { revision }) {
+  checkRevision(p, revision);
+  if (p.status !== 'planning') throw new Error('Project is not in planning.');
+  const next = structuredClone(p), waiting = proposals(next.plan);
+  next.plan.skipped ||= {};
+  for (const section of sections) if (!next.plan.approvals[section] && !waiting[section] && !next.plan.skipped[section]) next.plan.skipped[section] = Date.now();
+  next.status = 'active'; next.plan.revision++; next.updatedAt = Date.now();
+  return next;
 }
 function context(p, section) {
   if (!p?.plan) throw new Error('Open this project’s Roadmap to start guided planning.');
@@ -82,7 +89,6 @@ function review(p, { revision, section, changes, action }) {
     if (!waiting[section]) throw new Error('No proposal is waiting for this section.');
     delete waiting[section];
   } else if (action === 'skip' || action === 'unskip') {
-    if (section === 'roadmap') throw new Error('The roadmap is needed to start the project.');
     if (action === 'skip') { next.plan.skipped[section] = Date.now(); delete next.plan.approvals[section]; }
     else delete next.plan.skipped[section];
   } else {
@@ -92,10 +98,6 @@ function review(p, { revision, section, changes, action }) {
     if (action === 'approve') {
       validate(next, section);
       next.plan.approvals[section] = Date.now(); delete next.plan.skipped[section];
-      if (approved(next)) {
-        if (next.status === 'planning') next.status = 'active';
-        next.nextStep = next.milestones.find(m => !m.done)?.text || 'Review project completion';
-      }
     }
     delete waiting[section];
   }
@@ -174,12 +176,10 @@ function writeFiles(p) {
 }
 function instructions(p) {
   if (!p.plan) return '\nAsk before adding extra features. Record them as later ideas. Defer marketing strategy until the project is complete.\n';
-  return `\n## Project planning rules\n${approved(p) ? 'Follow the user-approved scope and milestones.' : 'This project is in planning. Discuss it with the user before implementation. Ask one focused question, then wait for their answer. Do not silently fill missing decisions or start implementation.'}
+  return `\n## Project planning rules\nPlan sections: ${sections.map(s => `${s}: ${p.plan.approvals[s] ? 'approved' : p.plan.skipped?.[s] ? 'not needed' : 'draft'}`).join('; ')}.
 Current section: ${currentSection(p)}. Plan revision: ${p.plan.revision}.
-Use dock/project_plan to retrieve the current section. Discuss goals, audience and success criteria, compare real alternatives with source URLs and research dates, then establish the niche. AI guesses are not customer evidence.
-For infrastructure, ask about target devices, hosting, data, authentication, backups, deployment and cost constraints. Recommend one language/stack and explain why it fits better than a named alternative. Use plain language for beginners; advanced users choose their language. Non-software projects can document their tools and infrastructure instead.
-Agree on a bounded first release and ordered milestones with a concrete completion check for each. Use dock/propose_project_plan for a proposal after the conversation; only the user can approve it in Projects. A tool call is not user approval. Pause for their review.
-Use dock/add_later_feature for extra ideas. Do not implement them or expand scope without explicit user agreement and a reviewed roadmap. Marketing strategy comes after completion.
-Project files: ${directory(p)}. Use dock/project_progress for verified work after roadmap approval, with the current plan revision.\n`;
+Use dock/project_plan to retrieve a section. Follow approved decisions and discuss planning details when relevant. Do not treat proposals as approved; only the user can approve them in Projects.
+Use dock/add_later_feature for extra ideas and ask before expanding scope. Marketing strategy comes after completion.
+Project files: ${directory(p)}. Use dock/project_progress for verified work with the current plan revision.\n`;
 }
-module.exports = { sections, proposals, addReference, removeReference, initial, milestones, approved, currentSection, sectionData, checkRevision, invalidate, context, review, propose, later, directory, writeFiles, instructions };
+module.exports = { sections, proposals, addReference, removeReference, initial, milestones, approved, currentSection, sectionData, checkRevision, invalidate, context, review, underway, propose, later, directory, writeFiles, instructions };

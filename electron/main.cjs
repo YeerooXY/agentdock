@@ -690,6 +690,7 @@ app.whenReady().then(async () => {
         case 'projects.decision': { const project = projects.decide(payload.id, payload); publish(); return { ok: true, value: project }; }
         case 'projects.plan.begin': return { ok: true, value: projects.beginPlan(payload.id) };
         case 'projects.plan.review': return { ok: true, value: projects.review(payload.id, payload) };
+        case 'projects.plan.underway': return { ok: true, value: projects.underway(payload.id, payload) };
         case 'projects.plan.later': return { ok: true, value: projects.addLater(payload.id, payload) };
         case 'projects.plan.sync': return { ok: true, value: projects.syncPlan(payload.id) };
         case 'projects.plan.reference.add': {

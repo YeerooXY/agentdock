@@ -52,11 +52,13 @@ const step = name => sheet().locator(`[data-plan-step=${name}]`);
   await rows.last().locator('[name=milestoneText]').fill('Release check'); await rows.last().locator('[name=milestoneDone]').fill('Tests and a backup restore pass');
   await rows.last().locator('[data-plan-move="-1"]').click(); assert.equal(await rows.nth(1).locator('[name=milestoneText]').inputValue(), 'Release check');
   await capture('desktop-roadmap-edit');
-  await sheet().locator('#project-plan-form [value=approve]').click(); await until(async () => (await current()).status === 'active');
-  p = await current(); assert.deepEqual(p.milestones.map(m => m.text), ['Import notes', 'Release check', 'Practice session']); assert.equal(p.plan.excluded, 'Accounts, sharing and cloud sync.');
+  await sheet().locator('#project-plan-form [value=approve]').click(); await until(async () => !!(await current()).plan.approvals.roadmap);
+  p = await current(); assert.equal(p.status, 'planning'); assert.deepEqual(p.milestones.map(m => m.text), ['Import notes', 'Release check', 'Practice session']); assert.equal(p.plan.excluded, 'Accounts, sharing and cloud sync.');
+  await sheet().locator('[data-plan-underway]').click(); await until(async () => (await current()).status === 'active');
+  p = await current(); assert.ok(p.plan.skipped.brief); assert.ok(p.plan.approvals.roadmap);
   await sheet().locator('#plan-later').fill('Shared class libraries'); await sheet().locator('[data-plan-later-form] button').click(); await until(async () => (await current()).plan.laterFeatures.length === 1);
   await capture('desktop-roadmap-read');
-  checks.push('References (file copy with thumbnail, link), roadmap approved without earlier sections, milestone editor, not included, later features');
+  checks.push('References (file copy with thumbnail, link), roadmap approval, already under way, milestone editor, not included, later features');
   // Proposals for two sections at once through the real MCP bridge.
   await page.keyboard.press('Escape');
   const s = await call('session.create', { provider: 'shell', projectId: p.id, cwd: folder, name: 'Planning fixture' });

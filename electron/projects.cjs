@@ -39,7 +39,6 @@ class Projects extends EventEmitter {
       item.plan = structuredClone(before.plan);
       if (item.goals !== before.goals) planning.invalidate(item, 'brief');
       if (JSON.stringify(item.milestones) !== JSON.stringify(before.milestones)) planning.invalidate(item, 'roadmap');
-      if (!planning.approved(item) && ['active', 'complete'].includes(item.status)) item.status = 'planning';
       item.plan.revision++;
     } else if (raw.guided) {
       item.plan = planning.initial(); item.status = 'planning';
@@ -60,6 +59,7 @@ class Projects extends EventEmitter {
   }
   plan(id, section) { return planning.context(this.get(id), section); }
   review(id, raw) { return this.store(planning.review(this.get(id), raw)); }
+  underway(id, raw) { return this.store(planning.underway(this.get(id), raw)); }
   propose(id, raw, agent) { return this.store(planning.propose(this.get(id), raw, agent)); }
   addLater(id, raw) { return this.store(planning.later(this.get(id), raw)); }
   // Files and images are copied into the project's planning folder so every
@@ -93,7 +93,7 @@ class Projects extends EventEmitter {
   beginPlan(id) {
     const before = this.get(id); if (!before) throw new Error('Project not found.');
     if (before.plan) return before;
-    return this.store({ ...before, plan: planning.initial(), status: 'planning', updatedAt: Date.now() });
+    return this.store({ ...before, plan: planning.initial(), updatedAt: Date.now() });
   }
   syncPlan(id) { const p = this.get(id); if (!p?.plan) throw new Error('Project plan not found.'); return this.store(p); }
   folderPath(id, index = 0, planFiles = false) {
@@ -115,7 +115,7 @@ class Projects extends EventEmitter {
     const notes = raw.note ? text([item.notes, text(raw.note, 2000, 'Progress note')].filter(Boolean).join('\n\n'), 20000, 'Notes') : item.notes;
     const milestones = item.milestones.map(x => ({ ...x }));
     if (raw.milestone != null) {
-      if (item.plan) { planning.checkRevision(item, raw.revision); if (!planning.approved(item)) throw new Error('Approve the roadmap before completing milestones.'); }
+      if (item.plan) planning.checkRevision(item, raw.revision);
       if (!Number.isInteger(raw.milestone) || !milestones[raw.milestone]) throw new Error('Choose an existing milestone.');
       milestones[raw.milestone].done = raw.done === true;
       if (item.plan && raw.nextStep == null) nextStep = milestones.find(m => !m.done)?.text || 'Review project completion';

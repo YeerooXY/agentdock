@@ -34,6 +34,7 @@ let browser, directory; const reports = [];
         if (method === 'session.models') return { ok: true, value: [] };
         if (method === 'settings') Object.assign(state.settings, payload);
         else if (method === 'projects.plan.review') value = projects.review(payload.id, payload);
+        else if (method === 'projects.plan.underway') value = projects.underway(payload.id, payload);
         else if (method === 'projects.plan.later') value = projects.addLater(payload.id, payload);
         else if (method === 'projects.plan.thumb') value = '';
         else if (method === 'projects.folder') { value = projects.folderPath(payload.id, payload.index, payload.planFiles); state.openedFolder = value; }
@@ -44,7 +45,7 @@ let browser, directory; const reports = [];
     await context.addInitScript(() => { let changed; window.dock = { call: async (method, payload) => { const r = await window.fixtureCall(method, payload); if (r.state) changed?.(r.state); return r; }, onState: fn => { changed = fn; }, onOutput: () => {}, onSelect: () => {} }; });
     const page = await context.newPage(); page.setDefaultTimeout(12000); page.on('pageerror', error => errors.push(error.message));
     await page.goto('http://127.0.0.1:' + server.address().port); await page.locator('.session-grid').waitFor(); await page.addScriptTag({ url: '/axe.js' });
-    await page.locator('[data-page=projects]').click(); if (['android', 'iphone'].includes(name)) await page.locator('#sidebar-toggle').click();
+    await page.locator('[data-page=projects]').click(); // The rail holds the pages; #sidebar-toggle now opens the Explorer.
     async function capture(view) {
       await page.evaluate(async () => { document.getAnimations().filter(a => a.effect?.getTiming().iterations !== Infinity).forEach(a => a.finish()); await document.fonts.ready; });
       const file = `${name}-${view}.png`; await page.screenshot({ path: path.join(out, file) }); captures.push(file);
@@ -78,6 +79,8 @@ let browser, directory; const reports = [];
     await capture('roadmap-edit');
     const close = await dialog.locator('[data-plan-close]').boundingBox(); assert.ok(close.y >= 0 && close.y + close.height <= (options.viewport?.height || 1000), 'Close remains visible');
     await form.locator('[value=approve]').click(); await page.waitForFunction(() => document.querySelector('[data-plan-step=roadmap] .plan-badge')?.textContent === 'Approved');
+    assert.equal(projects.get(example.id).status, 'planning');
+    await dialog.locator('[data-plan-underway]').click();
     assert.equal(projects.get(example.id).status, 'active');
     await dialog.locator('#plan-later').fill('Shared study groups'); await dialog.locator('[data-plan-later-form] button').click(); await dialog.locator('.plan-later li').filter({ hasText: 'Shared study groups' }).waitFor();
     await capture('roadmap-read');
@@ -90,7 +93,7 @@ let browser, directory; const reports = [];
       await dialog.locator('h2').evaluate(el => { el.textContent = 'LearningApplicationWithLongUnbrokenProjectNameAndRevisionNumber123'; });
       await capture('narrow-long-name'); await page.keyboard.press('Escape');
     }
-    assert.deepEqual(errors, []); reports.push({ profile: name, engine: browser.version(), emulated: name !== 'pc', captures, violations, checks: ['read mode', 'unsaved text preserved across steps', 'actionable validation', 'not needed', 'roadmap approval without earlier sections', 'Later features separate', 'visible close control', 'folder link', 'Escape and focus return', 'no horizontal overflow'] });
+    assert.deepEqual(errors, []); reports.push({ profile: name, engine: browser.version(), emulated: name !== 'pc', captures, violations, checks: ['read mode', 'unsaved text preserved across steps', 'actionable validation', 'not needed', 'roadmap approval keeps Planning', 'already under way sets Active', 'Later features separate', 'visible close control', 'folder link', 'Escape and focus return', 'no horizontal overflow'] });
     await browser.close(); browser = null;
     assert.equal(path.dirname(fs.realpathSync(directory)), fs.realpathSync(parent)); fs.rmSync(directory, { recursive: true, force: true, maxRetries: 3 }); directory = null;
     console.log('PASS ' + name + ' planning flow and visual checks');

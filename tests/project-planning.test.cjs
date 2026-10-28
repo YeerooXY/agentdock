@@ -14,23 +14,49 @@ function fixture(t) {
 }
 const infrastructure = { stack: 'TypeScript', reason: 'Browser UI with type checks', alternative: 'JavaScript', tradeoff: 'Less setup, fewer checks', hosting: 'Local PC; no hosting cost', data: 'Local files', security: 'Single local user; no credentials in files', operations: 'Unit tests, build, file backups and restore check' };
 const roadmap = { scope: 'Practice one class from local notes', milestones: [{ text: 'Practice prototype', acceptance: 'Import notes and complete a session', done: false }, { text: 'Release check', acceptance: 'Tests and backup restore pass', done: false }] };
+test('status remains the user choice when saving or changing a draft roadmap', t => {
+  const f = fixture(t); let p = f.p;
+  for (const status of ['active', 'paused', 'complete', 'archived', 'planning']) {
+    p = f.store.save({ ...p, status, revision: p.plan.revision, milestones: [{ text: `Milestone ${status}` }] });
+    assert.equal(p.status, status);
+  }
+});
+test('already under way preserves approvals and waiting proposals and skips open sections', t => {
+  const f = fixture(t); let p = f.review('brief', {});
+  p = f.store.propose(p.id, { revision: p.plan.revision, section: 'research', changes: { evidence: 'A finding' } }, 'Agent');
+  assert.throws(() => f.store.underway(p.id, { revision: p.plan.revision - 1 }), /project changed/);
+  const proposal = structuredClone(p.plan.proposals.research);
+  p = f.store.underway(p.id, { revision: p.plan.revision });
+  assert.equal(p.status, 'active'); assert.ok(p.plan.approvals.brief);
+  assert.deepEqual(p.plan.proposals.research, proposal); assert.equal(p.plan.skipped.research, undefined);
+  assert.ok(p.plan.skipped.infrastructure); assert.ok(p.plan.skipped.roadmap);
+  assert.match(f.store.summary(p.id), /brief: approved; research: draft; infrastructure: not needed; roadmap: not needed/);
+  assert.match(f.store.summary(p.id), /Do not treat proposals as approved/);
+  assert.throws(() => f.store.underway(p.id, { revision: p.plan.revision }), /not in planning/);
+});
+test('user and agent can check draft milestones with the current revision', async t => {
+  const f = fixture(t); let p = f.store.progress(f.p.id, { revision: f.p.plan.revision, milestone: 0, done: true });
+  assert.equal(p.milestones[0].done, true); assert.equal(p.plan.approvals.roadmap, undefined);
+  const sessions = new Map([['agent', { id: 'agent', alive: true, cwd: f.folder, projectId: p.id }]]);
+  const bridge = Object.create(Workbench.prototype); Object.assign(bridge, { projects: f.store, getSessions: () => ({ items: sessions }), getProject: () => f.folder, alerts: { send() {} } });
+  await assert.rejects(bridge.invoke('dock/project_progress', { revision: p.plan.revision - 1, milestone: 0, done: false }, 'agent'), /project changed/);
+  p = await bridge.invoke('dock/project_progress', { revision: p.plan.revision, milestone: 0, done: false }, 'agent');
+  assert.equal(p.milestones[0].done, false);
+});
 function approveAll(f) {
   f.review('brief', {}); f.review('research', { purpose: 'personal', evidence: 'Used only for my own notes.' });
   f.review('infrastructure', infrastructure); return f.review('roadmap', roadmap);
 }
-test('sections are independent: only the roadmap is needed to start, others can be marked not needed', t => {
+test('sections are independent and can be marked not needed', t => {
   const f = fixture(t); assert.equal(f.p.status, 'planning'); assert.equal(f.p.milestones.length, 1);
-  assert.throws(() => f.store.progress(f.p.id, { milestone: 0, done: true, revision: f.p.plan.revision }), /Approve the roadmap/);
   assert.throws(() => f.review('roadmap', { scope: 'Practice', milestones: [{ text: 'Ship' }] }), /completion check/);
   assert.throws(() => f.review('roadmap', { scope: '', milestones: roadmap.milestones }), /what is included/);
-  let p = f.review('roadmap', roadmap); assert.equal(p.status, 'active'); assert.deepEqual(Object.keys(p.plan.approvals), ['roadmap']);
-  assert.equal(p.nextStep, 'Practice prototype');
+  let p = f.review('roadmap', roadmap); assert.equal(p.status, 'planning'); assert.deepEqual(Object.keys(p.plan.approvals), ['roadmap']);
   assert.throws(() => f.review('research', {}), /at least one finding|Not needed/);
-  p = f.review('research', {}, 'skip'); assert.ok(p.plan.skipped.research); assert.equal(p.status, 'active');
-  assert.throws(() => f.review('roadmap', {}, 'skip'), /needed to start/);
+  p = f.review('research', {}, 'skip'); assert.ok(p.plan.skipped.research); assert.equal(p.status, 'planning');
   p = f.review('infrastructure', { stack: 'TypeScript and Electron' }); assert.ok(p.plan.approvals.infrastructure);
   p = f.review('research', {}, 'unskip'); assert.equal(p.plan.skipped.research, undefined);
-  assert.equal(new Projects(f.root).get(p.id).status, 'active');
+  assert.equal(new Projects(f.root).get(p.id).status, 'planning');
   assert.match(fs.readFileSync(path.join(p.plan.files.directory, 'ROADMAP.md'), 'utf8'), /## Not included/);
 });
 test('the roadmap records what is not included', t => {
@@ -72,27 +98,27 @@ test('agent proposals cannot approve, replace pending proposals, overwrite user 
   assert.equal(bridge.tools().some(x => x.name.includes('project') && /approve|review/.test(x.name)), false);
 });
 test('editing approved decisions requires review again and preserves legacy projects', t => {
-  const f = fixture(t), active = approveAll(f);
+  const f = fixture(t); let active = approveAll(f); active = f.store.save({ ...active, status: 'active', revision: active.plan.revision });
   const changed = f.store.review(active.id, { revision: active.plan.revision, section: 'infrastructure', changes: { stack: 'Changed stack' }, action: 'save' });
   assert.equal(changed.status, 'active'); assert.equal(changed.plan.approvals.infrastructure, undefined); assert.ok(changed.plan.approvals.roadmap);
   const scope = f.store.review(active.id, { revision: changed.plan.revision, section: 'roadmap', changes: { scope: 'Changed scope' }, action: 'save' });
-  assert.equal(scope.status, 'planning'); assert.equal(scope.plan.approvals.roadmap, undefined); assert.ok(scope.plan.approvals.brief);
+  assert.equal(scope.status, 'active'); assert.equal(scope.plan.approvals.roadmap, undefined); assert.ok(scope.plan.approvals.brief);
   const legacyPlan = structuredClone(f.store.get(active.id)); legacyPlan.plan.proposal = { id: 'x', section: 'research', data: { niche: 'Old' }, agent: 'A', at: 1 }; delete legacyPlan.plan.proposals;
   assert.equal(require('../electron/project-planning.cjs').context(legacyPlan, 'research').proposal.data.niche, 'Old');
   const legacy = f.store.save({ name: 'Existing project', goals: 'Maintain it', folders: [{ path: f.folder }], status: 'paused' });
   assert.equal(legacy.plan, undefined); assert.equal(new Projects(f.root).get(legacy.id).status, 'paused');
-  const converted = f.store.beginPlan(legacy.id); assert.equal(converted.status, 'planning'); assert.equal(converted.goals, 'Maintain it');
+  const converted = f.store.beginPlan(legacy.id); assert.equal(converted.status, 'paused'); assert.equal(converted.goals, 'Maintain it');
 });
 test('Later features are saved on disk outside scope and persist with the roadmap', t => {
-  const f = fixture(t), active = approveAll(f);
+  const f = fixture(t); let active = approveAll(f); active = f.store.save({ ...active, status: 'active', revision: active.plan.revision });
   const updated = f.store.addLater(active.id, { revision: active.plan.revision, text: 'Add multiplayer practice later' });
   assert.deepEqual(updated.milestones, active.milestones); assert.equal(updated.status, 'active');
   const directory = updated.plan.files.directory;
   assert.match(fs.readFileSync(path.join(directory, 'LATER_FEATURES.md'), 'utf8'), /multiplayer practice later/);
   assert.doesNotMatch(fs.readFileSync(path.join(directory, 'ROADMAP.md'), 'utf8'), /multiplayer/);
   assert.match(fs.readFileSync(path.join(directory, 'PROJECT.md'), 'utf8'), /University students/);
-  assert.match(f.store.summary(updated.id), /one focused question|Follow the user-approved scope/);
-  assert.match(f.store.summary(updated.id), /explicit user agreement/);
+  assert.match(f.store.summary(updated.id), /roadmap: approved/);
+  assert.match(f.store.summary(updated.id), /Do not treat proposals as approved/);
   const completed = f.store.progress(updated.id, { revision: updated.plan.revision, milestone: 0, done: true });
   assert.equal(completed.nextStep, 'Release check');
   assert.match(fs.readFileSync(path.join(directory, 'ROADMAP.md'), 'utf8'), /\[x\] Practice prototype/);

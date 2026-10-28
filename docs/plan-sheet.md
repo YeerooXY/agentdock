@@ -3,7 +3,7 @@
 Replaces the planning dialog (23 October 2026). Design source: [planning scenarios](research/planning-personas.md) and the HTML concept in `artifacts/plan-concept/`.
 
 ## What changed
-- **Independent sections.** Brief, Research, Setup and Roadmap are reviewed on their own. Approving the roadmap starts the project; the others are optional and can be marked **Not needed**. The old "Approve the earlier sections first" rule is gone. Editing a section only resets that section's approval; only a changed roadmap pauses the project.
+- **Independent sections.** Brief, Research, Setup and Roadmap are reviewed on their own and can be marked **Not needed**. Editing a section resets only its approval. Choose the project status in **Edit**; **Already under way** sets a Planning project to Active and marks open sections not needed while keeping waiting proposals.
 - **Layout.** A near full-window sheet. Left: project, section list with status (Approved, Proposal, Not needed, Draft, Not started) and the reference board. Right: the selected section.
 - **Read first, edit when needed.** Sections open as text. Empty fields show one "+ Add …" line instead of an empty box. **Edit** shows larger, auto-growing fields. Drafts survive switching sections and closing.
 - **Fewer fields.** Setup shows four (tools and why, where it runs and cost, data and security, testing and backups). Older Setup answers stay under **More detail**. Only the goal, the tools and the included scope are required to approve their section; Research needs one finding.
