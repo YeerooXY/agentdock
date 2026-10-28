@@ -50,6 +50,37 @@ function client(f, auth) {
   return { ws, wait, messages, call };
 }
 
+test('phone advertises result actions and bounded image previews with validated input', async t => {
+  const f = await fixture(t), paired = await f.pair(), c = client(f, paired.data.token);
+  t.after(() => c.ws.terminate()); await once(c.ws, 'open');
+  const capabilities = (await c.call('state')).capabilities;
+  assert.ok(capabilities.includes('results.thumbnails'));
+  assert.ok(capabilities.includes('results.actions'));
+  const image = f.results.add({ title: 'Landscape', buffer: Buffer.from('mock image'), ext: '.png' }, { trusted: true });
+  const resized = [];
+  f.results.nativeImage = { createFromPath: file => {
+    assert.equal(file, f.results.path(image.id));
+    return {
+      isEmpty: () => false, getSize: () => ({ width: 2400, height: 1200 }),
+      resize: size => { resized.push(size); return { toDataURL: () => 'data:image/png;base64,bW9jaw==' }; },
+    };
+  } };
+  assert.deepEqual(await c.call('results.preview', { id: image.id, thumbnail: true }), { image: 'data:image/png;base64,bW9jaw==' });
+  assert.ok(resized[0].width <= 400 && resized[0].height <= 400);
+  for (const id of [null, {}, '../outside', 42]) {
+    await assert.rejects(c.call('results.preview', { id, thumbnail: true }), /Choose a result/);
+  }
+  await assert.rejects(c.call('results.preview', { id: image.id, thumbnail: 'yes' }), /thumbnail option/);
+  await assert.rejects(c.call('results.preview', { id: crypto.randomUUID(), thumbnail: true }), /deleted/);
+  await assert.rejects(c.call('results.seen', { ids: image.id }), /Choose results/);
+  await assert.rejects(c.call('results.delete', { ids: image.id }), /Choose results/);
+  await c.call('results.seen', { ids: [image.id] });
+  assert.ok((await c.call('results.list')).find(x => x.id === image.id).seenAt);
+  const other = f.results.add({ title: 'Report', text: 'keep' });
+  assert.deepEqual(await c.call('results.delete', { ids: [image.id] }), { deleted: [image.id], failed: [] });
+  assert.deepEqual((await c.call('results.list')).map(x => x.id), [other.id]);
+});
+
 test('phone refresh starts the common account refresh and polling reads its progress', async t => {
   const f = await fixture(t), paired = await f.pair(), c = client(f, paired.data.token);
   t.after(() => c.ws.terminate()); await once(c.ws, 'open');

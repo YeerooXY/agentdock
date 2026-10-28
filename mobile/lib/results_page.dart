@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
@@ -18,11 +19,61 @@ class ResultsPage extends StatefulWidget {
 class _ResultsPageState extends State<ResultsPage> {
   List<dynamic>? items;
   String error = '';
+  final search = TextEditingController();
+  late Map<String, String> filters;
   @override
   void initState() {
     super.initState();
+    filters = widget.client.resultFilters.putIfAbsent(widget.client.activePC, () => {});
+    search.text = filters['search'] ?? '';
     load();
   }
+
+  @override
+  void dispose() {
+    search.dispose();
+    super.dispose();
+  }
+
+  String projectKey(dynamic item) =>
+      (item['projectId'] ?? item['project'] ?? 'unassigned').toString();
+  String consoleKey(dynamic item) =>
+      (item['consoleKey'] ?? item['sessionId'] ??
+          jsonEncode(['legacy', projectKey(item), item['source'] ?? 'Dock'])).toString();
+  String turnKey(dynamic item) => jsonEncode([
+    projectKey(item), consoleKey(item),
+    (item['groupId'] as String? ?? '').isEmpty ? item['id'] : item['groupId'],
+  ]);
+  String resultType(dynamic item) {
+    if (item['image'] == true) return 'Images';
+    if (item['kind'] == 'code') return 'Code';
+    if (['.md', '.txt', '.json', '.log', '.html', '.pdf'].contains(item['ext'])) return 'Documents';
+    return 'Other';
+  }
+
+  bool matches(dynamic item) =>
+      (filters['type'] == null || resultType(item) == filters['type']) &&
+      (filters['project'] == null || projectKey(item) == filters['project']) &&
+      (filters['console'] == null || consoleKey(item) == filters['console']) &&
+      '${item['title'] ?? ''} ${item['summary'] ?? ''} ${item['consoleName'] ?? ''}'
+          .toLowerCase().contains((filters['search'] ?? '').trim().toLowerCase());
+
+  Widget filterMenu(String key, String label, Map<String, String> options) =>
+      PopupMenuButton<String>(
+        tooltip: label,
+        onSelected: (value) => setState(() {
+          if (value.isEmpty) { filters.remove(key); } else { filters[key] = value; }
+        }),
+        itemBuilder: (_) => [
+          PopupMenuItem(value: '', child: Text('All ${label.toLowerCase()}s')),
+          for (final entry in options.entries)
+            PopupMenuItem(value: entry.key, child: Text(entry.value)),
+        ],
+        child: Chip(label: Text(
+          '$label: ${options[filters[key]] ?? filters[key] ?? 'All'}',
+          overflow: TextOverflow.ellipsis,
+        )),
+      );
 
   Future<void> load() async {
     try {
@@ -68,6 +119,9 @@ class _ResultsPageState extends State<ResultsPage> {
       if ((result['failed'] as List).isNotEmpty) {
         throw StateError('Some saved copies could not be deleted. Try again.');
       }
+      for (final id in result['deleted'] as List) {
+        widget.client.forgetResultThumbnail(id as String);
+      }
       await load();
     } catch (e) {
       if (mounted) setState(() => error = e.toString());
@@ -93,7 +147,7 @@ class _ResultsPageState extends State<ResultsPage> {
         .cast<Map<String, dynamic>>()
         .toList();
     final viewed = pictures.where((x) => x['seenAt'] != null).length;
-    return ListTile(
+    return Column(children: [ListTile(
       contentPadding: EdgeInsets.zero,
       leading: Icon(Icons.photo_library_outlined, color: blue),
       title: Text('${pictures.length} pictures'),
@@ -115,46 +169,60 @@ class _ResultsPageState extends State<ResultsPage> {
         );
         await load();
       },
-    );
+    ),
+      if (widget.client.supportsResult('results.thumbnails'))
+        SizedBox(
+          height: 80,
+          child: ListView.builder(
+            scrollDirection: Axis.horizontal,
+            itemCount: pictures.length,
+            itemBuilder: (_, index) => Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: InkWell(
+                onTap: () async {
+                  await Navigator.push(context, MaterialPageRoute(builder: (_) => ResultDetail(
+                    client: widget.client, item: pictures[index],
+                    ids: pictures.map((x) => x['id']).toList(), images: pictures,
+                  )));
+                  await load();
+                },
+                child: ResultThumbnail(client: widget.client, item: pictures[index]),
+              ),
+            ),
+          ),
+        ),
+    ]);
   }
 
   @override
   Widget build(BuildContext context) {
     final groups = <String, List<dynamic>>{};
-    for (final item in items ?? []) {
-      final key = jsonEncode([
-        item['projectId'] ?? item['project'],
-        item['consoleKey'] ?? item['sessionId'],
-        item['groupId'] ?? item['id'],
-      ]);
+    for (final item in (items ?? []).where(matches)) {
+      final key = turnKey(item);
       groups.putIfAbsent(key, () => []).add(item);
     }
     final chats = <String, List<List<dynamic>>>{};
     for (final group in groups.values) {
       final first = group.first;
-      final key =
-          (first['consoleKey'] ??
-                  first['sessionId'] ??
-                  jsonEncode([
-                    'legacy',
-                    first['projectId'] ?? first['project'],
-                    first['source'] ?? 'Dock',
-                  ]))
-              .toString();
+      final key = consoleKey(first);
       chats.putIfAbsent(key, () => []).add(group);
     }
-    return RefreshIndicator(
-      onRefresh: load,
-      child: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
+    final projects = <String, String>{for (final item in items ?? []) projectKey(item): projectLabel(item)};
+    final consoles = <String, String>{for (final item in items ?? []) consoleKey(item): item['consoleName'] as String? ?? 'Earlier console'};
+    final active = <String>[
+      if ((filters['search'] ?? '').isNotEmpty) 'Search: "${filters['search']}"',
+      if (filters['type'] != null) 'Type: ${filters['type']}',
+      if (filters['project'] != null) 'Project: ${projects[filters['project']] ?? filters['project']}',
+      if (filters['console'] != null) 'Console: ${consoles[filters['console']] ?? filters['console']}',
+    ];
+    final children = <Widget>[
           if (error.isNotEmpty) Text(error, style: TextStyle(color: pink)),
           if (items == null && error.isEmpty)
             const Center(child: CircularProgressIndicator()),
-          if (items?.isEmpty == true)
-            const Padding(
+          if (items != null && chats.isEmpty && error.isEmpty)
+            Padding(
               padding: EdgeInsets.all(32),
-              child: Text('Finished work will appear here.'),
+              child: Text(active.isEmpty ? 'No results.' : 'No results for ${active.join('; ')}.'),
             ),
           for (final chat in chats.values) ...[
             Padding(
@@ -166,6 +234,7 @@ class _ResultsPageState extends State<ResultsPage> {
             ),
             for (final group in chat)
               Card(
+                key: ValueKey(turnKey(group.first)),
                 margin: const EdgeInsets.only(bottom: 18),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(18),
@@ -203,7 +272,9 @@ class _ResultsPageState extends State<ResultsPage> {
                               child: Badge(label: Text('New')),
                             ),
                           IconButton(
-                            onPressed: () => remove(group),
+                            onPressed: () => remove((items ?? []).where(
+                              (x) => turnKey(x) == turnKey(group.first),
+                            ).toList()),
                             icon: Icon(Icons.delete_outline, color: blue),
                             tooltip: 'Delete this turn’s results',
                           ),
@@ -283,10 +354,61 @@ class _ResultsPageState extends State<ResultsPage> {
                 ),
               ),
           ],
-        ],
+        ];
+    return Column(children: [
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+        child: TextField(
+          controller: search,
+          decoration: const InputDecoration(labelText: 'Search results', prefixIcon: Icon(Icons.search)),
+          onChanged: (value) => setState(() {
+            if (value.isEmpty) { filters.remove('search'); } else { filters['search'] = value; }
+          }),
+        ),
       ),
-    );
+      Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: Wrap(spacing: 8, children: [
+          for (final type in ['Images', 'Documents', 'Code', 'Other'])
+            FilterChip(label: Text(type), selected: filters['type'] == type,
+              onSelected: (selected) => setState(() {
+                if (selected) { filters['type'] = type; } else { filters.remove('type'); }
+              })),
+          filterMenu('project', 'Project', projects),
+          filterMenu('console', 'Console', consoles),
+          if (active.isNotEmpty) TextButton(onPressed: () => setState(() {
+            filters.clear(); search.clear();
+          }), child: const Text('Clear filters')),
+        ]),
+      ),
+      Expanded(child: RefreshIndicator(onRefresh: load, child: ListView.builder(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(16),
+        itemCount: children.length,
+        itemBuilder: (_, index) => children[index],
+      ))),
+    ]);
   }
+}
+
+class ResultThumbnail extends StatelessWidget {
+  final DockClient client;
+  final Map<String, dynamic> item;
+  const ResultThumbnail({super.key, required this.client, required this.item});
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    width: 72, height: 72,
+    child: FutureBuilder<Uint8List?>(
+      key: ValueKey('${client.activePC}:${item['id']}'),
+      future: client.resultThumbnail(item['id'] as String),
+      builder: (_, snapshot) => snapshot.data == null
+          ? Semantics(label: item['title'] as String, child: const Icon(Icons.image_outlined))
+          : Image.memory(snapshot.data!, fit: BoxFit.cover,
+              semanticLabel: item['title'] as String,
+              errorBuilder: (_, error, stack) => const Icon(Icons.broken_image_outlined)),
+    ),
+  );
 }
 
 class ResultDetail extends StatefulWidget {
@@ -309,6 +431,7 @@ class _ResultDetailState extends State<ResultDetail> {
   Map<String, dynamic>? content;
   String error = '';
   bool full = false;
+  bool acting = false;
   late Map<String, dynamic> item;
   int version = 0;
   @override
@@ -344,7 +467,43 @@ class _ResultDetailState extends State<ResultDetail> {
   }
 
   int get imageIndex => widget.images.indexWhere((x) => x['id'] == item['id']);
+  Future<void> act(bool deleting) async {
+    if (acting) return;
+    final id = item['id'];
+    setState(() => acting = true);
+    try {
+      if (deleting) {
+        final confirmed = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
+          title: Text('Delete "${item['title']}"?'),
+          content: const Text('The saved copy will be removed. Your project files stay where they are.'),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Delete')),
+          ],
+        ));
+        if (confirmed != true || !mounted) return;
+        final result = await widget.client.request('results.delete', {'ids': [id]});
+        if (!(result['deleted'] as List).contains(id) || (result['failed'] as List).isNotEmpty) {
+          throw StateError('The saved copy could not be deleted. Try again.');
+        }
+        widget.client.forgetResultThumbnail(id as String);
+        if (mounted) Navigator.pop(context);
+      } else {
+        await widget.client.request('results.seen', {'ids': [id]});
+        if (mounted) {
+          setState(() => item['seenAt'] = DateTime.now().millisecondsSinceEpoch);
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Marked viewed.')));
+        }
+      }
+    } catch (e) {
+      if (mounted) setState(() => error = e.toString());
+    } finally {
+      if (mounted) setState(() => acting = false);
+    }
+  }
+
   void switchImage(int index) {
+    if (acting) return;
     setState(() {
       item = widget.images[index];
       content = null;
@@ -358,6 +517,18 @@ class _ResultDetailState extends State<ResultDetail> {
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
       title: Text(item['title'] as String, overflow: TextOverflow.ellipsis),
+      actions: [
+        if (widget.client.supportsResult('results.actions'))
+          PopupMenuButton<String>(
+            tooltip: 'Result actions',
+            enabled: !acting,
+            onSelected: (value) => act(value == 'delete'),
+            itemBuilder: (_) => const [
+              PopupMenuItem(value: 'seen', child: Text('Mark viewed')),
+              PopupMenuItem(value: 'delete', child: Text('Delete')),
+            ],
+          ),
+      ],
     ),
     bottomNavigationBar: widget.images.length > 1
         ? SafeArea(
@@ -386,7 +557,26 @@ class _ResultDetailState extends State<ResultDetail> {
                       ),
                     ],
                   ),
-                  SingleChildScrollView(
+                  if (widget.client.supportsResult('results.thumbnails'))
+                    SizedBox(height: 100, child: ListView.builder(
+                      scrollDirection: Axis.horizontal,
+                      itemCount: widget.images.length,
+                      itemBuilder: (_, i) => Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: Semantics(selected: i == imageIndex, child: InkWell(
+                          onTap: acting ? null : () => switchImage(i),
+                          child: Container(
+                            decoration: BoxDecoration(border: Border.all(
+                              color: i == imageIndex ? pink : Colors.transparent, width: 2)),
+                            child: Column(children: [
+                              ResultThumbnail(client: widget.client, item: widget.images[i]),
+                              Text(widget.images[i]['seenAt'] != null ? 'Viewed' : '${i + 1}'),
+                            ]),
+                          ),
+                        )),
+                      ),
+                    ))
+                  else SingleChildScrollView(
                     scrollDirection: Axis.horizontal,
                     child: Row(
                       children: [

@@ -121,6 +121,35 @@ class DockClient extends ChangeNotifier {
     });
   }
   String get activePC => pairing?['pin'] as String? ?? '';
+  final resultFilters = <String, Map<String, String>>{};
+  final _resultThumbnails = <String, Future<Uint8List?>>{};
+
+  bool supportsResult(String capability) =>
+      (state['capabilities'] as List? ?? []).contains(capability);
+
+  Future<Uint8List?> resultThumbnail(String id) {
+    final key = '$activePC:$id';
+    if (!_resultThumbnails.containsKey(key) && _resultThumbnails.length >= 128) {
+      _resultThumbnails.remove(_resultThumbnails.keys.first);
+    }
+    return _resultThumbnails.putIfAbsent(key, () async {
+      try {
+        final value = await request('results.preview', {
+          'id': id,
+          'thumbnail': true,
+        });
+        final data = value['image'] as String?;
+        return data == null ? null : base64Decode(data.split(',').last);
+      } catch (_) {
+        _resultThumbnails.remove(key);
+        return null;
+      }
+    });
+  }
+
+  void forgetResultThumbnail(String id) {
+    _resultThumbnails.remove('$activePC:$id');
+  }
   String get pcName =>
       pairing == null ? 'Computers' : SavedDevices.label(pairing!);
   String get phoneName => devices.phoneName;
@@ -415,6 +444,7 @@ class DockClient extends ChangeNotifier {
   void activate(Map<String, dynamic>? pc) {
     _selections[activePC] = selected;
     disconnectTransport();
+    _resultThumbnails.clear();
     pairing = pc;
     screens.clear();
     selected = _selections[activePC] ?? '';
