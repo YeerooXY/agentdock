@@ -81,7 +81,10 @@ export function explorerUI({ host, call, getState, selectedConsole, openFile, co
   }
   function sync() {
     const state = getState(); if (!state) return;
-    const session = state.sessions.find(x => x.id === selectedConsole());
+    // Without a selected local console, follow the most recently active one; the root label names it.
+    const local = x => x && x.alive && !x.dismissed && !x.remote && !x.remoteHostId && !x.kind;
+    const chosen = state.sessions.find(x => x.id === selectedConsole());
+    const session = chosen && !local(chosen) ? chosen : chosen || [...state.sessions].filter(local).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))[0];
     const project = session && state.projects?.find(x => x.id === session.projectId);
     const next = session && !session.remote && !session.remoteHostId && !session.kind && session.alive ? project ? project.folders.map(f => ({ path: f.path, label: `${project.name} · ${f.label || f.path}` })) : [{ path: session.cwd, label: `Console folder · ${session.name}` }] : [];
     const stamp = JSON.stringify([session?.id, next]);

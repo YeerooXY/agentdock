@@ -52,6 +52,7 @@ async function installBridge(context, state, record, origin) {
       case 'code.report': return ok(f.report);
       case 'code.file': return ok({ file: payload.path, before: payload.reportId ? 'export function greeting() { return "Hello"; }\n' : null, after: f.changedCode ? 'File changed after selection.\n' : f.codeText, mode: payload.reportId ? 'turn' : 'file' });
       case 'code.browse': return ok({ path: payload.path || '', items: [{ name: 'greeting.js', path: 'src/greeting.js' }] });
+      case 'explorer.list': return ok(payload.path ? { path: payload.path, entries: [{ name: 'greeting.js', path: `${payload.path}/greeting.js` }], truncated: false } : { path: '', entries: [{ name: 'src', path: 'src', directory: true }, { name: 'README.md', path: 'README.md' }], truncated: false });
       case 'file.preview': return f.fileKind === 'missing' ? fail('File not found. Check the path.') : ok({ name: 'review.md', path: 'C:\\Workspace\\review.md', kind: f.fileKind, size: f.fileKind === 'large' ? 100000000 : 1024, text: '# Review file\n\nSynthetic preview content.\n', data: image });
       case 'ssh.scan': return f.sshError ? fail(f.sshError) : ok({ probeId: 'review-probe', fingerprint: 'SHA256:synthetic-review-fingerprint', algorithm: 'ssh-ed25519', changed: !!f.sshChanged });
       case 'slot.trim': {

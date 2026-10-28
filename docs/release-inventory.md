@@ -42,6 +42,7 @@ Status key: **Not seen** · **Looks good** · **Needs work** · **Cut**
 | 2.14 | SSH hosts and remote consoles | Linux machines over SSH | New host key; changed host key; host offline | Not seen |
 | 2.15 | Fullscreen (F11), corner HUD, tray | Window modes | F11 with an expanded console; HUD with alerts | Not seen |
 | 2.16 | Keyboard page shortcuts | Vim-style page keys | Every key; while typing in a console (must not trigger) | Not seen |
+| 2.17 | Explorer (new) | File tree beside the consoles; opens files read-only | Project root; folder expanded; filter; narrow-window drawer; unlinked console | Not seen |
 
 ### 3. Projects
 
@@ -109,6 +110,8 @@ Status key: **Not seen** · **Looks good** · **Needs work** · **Cut**
 | 9.9 | Settings and themes | Phone appearance and preferences | All themes; lighting; stars; openings | Not seen |
 | 9.10 | PC settings and devices | Manage the PC and paired phones | Revoke this phone | Not seen |
 | 9.11 | Updates | App update check and install | Update available; same version; download fails | Not seen |
+| 9.12 | Code reader (new) | Read project files; long-press lines to add them to a console draft | Long lines; deep folders; large text; private files; remote console | Not seen |
+| 9.13 | Rename and project link (new) | Rename a running console or link it to a project | Archived project; console changed meanwhile; old PC version | Not seen |
 
 Every phone item is also checked: small phone (360 px), large phone, larger text size, landscape.
 
