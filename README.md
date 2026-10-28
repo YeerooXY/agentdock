@@ -187,7 +187,7 @@ A fresh installation uses **Agent defaults** for permissions. Select **Unrestric
 | OpenCode | `--auto` |
 | Cursor | `--force` |
 | Grok Build | `--always-approve` |
-| Kiro | `--trust-all-tools` |
+| Kiro | `--trust-tools=fs_read,fs_write` (file reads and edits run without asking; shell commands still ask, because Kiro has no local sandbox) |
 | Qwen Code, Gemini CLI | `--approval-mode yolo` |
 | Kimi Code | `--yolo` |
 | Cline | `--auto-approve true` |
