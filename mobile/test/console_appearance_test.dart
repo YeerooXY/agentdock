@@ -308,9 +308,13 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('Void empty-panel effect is connected to the phone empty state', (
+  testWidgets('Void empty-panel effect remains in the tablet detail pane', (
     tester,
   ) async {
+    tester.view.physicalSize = const Size(1024, 768);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
     final c = FakeDock();
     addTearDown(c.dispose);
     c.appearance = const ConsoleAppearance(

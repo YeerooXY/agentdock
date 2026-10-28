@@ -10,6 +10,10 @@ void main() {
     testWidgets(
       '$provider header uses bundled icon only and chat starts collapsed',
       (tester) async {
+        tester.view.physicalSize = const Size(360, 800);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
         final c = FakeDock();
         addTearDown(c.dispose);
         c.state['sessions'][0]['provider'] = provider;

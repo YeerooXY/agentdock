@@ -7,6 +7,7 @@ import 'dock_client.dart';
 import 'dock_style.dart';
 
 class ConsoleSwitcher extends StatefulWidget {
+  static const allConsoles = '@all';
   final DockClient client;
   final String name;
   final bool showAgentMark;
@@ -74,6 +75,17 @@ class _ConsoleSwitcherState extends State<ConsoleSwitcher> {
             curve: Curves.easeOutCubic,
           ),
     itemBuilder: (_) => [
+      const PopupMenuItem(
+        value: ConsoleSwitcher.allConsoles,
+        child: Row(
+          children: [
+            Icon(Icons.grid_view),
+            SizedBox(width: 12),
+            Flexible(child: Text('All consoles')),
+          ],
+        ),
+      ),
+      const PopupMenuDivider(),
       for (final session in widget.client.sessions)
         PopupMenuItem(
           value: session['id'] as String,
@@ -122,7 +134,7 @@ class _ConsoleSwitcherState extends State<ConsoleSwitcher> {
           children: [
             Icon(Icons.add, color: pink),
             SizedBox(width: 12),
-            Text('New console'),
+            Flexible(child: Text('New console')),
           ],
         ),
       ),

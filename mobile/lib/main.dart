@@ -18,6 +18,7 @@ import 'terminal_reading.dart';
 import 'agent_identity.dart';
 import 'console_actions.dart';
 import 'console_switcher.dart';
+import 'console_overview.dart';
 import 'console_drafts.dart';
 import 'code_page.dart';
 import 'live_agent_controls.dart';
@@ -141,6 +142,7 @@ typedef _CommandTarget = ({
 class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
   DockClient get c => widget.client;
   int page = 0;
+  bool showConsoleOverview = false;
   final composer = TextEditingController(), composerFocus = FocusNode();
   final composerScroll = ScrollController();
   // xterm requests focus on touch-down, before it can recognize a scroll.
@@ -424,6 +426,7 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
           c.connected &&
           c.activePC == pc &&
           c.generation == generation) {
+        setState(() => showConsoleOverview = false);
         await c.select(session['id'] as String);
         if (value['chooseModel'] == true && mounted) {
           await liveControls('Model');
@@ -672,16 +675,23 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
                     Expanded(
                       child: ConsoleSwitcher(
                         client: c,
-                        name: current?['name'] as String? ?? 'Consoles',
+                        name: (showConsoleOverview &&
+                                    MediaQuery.sizeOf(context).shortestSide < 600) ||
+                                current == null
+                            ? 'All consoles'
+                            : current['name'] as String,
                         showAgentMark: false,
                         onOpened: () {
                           stopTerminalTyping();
                           composerFocus.unfocus();
                         },
                         onSelected: (id) {
-                          if (id == '+') {
+                          if (id == ConsoleSwitcher.allConsoles) {
+                            setState(() => showConsoleOverview = true);
+                          } else if (id == '+') {
                             newConsole();
                           } else if (c.sessions.any((s) => s['id'] == id)) {
+                            setState(() => showConsoleOverview = false);
                             run(() => c.select(id));
                           }
                         },
@@ -932,14 +942,17 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
                 ),
               Expanded(
                 child: page == 0
-                    ? terminal(current)
+                    ? consoleWorkspace(current)
                     : page == 1
                     ? ResultsPage(client: c)
                     : page == 4
                     ? ProjectsPage(
                         client: c,
                         onConsoleSelected: () {
-                          setState(() => page = 0);
+                          setState(() {
+                            page = 0;
+                            showConsoleOverview = false;
+                          });
                           run(() => c.setStreaming(true));
                         },
                       )
@@ -995,6 +1008,42 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
       );
     },
   );
+  Widget consoleWorkspace(Map<String, dynamic>? current) {
+    final tablet = MediaQuery.sizeOf(context).shortestSide >= 600;
+    final overview = ConsoleOverview(
+      client: c,
+      onNewConsole: newConsole,
+      onSelected: (id) {
+        stopTerminalTyping();
+        composerFocus.unfocus();
+        setState(() => showConsoleOverview = false);
+        run(() => c.select(id));
+      },
+    );
+    return Row(
+      key: ValueKey(tablet ? 'console-two-pane' : 'console-single-pane'),
+      children: [
+        if (tablet) ...[
+          SizedBox(
+            width: min(360, MediaQuery.sizeOf(context).width * .4),
+            child: overview,
+          ),
+          const VerticalDivider(width: 1),
+        ],
+        Expanded(
+          // Keep the phone terminal and composer mounted while browsing.
+          child: IndexedStack(
+            index: !tablet && (showConsoleOverview || current == null) ? 0 : 1,
+            children: [
+              if (tablet) const SizedBox.shrink() else overview,
+              terminal(current),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget terminal(Map<String, dynamic>? session) {
     final view = c.screen;
     if (session == null) {

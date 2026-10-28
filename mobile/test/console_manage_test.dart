@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:agent_dock_mobile/main.dart';
+import 'package:agent_dock_mobile/console_switcher.dart';
 
 import 'widget_test.dart' show FakeDock, consoleAction, enterChat;
 
@@ -262,9 +263,15 @@ void main() {
     final c = managedDock();
     addTearDown(c.dispose);
     await tester.pumpWidget(DockApp(client: c));
-    expect(find.text('Game'), findsOneWidget);
+    expect(find.descendant(
+      of: find.byType(ConsoleSwitcher),
+      matching: find.text('Game'),
+    ), findsOneWidget);
     await tester.tap(find.byTooltip('Switch console'));
     await tester.pumpAndSettle();
-    expect(find.text('Game'), findsWidgets);
+    expect(find.descendant(
+      of: find.byType(PopupMenuItem<String>),
+      matching: find.text('Game'),
+    ), findsOneWidget);
   });
 }
