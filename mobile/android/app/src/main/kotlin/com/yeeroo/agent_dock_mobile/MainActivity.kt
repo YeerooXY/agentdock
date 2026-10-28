@@ -11,7 +11,7 @@ class MainActivity : FlutterActivity() {
         if (requestCode == 7411) {
             notificationPermission?.success(grantResults.isNotEmpty() && grantResults[0] == android.content.pm.PackageManager.PERMISSION_GRANTED)
             notificationPermission = null
-        } else super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        } else if (media?.permissionResult(requestCode) != true) super.onRequestPermissionsResult(requestCode, permissions, grantResults)
     }
     override fun onStart() { super.onStart(); media?.start() }
     override fun onStop() { media?.stop(); super.onStop() }

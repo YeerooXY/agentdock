@@ -79,9 +79,35 @@ class AgentMenu {
 
 bool hasEmptyAgentPrompt(Terminal terminal, String provider) {
   if (!['codex', 'claude'].contains(provider)) return false;
-  final line = terminal.buffer.lines[terminal.buffer.absoluteCursorY]
-      .getText()
-      .trim();
-  return RegExp(r'^[›❯>]\s*$').hasMatch(line) ||
-      (provider == 'codex' && line == '› Ask Codex to do anything');
+  final buffer = terminal.buffer;
+  final prompt = RegExp(r'^[›❯>](\s|$)');
+  var row = buffer.lines[buffer.absoluteCursorY];
+  // A TUI may park its hidden cursor below the input box; then use the
+  // lowest prompt row on screen.
+  if (!prompt.hasMatch(row.getText().trim())) {
+    for (var y = buffer.height - 1; y >= buffer.scrollBack; y--) {
+      if (prompt.hasMatch(buffer.lines[y].getText().trim())) {
+        row = buffer.lines[y];
+        break;
+      }
+    }
+  }
+  final line = row.getText().trim();
+  if (RegExp(r'^[›❯>]\s*$').hasMatch(line) ||
+      (provider == 'codex' && line == '› Ask Codex to do anything')) {
+    return true;
+  }
+  if (!prompt.hasMatch(line)) return false;
+  // Both CLIs draw rotating placeholder hints dimmed; typed text is not dim.
+  const glyphs = [0x203a, 0x276f, 0x3e];
+  var x = 0;
+  while (x < row.length && !glyphs.contains(row.getCodePoint(x))) {
+    x++;
+  }
+  for (x++; x < row.length; x++) {
+    final cp = row.getCodePoint(x);
+    if (cp == 0 || cp == 32) continue;
+    if (row.getAttributes(x) & CellAttr.faint == 0) return false;
+  }
+  return true;
 }

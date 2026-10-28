@@ -153,6 +153,9 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
   bool attaching = false;
   bool chatMode = false;
   static const media = MethodChannel('agentdock/media');
+  // The newest screenshot (taken in the last five minutes) offered as a chip.
+  Map? recentShot;
+  final dismissedShots = <int>{};
   bool fitWidth = false;
   _CommandTarget? stagedCommandTarget;
   Map<String, dynamic>? pinnedAccountSession;
@@ -179,12 +182,20 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
           mounted &&
           page == 0 &&
           c.selected.isNotEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text('Attach this screenshot?'),
-            action: SnackBarAction(label: 'Choose image', onPressed: pickImage),
-          ),
-        );
+        // The capture is saved a moment after the callback.
+        Future<void>.delayed(const Duration(seconds: 2), () async {
+          if (!await checkRecentShot() && mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: const Text('Attach this screenshot?'),
+                action: SnackBarAction(
+                  label: 'Attach',
+                  onPressed: () => checkRecentShot(ask: true),
+                ),
+              ),
+            );
+          }
+        });
       }
     });
   }
@@ -324,7 +335,10 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) c.setForeground(true);
+    if (state == AppLifecycleState.resumed) {
+      c.setForeground(true);
+      unawaited(checkRecentShot());
+    }
     if ([
       AppLifecycleState.paused,
       AppLifecycleState.hidden,
@@ -435,7 +449,53 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
     });
   }
 
-  Future<void> pickImage() async {
+  /// Offers the newest screenshot. With [ask], requests photo access first
+  /// and attaches the screenshot directly, or opens the picker if denied.
+  Future<bool> checkRecentShot({bool ask = false}) async {
+    if (page != 0 || c.selected.isEmpty || !supports('console.attachments')) {
+      return false;
+    }
+    try {
+      if (ask && await media.invokeMethod<bool>('allowRecent') != true) {
+        await pickImage();
+        return true;
+      }
+      final found = await media.invokeMethod<Map>('recent', {'seconds': 300});
+      if (!mounted || found == null) return false;
+      if (found['permission'] != true) {
+        if (ask) await pickImage();
+        return ask;
+      }
+      final id = found['id'] as int?;
+      final shot = id == null || dismissedShots.contains(id) ? null : found;
+      setState(() => recentShot = shot);
+      if (ask && shot != null) await attachRecentShot();
+      return shot != null;
+    } on PlatformException {
+      return false;
+    } on MissingPluginException {
+      return false;
+    }
+  }
+
+  Future<void> attachRecentShot() async {
+    final id = recentShot?['id'] as int?;
+    if (id == null) return;
+    await attachImage(
+      () => media.invokeMethod<Uint8List>('recentImage', {'id': id}),
+    );
+    if (mounted && !attaching) {
+      setState(() {
+        dismissedShots.add(id);
+        recentShot = null;
+      });
+    }
+  }
+
+  Future<void> pickImage() =>
+      attachImage(() => media.invokeMethod<Uint8List>('pick'));
+
+  Future<void> attachImage(Future<Uint8List?> Function() source) async {
     if (attaching || sending) return;
     if (!supports('console.attachments')) {
       await run(() async {
@@ -446,7 +506,7 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
     final key = draftKey, pc = c.activePC, id = c.selected;
     setState(() => attaching = true);
     await run(() async {
-      final bytes = await media.invokeMethod<Uint8List>('pick');
+      final bytes = await source();
       // The Android picker backgrounds the activity. It can reconnect, but a
       // changed PC/console must never receive the selected image.
       if (bytes == null) return;
@@ -1457,9 +1517,10 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
                   divisions: 6,
                   label: '${(c.textScale * 100).round()}%',
                   onChanged: (value) {
-                    run(() => c.setTextScale(value));
+                    run(() => c.setTextScale(value, save: false));
                     update(() {});
                   },
+                  onChangeEnd: (value) => run(() => c.setTextScale(value)),
                 ),
                 if (fitWidth)
                   const Text(
@@ -1678,6 +1739,38 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
               ],
             ),
           ),
+          if (recentShot case final shot?)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: InputChip(
+                  key: const ValueKey('recent-screenshot'),
+                  avatar: shot['thumbnail'] is Uint8List
+                      ? ClipRRect(
+                          borderRadius: BorderRadius.circular(4),
+                          child: Image.memory(
+                            shot['thumbnail'] as Uint8List,
+                            fit: BoxFit.cover,
+                            gaplessPlayback: true,
+                          ),
+                        )
+                      : const Icon(Icons.screenshot_outlined),
+                  label: Text(
+                    'Attach screenshot · ${TimeOfDay.fromDateTime(DateTime.fromMillisecondsSinceEpoch(shot['at'] as int)).format(context)}',
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  onPressed: c.connected && !sending && !attaching
+                      ? attachRecentShot
+                      : null,
+                  deleteButtonTooltipMessage: 'Dismiss',
+                  onDeleted: () => setState(() {
+                    dismissedShots.add(shot['id'] as int);
+                    recentShot = null;
+                  }),
+                ),
+              ),
+            ),
           if (c.inputError.isNotEmpty || c.drafts.error.isNotEmpty)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),

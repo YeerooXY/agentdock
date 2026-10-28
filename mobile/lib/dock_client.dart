@@ -227,6 +227,7 @@ class DockClient extends ChangeNotifier {
       );
       if (savedScale != null && savedScale.isFinite) {
         textScale = savedScale.clamp(.85, 1.15).toDouble();
+        notifyListeners();
       }
       if (await storage.read(key: 'stayConnected') == 'true') {
         try {
@@ -244,10 +245,14 @@ class DockClient extends ChangeNotifier {
     }
   }
 
-  Future<void> setTextScale(double value) async {
+  /// Drags update the scale only; the final value is saved once, so out-of-order
+  /// storage writes cannot leave an older size behind.
+  Future<void> setTextScale(double value, {bool save = true}) async {
     textScale = value.clamp(.85, 1.15).toDouble();
-    await storage.write(key: 'textScale', value: textScale.toStringAsFixed(2));
     notifyListeners();
+    if (save) {
+      await storage.write(key: 'textScale', value: textScale.toStringAsFixed(2));
+    }
   }
 
   Future<void> setConsoleAppearance(ConsoleAppearance value) async {

@@ -64,6 +64,23 @@ void main() {
     expect(hasEmptyAgentPrompt(terminal, 'codex'), false);
     expect(hasEmptyAgentPrompt(terminal, 'shell'), false);
   });
+  test('dimmed placeholder hints count as an empty prompt', () {
+    final hint = Terminal()..resize(80, 20);
+    hint.write('\x1b[1m›\x1b[0m \x1b[2mImplement {feature}\x1b[0m\x1b[3G');
+    expect(hasEmptyAgentPrompt(hint, 'codex'), true);
+    final claude = Terminal()..resize(80, 20);
+    claude.write('❯ \x1b[2mTry "fix lint errors"\x1b[0m\x1b[3G');
+    expect(hasEmptyAgentPrompt(claude, 'claude'), true);
+    final typed = Terminal()..resize(80, 20);
+    typed.write('› \x1b[2mhint\x1b[0m typed');
+    expect(hasEmptyAgentPrompt(typed, 'codex'), false);
+    final parked = Terminal()..resize(80, 20);
+    parked.write('› Ask Codex to do anything\r\n\r\n  ? for shortcuts');
+    expect(hasEmptyAgentPrompt(parked, 'codex'), true);
+    parked.write('\x1b[1;3Hdraft');
+    parked.write('\x1b[3;1H');
+    expect(hasEmptyAgentPrompt(parked, 'codex'), false);
+  });
   test('a narrow PC menu keeps a soft-wrapped navigation footer', () {
     final terminal = Terminal()..resize(32, 24);
     terminal.write(menuText(session: true));

@@ -1114,14 +1114,18 @@ async function pasteScreenshot(id) {
 // Per-console text size, changed with the A− / A+ buttons in its header.
 // A viewer preference: kept in this window's storage, never sent to the PC.
 const textSteps = (() => { try { return JSON.parse(localStorage.getItem('console-text-steps') || '{}'); } catch { return {}; } })();
-const textSize = (id, compact) => (compact ? 11 : 14) + (textSteps[id] || 0);
+// Keyed by the console's stable key: session ids change when Paddock restarts.
+const textKey = id => state.sessions.find(s => s.id === id)?.consoleKey || id;
+const textStep = id => textSteps[textKey(id)] ?? textSteps[id] ?? 0;
+const textSize = (id, compact) => (compact ? 11 : 14) + textStep(id);
 function textSizeButtons(id, name) {
-  const step = textSteps[id] || 0;
+  const step = textStep(id);
   return `<span class="text-size-buttons" role="group" aria-label="Text size for ${escape(name)}"><button class="icon-button text-size" data-text-size="-1" data-id="${id}" aria-label="Smaller text" title="Smaller text" ${step <= -4 ? 'disabled' : ''}>A<small>−</small></button><button class="icon-button text-size" data-text-size="1" data-id="${id}" aria-label="Larger text" title="Larger text" ${step >= 10 ? 'disabled' : ''}>A<small>+</small></button></span>`;
 }
 function changeTextSize(id, delta) {
-  const step = Math.max(-4, Math.min(10, (textSteps[id] || 0) + delta));
-  if (step) textSteps[id] = step; else delete textSteps[id];
+  const step = Math.max(-4, Math.min(10, textStep(id) + delta));
+  delete textSteps[id];
+  if (step) textSteps[textKey(id)] = step; else delete textSteps[textKey(id)];
   try { localStorage.setItem('console-text-steps', JSON.stringify(textSteps)); } catch { /* keep the size for this session only */ }
   const record = terminals.get(id);
   if (record) { record.term.options.fontSize = textSize(id, record.compact); record.dimensions = null; scheduleFits(); }
