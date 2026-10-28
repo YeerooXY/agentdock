@@ -1,0 +1,16 @@
+.consoles-only .session-card.review-panel[data-frame]{min-width:0;overflow:hidden;container-type:inline-size}
+/* The shared frame skin and halo extend beyond the card, even at opacity 0. */
+.review-panel>.console-skin{inset:0;overflow:hidden}
+.review-panel .console-panel-header{min-width:0;flex:0 0 auto;max-height:40%;padding-block:4px;overflow:auto}
+.review-panel .console-panel-header .review-title{flex:1;min-width:0;white-space:normal;overflow-wrap:anywhere;font-size:12px}
+.review-panel .review-title small{display:block;font-weight:400;font-size:11px;white-space:normal;overflow-wrap:anywhere}
+.review-panel-body{display:flex;flex-direction:column;flex:1;min-height:0;min-width:0;background:var(--surface);color:inherit;overflow:hidden}
+.review-summary{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;padding:8px 10px;font-size:12px;flex-shrink:0;min-width:0;overflow-wrap:anywhere}
+.review-state{min-width:0}
+.review-elapsed{font-variant-numeric:tabular-nums}
+.review-panel .review-log{flex:1 1 0;min-height:0;min-width:0;width:100%;max-width:100%;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;margin:0;padding:8px 10px;font:12px/1.5 "Cascadia Code",Consolas,monospace;color:inherit;background:transparent}
+.review-error{margin:0;padding:0 10px 8px;font-size:12px;overflow-wrap:anywhere;max-height:30%;overflow:auto}
+.review-actions{display:flex;gap:8px;flex-wrap:wrap;padding:8px 10px;flex-shrink:0}
+.review-actions:has(>button:not([hidden])){border-top:1px solid var(--line)}
+.review-actions button{min-height:32px;min-width:0;max-width:100%;white-space:normal;overflow-wrap:anywhere;font-size:12px}
+.review-panel :focus-visible{outline:2px solid var(--accent);outline-offset:-2px}

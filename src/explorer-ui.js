@@ -5,6 +5,9 @@ export function explorerUI({ host, call, getState, selectedConsole, openFile, co
   host.innerHTML = `<header><strong>Explorer</strong><button data-explorer="refresh" title="Refresh" aria-label="Refresh Explorer">${icon('refresh')}</button><button data-explorer="collapse" title="Collapse all" aria-label="Collapse all folders">${icon('minus')}</button></header><select aria-label="Explorer root"></select><p class="explorer-status" role="status"></p><input type="search" aria-label="Filter loaded filenames" placeholder="Filter filenames"><div class="explorer-tree" role="tree" aria-label="Files"></div><p class="explorer-empty"></p><p class="explorer-error" role="alert"></p><div class="explorer-resize" role="separator" tabindex="0" aria-label="Explorer width" aria-orientation="vertical" aria-valuemin="180" aria-valuemax="480"></div>`;
   const select = host.querySelector('select'), filter = host.querySelector('input'), tree = host.querySelector('[role=tree]'), status = host.querySelector('[role=status]'), error = host.querySelector('[role=alert]'), handle = host.querySelector('[role=separator]');
   const record = () => memory.get(root);
+  // An array response has an inherited .entries function; only listing arrays
+  // are valid here, including when restoring folders after a refresh.
+  const entries = listing => Array.isArray(listing?.entries) ? listing.entries : [];
   function resize(value) {
     width = Math.max(180, Math.min(480, Math.round(value)));
     host.style.setProperty('--explorer-width', `${width}px`); handle.setAttribute('aria-valuenow', width);
@@ -43,7 +46,7 @@ export function explorerUI({ host, call, getState, selectedConsole, openFile, co
     const query = filter.value.toLocaleLowerCase();
     function rows(parent, depth) {
       const listing = r.loaded.get(parent); if (!listing) return '';
-      return listing.entries.map(x => {
+      return entries(listing).map(x => {
         const expanded = query ? r.loaded.has(x.path) && !filterCollapsed.has(x.path) : r.expanded.has(x.path);
         const children = x.directory && (query || expanded) ? rows(x.path, depth + 1) : '';
         if (query && !x.name.toLocaleLowerCase().includes(query) && !children) return '';
@@ -64,14 +67,14 @@ export function explorerUI({ host, call, getState, selectedConsole, openFile, co
     try {
       const result = await call('explorer.list', { root: current, path });
       if (ticket !== generation || root !== current) return;
-      r.loaded.set(path, result); error.textContent = ''; updateStatus(); draw();
+      r.loaded.set(path, { ...result, entries: entries(result) }); error.textContent = ''; updateStatus(); draw();
     } catch (reason) { if (ticket === generation) fail(reason); }
     finally { r.pending.delete(path); if (ticket === generation) { if (!r.pending.size) tree.removeAttribute('aria-busy'); updateMessage(); } }
   }
   async function restore(path = '') {
     const current = root, ticket = generation; await load(path);
     if (current !== root || ticket !== generation) return;
-    for (const entry of record()?.loaded.get(path)?.entries || []) if (entry.directory && record().expanded.has(entry.path)) await restore(entry.path);
+    for (const entry of entries(record()?.loaded.get(path))) if (entry.directory && record().expanded.has(entry.path)) await restore(entry.path);
   }
   function choose(path) {
     ++generation; root = path; filterCollapsed.clear(); error.textContent = ''; tree.removeAttribute('aria-busy');
@@ -83,10 +86,11 @@ export function explorerUI({ host, call, getState, selectedConsole, openFile, co
     const state = getState(); if (!state) return;
     // Without a selected local console, follow the most recently active one; the root label names it.
     const local = x => x && x.alive && !x.dismissed && !x.remote && !x.remoteHostId && !x.kind;
-    const chosen = state.sessions.find(x => x.id === selectedConsole());
-    const session = chosen && !local(chosen) ? chosen : chosen || [...state.sessions].filter(local).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))[0];
-    const project = session && state.projects?.find(x => x.id === session.projectId);
-    const next = session && !session.remote && !session.remoteHostId && !session.kind && session.alive ? project ? project.folders.map(f => ({ path: f.path, label: `${project.name} · ${f.label || f.path}` })) : [{ path: session.cwd, label: `Console folder · ${session.name}` }] : [];
+    const sessions = Array.isArray(state.sessions) ? state.sessions : [], projects = Array.isArray(state.projects) ? state.projects : [];
+    const chosen = sessions.find(x => x.id === selectedConsole());
+    const session = chosen && !local(chosen) ? chosen : chosen || sessions.filter(local).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))[0];
+    const project = session && projects.find(x => x.id === session.projectId);
+    const next = session && !session.remote && !session.remoteHostId && !session.kind && session.alive ? project ? (Array.isArray(project.folders) ? project.folders : []).map(f => ({ path: f.path, label: `${project.name} · ${f.label || f.path}` })) : [{ path: session.cwd, label: `Console folder · ${session.name}` }] : [];
     const stamp = JSON.stringify([session?.id, next]);
     if (stamp === context) return; context = stamp; roots = next;
     width = Math.max(180, Math.min(480, state.settings.explorerWidth || 260));

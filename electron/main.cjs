@@ -342,6 +342,8 @@ app.whenReady().then(async () => {
   // Reviewers are the user's own signed-in Claude Code and Codex accounts.
   workbench.delegation = new Delegation(root, {
     testMode, getSettings: () => settings,
+    openPanel: job => sessions?.createReviewPanel(job),
+    panelOpen: id => sessions?.items.get(id)?.kind === 'review',
     getLimits: () => limits.map(item => ({ ...item, accountId: limitAccountId(item) })),
     candidates: () => REVIEWERS.flatMap(provider => {
       const executable = cliSetup.executable(provider), name = provider === 'claude' ? 'Claude Code' : 'Codex';
@@ -592,9 +594,10 @@ app.whenReady().then(async () => {
         case 'code.report': return { ok: true, value: await codePanel.report(payload?.id, payload?.refresh === true) };
         case 'code.browse': return { ok: true, value: await codePanel.browse(payload?.id, payload?.path) };
         case 'code.file': return { ok: true, value: await codePanel.file(payload?.id, payload?.path, payload?.reportId) };
-        case 'code.close': case 'web.close': {
-          const panel = method === 'web.close' ? sessions.items.get(payload) : codePanel.panel(payload), slotNames = { ...settings.slotNames };
+        case 'code.close': case 'web.close': case 'review.close': {
+          const panel = method === 'code.close' ? codePanel.panel(payload) : sessions.items.get(payload), slotNames = { ...settings.slotNames };
           if (method === 'web.close' && panel?.kind !== 'web') throw new Error('Open a preview panel first.');
+          if (method === 'review.close' && panel?.kind !== 'review') throw new Error('Open a review panel first.');
           delete slotNames[panel.slot]; persistSettings({ ...settings, slotNames });
           sessions.end(payload); break;
         }
@@ -814,6 +817,7 @@ app.whenReady().then(async () => {
           }
           if (typeof payload?.autoSwitchAccounts === 'boolean') next.autoSwitchAccounts = payload.autoSwitchAccounts;
           if (typeof payload?.delegationEnabled === 'boolean') next.delegationEnabled = payload.delegationEnabled;
+          if (typeof payload?.delegationPanels === 'boolean') next.delegationPanels = payload.delegationPanels;
           if (payload?.delegationProviders !== undefined) {
             if (!Array.isArray(payload.delegationProviders) || payload.delegationProviders.some(id => !REVIEWERS.includes(id))) throw new Error('Choose reviewers from Claude Code, Codex and Kiro.');
             next.delegationProviders = [...new Set(payload.delegationProviders)];

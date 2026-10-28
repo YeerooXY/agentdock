@@ -7,6 +7,7 @@ const fs = require('node:fs'), path = require('node:path');
 const { spawn, execFile } = require('node:child_process');
 const { randomUUID } = require('node:crypto');
 const { EventEmitter } = require('node:events');
+const { StringDecoder } = require('node:string_decoder');
 const { permitted } = require('./code-panel.cjs');
 const { programLaunch } = require('./platform.cjs');
 
@@ -99,25 +100,27 @@ function pickReviewer({ candidates, limits, callerProvider, requested, now = Dat
 // Every reviewer reads the brief from stdin, so it never needs file access outside the project.
 function reviewerLaunch(provider, executable, { outFile, model, platform = process.platform }) {
   const args = provider === 'claude'
-    ? ['-p', '--output-format', 'json', '--tools', 'Read,Grep,Glob', '--strict-mcp-config', '--no-session-persistence', ...(model ? ['--model', model] : [])]
+    ? ['-p', '--output-format', 'stream-json', '--verbose', '--tools', 'Read,Grep,Glob', '--strict-mcp-config', '--no-session-persistence', ...(model ? ['--model', model] : [])]
     : provider === 'kiro'
       ? ['chat', '--no-interactive', '--trust-tools=fs_read', ...(model ? ['--model', model] : [])]
       // Codex's default Windows sandbox rejects every command, even reads; the unelevated one enforces read-only.
-      : ['exec', '--sandbox', 'read-only', ...(platform === 'win32' ? ['-c', 'windows.sandbox=unelevated'] : []), '--ephemeral', '--skip-git-repo-check', '--color', 'never', '-o', outFile, ...(model ? ['-m', model] : []), '-'];
+      : ['exec', '--sandbox', 'read-only', ...(platform === 'win32' ? ['-c', 'windows.sandbox=unelevated'] : []), '--json', '--ephemeral', '--skip-git-repo-check', '--color', 'never', '-o', outFile, ...(model ? ['-m', model] : []), '-'];
   return programLaunch(executable, args);
 }
 
 function parseReply(provider, stdout, outFile) {
   let text = '', usage = null;
   if (provider === 'claude') {
-    const line = stdout.trim().split('\n').reverse().find(l => l.startsWith('{'));
+    const line = stdout.trim().split('\n').reverse().find(l => {
+      try { const data = JSON.parse(l); return data.type === 'result' || (!data.type && 'result' in data); } catch { return false; }
+    });
     const data = line ? JSON.parse(line) : null;
     if (!data || data.is_error) throw new Error(String(data?.result || 'The reviewer returned no answer.').slice(0, 300));
     text = String(data.result || '');
     usage = { inputTokens: data.usage?.input_tokens ?? null, outputTokens: data.usage?.output_tokens ?? null, turns: data.num_turns ?? null };
   } else if (provider === 'kiro') {
     // Kiro prints its working notes first; the answer is the last VERDICT block.
-    text = stdout.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '');
+    text = stripAnsi(stdout);
     const last = text.lastIndexOf('VERDICT:');
     if (last >= 0) text = text.slice(last);
   } else {
@@ -127,6 +130,77 @@ function parseReply(provider, stdout, outFile) {
   if (!text) throw new Error('The reviewer returned no answer.');
   const verdict = /VERDICT:\s*approve\b/i.test(text) ? 'approve' : /VERDICT:\s*changes-requested/i.test(text) ? 'changes-requested' : 'unclear';
   return { text, verdict, usage };
+}
+
+function stripAnsi(text) {
+  return String(text).replace(/\x1b\][^\x07]*(?:\x07|\x1b\\)/g, '').replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '').replace(/[\x00-\x08\x0b-\x1f\x7f]/g, '');
+}
+
+// Only selected event fields become progress. Never publish raw JSON, tool
+// output, shell commands, stdin, stderr, environment objects or usage tokens.
+function progressLines(provider, line) {
+  if (provider === 'kiro') return [stripAnsi(line)];
+  let event; try { event = JSON.parse(line); } catch { return []; }
+  if (!event || typeof event !== 'object') return [];
+  if (provider === 'claude') {
+    if (event.type === 'result') return [String(event.result || '')];
+    if (event.type !== 'assistant') return [];
+    return (Array.isArray(event.message?.content) ? event.message.content : []).flatMap(block => {
+      if (!block || typeof block !== 'object') return [];
+      if (block.type === 'text') return [String(block.text || '')];
+      if (block.type !== 'tool_use') return [];
+      if (block.name === 'Read') return [`Reading ${block.input?.file_path || 'file'}`];
+      if (block.name === 'Grep') return ['Searching files'];
+      if (block.name === 'Glob') return ['Finding files'];
+      return ['Using read-only tool'];
+    });
+  }
+  const item = event.item;
+  if (!item) return [];
+  if (item.type === 'agent_message' && event.type === 'item.completed') return [String(item.text || '')];
+  if (event.type !== 'item.started') return [];
+  if (item.type === 'command_execution') return ['Running read-only command'];
+  if (item.type === 'mcp_tool_call') return ['Using read-only tool'];
+  return [];
+}
+
+function progressLog({ brief = '', environment = {}, append }) {
+  const privateLines = brief.split(/\r?\n/).map(x => x.trim()).filter(Boolean);
+  const values = [...new Set(Object.values(environment).filter(x => typeof x === 'string' && x.length))].sort((a, b) => b.length - a.length);
+  const privateValues = values.length ? new RegExp(values.map(x => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'), 'g') : null;
+  return text => {
+    for (let line of stripAnsi(text).split(/\r?\n/)) {
+      line = line.trim();
+      if (!line || privateLines.some(part => line.includes(part) || (line.length >= 12 && part.includes(line)))) continue;
+      if (privateValues) line = line.replace(privateValues, '[redacted]');
+      line = line.replace(/\b(?:sk-|gh[pousr]_|github_pat_|Bearer\s+)[\w.\-/+=]+/gi, '[redacted]')
+        .replace(/\b[A-Za-z0-9_+/=-]{40,}\b/g, '[redacted]')
+        .replace(/\b(?:[\w-]*(?:token|secret|password|api[_-]?key)[\w-]*)\s*[:=]\s*\S+/gi, '[redacted]');
+      append(line.slice(0, 4000));
+    }
+  };
+}
+
+function appendLog(job, line) {
+  job.log ||= [];
+  job.log.push(line);
+  let bytes = job.log.reduce((sum, text) => sum + Buffer.byteLength(text, 'utf8') + 1, 0);
+  while (job.log.length > 400 || bytes > 200_000) bytes -= Buffer.byteLength(job.log.shift(), 'utf8') + 1;
+}
+
+function progressStream(provider, write) {
+  const decoder = new StringDecoder('utf8');
+  let pending = '', dropping = false;
+  function consume(text, end = false) {
+    const lines = (pending + text).split('\n'); pending = lines.pop();
+    for (const line of lines) {
+      if (!dropping && line.length <= 256_000) for (const text of progressLines(provider, line)) write(text);
+      dropping = false;
+    }
+    if (pending.length > 256_000) { pending = ''; dropping = true; }
+    if (end) { if (!dropping && pending.length) for (const text of progressLines(provider, pending)) write(text); pending = ''; }
+  }
+  return { push: chunk => consume(typeof chunk === 'string' ? chunk : decoder.write(chunk)), end: () => consume(decoder.end(), true) };
 }
 
 function killTree(child) {
@@ -140,14 +214,15 @@ function killTree(child) {
 }
 
 class Delegation extends EventEmitter {
-  constructor(root, { getSettings, candidates, getLimits, environment, saveResult, spawnProcess = spawn, run = execFile, now = Date.now, testMode = false } = {}) {
+  constructor(root, { getSettings, candidates, getLimits, environment, saveResult, openPanel, panelOpen = () => false, spawnProcess = spawn, run = execFile, now = Date.now, testMode = false } = {}) {
     super();
-    Object.assign(this, { getSettings, candidates, getLimits, environment, saveResult, spawnProcess, run, now, testMode });
+    Object.assign(this, { getSettings, candidates, getLimits, environment, saveResult, openPanel, panelOpen, spawnProcess, run, now, testMode });
     this.dir = path.join(root, 'delegations'); this.jobs = new Map(); this.children = new Map(); this.finishers = new Map(); this.started = [];
   }
   snapshot() {
-    return [...this.jobs.values()].sort((a, b) => b.startedAt - a.startedAt).slice(0, 20)
-      .map(({ id, state, reviewer, why, consoleName, startedAt, finishedAt, verdict, error, resultId }) => ({ id, state, reviewer, why, consoleName, startedAt, finishedAt, verdict, error, resultId }));
+    return [...this.jobs.values()].sort((a, b) => b.startedAt - a.startedAt)
+      .filter((job, index) => job.state === 'running' || index < 20 || (job.panelId && this.panelOpen(job.panelId)))
+      .map(({ id, state, reviewer, why, consoleName, startedAt, finishedAt, verdict, error, resultId, log, panelId, noFreeSlot }) => ({ id, state, reviewer, why, consoleName, startedAt, finishedAt, verdict, error, resultId, log: [...(log || [])], panelId, noFreeSlot }));
   }
   allowed() {
     const settings = this.getSettings() || {};
@@ -170,35 +245,54 @@ class Delegation extends EventEmitter {
     const brief = reviewBrief({ focus, changes }), outFile = path.join(folder, 'reply.md');
     const job = { id, state: 'running', reviewer: { accountId: picked.choice.id, provider: picked.choice.provider, label: picked.choice.label }, why: picked.why,
       callerSessionId: caller.sessionId, consoleName: caller.consoleName || '', context: caller.context, focus, files: changes.files.length + changes.untracked.length,
-      startedAt: this.now(), finishedAt: null, verdict: null, text: '', error: '', usage: null, resultId: null, waiters: [] };
-    this.jobs.set(id, job); this.started.push(job.startedAt); this.emit('changed');
+      startedAt: this.now(), finishedAt: null, verdict: null, text: '', error: '', usage: null, resultId: null, waiters: [], log: [], panelId: null, noFreeSlot: false };
+    this.jobs.set(id, job); this.started.push(job.startedAt);
+    if (this.getSettings()?.delegationPanels !== false && this.openPanel) {
+      try { job.panelId = this.openPanel(job)?.id || null; } catch {}
+      job.noFreeSlot = !job.panelId;
+    }
+    this.emit('changed');
     this.run_(job, { brief, outFile, folder });
     return this.status(id);
   }
   run_(job, { brief, outFile, folder }) {
     const settings = this.getSettings() || {}, provider = job.reviewer.provider;
+    let stream, progressTimer;
     const finish = (patch) => {
       if (job.state !== 'running') return;
-      Object.assign(job, patch, { finishedAt: this.now() }); clearTimeout(timer); this.children.delete(job.id); this.finishers.delete(job.id);
+      stream?.end();
+      Object.assign(job, patch, { finishedAt: this.now() }); clearTimeout(timer); clearTimeout(progressTimer); this.children.delete(job.id); this.finishers.delete(job.id);
+      appendLog(job, patch.state === 'done' ? `Verdict: ${job.verdict}` : patch.state === 'stopped' ? 'Stopped' : 'Failed');
+      this.emit('changed');
       try { fs.rmSync(folder, { recursive: true, force: true }); } catch {}
       this.record(job).finally(() => { for (const wake of job.waiters.splice(0)) wake(); this.emit('changed'); });
     };
     const timer = setTimeout(() => { if (child) killTree(child); finish({ state: 'failed', error: 'The review timed out after 10 minutes.' }); }, (settings.delegationTimeoutMinutes || 10) * 60_000);
     let child, stdout = '', stderr = '';
+    const stdoutDecoder = new StringDecoder('utf8');
     this.finishers.set(job.id, patch => { finish(patch); if (child) killTree(child); });
     try {
       const executable = this.candidates().find(c => c.id === job.reviewer.accountId)?.executable;
       if (!executable) throw new Error(`${names[provider]} is no longer installed.`);
       const launch = reviewerLaunch(provider, executable, { outFile, model: settings.delegationModels?.[provider] });
-      child = this.spawnProcess(launch.executable, launch.args, { cwd: job.context?.project || undefined, env: this.environment(job.reviewer.accountId, provider), windowsHide: true, shell: false, stdio: ['pipe', 'pipe', 'pipe'] });
+      const env = this.environment(job.reviewer.accountId, provider);
+      const write = progressLog({ brief: brief + '\n' + job.focus, environment: env, append: line => { appendLog(job, line); } });
+      stream = progressStream(provider, write);
+      child = this.spawnProcess(launch.executable, launch.args, { cwd: job.context?.project || undefined, env, windowsHide: true, shell: false, stdio: ['pipe', 'pipe', 'pipe'] });
       child.stdin?.on('error', () => {});
       child.stdin?.end(brief);
     } catch (error) { finish({ state: 'failed', error: error.message }); return; }
     this.children.set(job.id, child);
-    child.stdout?.on('data', chunk => { if (stdout.length < 2_000_000) stdout += chunk; });
+    child.stdout?.on('data', chunk => {
+      if (job.state !== 'running') return;
+      stdout = (stdout + (typeof chunk === 'string' ? chunk : stdoutDecoder.write(chunk))).slice(-2_000_000); stream.push(chunk);
+      if (!progressTimer) progressTimer = setTimeout(() => { progressTimer = null; this.emit('changed'); }, 100);
+    });
     child.stderr?.on('data', chunk => { if (stderr.length < 20_000) stderr += chunk; });
     child.once('error', () => finish({ state: 'failed', error: `${names[provider]} could not start.` }));
     child.once('close', code => {
+      if (job.state !== 'running') return;
+      stdout += stdoutDecoder.end();
       try {
         const reply = parseReply(provider, stdout, outFile);
         finish({ state: 'done', ...reply });
@@ -230,4 +324,4 @@ class Delegation extends EventEmitter {
   stopAll() { for (const id of [...this.finishers.keys()]) this.stop(id); }
 }
 
-module.exports = { Delegation, collectChanges, reviewBrief, pickReviewer, reviewerLaunch, parseReply, headroom, cleanFiles, REVIEWERS };
+module.exports = { Delegation, collectChanges, reviewBrief, pickReviewer, reviewerLaunch, parseReply, headroom, cleanFiles, REVIEWERS, progressLines, progressLog, appendLog, progressStream };

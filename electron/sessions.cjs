@@ -5,7 +5,7 @@ const crypto = require('node:crypto');
 const { EventEmitter } = require('node:events');
 const { findProgram, nativeCodex, wslPath } = require('./adapters.cjs');
 const { atomicJson, readJson } = require('./storage.cjs');
-const { planLayout, planOpening, planGrid, gridSize } = require('./console-layout.cjs');
+const { planLayout, planOpening, planGrid, gridSize, occupied } = require('./console-layout.cjs');
 const { providers, byId: cliAgents } = require('./cli-catalog.cjs');
 const { prepareCli } = require('./cli-launch.cjs');
 const { prepareCodexSession } = require('./codex-session.cjs');
@@ -16,7 +16,7 @@ const { psQuote, shQuote, quote, shellLaunch, programLaunch, customLaunch, realR
 const { cleanWorktree } = require('./worktrees.cjs');
 const { previewUrl } = require('./web-preview.cjs');
 // Code and preview panels sit in the grid but run no process.
-const isPanel = item => item?.kind === 'code' || item?.kind === 'web';
+const isPanel = item => ['code', 'web', 'review'].includes(item?.kind);
 function envValue(env, name) { return Object.entries(env).find(([key]) => key.toLowerCase() === name.toLowerCase())?.[1]; }
 function removeEnv(env, names) { const set = new Set(names.map(x => x.toLowerCase())); for (const key of Object.keys(env)) if (set.has(key.toLowerCase())) delete env[key]; }
 function canonical(value) { const result = path.resolve(value).replace(/[\\/]+$/, ''); return process.platform === 'win32' ? result.toLowerCase() : result; }
@@ -88,6 +88,15 @@ class Sessions extends EventEmitter {
     } : {})
   })).sort((a, b) => a.slot - b.slot); }
   codePanels() { return [...this.items.values()].filter(item => isPanel(item) && item.alive).map(publicSession); }
+  createReviewPanel(job) {
+    if (this.stopping) return null;
+    const used = occupied([...this.items.values(), ...this.starting.values()], this.grid);
+    const slot = Array.from({ length: this.grid.columns * this.grid.rows }, (_, i) => i + 1).find(x => !used.has(x));
+    if (!slot) return null;
+    const item = { id: crypto.randomUUID(), kind: 'review', provider: 'review', purpose: 'review', alive: true, state: 'open',
+      name: `Review · ${job.reviewer.label}`, consoleName: job.consoleName, reviewId: job.id, slot, width: 1, height: 1, cwd: '', consoleKey: crypto.randomUUID() };
+    this.items.set(item.id, item); this.emit('changed'); return publicSession(item);
+  }
   createCodePanel(raw = {}) {
     if (this.stopping || this.starting.size) throw new Error('Wait for the console to finish opening.');
     const cwd = String(raw.cwd || '');
@@ -109,7 +118,7 @@ class Sessions extends EventEmitter {
     item.url = previewUrl(url); this.emit('changed'); return publicSession(item);
   }
   savedConsoles() {
-    return [...this.items.values()].filter(x => (x.alive || x.restoreError) && !x.dismissed && !['login', 'setup'].includes(x.purpose)).map(x => ({
+    return [...this.items.values()].filter(x => (x.alive || x.restoreError) && !x.dismissed && !['login', 'setup', 'review'].includes(x.purpose)).map(x => ({
       slot: x.slot, width: x.width || 1, height: x.height || 1, consoleKey: x.consoleKey || x.id, projectId: x.projectId || null, name: x.name, nameMode: x.nameMode, cwd: x.cwd, provider: x.provider, permissions: x.permissions,
       ...(x.kind === 'code' ? { kind: 'code', codeSourceKey: x.codeSourceKey } : {}),
       ...(x.kind === 'web' ? { kind: 'web', url: x.url, codeSourceKey: x.codeSourceKey } : {}),
@@ -629,7 +638,7 @@ class Sessions extends EventEmitter {
   }
   write(id, data, { draft = false, queued = false } = {}) {
     const item = this.items.get(id);
-    if (isPanel(item)) throw new Error(item.kind === 'code' ? 'This is a read-only code panel.' : 'This is a preview panel.');
+    if (isPanel(item)) throw new Error(`This is a read-only ${item.kind === 'web' ? 'preview' : item.kind} panel.`);
     if (!item?.alive) return;
     if (item.switching) throw new Error('This console is switching accounts. Your composer draft stays on the phone until switching finishes.');
     if (typeof data !== 'string' || data.length > 65536) throw new Error('Terminal input is too large.');

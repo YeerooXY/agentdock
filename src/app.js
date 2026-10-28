@@ -27,6 +27,7 @@ import { projectsUI } from './projects-ui.js';
 import { consoleProjects } from './console-projects.js';
 import { consoleQueue } from './console-queue.js';
 import { webPanelUI } from './web-panel-ui.js';
+import { reviewPanelUI } from './review-panel-ui.js';
 import { imageGenerationUI } from './image-generation-ui.js';
 import { sshUI } from './ssh-ui.js';
 import './ssh.css';
@@ -90,7 +91,7 @@ const gridSize = () => state?.grid || { columns: 3, rows: 3 };
 const allPanels = () => [...(state?.sessions || []), ...(state?.codePanels || [])];
 const gridCapacity = () => gridSize().columns * gridSize().rows;
 let openingConsole = false;
-let explorer, codePanels, webPanels, launchGesture, chooserOpener, vim, setup, workbench, layoutMotion, phone, projects, projectChats, messageQueue, imageGenerator, updates, usageView;
+let explorer, codePanels, webPanels, reviewPanels, launchGesture, chooserOpener, vim, setup, workbench, layoutMotion, phone, projects, projectChats, messageQueue, imageGenerator, updates, usageView;
 const nameSaves = new Map();
 const launchHint = 'title="Click to open. Hold or right-click to choose." aria-haspopup="dialog"';
 let renderedView = null, viewAnimation, windowMoving = false, pageBeforeSettings = 'consoles';
@@ -343,6 +344,7 @@ function sessionCard(slot) {
   if (!session) return `<article class="session-card empty" data-slot="${slot}"><header class="empty-panel-header">${slotNameInput(slot)}${appearance.button(slot)}</header><button class="console-launch" data-action="new" data-slot="${slot}" aria-label="Open console ${slot}" ${launchHint} ${openingConsole ? 'disabled' : ''}>${newConsoleMark()}</button></article>`;
   if (session.kind === 'code') return codePanels.card(session);
   if (session.kind === 'web') return webPanels.card(session);
+  if (session.kind === 'review') return reviewPanels.card(session);
   const expanded = expandedId === session.id;
   const endLabel = session.restoreError ? 'Remove saved console' : 'End this console';
   return `<article class="session-card ${escape(session.state)}${expanded ? ' console-expanded' : ''}" data-console-id="${session.id}" data-slot="${slot}"><header class="console-panel-header"><button class="console-grip" draggable="true" data-console-drag="${session.id}" aria-label="Move console ${slot}" title="Drag to move or swap. Focus here and press Alt + 1–9 to move.">${readyIcon(session)}</button><span class="slot" title="${escape(providerName(session.provider) + ' · ' + session.cwd)}">${String(slot).padStart(2, '0')}</span>${slotNameInput(slot, session)}${session.worktree ? `<span class="worktree-badge" role="img" aria-label="${escape(`Git worktree branch ${session.worktree.branch}`)}" title="${escape(`Git worktree on ${session.worktree.branch}\n${session.worktree.path}`)}"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="4" cy="3.5" r="1.6"/><circle cx="4" cy="12.5" r="1.6"/><circle cx="12" cy="5.5" r="1.6"/><path d="M4 5.1v5.8M12 7.1c0 2.6-3 3-6.6 4.4"/></svg><span class="worktree-name">${escape(session.worktree.branch.replace(/^paddock\//, ''))}</span></span>` : ''}<span class="panel-status">${badge(session.state)}</span>${accountSwitchMenu(session, 'panel')}${projectChats.button(session)}${textSizeButtons(session.id, `console ${slot}`)}${appearance.button(slot)}<button class="icon-button console-expand" data-action="toggle-console" data-id="${session.id}" aria-label="${expanded ? 'Restore console ' + slot + ' to the grid (Ctrl+Shift+Enter)' : 'Expand console ' + slot}" aria-keyshortcuts="${expanded ? 'Control+Shift+Enter' : ''}" title="${expanded ? 'Restore console · Ctrl+Shift+Enter' : 'Expand console'}">${icon(expanded ? 'restore' : 'expand')}</button><button class="icon-button console-close" data-action="end-session" data-id="${session.id}" aria-label="${endLabel} ${slot}" title="${endLabel}">${icon('close')}</button></header>${switchOfferHtml(session)}<div class="console-panel-body" data-terminal-mount="${session.id}"></div>${messageQueue?.button(session) || ''}${resizeHandles(slot)}</article>`;
@@ -417,10 +419,11 @@ function renderConsoles() {
     appearance.sync(panel, slot);
     panel.style.gridColumn = `${(slot - 1) % gridSize().columns + 1} / span ${session?.width || 1}`;
     panel.style.gridRow = `${Math.floor((slot - 1) / gridSize().columns) + 1} / span ${session?.height || 1}`;
-    if (session?.kind === 'code' || session?.kind === 'web') {
-      const kind = session.kind === 'web' ? 'preview' : 'code';
-      panel.classList.toggle('console-expanded', isExpanded); panel.setAttribute('aria-label', session.kind === 'web' ? 'Preview panel' : 'Code panel');
+    if (['code', 'web', 'review'].includes(session?.kind)) {
+      const kind = session.kind === 'web' ? 'preview' : session.kind;
+      panel.classList.toggle('console-expanded', isExpanded); panel.setAttribute('aria-label', `${kind} panel`);
       if (session.kind === 'web') webPanels.mount(session, panel.querySelector('.web-panel-body'));
+      else if (session.kind === 'review') reviewPanels.mount(session, panel.querySelector('.review-panel-body'));
       else codePanels.mount(session, panel.querySelector('.code-panel-body'));
       const expand = panel.querySelector('[data-action="toggle-console"]'); expand.innerHTML = icon(isExpanded ? 'restore' : 'expand'); expand.setAttribute('aria-label', isExpanded ? `Restore ${kind} panel to grid` : `Expand ${kind} panel`); expand.setAttribute('aria-expanded', String(isExpanded));
       panel.querySelectorAll('.console-grip,.console-resize').forEach(handle => { handle.disabled = !!expanded; });
@@ -484,8 +487,8 @@ function renderConsoles() {
 function delegationSection() {
   const on = state.settings.delegationEnabled === true, allowed = state.settings.delegationProviders || ['claude', 'codex', 'kiro'];
   const states = { running: 'Reviewing', done: 'Done', failed: 'Failed', stopped: 'Stopped' };
-  const rows = (state.delegations || []).slice(0, 6).map(job => `<div class="delegation-row"><span><strong>${escape(job.reviewer.label)}</strong> · ${states[job.state] || escape(job.state)}${job.verdict ? ' · ' + (job.verdict === 'approve' ? 'Approved' : job.verdict === 'changes-requested' ? 'Changes requested' : 'No clear verdict') : ''}<small>For ${escape(job.consoleName || 'a console')}. ${escape(job.error || job.why)}</small></span>${job.state === 'running' ? `<button class="secondary" data-delegation-stop="${escape(job.id)}">Stop</button>` : ''}</div>`).join('');
-  return `<section class="surface delegation-settings"><div class="section-label"><div><h2>Cross-agent reviews</h2><p>An agent can ask another of your subscriptions to review its changes.</p></div></div><label class="check-row"><input type="checkbox" data-setting="delegationEnabled" ${on ? 'checked' : ''}>Allow cross-agent reviews</label><fieldset class="delegation-reviewers" ${on ? '' : 'disabled'}><legend>Reviewers</legend>${[['claude', 'Claude Code'], ['codex', 'Codex'], ['kiro', 'Kiro']].map(([id, name]) => `<label class="check-row"><input type="checkbox" data-delegation-provider="${id}" ${allowed.includes(id) ? 'checked' : ''}>${name}</label>`).join('')}</fieldset><p class="field-hint">Paddock runs the reviewer’s own CLI read-only with your sign-in, picks the account with the most usage left and saves each review in Results. The changed code goes to the reviewer’s vendor. Up to 2 at a time and 20 an hour.</p>${rows ? `<div class="delegation-list">${rows}</div>` : ''}</section>`;
+  const rows = (state.delegations || []).filter((job, index) => job.state === 'running' || index < 6).map(job => `<div class="delegation-row"><span><strong>${escape(job.reviewer.label)}</strong> · ${states[job.state] || escape(job.state)}${job.verdict ? ' · ' + (job.verdict === 'approve' ? 'Approved' : job.verdict === 'changes-requested' ? 'Changes requested' : 'No clear verdict') : ''}${job.noFreeSlot ? ' · No free slot' : ''}<small>For ${escape(job.consoleName || 'a console')}. ${escape(job.error || job.why)}</small></span>${job.state === 'running' ? `<button class="secondary" data-delegation-stop="${escape(job.id)}">Stop</button>` : ''}</div>`).join('');
+  return `<section class="surface delegation-settings"><div class="section-label"><div><h2>Cross-agent reviews</h2><p>An agent can ask another of your subscriptions to review its changes.</p></div></div><label class="check-row"><input type="checkbox" data-setting="delegationEnabled" ${on ? 'checked' : ''}>Allow cross-agent reviews</label><label class="check-row"><input type="checkbox" data-setting="delegationPanels" ${state.settings.delegationPanels !== false ? 'checked' : ''}>Show reviews in the console grid</label><fieldset class="delegation-reviewers" ${on ? '' : 'disabled'}><legend>Reviewers</legend>${[['claude', 'Claude Code'], ['codex', 'Codex'], ['kiro', 'Kiro']].map(([id, name]) => `<label class="check-row"><input type="checkbox" data-delegation-provider="${id}" ${allowed.includes(id) ? 'checked' : ''}>${name}</label>`).join('')}</fieldset><p class="field-hint">Paddock runs the reviewer’s own CLI read-only with your sign-in, picks the account with the most usage left and saves each review in Results. The changed code goes to the reviewer’s vendor. Up to 2 at a time and 20 an hour.</p>${rows ? `<div class="delegation-list">${rows}</div>` : ''}</section>`;
 }
 function ledgerTable() {
   return state.ledger.length ? `<div class="table-scroll"><table><thead><tr><th>Time</th><th>Provider / model</th><th>Input</th><th>Output</th><th>Status</th></tr></thead><tbody>${state.ledger.slice(0, 100).map(row => `<tr><td>${new Date(row.at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</td><td><strong class="ledger-provider">${accountMark(row.provider)}${escape(providerName(row.provider))}</strong><small>${escape(row.model)}</small></td><td class="mono">${number(row.usage?.input)}</td><td class="mono">${number(row.usage?.output)}</td><td><span class="ledger-status ${row.status}">${escape(row.status)}</span></td></tr>`).join('')}</tbody></table></div>` : `<div class="empty-ledger"><span class="empty-illustration">${icon('chart')}</span><h3>No API requests yet</h3><p>Requests made here will appear below.</p><button class="secondary" data-page="api">Open API workspace ${icon('arrow')}</button></div>`;
@@ -742,6 +745,7 @@ function updatePreview() {
 }
 let bareFullscreen = false; // set when F11, not a console expansion, entered fullscreen
 function receive(next) {
+  next = { ...next, sessions: Array.isArray(next.sessions) ? next.sessions : [], codePanels: Array.isArray(next.codePanels) ? next.codePanels : [], delegations: Array.isArray(next.delegations) ? next.delegations : [] };
   ++stateReceiveVersion;
   const sessionEffects = [];
   if (state && next.mode !== state.mode) {
@@ -1916,6 +1920,7 @@ vim = vimControls({
   focusSlot: focusVimSlot, action: vimAction, onError: message => toast(message, true)
 });
 webPanels = webPanelUI({ call, getState: () => state, selectedConsole: () => selectedId, escape, icon, resizeHandles, toast, navigate: navigatePage });
+reviewPanels = reviewPanelUI({ call, getState: () => state, escape, icon, resizeHandles, toast, openResult: id => workbench.openResult(id) });
 codePanels = codePanelUI({ call, getState: () => state, selectedConsole: () => selectedId, escape, icon, resizeHandles, toast, navigate: navigatePage,
   pasteContext: async (id, text) => {
     const session = state.sessions.find(x => x.id === id && x.alive && !x.switching);

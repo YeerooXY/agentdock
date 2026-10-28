@@ -202,6 +202,7 @@ export function workbenchUI({ call, getState, getPage, renderPage, escape: e, to
   }
   return {
     openNotice,
+    openResult: preview,
     render: page => page === 'results' ? gallery() : '',
     mount: () => { loadImages(); const btn = document.querySelector('[data-wb="delete-selected"]'); if (btn) btn.disabled = !selected.size; },
     sync() {
