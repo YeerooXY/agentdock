@@ -68,8 +68,10 @@ async function eventually(predicate, message) {
   const expandedGrid = await page.locator('.session-grid').boundingBox();
   await page.locator('#sidebar-toggle').click();
   await eventually(async () => (await invoke('state')).settings.sidebarCollapsed === true);
-  await page.locator('#sidebar').waitFor({ state: 'hidden' });
-  assert.equal(await page.locator('#sidebar').isVisible(), false);
+  // The toggle collapses the Explorer pane; the activity rail stays.
+  await page.locator('#explorer-pane').waitFor({ state: 'hidden' });
+  assert.equal(await page.locator('#explorer-pane').isVisible(), false);
+  assert.equal(await page.locator('#sidebar').isVisible(), true);
   assert.ok((await page.locator('.session-grid').boundingBox()).width > expandedGrid.width);
   assert.ok(await page.locator('.session-card.empty').evaluateAll(cards => cards.every(card => {
     const panel = card.getBoundingClientRect(), plus = card.querySelector('svg').getBoundingClientRect();
@@ -80,11 +82,10 @@ async function eventually(predicate, message) {
   await capture({ path: path.join(artifacts, 'test-grid-collapsed.png') });
   await page.reload();
   await page.waitForSelector('.session-grid');
-  assert.equal(await page.locator('#sidebar').isVisible(), false);
+  assert.equal(await page.locator('#explorer-pane').isVisible(), false);
   await page.locator('#sidebar-toggle').click();
-  await page.locator('#sidebar').waitFor({ state: 'visible' });
-  await page.waitForFunction(() => getComputedStyle(document.querySelector('#sidebar')).marginLeft === '0px');
-  checks.push('Empty panels keep the plus centered at rest; sidebar toggles completely and remembers its state');
+  await page.locator('#explorer-pane').waitFor({ state: 'visible' });
+  checks.push('Empty panels keep the plus centered at rest; the Explorer pane toggles and remembers its state while the activity rail stays');
   await capture({ path: path.join(artifacts, 'test-overview.png') });
   const emptyName = page.locator('.session-card[data-slot="3"] .console-name');
   await emptyName.fill('Trader'); await emptyName.press('Enter');
