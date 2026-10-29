@@ -999,6 +999,36 @@ class DockClient extends ChangeNotifier {
     }
   }
 
+  Future<int> previewStatus(String id, String address) async {
+    final config = pairing;
+    if (!connected || config == null) throw StateError('Reconnect to your PC first.');
+    final path = Uri.tryParse(address);
+    if (path == null || !RegExp(r'^[a-f0-9-]{36}$').hasMatch(id)) {
+      throw const FormatException('Invalid preview.');
+    }
+    Object? failure;
+    for (final endpoint in endpoints(config)) {
+      final client = pinned({...config, 'url': endpoint});
+      try {
+        final uri = Uri.parse(endpoint).replace(
+          path: '/v1/preview/$id${path.path.isEmpty ? '/' : path.path}',
+          query: path.hasQuery ? path.query : null,
+        );
+        final request = await client.getUrl(uri).timeout(routeTimeout(config, endpoint));
+        request.followRedirects = false;
+        request.headers.set(HttpHeaders.authorizationHeader, 'Bearer ${config['token']}');
+        final response = await request.close().timeout(const Duration(seconds: 32));
+        await response.drain<void>().timeout(const Duration(seconds: 32));
+        return response.statusCode;
+      } catch (error) {
+        failure = error;
+      } finally {
+        client.close(force: true);
+      }
+    }
+    throw failure ?? StateError('The PC could not be reached.');
+  }
+
   bool get canEditPrompts =>
       (state['capabilities'] as List? ?? []).contains('prompts.edit');
 

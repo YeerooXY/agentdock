@@ -34,7 +34,7 @@ class Concepts extends EventEmitter {
   save() {
     atomicJson(this.file, this.items);
     for (const job of this.items.filter(x => x.taskId || x.requestId || x.provider && x.provider !== 'meshy')) {
-      const entry = { id: job.id, taskId: job.taskId, at: job.at, state: job.state, credits: job.credits, provider: job.provider || 'meshy', model: job.config?.model || '', usage: job.usage || null, requestId: job.requestId, requestScope: job.requestScope, requestProject: job.requestProject, resultId: job.resultId || null };
+      const entry = { id: job.id, taskId: job.taskId, at: job.at, state: job.state, credits: job.credits, provider: job.provider || 'meshy', model: job.config?.model || '', usage: job.usage || null, requestId: job.requestId, requestScope: job.requestScope, requestProject: job.requestProject, resultId: job.resultId || null, finishedAt: job.finishedAt || null };
       const index = this.usage.findIndex(x => x.id === job.id);
       if (index < 0) this.usage.unshift(entry); else this.usage[index] = entry;
     }
@@ -101,11 +101,11 @@ class Concepts extends EventEmitter {
     const job = this.items.find(x => x.id === id); if (!job || !job.taskId) throw new Error('No accepted task ID is available. Check Meshy before submitting anything again.');
     if (this.busy) throw new Error('A concept is already running.');
     if (this.testMode) throw new Error('Generation is disabled during tests.');
-    this.launch(job, false);
+    delete job.finishedAt; this.launch(job, false);
   }
   launch(job, submit) {
     this.busy = true;
-    this.perform(job, submit).catch(error => { job.state = this.stopping ? 'interrupted' : 'failed'; job.error = error.message; this.save(); if (!this.stopping) this.alerts.send({ title: 'Concept needs attention', message: error.message, reviewId: job.reviewId, sessionId: job.sessionId, kind: 'error' }); }).finally(() => { this.busy = false; });
+    this.perform(job, submit).catch(error => { job.state = this.stopping ? 'interrupted' : 'failed'; job.finishedAt = Date.now(); job.error = error.message; this.save(); if (!this.stopping) this.alerts.send({ title: 'Concept needs attention', message: error.message, reviewId: job.reviewId, sessionId: job.sessionId, kind: 'error' }); }).finally(() => { this.busy = false; });
   }
   async perform(job, submit) {
     if (job.provider && job.provider !== 'meshy') return this.performImage(job);
@@ -139,7 +139,7 @@ class Concepts extends EventEmitter {
     const file = downloaded.result?.downloads?.files?.find(x => x.status === 'written')?.path;
     if (!file || !inside(fs.realpathSync(dir), fs.realpathSync(file))) throw new Error('Meshy did not save an image inside the job folder.');
     const saved = this.results.add({ file, title: 'Page concept · Meshy', kind: 'concept', source: 'Meshy', groupId: job.groupId || job.reviewId, reviewId: job.reviewId, summary: job.prompt }, { project: job.project, sessionId: job.sessionId, consoleKey: job.consoleKey, consoleName: job.consoleName, turnId: job.turnId, trusted: true });
-    job.resultId = saved.id; job.state = 'complete'; this.save();
+    job.resultId = saved.id; job.state = 'complete'; job.finishedAt = Date.now(); this.save();
     this.alerts.send({ title: 'Page concept ready', resultId: saved.id, reviewId: job.reviewId, sessionId: job.sessionId });
     // Keep task/credit metadata; discard duplicate working files only within this proven job folder.
     try { await this.cleanFiles(job.id); } catch { job.cleanupWarning = 'Temporary files remain. Use Remove job to clean them up.'; this.save(); }
@@ -155,7 +155,7 @@ class Concepts extends EventEmitter {
       const result = await this.imageRequest({ config: job.config, reference, prompt: job.prompt, key, signal: this.abort.signal });
       job.usage = result.usage; this.save();
       const saved = this.results.add({ buffer: result.buffer, ext: result.ext, title: 'Screen preview · ' + job.provider, kind: 'concept', source: job.provider, groupId: job.groupId, reviewId: job.reviewId, summary: 'Generated design proposal · ' + job.config.model }, { project: job.project, sessionId: job.sessionId, consoleKey: job.consoleKey, consoleName: job.consoleName, turnId: job.turnId, trusted: true });
-      job.resultId = saved.id; job.state = 'complete'; this.save();
+      job.resultId = saved.id; job.state = 'complete'; job.finishedAt = Date.now(); this.save();
       this.alerts.send({ title: 'Screen preview ready', resultId: saved.id, reviewId: job.reviewId, sessionId: job.sessionId });
     } finally { clearTimeout(timeout); this.abort = null; }
   }

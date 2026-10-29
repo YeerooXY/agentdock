@@ -64,4 +64,11 @@ function cleanWorktree(value) {
   return { repository, path: folder, branch, base };
 }
 
-module.exports = { Worktrees, cleanWorktree, slug };
+async function prepareWorktree(launch, worktrees, defaultFolder) {
+  if (launch.remoteHostId) throw new Error('Worktrees are available for consoles on this PC.');
+  const folder = launch.cwd || defaultFolder;
+  const created = await worktrees.create(folder, launch.name || path.basename(folder));
+  Object.assign(launch, { cwd: created.cwd, worktree: cleanWorktree(created) });
+}
+
+module.exports = { Worktrees, cleanWorktree, prepareWorktree, slug };

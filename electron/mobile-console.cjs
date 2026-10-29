@@ -2,6 +2,7 @@
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { catalog } = require('./cli-catalog.cjs');
+const { realRoot } = require('./platform.cjs');
 
 function consoleChoices(sessions, defaults) {
   const installed = new Set((sessions.cliSetup?.snapshot() || []).filter(x => x.installed).map(x => x.id));
@@ -23,7 +24,7 @@ function mobileLaunch(sessions, defaults, payload) {
   if (payload.projectId !== undefined && payload.projectId !== '') {
     const project = sessions.projects?.get(payload.projectId);
     const index = payload.folderIndex ?? 0;
-    if (!project || !Number.isSafeInteger(index) || !project.folders[index]) throw new Error('Choose an existing project folder.');
+    if (!project || project.status === 'archived' || !Number.isSafeInteger(index) || !project.folders[index]) throw new Error('Choose an existing project folder.');
     options.projectId = project.id;
     options.cwd = project.folders[index].path;
     if (!options.name?.trim()) { options.name = project.name; options.nameMode = 'project'; }
@@ -102,4 +103,10 @@ async function consoleFiles(session, payload) {
   return { directory, entries, truncated };
 }
 
-module.exports = { consoleChoices, mobileLaunch, consoleFiles };
+async function worktreeRoot(worktrees, folder) {
+  if (typeof folder !== 'string' || !folder) return false;
+  const repository = await worktrees.repository(folder);
+  return !!repository && path.relative(realRoot(folder), repository) === '';
+}
+
+module.exports = { consoleChoices, mobileLaunch, consoleFiles, worktreeRoot };

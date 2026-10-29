@@ -43,8 +43,8 @@ const { validateProvider, validateRequest, ledgerSummary, number, validateExplor
 const { APP_ID, taskbarIcon, developmentShortcuts } = require('./windows-identity.cjs');
 const { CodePanel } = require('./code-panel.cjs');
 const { Screenshots, clipboardReader } = require('./screenshots.cjs');
-const { endSession } = require('./session-end.cjs');
-const { Worktrees, cleanWorktree } = require('./worktrees.cjs');
+const { endSession, endMobileSession } = require('./session-end.cjs');
+const { Worktrees, prepareWorktree } = require('./worktrees.cjs');
 const { MessageQueue } = require('./message-queue.cjs');
 const { PromptLibrary } = require('./prompt-library.cjs');
 const { isLocal } = require('./web-preview.cjs');
@@ -474,7 +474,7 @@ app.whenReady().then(() => guardStartup(async () => {
   messageQueue = new MessageQueue(sessions);
   messageQueue.on('changed', publish); prompts.on('changed', publish);
   messageQueue.on('error', ({ id, message }) => workbench.alerts.send({ key: 'queue:' + id + ':' + Date.now(), title: (sessions.items.get(id)?.name || 'Console') + ': queued message not sent', message, sessionId: id, kind: 'error' }));
-  mobile = new MobileCompanion(root, safeStorage, { codePanel, sessions, results: workbench.results, alerts: workbench.alerts, queue: messageQueue, prompts, getUsage: usageSnapshot, getUsageTurns: () => [...(messageUsage?.items || []), ...apiMessages(ledger || [])], refreshUsage: refreshLimits, getDefaults: () => ({ ...settings.consoleDefaults, permissions: settings.agentPermissions }), getModels: () => getCodexAccount(defaultId('codex')).models(), toolsStatus: true, getSettings: () => { const shared = hub.snapshot(), keys = vault.list(); return { shared, keys, integrations: integrations.snapshot(shared.connections, keys), setupRequests: workbench.snapshot().setupRequests, redact: value => hub.redact(value) }; }, getKey: id => vault.get(id), networkScript: app.isPackaged ? path.join(process.resourcesPath, 'mobile-network.ps1') : path.join(__dirname, 'mobile-network.ps1'), program: process.execPath, testMode });
+  mobile = new MobileCompanion(root, safeStorage, { codePanel, sessions, concepts: workbench.concepts, redactImageText: value => hub.redact(value), results: workbench.results, alerts: workbench.alerts, queue: messageQueue, prompts, getUsage: usageSnapshot, getUsageTurns: () => [...(messageUsage?.items || []), ...apiMessages(ledger || [])], refreshUsage: refreshLimits, getDefaults: () => ({ ...settings.consoleDefaults, permissions: settings.agentPermissions }), worktrees, endMobileSession: (id, choice, valid) => endMobileSession(id, choice, valid, { sessions, getSettings: () => settings, persistSettings, worktrees }), getModels: () => getCodexAccount(defaultId('codex')).models(), toolsStatus: true, getSettings: () => { const shared = hub.snapshot(), keys = vault.list(); return { shared, keys, integrations: integrations.snapshot(shared.connections, keys), setupRequests: workbench.snapshot().setupRequests, redact: value => hub.redact(value) }; }, getKey: id => vault.get(id), networkScript: app.isPackaged ? path.join(process.resourcesPath, 'mobile-network.ps1') : path.join(__dirname, 'mobile-network.ps1'), program: process.execPath, testMode });
   mobile.on('changed', publish);
   mobile.on('pairing-requested', () => { if (settings.notifications && !testMode) notifications?.show({ title: 'Approve a phone?', message: 'Compare the codes on your PC and phone before allowing access.', destination: 'phone-pairing' }); });
   if (!testMode) void startupStep('Phone connection', () => mobile.start(), { optional: true }).catch(() => {});
@@ -694,6 +694,7 @@ app.whenReady().then(() => guardStartup(async () => {
           publish(); return { ok: true, value: panel };
         }
         case 'web.url': return { ok: true, value: sessions.setWebUrl(payload?.id, payload?.url) };
+        case 'web.phone': return { ok: true, value: sessions.setWebPhoneAllowed(payload?.id, payload?.allow) };
         case 'web.open': {
           const panel = sessions.items.get(payload);
           if (panel?.kind !== 'web' || !isLocal(panel.url)) throw new Error('Enter a local address first.');
@@ -723,10 +724,7 @@ app.whenReady().then(() => guardStartup(async () => {
           const slot = payload?.slot ?? Array.from({ length: sessions.grid.columns * sessions.grid.rows }, (_, i) => i + 1).find(x => !occupied.has(x));
           const { accountId, worktree: ownWorktree, ...launch } = payload || {};
           if (ownWorktree) {
-            // A worktree gives this console its own branch and folder in the same repository.
-            if (launch.remoteHostId) throw new Error('Worktrees are available for consoles on this PC.');
-            const created = await worktrees.create(launch.cwd || settings.consoleDefaults.cwd, launch.name || path.basename(launch.cwd || settings.consoleDefaults.cwd));
-            Object.assign(launch, { cwd: created.cwd, worktree: cleanWorktree(created) });
+            await prepareWorktree(launch, worktrees, settings.consoleDefaults.cwd);
           }
           // Only a signed-in account of the chosen agent can be launched directly.
           if (accountId !== undefined && !accounts?.choices(launch.provider).some(choice => choice.id === accountId && (!choice.profile || choice.loginCompletedAt))) throw new Error('Choose a signed-in account for this agent.');
