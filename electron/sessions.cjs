@@ -109,13 +109,20 @@ class Sessions extends EventEmitter {
   createWebPanel(raw = {}) {
     if (this.stopping || this.starting.size) throw new Error('Wait for the console to finish opening.');
     const url = previewUrl(raw.url), opening = planOpening(this.items.values(), raw, this.grid);
-    const item = { id: crypto.randomUUID(), kind: 'web', provider: 'web', purpose: 'web', alive: true, state: 'open', name: 'Preview', nameMode: 'custom', permissions: 'default', cwd: '', url,
+    const item = { id: crypto.randomUUID(), kind: 'web', provider: 'web', purpose: 'web', alive: true, state: 'open', name: 'Preview', nameMode: 'custom', permissions: 'default', cwd: '', url, phoneAllowed: false,
       slot: opening.slot, width: opening.width, height: opening.height, codeSourceKey: typeof raw.codeSourceKey === 'string' ? raw.codeSourceKey.slice(0, 100) : null, consoleKey: raw.consoleKey || crypto.randomUUID(), projectId: null };
     this.commitLayout(opening.plan, opening.grid); this.items.set(item.id, item); this.emit('changed'); return publicSession(item);
   }
   setWebUrl(id, url) {
     const item = this.items.get(id); if (!item?.alive || item.kind !== 'web') throw new Error('Open a preview panel first.');
-    item.url = previewUrl(url); this.emit('changed'); return publicSession(item);
+    const next = previewUrl(url); if (next !== item.url) item.phoneAllowed = false;
+    item.url = next; this.emit('changed'); return publicSession(item);
+  }
+  setWebPhoneAllowed(id, allow) {
+    const item = this.items.get(id); if (!item?.alive || item.kind !== 'web') throw new Error('Open a preview panel first.');
+    if (typeof allow !== 'boolean' || (allow && !item.url)) throw new Error('Enter a local address first.');
+    if (allow && !['localhost', '127.0.0.1'].includes(new URL(item.url).hostname)) throw new Error('Use localhost or 127.0.0.1 for phone previews.');
+    item.phoneAllowed = allow; this.emit('changed'); return publicSession(item);
   }
   savedConsoles() {
     return [...this.items.values()].filter(x => (x.alive || x.restoreError) && !x.dismissed && !['login', 'setup', 'review'].includes(x.purpose)).map(x => ({

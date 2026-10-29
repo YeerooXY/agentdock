@@ -5,7 +5,7 @@ export function webPanelUI({ call, getState, selectedConsole, escape: e, icon, r
   const source = panel => (getState()?.sessions || []).find(s => (s.consoleKey || s.id) === panel.codeSourceKey && s.alive && !s.dismissed);
   const reloadHint = panel => source(panel) ? `Reloads when ${source(panel).name} finishes a turn` : 'Reloads when any console finishes a turn';
   function card(panel) {
-    return `<article class="session-card code-panel web-panel" data-console-id="${e(panel.id)}" data-slot="${panel.slot}"><header class="console-panel-header"><button class="console-grip" draggable="true" data-console-drag="${e(panel.id)}" aria-label="Move preview panel" title="Drag to move. Alt + 1–9 moves to a slot.">${icon('globe')}</button><span class="slot">${String(panel.slot).padStart(2, '0')}</span><form class="web-url-form" data-web-form="${e(panel.id)}"><input name="url" value="${e(panel.url)}" placeholder="localhost:5173" aria-label="Local address" autocomplete="off" spellcheck="false"></form><button class="icon-button" data-web-action="reload" aria-label="Reload preview" title="${e(reloadHint(panel))}">${icon('refresh')}</button><button class="icon-button" data-web-action="open" aria-label="Open in browser" title="Open in browser">${icon('arrow')}</button><button class="icon-button" data-action="toggle-console" data-id="${e(panel.id)}" aria-label="Expand preview panel" title="Expand preview panel">${icon('expand')}</button><button class="icon-button" data-web-action="close" aria-label="Close preview panel" title="Close preview panel">${icon('close')}</button></header><div class="web-panel-body"></div>${resizeHandles(panel.slot)}</article>`;
+    return `<article class="session-card code-panel web-panel" data-console-id="${e(panel.id)}" data-slot="${panel.slot}"><header class="console-panel-header"><button class="console-grip" draggable="true" data-console-drag="${e(panel.id)}" aria-label="Move preview panel" title="Drag to move. Alt + 1–9 moves to a slot.">${icon('globe')}</button><span class="slot">${String(panel.slot).padStart(2, '0')}</span><form class="web-url-form" data-web-form="${e(panel.id)}"><input name="url" value="${e(panel.url)}" placeholder="localhost:5173" aria-label="Local address" autocomplete="off" spellcheck="false"></form><button class="web-phone-toggle" data-web-action="phone" aria-pressed="${panel.phoneAllowed === true}" title="Allow paired phones to access this preview">Allow phone</button><button class="icon-button" data-web-action="reload" aria-label="Reload preview" title="${e(reloadHint(panel))}">${icon('refresh')}</button><button class="icon-button" data-web-action="open" aria-label="Open in browser" title="Open in browser">${icon('arrow')}</button><button class="icon-button" data-action="toggle-console" data-id="${e(panel.id)}" aria-label="Expand preview panel" title="Expand preview panel">${icon('expand')}</button><button class="icon-button" data-web-action="close" aria-label="Close preview panel" title="Close preview panel">${icon('close')}</button></header><div class="web-panel-body"></div>${resizeHandles(panel.slot)}</article>`;
   }
   function mount(panel, body) {
     let record = frames.get(panel.id);
@@ -21,6 +21,7 @@ export function webPanelUI({ call, getState, selectedConsole, escape: e, icon, r
     const node = body.closest('.web-panel'), input = node?.querySelector('input[name=url]');
     if (input && document.activeElement !== input && input.value !== panel.url) input.value = panel.url;
     node?.querySelector('[data-web-action="reload"]')?.setAttribute('title', reloadHint(panel));
+    node?.querySelector('[data-web-action="phone"]')?.setAttribute('aria-pressed', String(panel.phoneAllowed === true));
   }
   function reload(id) {
     const frame = frames.get(id)?.body.querySelector('iframe');
@@ -58,6 +59,7 @@ export function webPanelUI({ call, getState, selectedConsole, escape: e, icon, r
         } finally { b.disabled = false; }
       }
       if (b.dataset.webAction === 'reload') reload(id);
+      if (b.dataset.webAction === 'phone') await call('web.phone', { id, allow: b.getAttribute('aria-pressed') !== 'true' });
       if (b.dataset.webAction === 'open') await call('web.open', id);
       if (b.dataset.webAction === 'close') await call('web.close', id);
     } catch (error) { toast(error.message, true); }

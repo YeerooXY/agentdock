@@ -28,6 +28,7 @@ import 'message_queue_sheet.dart';
 import 'console_surface.dart';
 import 'console_theme.dart';
 import 'console_appearance_controls.dart';
+import 'preview_page.dart';
 
 export 'dock_style.dart' show blue, pink, ink;
 
@@ -894,6 +895,9 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
                 pinnedAccountPC = '';
                 pinnedAccountGeneration = -1;
                 if (action == 'updates') openUpdates(context);
+                if (action == 'previews') Navigator.of(context).push(
+                  MaterialPageRoute<void>(builder: (_) => PreviewListPage(client: c)),
+                );
                 if (action == 'reconnect') run(c.reconnect);
                 if (action == 'display') displaySettings();
                 if (action == 'appearance') appearanceSettings();
@@ -971,6 +975,10 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
                   ),
                   const PopupMenuDivider(),
                 ],
+                const PopupMenuItem(
+                  value: 'previews',
+                  child: Text('Previews'),
+                ),
                 const PopupMenuItem(
                   value: 'updates',
                   child: Text('App updates'),
