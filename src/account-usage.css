@@ -4,6 +4,9 @@
 .usage-grid .quota-card{background:linear-gradient(130deg,color-mix(in srgb,var(--provider-accent) 5%,#0b0d14),#0b0d14 75%)}
 .quota-heading{gap:10px}
 .quota-heading>strong{min-width:0;overflow-wrap:anywhere;color:var(--provider-accent)}
+.usage-grid .quota-heading{align-items:center;gap:10px}
+.usage-grid .quota-heading>strong{flex:1 1 120px}
+.usage-grid .quota-heading .connection{margin-left:auto;white-space:normal}
 .quota-window strong{color:var(--provider-accent)}
 .quota-window .meter>span{background:linear-gradient(90deg,color-mix(in srgb,var(--provider-accent) 80%,#232638),var(--provider-accent))}
 .quota-window .meter.warning>span{background:#efbc7a}

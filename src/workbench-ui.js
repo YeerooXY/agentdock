@@ -5,7 +5,7 @@ export function workbenchUI({ call, getState, getPage, renderPage, escape: e, to
   const api = (method, value) => call('workbench.' + method, value);
   const selected = new Set(), previews = new Map();
   let resultPage = 0;
-  let controlsOpen = !matchMedia('(max-width:650px)').matches;
+  const wideResults = matchMedia('(min-width:1200px)');
   let filter = '', kind = '', project = '', consoleFilter = '', detail = null, stamp = '', modalVersion = 0;
   const data = () => getState()?.workbench || { results: [], concepts: [] };
   const date = at => new Date(at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
@@ -17,10 +17,11 @@ export function workbenchUI({ call, getState, getPage, renderPage, escape: e, to
   const revision = (git, showRepository = false) => `<span class="result-branch" title="${e(git ? [git.repository, git.branch || (git.detached ? 'Detached HEAD' : 'Branch unavailable'), git.commit || (git.unborn ? 'No commits yet' : 'Commit unavailable'), git.dirty === true ? 'Includes uncommitted changes relative to this commit.' : git.dirty === false ? 'Working tree clean when recorded.' : 'Working-tree state was not recorded.'].filter(Boolean).join('\n') : 'This result has no saved Git revision.')}" aria-label="${e('Git revision: ' + revisionLabel(git))}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M2 12h5m10 0h5"/><circle cx="12" cy="12" r="5"/></svg><span>${showRepository && git?.repository ? e(git.repository.split(/[\\/]/).pop()) + ' · ' : ''}${e(revisionLabel(git))}</span></span>`;
   const batch = id => { const item = data().results.find(x => x.id === id); return item ? data().results.filter(x => groupKey(x) === groupKey(item)) : []; };
   const filtered = () => data().results.filter(x => (!kind || x.kind === kind) && (!project || projectKey(x) === project) && (!consoleFilter || consoleKey(x) === consoleFilter) && (!filter || (x.title + ' ' + x.summary + ' ' + consoleName(x) + ' ' + projectName(x)).toLowerCase().includes(filter.toLowerCase())));
-  const shell = (title, text, content) => `<div class="page-heading"><div><h1>${title}</h1><p>${text}</p></div></div>${content}`;
+  const shell = (title, text, content, actions = '') => `<div class="page-heading"><div><h1>${title}</h1><p>${text}</p></div><div class="result-heading-actions">${actions}</div></div>${content}`;
   const empty = text => `<div class="wb-empty">${text}</div>`;
   const visible = () => resultGroups(filtered()).slice(resultPage * 12, (resultPage + 1) * 12).flat();
   const pagination = () => button('previous-results','Previous','','subtle',resultPage === 0) + `<span class="result-page-number">${resultPage + 1} / ${Math.max(1, Math.ceil(resultGroups(filtered()).length / 12))}</span>` + button('next-results','Next','','subtle',(resultPage + 1) * 12 >= resultGroups(filtered()).length);
+  const bulkActions = () => `${button('select-all','Select visible')}${selected.size ? button('delete-selected',`Delete selected (${selected.size})`,'','subtle danger') : ''}${button('seen-all','Mark all viewed')}`;
   const card = x => `<article class="result-card ${!x.image && x.ext !== '.zip' ? 'result-document' : ''}"><button class="result-image" data-wb="preview" data-id="${x.id}" aria-label="Open ${e(x.title)}">${!x.image ? `<span class="result-file">${x.kind === 'code' ? '&lt;/&gt;' : e(x.ext.slice(1).toUpperCase())}</span>` : ''}${x.image || x.ext === '.zip' ? `<img data-result-image="${x.id}" alt="${e(x.title)}">` : ''}</button><div class="result-copy"><div class="result-meta"><span>${e(x.kind)}</span><label class="result-select"><input type="checkbox" data-result-select="${x.id}" aria-label="Select ${e(x.title)}" ${selected.has(x.id) ? 'checked' : ''}></label></div><button class="result-title" data-wb="preview" data-id="${x.id}">${e(x.title)}</button><p>${e(x.summary || 'Saved file')}</p><div class="result-meta"><time>${date(x.at)}</time><span>${e(x.status.replaceAll('-', ' '))}</span></div></div></article>`;
   const resultsList = () => {
     const consoles = new Map();
@@ -47,20 +48,36 @@ export function workbenchUI({ call, getState, getPage, renderPage, escape: e, to
   function gallery() {
     const projects = new Map(data().results.map(x => [projectKey(x), projectName(x)]));
     const consoles = new Map(data().results.map(x => [consoleKey(x), consoleName(x)]));
-    return shell('Results', '', `<details class="result-controls" ${controlsOpen ? 'open' : ''}><summary>Filters and actions${filter || kind || project || consoleFilter ? ' · Filter active' : ''}</summary><div class="wb-toolbar result-filters"><input id="result-search" type="search" aria-label="Search results" placeholder="Search results" value="${e(filter)}"><select id="result-console" aria-label="Console"><option value="">All consoles</option>${[...consoles].map(([key,name]) => `<option value="${e(key)}" ${key === consoleFilter ? 'selected' : ''}>${e(name)}</option>`).join('')}</select><select id="result-kind" aria-label="Result type"><option value="">All types</option>${['code','screenshot','test','report','review','concept','asset'].map(x => `<option value="${x}" ${x === kind ? 'selected' : ''}>${x}</option>`).join('')}</select><select id="result-project" aria-label="Project"><option value="">All projects</option>${[...projects].map(([key,name]) => `<option value="${e(key)}" ${key === project ? 'selected' : ''}>${e(name)}</option>`).join('')}</select>${button('import','Add files','','secondary')}${button('folder','Open folder')}</div><div class="wb-toolbar small">${button('select-all','Select visible')}${button('delete-selected',`Delete selected (${selected.size})`,'','subtle danger')}${button('seen-all','Mark all viewed')}</div></details><div class="results-grid">${resultsList()}</div><div class="wb-toolbar result-pagination">${pagination()}</div>`);
+    const hasResults = data().results.length > 0, multiplePages = resultGroups(filtered()).length > 12;
+    return shell('Results', '', `<div class="result-controls"><div class="wb-toolbar result-filters"><input id="result-search" type="search" aria-label="Search results" placeholder="Search results" value="${e(filter)}"><select id="result-console" aria-label="Console"><option value="">All consoles</option>${[...consoles].map(([key,name]) => `<option value="${e(key)}" ${key === consoleFilter ? 'selected' : ''}>${e(name)}</option>`).join('')}</select><select id="result-kind" aria-label="Result type"><option value="">All types</option>${['code','screenshot','test','report','review','concept','asset'].map(x => `<option value="${x}" ${x === kind ? 'selected' : ''}>${x}</option>`).join('')}</select><select id="result-project" aria-label="Project"><option value="">All projects</option>${[...projects].map(([key,name]) => `<option value="${e(key)}" ${key === project ? 'selected' : ''}>${e(name)}</option>`).join('')}</select></div><div class="wb-toolbar small result-bulk-actions" ${hasResults ? '' : 'hidden'}>${hasResults ? bulkActions() : ''}</div></div><div class="results-workspace"><div class="results-list"><div class="results-grid">${resultsList()}</div><div class="wb-toolbar result-pagination" ${multiplePages ? '' : 'hidden'}>${multiplePages ? pagination() : ''}</div></div><aside class="result-side-panel" aria-label="Result details" hidden></aside></div>`, button('folder','Open folder','','secondary') + button('import','Add files','','primary'));
   }
   const dialog = document.createElement('dialog'); dialog.className = 'wb-dialog'; dialog.setAttribute('aria-label','Result details'); document.body.append(dialog);
-  function show(html) {
+  let pendingPreviewMoves = 0, previewOpener = null;
+  function show(html, inline = false) {
     dialog.innerHTML = `<div class="wb-dialog-top">${button('close','Close')}</div>${html}`;
-    if (!dialog.open) dialog.showModal();
+    const panel = document.querySelector('.result-side-panel');
+    const usePanel = inline && !!panel;
+    if (dialog.open && usePanel !== dialog.classList.contains('result-inline-preview')) { ++pendingPreviewMoves; dialog.close(); }
+    if (inline && panel) {
+      panel.hidden = false;
+      panel.append(dialog);
+      dialog.classList.add('result-inline-preview');
+      dialog.show();
+    } else {
+      dialog.classList.remove('result-inline-preview');
+      document.body.append(dialog);
+      if (panel) panel.hidden = true;
+      if (!dialog.open) dialog.showModal();
+    }
     loadImages(dialog);
   }
   async function preview(id, entry = null) {
     const item = data().results.find(x => x.id === id); if (!item) throw new Error('This result was deleted.');
-    detail = { type: 'result', id }; const version = ++modalVersion;
+    if (!dialog.contains(document.activeElement)) previewOpener = document.activeElement;
+    detail = { type: 'result', id, entry }; const version = ++modalVersion;
     dialog.classList.toggle('image-gallery', !!item.image);
     const code = batch(id).find(x => x.kind === 'code');
-    show(`<h2>${e(item.title)}</h2><div class="result-detail-meta"><span>${e(consoleName(item))} · ${e(item.status.replaceAll('-', ' '))} · ${date(item.at)}</span>${code && code.id !== id ? button('preview','Code changes',code.id,'secondary') : ''}</div><div id="result-preview" aria-live="polite">Loading…</div><div class="wb-toolbar">${button('export','Export',id,'secondary')}${button('delete-one','Delete saved copy',id,'subtle danger')}</div>`);
+    show(`<h2>${e(item.title)}</h2><div class="result-detail-meta"><span>${e(consoleName(item))} · ${e(item.status.replaceAll('-', ' '))} · ${date(item.at)}</span>${code && code.id !== id ? button('preview','Code changes',code.id,'secondary') : ''}</div><div id="result-preview" aria-live="polite">Loading…</div><div class="wb-toolbar">${button('export','Export',id,'secondary')}${button('delete-one','Delete saved copy',id,'subtle danger')}</div>`, wideResults.matches && getPage() === 'results');
     const heading = dialog.querySelector('h2'); heading.tabIndex = -1; heading.focus({ preventScroll: true }); dialog.scrollTop = 0;
     if (item.image) { dialog.querySelector('#result-preview').insertAdjacentHTML('afterend', '<div id="image-navigation"></div>'); updateImageNavigation(id); }
     try {
@@ -122,11 +139,13 @@ export function workbenchUI({ call, getState, getPage, renderPage, escape: e, to
       }
     }
     resultPage = Math.min(resultPage, Math.max(0, Math.ceil(resultGroups(filtered()).length / 12) - 1));
-    const pager = document.querySelector('.result-pagination'); if (pager) pager.innerHTML = pagination();
+    const pager = document.querySelector('.result-pagination'); if (pager) { pager.hidden = resultGroups(filtered()).length <= 12; pager.innerHTML = pager.hidden ? '' : pagination(); }
     const grid = document.querySelector('.results-grid'); if (grid) { grid.innerHTML = resultsList(); loadImages(grid); }
-    const controls = document.querySelector('.result-controls > summary');
-    if (controls) controls.textContent = `Filters and actions${filter || kind || project || consoleFilter ? ' · Filter active' : ''}`;
-    const btn = document.querySelector('[data-wb="delete-selected"]'); if (btn) { btn.textContent = `Delete selected (${selected.size})`; btn.disabled = !selected.size; }
+    refreshBulkActions();
+  }
+  function refreshBulkActions() {
+    const controls = document.querySelector('.result-bulk-actions');
+    if (controls) { controls.hidden = !data().results.length; controls.innerHTML = controls.hidden ? '' : bulkActions(); }
   }
   async function remove(ids) {
     const result = await api('results.delete', ids);
@@ -137,14 +156,11 @@ export function workbenchUI({ call, getState, getPage, renderPage, escape: e, to
   document.addEventListener('input', event => {
     if (event.target.id === 'result-search') { filter = event.target.value; resultPage = 0; refreshGallery(); }
   });
-  document.addEventListener('toggle', event => {
-    if (event.target.classList?.contains('result-controls')) controlsOpen = event.target.open;
-  }, true);
   document.addEventListener('change', event => {
     if (event.target.id === 'result-kind') { kind = event.target.value; resultPage = 0; refreshGallery(); }
     if (event.target.id === 'result-project') { project = event.target.value; resultPage = 0; refreshGallery(); }
     if (event.target.id === 'result-console') { consoleFilter = event.target.value; resultPage = 0; refreshGallery(); }
-    if (event.target.dataset.resultSelect) { event.target.checked ? selected.add(event.target.dataset.resultSelect) : selected.delete(event.target.dataset.resultSelect); const btn = document.querySelector('[data-wb="delete-selected"]'); btn.textContent = `Delete selected (${selected.size})`; btn.disabled = !selected.size; }
+    if (event.target.dataset.resultSelect) { event.target.checked ? selected.add(event.target.dataset.resultSelect) : selected.delete(event.target.dataset.resultSelect); refreshBulkActions(); }
   });
   document.addEventListener('click', async event => {
     const target = event.target.closest('[data-wb]'); if (!target) return;
@@ -170,7 +186,24 @@ export function workbenchUI({ call, getState, getPage, renderPage, escape: e, to
     } catch (error) { toast(error.message,true); }
     finally { if (target.isConnected) target.disabled = false; }
   });
-  dialog.addEventListener('close',()=>{detail=null;++modalVersion;});
+  dialog.addEventListener('close',()=>{
+    if (pendingPreviewMoves) { --pendingPreviewMoves; return; }
+    detail=null; ++modalVersion;
+    const panel = dialog.closest('.result-side-panel'); if (panel) panel.hidden = true;
+    document.body.append(dialog);
+    dialog.classList.remove('result-inline-preview');
+    if (previewOpener?.isConnected) previewOpener.focus({ preventScroll: true });
+    previewOpener = null;
+  });
+  // A non-modal desktop preview needs the same Escape behavior as the dialog.
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && dialog.open && dialog.classList.contains('result-inline-preview') && !document.querySelector('dialog[open]:modal')) {
+      event.preventDefault(); dialog.close();
+    }
+  });
+  wideResults.addEventListener('change', () => {
+    if (detail?.type === 'result' && dialog.open && getPage() === 'results') preview(detail.id, detail.entry).catch(error => toast(error.message, true));
+  });
   dialog.addEventListener('keydown', event => {
     if (!['ArrowLeft','ArrowRight'].includes(event.key) || event.target.closest('input,textarea,select') || !dialog.querySelector('#image-navigation')) return;
     const action = event.key === 'ArrowLeft' ? 'previous-image' : 'next-image', next = dialog.querySelector(`[data-wb="${action}"]:not(:disabled)`);
@@ -204,7 +237,14 @@ export function workbenchUI({ call, getState, getPage, renderPage, escape: e, to
     openNotice,
     openResult: preview,
     render: page => page === 'results' ? gallery() : '',
-    mount: () => { loadImages(); const btn = document.querySelector('[data-wb="delete-selected"]'); if (btn) btn.disabled = !selected.size; },
+    mount: () => {
+      loadImages();
+      // Rendering the page replaces its aside; keep the existing viewer alive.
+      if (dialog.classList.contains('result-inline-preview')) {
+        if (getPage() === 'results' && detail?.type === 'result') preview(detail.id, detail.entry).catch(error => toast(error.message, true));
+        else { detail = null; ++modalVersion; dialog.close(); document.body.append(dialog); }
+      }
+    },
     sync() {
       const d = data(), next = JSON.stringify(d);
       const count = d.unreadResults ?? new Set(d.results.filter(x => !x.seenAt).map(groupKey)).size;

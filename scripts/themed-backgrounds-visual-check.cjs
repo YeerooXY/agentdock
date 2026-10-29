@@ -473,7 +473,7 @@ async function inspectTools(page, name, capture) {
   await page.waitForFunction(before => window.fixtureCalls.length >= before + 2, callsBefore);
   const actions = await page.evaluate(before => window.fixtureCalls.slice(before).map(([method]) => method), callsBefore);
   assert.ok(actions.includes('docs') && actions.includes('integrations.setup'), `${name}: guide and setup actions still work through the fixture`);
-  assert.equal(await page.locator('.settings-rail-title').textContent(), 'Settings');
+  assert.equal(await page.locator('.settings-header .settings-title').textContent(), 'Settings');
   assert.equal(await page.locator('.settings-rail-title').evaluate(el => getComputedStyle(el).textTransform), 'none');
   assert.equal(await page.locator('.settings-close span').count(), 0, `${name}: redundant ESC label is absent`);
   await assertNoOverflow(page, `${name} Tools`);

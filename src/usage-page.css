@@ -3,7 +3,7 @@
 #content[data-view=usage] .usage-stats{grid-template-columns:repeat(2,minmax(0,1fr))}
 #content[data-view=usage] .usage-stats .stat>span:first-child{font-size:14px;color:var(--usage-muted);letter-spacing:0}
 #content[data-view=usage] .usage-stats .stat>strong{font-size:36px}
-#content[data-view=usage] .quota-card.large{padding:24px 26px}
+#content[data-view=usage] .quota-card.large{padding:24px;margin:0;min-width:0}
 #content[data-view=usage] .quota-heading{gap:10px}
 #content[data-view=usage] .quota-heading strong{font-size:18px}
 #content[data-view=usage] .quota-heading .account-mark{width:32px;height:32px}
@@ -14,7 +14,7 @@
 #content[data-view=usage] .reset,#content[data-view=usage] .missing-window,#content[data-view=usage] .quota-unavailable p{font-size:14px;color:var(--usage-muted)}
 #content[data-view=usage] .quota-foot{font-size:13px;color:var(--usage-muted)}
 #content[data-view=usage] .section-note,#content[data-view=usage] .ledger-foot,#content[data-view=usage] .field-hint{font-size:14px;color:var(--usage-muted);line-height:1.6}
-#content[data-view=usage] h2{font-size:20px}
+#content[data-view=usage] h2{font-size:18px;line-height:1.35;margin:0}
 #content[data-view=usage] .section-label p,#content[data-view=usage] .section-label>span{font-size:14px;color:var(--usage-muted)}
 #content[data-view=usage] .subtle{font-size:14px}
 #content[data-view=usage] table{font-size:14px}
@@ -77,3 +77,25 @@
 #content[data-view=usage] .account-switch-settings{grid-template-columns:minmax(0,1fr)}
 #content[data-view=usage] .account-switch-settings>.section-label>div{min-width:0}
 #content[data-view=usage] .usage-add-list button{min-width:0}
+/* The original subscriptions class remains a hook for the visual checks. */
+#content[data-view=usage] .usage-subscriptions{padding:0;border:0;background:none}
+#content[data-view=usage] .usage-grid{grid-template-columns:repeat(auto-fill,minmax(min(100%,300px),1fr));gap:16px;margin:0}
+#content[data-view=usage] .usage-management{display:grid;grid-template-columns:minmax(0,1fr);gap:16px;margin-top:16px;align-items:start}
+#content[data-view=usage] .usage-management>.surface{min-width:0;padding:24px;margin:0;overflow-wrap:anywhere}
+#content[data-view=usage] .account-switch-panel{display:grid;gap:16px}
+#content[data-view=usage] .account-switch-panel>.section-label{margin:0}
+#content[data-view=usage] .account-profile-form{grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+#content[data-view=usage] .account-profile-form>button{grid-column:1/-1;justify-self:start}
+#content[data-view=usage] .account-profile-form label{margin:0}
+#content[data-view=usage] .account-profile-row{flex-wrap:wrap}
+#content[data-view=usage] .account-profile-row>div>span{overflow-wrap:anywhere}
+#content[data-view=usage] .usage-stats{margin:16px 0;padding:16px 0}
+#content[data-view=usage] .usage-stats .stat>strong{font-size:28px}
+#content[data-view=usage] .ledger-panel .section-label{flex-wrap:wrap}
+#content[data-view=usage] .usage-management .table-scroll{min-width:0}
+#content[data-view=usage] .usage-management table{table-layout:fixed}
+#content[data-view=usage] .usage-management th,#content[data-view=usage] .usage-management td{padding:12px 8px;white-space:normal;overflow-wrap:anywhere}
+#content[data-view=usage] .delegation-settings{margin-top:16px;padding:24px}
+#content[data-view=usage] .image-usage,#content[data-view=usage] .message-usage{margin-top:16px}
+@media(min-width:1200px){#content[data-view=usage] .usage-management{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:700px){#content[data-view=usage] .account-profile-form{grid-template-columns:minmax(0,1fr)}}

@@ -134,62 +134,65 @@ body[data-stars=off] .panel-sky { opacity:0 }
 canvas.launch-burst { position:absolute; inset:0; width:100%; height:100%; z-index:4; pointer-events:none; clip-path:var(--inner-shape); border-radius:10px }
 body[data-opening-motion=off] canvas.launch-burst { display:none }
 
-/* Settings open as their own layer above the app, like a game or chat client:
-   categories on the left, one column of settings, close button and Esc. */
-body[data-settings-open] { background:#010103 }
+/* Settings keep the app rail; only the content pane scrolls. */
 body[data-settings-open] #content {
-  position:fixed; inset:0; z-index:30; padding:0!important; overflow:hidden; background:var(--window-black,#07080c);
+  position:relative; z-index:30; padding:0!important; overflow:hidden; background:var(--window-black,#07080c);
 }
-body[data-settings-open] .app-shell>.sidebar,body[data-settings-open] #sidebar-toggle,body[data-settings-open] #results-shortcut { visibility:hidden!important; opacity:0 }
-body[data-settings-open] .titlebar { position:relative; z-index:31; background:transparent; border-color:transparent }
-.settings-overlay { position:absolute; inset:0; max-width:none!important; isolation:isolate; overflow:hidden; background:var(--theme-surface,#07080c) }
-/* Backdrop: the theme texture, faded toward the centre so settings stay calm. */
-.settings-backdrop { position:absolute; inset:0; z-index:-2; pointer-events:none;
-  background:radial-gradient(ellipse 55% 75% at 50% 45%,color-mix(in srgb,var(--theme-surface) 92%,transparent),color-mix(in srgb,var(--theme-surface) 55%,transparent) 70%,color-mix(in srgb,var(--theme-surface) 25%,transparent)),var(--theme-texture,none) center / cover no-repeat,var(--theme-surface) }
-body[data-textures=off] .settings-backdrop { background:radial-gradient(ellipse at 0 0,color-mix(in srgb,var(--frame-a) 10%,transparent),transparent 50%),radial-gradient(ellipse at 100% 100%,color-mix(in srgb,var(--frame-b) 10%,transparent),transparent 50%),var(--theme-surface) }
-.settings-overlay>.panel-sky { position:absolute; inset:0; width:100%; height:100%; z-index:-1; border-radius:0; opacity:.9 }
-.settings-stage { position:absolute; inset:0; overflow-y:auto; scrollbar-gutter:stable both-edges; padding-top:var(--titlebar-h,51px) }
-.settings-columns { display:flex; align-items:flex-start; justify-content:center; gap:28px; max-width:1220px; margin:0 auto; padding:24px 24px 80px }
-.settings-rail { position:sticky; top:24px; flex:0 0 236px; padding:14px 10px; border-radius:14px;
-  background:linear-gradient(160deg,color-mix(in srgb,var(--frame-a) 10%,#0a0b12),color-mix(in srgb,var(--frame-b) 8%,#0a0b12));
-  border:1px solid color-mix(in srgb,var(--frame-a) 30%,transparent); box-shadow:0 0 24px color-mix(in srgb,var(--frame-b) 14%,transparent),inset 0 1px #ffffff10 }
+body[data-settings-open] #results-shortcut { visibility:hidden!important; opacity:0 }
+body[data-settings-open] #content>.page-background-layer { display:none }
+.settings-overlay { position:absolute; inset:0; max-width:none!important; isolation:isolate; overflow:hidden; display:flex; flex-direction:column; background:var(--window-black,#07080c) }
+.settings-backdrop { position:absolute; inset:0; z-index:-1; pointer-events:none; background:var(--window-black,#07080c) }
+.settings-header { display:flex; align-items:center; justify-content:space-between; gap:16px; flex:none; padding:24px; background:var(--window-black,#07080c) }
+.settings-header p { margin:6px 0 0; font-size:14px; color:var(--muted) }
+.settings-stage { position:relative; min-width:0; min-height:0; height:100%; overflow-x:hidden; overflow-y:scroll; overscroll-behavior:contain; scrollbar-gutter:stable; scrollbar-width:auto; scrollbar-color:var(--accent-blue) var(--soft); padding:0 12px 24px 0 }
+.settings-stage::-webkit-scrollbar { width:10px }
+.settings-stage::-webkit-scrollbar-track { background:var(--soft); border-radius:8px }
+.settings-stage::-webkit-scrollbar-thumb { background:color-mix(in srgb,var(--accent-blue) 55%,#34384a); border:2px solid var(--soft); border-radius:8px }
+.settings-columns { display:grid; grid-template-columns:208px minmax(0,1fr); align-items:stretch; gap:16px; flex:1; min-height:0; width:100%; margin:0; padding:0 24px 24px }
+.settings-rail { position:sticky; top:0; min-height:0; align-self:start; max-height:100%; overflow-y:auto; padding:10px; border-radius:9px; background:var(--surface); border:1px solid var(--line) }
 .settings-rail .settings-navigation { display:flex; flex-direction:column; flex-wrap:nowrap; align-items:stretch; gap:3px; width:auto; padding:0; margin:0; border:0 }
-.settings-rail-title { margin:2px 0 10px; padding:0 12px; font-size:16px; font-weight:600; letter-spacing:0; text-transform:none; color:#f0f0f7 }
-.settings-rail .settings-navigation button { position:relative; text-align:left; min-height:44px; padding:10px 14px; font-size:16px; border:0; border-radius:9px; color:#c9ccd9; background:transparent; transition:background-color 150ms ease,color 150ms ease }
+.settings-rail .settings-navigation button { position:relative; text-align:left; min-height:40px; padding:10px 12px; font-size:14px; border:0; border-radius:6px; color:#c9ccd9; background:transparent; transition:background-color 150ms ease,color 150ms ease }
 .settings-rail .settings-navigation button:hover { background:color-mix(in srgb,var(--frame-a) 12%,transparent); color:#fff }
 .settings-rail .settings-navigation button.selected { color:#fff; background:linear-gradient(100deg,color-mix(in srgb,var(--frame-a) 26%,transparent),color-mix(in srgb,var(--frame-b) 18%,transparent)); box-shadow:inset 3px 0 var(--frame-b),0 0 14px color-mix(in srgb,var(--frame-b) 16%,transparent) }
-.settings-columns>.settings-content { flex:0 1 800px; min-width:0; padding:0; font-size:16px }
-.settings-content .surface { background:#090a11; backdrop-filter:none; -webkit-backdrop-filter:none }
-.settings-close { position:sticky; top:24px; flex:0 0 56px; display:flex; flex-direction:column; align-items:center; gap:0; color:#aeb2c4; font-size:12px; font-weight:600; letter-spacing:.06em }
+.settings-content { min-width:0; padding:0; font-size:15px }
+.settings-content .surface { background:var(--surface); backdrop-filter:none; -webkit-backdrop-filter:none }
+.settings-close { flex:none; display:flex; align-items:center; color:#aeb2c4 }
 .settings-close button { display:grid; place-items:center; width:42px; height:42px; border-radius:50%; border:2px solid color-mix(in srgb,var(--frame-a) 50%,#5b5f73); color:#eef0f6; background:#0a0b12 }
 .settings-close button:hover { border-color:var(--frame-b); background:color-mix(in srgb,var(--frame-b) 18%,#0a0b12) }
 .settings-close svg { width:18px; height:18px }
-.settings-content .page-heading { margin:-12px 0 20px }
+.settings-content .page-heading { margin:0 }
 .settings-content .page-heading h2,.settings-content .page-heading .eyebrow:empty,.settings-content .page-heading p:empty { display:none }
 .settings-content .page-heading h2::after { display:none }
-.settings-title { font-size:26px; margin:0 0 24px; letter-spacing:-.4px }
+.settings-title { font-size:30px; margin:0; letter-spacing:-.8px }
 /* One setting per row, larger type. */
-.settings-content .settings-layout,.settings-general-columns,.settings-content .settings-console-grid,.settings-content .tools-layout,.settings-content .vault-layout,.settings-content .form-pair { grid-template-columns:minmax(0,1fr)!important }
-.settings-content .settings-layout { display:grid; gap:20px }
-.settings-content :is(label,input,select,textarea,button,.toggle-row strong,.saved-key strong) { font-size:16px!important }
-.settings-content .toggle-row strong { font-size:17px!important }
+.settings-content .settings-layout { display:grid; grid-template-columns:minmax(0,1fr); gap:16px }
+.settings-content .settings-general-columns,.settings-content .settings-console-grid,.settings-content .tools-layout,.settings-content .vault-layout { grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px }
+.settings-content .settings-general-columns>.settings-column { display:contents }
+.settings-content .settings-general-columns>.settings-column:first-child>.surface:first-child { grid-column:1/-1 }
+.settings-content .settings-column,.settings-content .form-pair { gap:16px }
+.settings-content :is(label,input,select,textarea,button,.toggle-row strong,.saved-key strong) { font-size:15px!important }
+.settings-content .toggle-row { padding:14px 0; gap:16px }
+.settings-content .toggle-row>span { min-width:0 }
+.settings-content .toggle-row strong { font-size:15px!important }
+.settings-content .toggle-row input { align-self:center; flex:none }
 .settings-content :is(p,small,.field-hint,.toggle-row small) { font-size:14px!important; line-height:1.55 }
-.settings-content h2 { font-size:21px }
-.settings-content .surface { padding:24px 26px }
+.settings-content h2 { font-size:18px;line-height:1.35 }
+.settings-content .surface { padding:24px }
 /* Buttons sit in one place: actions at the end of their card, left aligned,
    primary first, all the same height. */
-.settings-content .surface>:is(button,.primary,.secondary,.subtle):last-child,.settings-content form.surface>[type=submit] { display:flex; align-items:center; justify-content:center; margin-top:20px; min-width:160px }
+.settings-content .surface>:is(button,.primary,.secondary,.subtle):last-child,.settings-content form.surface>[type=submit] { display:flex; align-items:center; justify-content:center; margin-top:16px; min-width:min(160px,100%); max-width:100% }
 .settings-content :is(.wb-toolbar,.form-bottom,.update-actions,.dialog-footer) { display:flex; flex-wrap:wrap; gap:10px; align-items:center; justify-content:flex-start }
 .settings-content :is(.primary,.secondary) { min-height:44px; padding:10px 18px; border-radius:8px }
 .settings-content .section-label { display:flex; align-items:center; justify-content:space-between; gap:16px }
 @media (max-width:900px) {
-  .settings-columns { flex-direction:column; align-items:stretch; gap:14px; padding:12px 14px 60px }
-  .settings-rail { position:sticky; top:0; z-index:2; flex:none; padding:8px; margin-right:56px; overflow-x:auto; border-radius:12px }
-  .settings-rail .settings-navigation { flex-direction:row; width:auto }
-  .settings-rail-title { display:none }
-  .settings-rail .settings-navigation button { white-space:nowrap; font-size:15px; padding:10px 12px }
-  .settings-close { position:fixed; top:calc(var(--titlebar-h,42px) + 12px); right:12px; z-index:3 }
-  .settings-close span { display:none }
+  .settings-columns { grid-template-columns:180px minmax(0,1fr) }
+  .settings-content .settings-general-columns,.settings-content .settings-console-grid,.settings-content .tools-layout,.settings-content .vault-layout,.settings-content .form-pair { grid-template-columns:minmax(0,1fr) }
+}
+@media (max-width:650px) {
+  .settings-columns { grid-template-columns:minmax(0,1fr); grid-template-rows:auto minmax(0,1fr) }
+  .settings-rail { overflow-x:auto; max-height:150px }
+  .settings-rail .settings-navigation { flex-direction:row; flex-wrap:wrap }
+  .settings-rail .settings-navigation button { flex:1 0 auto; white-space:normal }
 }
 @media (prefers-reduced-motion:reduce) {
   .theme-wave::after { display:none!important }

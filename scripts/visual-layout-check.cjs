@@ -116,8 +116,7 @@ const reports = [], browsers = new Set(), overflowProblems = [];
       await openPage(page, view); await capture(view);
       if (view === 'results') {
         assert.equal(await page.locator('#results-count').innerText(), '2');
-        const pager = await page.locator('.result-pagination').evaluate(el => { const r = el.getBoundingClientRect(), c = document.querySelector('#content').getBoundingClientRect(); return Math.abs((r.left + r.right) / 2 - (c.left + c.right) / 2); });
-        assert.ok(pager < 12, 'Pagination is centered');
+        assert.equal(await page.locator('.result-pagination').isVisible(), false, 'A single Results page has no pagination');
       }
       if (view === 'settings') {
         await page.locator('[data-action=agent-setup]').click();

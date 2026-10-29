@@ -30,7 +30,7 @@ let app;
   state=await call('state');assert.equal(state.sessions.filter(x=>x.width===2).length,1);assert.equal(state.sessions.length,4);
   await call('grid.configure',{columns:4,rows:4});await page.waitForFunction(()=>document.querySelectorAll('.session-card').length===16);assert.equal((await call('state')).grid.columns,4);
   await page.screenshot({path:path.join(out,'desktop-grid.png')});
-  await page.locator('[data-page=projects]').click();await page.locator('.project-milestones summary').click();await page.locator('[data-project-milestone="1"]').check();await page.waitForFunction(()=>document.querySelector('.project-progress').textContent.includes('2 / 2'));assert.equal((await call('state')).projects[0].progress.done,2);
+  await page.locator('[data-page=projects]').click();await page.locator('[data-project-milestone="1"]').check();await page.waitForFunction(()=>document.querySelector('.project-progress').textContent.includes('2 / 2'));assert.equal((await call('state')).projects[0].progress.done,2);
   await page.screenshot({path:path.join(out,'desktop-projects.png')});
   state=await call('state');fs.writeFileSync(path.join(out,'fixture.json'),JSON.stringify(state,null,2));
   assert.deepEqual(errors,[]);await call('projects.remove',project.id);assert.equal(fs.existsSync(sub),true);assert.equal((await call('state')).sessions.length,4);

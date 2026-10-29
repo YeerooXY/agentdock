@@ -1,6 +1,7 @@
 'use strict';
 // Real renderer and synthetic state. Check immediate updates with a frozen clock,
-// then advance moving skies and the real CSS timeline. No CLI, account or model calls.
+// then advance the retained rail sky and real CSS timeline. Settings stays solid.
+// No CLI, account or model calls.
 // Run after npm run build: node scripts/settings-theme-live-check.cjs
 const { chromium, webkit, devices } = require('playwright');
 const assert = require('node:assert/strict');
@@ -68,13 +69,13 @@ function installFixture(initial) {
   wrap(proto, 'arc', function (x, y, radius) { this.__paddockCircle = { x, y, radius, color: this.fillStyle, alpha: this.globalAlpha, shadowBlur: this.shadowBlur }; });
   wrap(proto, 'fill', function () {
     const canvas = this.canvas, circle = this.__paddockCircle;
-    if (canvas.matches('.settings-overlay > .panel-sky') && circle?.radius >= 2 && circle?.radius <= 3) {
+    if (canvas.matches('#sidebar > .panel-sky') && circle?.radius >= 2 && circle?.radius <= 3) {
       window.cometHeads.push({ ...circle, at: performance.now() });
     }
   });
   wrap(proto, 'stroke', function () {
     const canvas = this.canvas;
-    if (canvas.matches('.settings-overlay > .panel-sky') && this.__paddockPathStart && this.__paddockPathEnd) {
+    if (canvas.matches('#sidebar > .panel-sky') && this.__paddockPathStart && this.__paddockPathEnd) {
       const line = { from: this.__paddockPathStart, to: this.__paddockPathEnd, at: performance.now(), alpha: this.globalAlpha, width: this.lineWidth, gradient: gradients.get(this.strokeStyle) || [] };
       frame(canvas).lines.push(line);
       window.cometHistory.push(line);
@@ -88,8 +89,8 @@ function installFixture(initial) {
     for (const stop of sprite?.stops || []) target.stops.add(stop);
   });
   const nodes = () => {
-    const overlay = document.querySelector('.settings-overlay');
-    return [overlay, overlay.querySelector('.settings-backdrop'), overlay.querySelector(':scope > .panel-sky'), overlay.querySelector('.settings-content')];
+    const overlay = document.querySelector('.settings-overlay'), sidebar = document.querySelector('#sidebar');
+    return [overlay || document.querySelector('#content'), sidebar.querySelector('.page-backdrop'), sidebar.querySelector(':scope > .panel-sky'), overlay?.querySelector('.settings-content') || document.querySelector('#content')];
   };
   window.rememberSettings = () => { refs = nodes(); };
   window.cometHistory = [];
@@ -110,6 +111,7 @@ function installFixture(initial) {
       pixelHash: hash >>> 0, painted, backdrop: getComputedStyle(backdrop).backgroundImage,
       particles: f.particles.slice(0, 24), particleCount: f.particles.length, width: canvas.clientWidth, height: canvas.clientHeight,
       sameNodes: !refs || current.every((node, i) => node === refs[i]),
+      solidSettings: !document.querySelector('.settings-overlay .panel-sky') && getComputedStyle(document.querySelector('.settings-backdrop') || overlay).backgroundImage === 'none',
       overflow: document.documentElement.scrollWidth > innerWidth + 1,
     };
   };
@@ -127,7 +129,7 @@ function installFixture(initial) {
       if (method !== 'settings') throw Error('Unexpected fixture call: ' + method);
       if ('starDensity' in payload) payload.starDensity = Number(payload.starDensity);
       const before = window.inspectSettingsSky(), focus = document.activeElement;
-      const scroller = document.querySelector('.settings-stage'), scrollTop = scroller.scrollTop;
+      const scroller = document.querySelector('.settings-stage') || document.querySelector('#content'), scrollTop = scroller.scrollTop;
       const now = performance.now();
       state = { ...state, settings: { ...state.settings, ...payload } };
       window.fixtureReceive(structuredClone(state));
@@ -390,10 +392,9 @@ async function checkShootingStars(page, capture) {
   await capture(`${orientation}-shooting-star-settings`, false);
   await page.evaluate(() => {
     const overlay = document.querySelector('.settings-overlay');
-    overlay.querySelector('.settings-stage').style.display = 'none';
+    overlay.style.visibility = 'hidden';
     document.querySelector('.titlebar').style.display = 'none';
-    overlay.style.background = '#05070c';
-    overlay.querySelector(':scope > .panel-sky').style.zIndex = '0';
+    document.querySelector('#sidebar > .panel-sky').style.zIndex = '0';
   });
   await capture(`${orientation}-shooting-star-panel`, false);
   return { measurements, issues };
@@ -406,10 +407,11 @@ function checkChange(change, theme, kind) {
   assert.ok(change.after.sameNodes, 'overlay, backdrop, canvas and content retain their DOM identity');
   assert.ok(change.focusPreserved && change.scrollPreserved, 'focus and Settings scroll are preserved');
   assert.equal(change.after.overflow, false, 'no document overflow');
+  assert.equal(change.after.solidSettings, true, 'Settings has a solid backdrop and no sky');
   assert.notEqual(change.after.backdrop, change.before.backdrop, 'texture/gradient changes');
   assert.ok(change.after.draws > change.before.draws, 'canvas redraws in the state update microtask');
   assert.notEqual(change.after.pixelHash, change.before.pixelHash, 'actual canvas pixels change');
-  assert.ok(change.after.painted > 0, 'sky remains visible');
+  assert.ok(change.after.painted > 0, 'rail sky remains visible');
   // Glitter uses the primary color for both its stars and hearts.
   const paintedColors = kind === 'glitter' ? change.after.expectedColors.slice(0, 1) : change.after.expectedColors;
   for (const color of paintedColors) assert.ok(change.after.colors.includes(color), `canvas paints new theme color ${color}`);

@@ -1,0 +1,39 @@
+/* Shared spacing for the redesigned pages. Console layout is independent. */
+#content:is([data-view=projects],[data-view=results],[data-view=usage]) { padding:24px; min-width:0 }
+#content:is([data-view=projects],[data-view=results],[data-view=usage])>.page-heading { gap:16px; margin-bottom:24px; flex-wrap:wrap }
+#content:is([data-view=projects],[data-view=results],[data-view=usage])>.page-heading h1,.settings-title { font-size:30px; line-height:1.22; letter-spacing:-.8px }
+#content:is([data-view=projects],[data-view=results],[data-view=usage]) :is(.primary,.secondary),.settings-content :is(.primary,.secondary) { min-height:40px; padding:10px 14px; border-radius:6px }
+#content:is([data-view=projects],[data-view=results],[data-view=usage]) .section-label { gap:16px }
+
+/* Results keep the existing console/turn groups, with a viewer alongside. */
+#content[data-view=results] .result-heading-actions { display:flex; flex-wrap:wrap; gap:8px }
+#content[data-view=results] .result-controls { margin:0 0 16px }
+#content[data-view=results] .result-filters { display:grid; grid-template-columns:minmax(0,2fr) repeat(3,minmax(0,1fr)); gap:16px; margin:0 }
+#content[data-view=results] .result-filters :is(input,select) { width:100%; max-width:none; min-width:0; margin:0; height:40px }
+#content[data-view=results] .result-bulk-actions { gap:8px; margin:16px 0 0; flex-wrap:wrap }
+#content[data-view=results] .results-workspace { display:grid; grid-template-columns:minmax(0,1fr); gap:16px; align-items:start }
+#content[data-view=results] .results-list { min-width:0 }
+#content[data-view=results] .results-grid { grid-template-columns:minmax(0,1fr); gap:16px; padding:0 }
+#content[data-view=results] .result-console-group { min-width:0; margin:0 }
+#content[data-view=results] .result-batch { margin-bottom:16px }
+#content[data-view=results] .result-batch:last-child { margin-bottom:0 }
+#content[data-view=results] .result-batch-grid { grid-template-columns:repeat(auto-fill,minmax(min(230px,100%),1fr)); gap:16px }
+#content[data-view=results] .result-pagination { justify-content:center; gap:16px; margin:16px 0 0 }
+#content[data-view=results] .result-side-panel { position:sticky; top:0; min-width:0; max-height:calc(100dvh - 130px) }
+.wb-dialog.result-inline-preview[open] { display:block; position:relative; inset:auto; width:100%; max-width:none; height:auto; max-height:calc(100dvh - 130px); margin:0; padding:24px; overflow:auto; border:1px solid var(--line); border-radius:9px; background:var(--surface); color:inherit }
+.result-inline-preview .wb-dialog-top { top:-24px; padding:0 0 8px; background:var(--surface) }
+.result-inline-preview.image-gallery #result-preview { min-height:80px; max-height:40vh; overflow:auto }
+.result-inline-preview.image-gallery .result-full-image { height:auto; max-height:40vh }
+.result-inline-preview :is(.result-detail-meta,.wb-toolbar,.result-image-pager) { flex-wrap:wrap; gap:8px }
+.result-inline-preview .archive-preview { grid-template-columns:minmax(0,1fr); gap:16px }
+.result-inline-preview .archive-files { max-height:180px }
+.result-inline-preview .result-filmstrip button { flex-basis:76px }
+.result-inline-preview .result-text { padding:12px }
+.result-inline-preview :is(h2,h3,pre) { min-width:0; overflow-wrap:anywhere }
+@media(min-width:1200px) {
+  #content[data-view=results] .results-workspace:has(>.result-side-panel:not([hidden])) { grid-template-columns:minmax(0,1.4fr) minmax(300px,1fr) }
+}
+@media(max-width:650px) {
+  #content[data-view=results] .result-filters { grid-template-columns:repeat(2,minmax(0,1fr)) }
+  #content[data-view=results] #result-search { grid-column:1/-1 }
+}

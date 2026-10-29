@@ -73,7 +73,7 @@ let browser; const reports = [];
     const linkedPanel = page.locator(`.session-card[data-console-id="${state.sessions[0].id}"]`);
     await linkedPanel.locator('[data-action="toggle-console"]').click(); await linkedPanel.locator('.console-expand[aria-expanded=true]').waitFor(); await capture('linked-console');
     await linkedPanel.locator('.console-project').click(); await page.locator('[data-project-view]').click();
-    await page.locator('.project-card').waitFor(); await page.locator('.project-milestones summary').click(); await capture('progress');
+    await page.locator('.project-card').waitFor(); assert.equal(await page.locator('[data-project-milestone]').first().isVisible(), true); await capture('progress');
     await nav('settings'); const toggle = page.locator('[data-setting=suggestProjects]');
     assert.equal(await toggle.isChecked(), false); await toggle.focus(); await page.keyboard.press('Space');
     await page.waitForFunction(async () => (await window.dock.call('state')).value.settings.suggestProjects === true);
