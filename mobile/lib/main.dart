@@ -602,32 +602,40 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
     );
     stopTerminalTyping();
     composerFocus.unfocus();
-    final confirmed = await showDialog<bool>(
+    final tree = session['worktree'] as Map?;
+    Map? status;
+    if (tree != null) {
+      try {
+        status = await c.request('console.worktree.status', {
+          'id': target.session, 'launchId': session['launchId'],
+        }) as Map;
+      } catch (_) {
+        status = null;
+      }
+      if (!mounted || !commandTargetIsCurrent(target)) return;
+    }
+    final choice = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text('Close ${session['name']}?'),
-        content: Text(
-          session['remote'] != null
-              ? 'This ends the remote tmux session, including its running task. SSH-key login is required.'
-              : 'This ends the console on your PC, including any running task.',
-        ),
+        content: Text(tree != null
+            ? 'This ends the console and its running task. ${status?['dirty'] == false ? 'The worktree is clean. Removing the folder keeps branch ${tree['branch']} and its commits.' : status?['dirty'] == true ? 'The worktree has uncommitted changes and will be kept at ${tree['path']}.' : 'Worktree status is unavailable. The folder will be kept at ${tree['path']}.'}'
+            : session['remote'] != null
+                ? 'This ends the remote tmux session, including its running task. SSH-key login is required.'
+                : 'This ends the console on your PC, including any running task.'),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Keep open'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Close console'),
-          ),
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Keep open')),
+          TextButton(onPressed: () => Navigator.pop(ctx, 'keep'), child: const Text('Close console')),
+          if (tree != null && status?['dirty'] == false)
+            FilledButton(onPressed: () => Navigator.pop(ctx, 'remove'), child: const Text('Close and remove worktree')),
         ],
       ),
     );
-    if (confirmed == true && commandTargetIsCurrent(target)) {
-      await run(
-        () =>
-            c.request('console.close', {'id': target.session, 'confirm': true}),
-      );
+    if (choice != null && commandTargetIsCurrent(target)) {
+      await run(() => c.request('console.close', {
+        'id': target.session, 'confirm': true,
+        if (tree != null) ...{'worktree': choice, 'launchId': session['launchId']},
+      }));
     }
   }
 

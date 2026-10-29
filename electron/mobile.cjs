@@ -11,7 +11,8 @@ const { readJson, atomicJson } = require('./storage.cjs');
 const { TerminalStream } = require('./mobile-stream.cjs');
 const { isPrivate, isPublic, isTailscale, connectionOptions } = require('./mobile-address.cjs');
 const { MobileNetwork } = require('./mobile-network.cjs');
-const { consoleChoices, mobileLaunch, consoleFiles } = require('./mobile-console.cjs');
+const { consoleChoices, mobileLaunch, consoleFiles, worktreeRoot } = require('./mobile-console.cjs');
+const { prepareWorktree } = require('./worktrees.cjs');
 const { consoleModels } = require('./adapters.cjs');
 const { MobileAttachments } = require('./mobile-attachments.cjs');
 const { settingsSummary } = require('./mobile-settings.cjs');
@@ -33,9 +34,9 @@ function deviceName(value) {
   return name;
 }
 class MobileCompanion extends EventEmitter {
-  constructor(root, safeStorage, { sessions, results, alerts, queue, prompts, getUsage, getUsageTurns, refreshUsage, getDefaults, getModels, getSettings, toolsStatus = false, getKey, codePanel, networkScript, program, network, testMode = false, isTailnet = isTailscale } = {}) {
+  constructor(root, safeStorage, { sessions, results, alerts, queue, prompts, getUsage, getUsageTurns, refreshUsage, getDefaults, getModels, getSettings, toolsStatus = false, getKey, codePanel, networkScript, program, network, worktrees, endMobileSession, testMode = false, isTailnet = isTailscale } = {}) {
     super(); this.file = path.join(root, 'mobile.json'); this.crypto = safeStorage;
-    this.queue = queue; this.prompts = prompts;
+    this.queue = queue; this.prompts = prompts; this.worktrees = worktrees; this.endMobileSession = endMobileSession;
     this.sessions = sessions; this.results = results; this.getUsage = getUsage; this.getDefaults = getDefaults; this.testMode = testMode;
     this.getModels = getModels;
     this.getUsageTurns = getUsageTurns;
@@ -250,7 +251,7 @@ class MobileCompanion extends EventEmitter {
     const localUrl = `https://${this.config.host}:${this.config.port}`;
     const connection = { url: localUrl };
     connection.name = this.name;
-    return { connection, projects: (typeof this.sessions.projects?.list === 'function' ? this.sessions.projects.list() || [] : []).filter(x => x.status !== 'archived').map(({ id, name, color }) => ({ id, name, ...(color ? { color } : {}) })), capabilities: [...(this.toolsStatus ? ['tools.status'] : []), ...(typeof this.getUsageTurns === 'function' ? ['usage.turns'] : []), ...(mobileProjects.available(this.sessions.projects) ? ['projects.read'] : []), 'code.read', 'results.thumbnails', 'results.actions', 'console.agents', 'console.files', 'console.close', 'console.projects', 'console.models', 'console.ssh', 'console.manage', 'console.switch', 'console.setup', 'alerts.direct', 'console.attachments', ...(this.queue ? ['console.queue'] : []), ...(this.prompts ? ['prompts', 'prompts.edit'] : [])], capacity: (this.sessions.grid?.columns || 3) * (this.sessions.grid?.rows || 3), sessions: this.sessions.list().filter(x => !x.dismissed).map(({ id, slot, name, provider, alive, state, cols, rows, consoleKey, projectId, remote, updatedAt, providerSessionId, model, modelId, effort, settingsAt, launchId, accountId, accountLabel, switchTargets, switching, purpose, draftSupported, switchOffer }) => ({ id, slot, name, provider, alive, state, cols, rows, consoleKey, projectId, remote, updatedAt, providerSessionId, model: modelId || model || null, modelName: model || null, effort: effort || null, settingsAt: settingsAt || null, launchId: launchId || null, accountId: accountId || null, accountLabel: accountLabel || null, switchTargets: switchTargets || [], switching: !!switching, purpose: purpose || 'agent', draftSupported: draftSupported === true, switchOffer: switchOffer || null })), queues: this.queue?.snapshot() || {}, prompts: this.prompts?.list() || [], alerts: this.liveAlerts, unreadResults: this.results.unreadGroups(), resultVersion: digest(this.results.list().map(x => x.id + ':' + x.seenAt + ':' + x.changeCount).join(',')).slice(0, 16) };
+    return { connection, projects: (typeof this.sessions.projects?.list === 'function' ? this.sessions.projects.list() || [] : []).filter(x => x.status !== 'archived').map(({ id, name, color }) => ({ id, name, ...(color ? { color } : {}) })), capabilities: [...(this.toolsStatus ? ['tools.status'] : []), ...(typeof this.getUsageTurns === 'function' ? ['usage.turns'] : []), ...(mobileProjects.available(this.sessions.projects) ? ['projects.read'] : []), 'code.read', 'results.thumbnails', 'results.actions', 'console.agents', ...(this.worktrees && this.endMobileSession ? ['console.worktree'] : []), 'console.files', 'console.close', 'console.projects', 'console.models', 'console.ssh', 'console.manage', 'console.switch', 'console.setup', 'alerts.direct', 'console.attachments', ...(this.queue ? ['console.queue'] : []), ...(this.prompts ? ['prompts', 'prompts.edit'] : [])], capacity: (this.sessions.grid?.columns || 3) * (this.sessions.grid?.rows || 3), sessions: this.sessions.list().filter(x => !x.dismissed).map(({ id, slot, name, provider, alive, state, cols, rows, consoleKey, projectId, remote, updatedAt, providerSessionId, model, modelId, effort, settingsAt, launchId, accountId, accountLabel, switchTargets, switching, purpose, draftSupported, switchOffer, worktree }) => ({ id, slot, name, provider, alive, state, cols, rows, consoleKey, projectId, remote, updatedAt, providerSessionId, model: modelId || model || null, modelName: model || null, effort: effort || null, settingsAt: settingsAt || null, launchId: launchId || null, accountId: accountId || null, accountLabel: accountLabel || null, switchTargets: switchTargets || [], switching: !!switching, purpose: purpose || 'agent', draftSupported: draftSupported === true, switchOffer: switchOffer || null, ...(worktree && typeof worktree.branch === 'string' && typeof worktree.path === 'string' ? { worktree: { branch: worktree.branch, path: worktree.path } } : {}) })), queues: this.queue?.snapshot() || {}, prompts: this.prompts?.list() || [], alerts: this.liveAlerts, unreadResults: this.results.unreadGroups(), resultVersion: digest(this.results.list().map(x => x.id + ':' + x.seenAt + ':' + x.changeCount).join(',')).slice(0, 16) };
   }
   scheduleState() {
     if (!this.server || this.stateTimer) return;
@@ -336,8 +337,30 @@ class MobileCompanion extends EventEmitter {
         if (!this.prompts) throw new Error('Update Paddock on your PC to manage prompts.');
         this.prompts.remove(payload.id); return true;
       }
+      case 'console.worktree.root': {
+        if (!this.worktrees || !this.endMobileSession) throw new Error('Worktrees are unavailable on this PC.');
+        if (payload.cwd !== undefined || payload.path !== undefined) throw new Error('Choose a saved project folder.');
+        const launch = mobileLaunch(this.sessions, this.getDefaults(), payload);
+        return { root: !launch.remoteHostId && await worktreeRoot(this.worktrees, launch.cwd) };
+      }
       case 'console.create': {
-        return this.sessions.create(mobileLaunch(this.sessions, this.getDefaults(), payload));
+        if (payload.worktree !== undefined && typeof payload.worktree !== 'boolean') throw new Error('Invalid worktree option.');
+        const launch = mobileLaunch(this.sessions, this.getDefaults(), payload);
+        if (payload.worktree) {
+          if (payload.cwd !== undefined || payload.path !== undefined) throw new Error('Choose a saved project folder.');
+          if (!this.worktrees || !this.endMobileSession) throw new Error('Worktrees are unavailable on this PC.');
+          if (launch.remoteHostId || !await worktreeRoot(this.worktrees, launch.cwd)) throw new Error('Choose a Git repository root on this PC.');
+          if (client.ws.readyState !== WebSocket.OPEN || !this.clients.has(client) || !this.private.devices.includes(client.device)) throw new Error('This phone connection is no longer authorized.');
+          await prepareWorktree(launch, this.worktrees, this.getDefaults().cwd);
+        }
+        return this.sessions.create(launch);
+      }
+      case 'console.worktree.status': {
+        const session = this.sessions.items.get(payload.id);
+        if (client.selected !== payload.id || !session?.worktree || session.dismissed || (session.launchId || null) !== (payload.launchId || null) || !this.worktrees) throw new Error('Select the current worktree console.');
+        const status = await this.worktrees.status(session.worktree).catch(() => null);
+        if (client.selected !== payload.id || this.sessions.items.get(payload.id) !== session || session.dismissed || (session.launchId || null) !== (payload.launchId || null) || client.ws.readyState !== WebSocket.OPEN || !this.clients.has(client) || !this.private.devices.includes(client.device)) throw new Error('Console changed.');
+        return { dirty: status?.dirty ?? null, ahead: status?.ahead ?? null };
       }
       case 'console.switch': {
         const session = this.sessions.items.get(payload.id);
@@ -415,7 +438,11 @@ class MobileCompanion extends EventEmitter {
       case 'console.close': {
         const session = this.sessions.items.get(payload.id);
         if (payload.confirm !== true || client.selected !== payload.id || !session || session.dismissed) throw new Error('Confirm closing the selected console.');
-        await this.sessions.end(payload.id);
+        if (session.worktree) {
+          if (!this.endMobileSession || !['keep', 'remove'].includes(payload.worktree) || (session.launchId || null) !== (payload.launchId || null)) throw new Error('Choose how to close this worktree console.');
+          const valid = () => client.ws.readyState === WebSocket.OPEN && this.clients.has(client) && this.private.devices.includes(client.device) && client.selected === payload.id && this.sessions.items.get(payload.id) === session && !session.dismissed && (session.launchId || null) === (payload.launchId || null);
+          if (!await this.endMobileSession(payload.id, payload.worktree, valid)) throw new Error('Console changed.');
+        } else await this.sessions.end(payload.id);
         client.selected = '';
         return true;
       }

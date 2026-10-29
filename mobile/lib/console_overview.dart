@@ -4,6 +4,7 @@ import 'package:xterm/xterm.dart';
 import 'agent_identity.dart';
 import 'dock_client.dart';
 import 'dock_style.dart';
+import 'worktree_badge.dart';
 
 String consoleOverviewState(Map<String, dynamic> session) {
   if (session['alive'] == false) {
@@ -185,6 +186,7 @@ class _ConsoleOverviewState extends State<ConsoleOverview> {
                                     Text(session['name'] as String,
                                         maxLines: 2, overflow: TextOverflow.ellipsis,
                                         style: const TextStyle(fontWeight: FontWeight.w600)),
+                                    if (session['worktree'] != null) WorktreeBadge(session: session),
                                     if (session['projectId'] != null)
                                       Padding(
                                         padding: const EdgeInsets.only(top: 4),

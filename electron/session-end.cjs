@@ -1,6 +1,6 @@
 'use strict';
 
-async function endSession(id, { sessions, getSettings, persistSettings, dialog, window, testMode, worktrees }) {
+async function endSession(id, { sessions, getSettings, persistSettings, dialog, window, testMode, worktrees, forceConfirmation = false }) {
   const open = session => !session.dismissed && (session.alive || session.restoreError);
   const sameLaunch = session => (session.launchId || null) === (target.launchId || null);
   const target = sessions.list().find(session => session.id === id && open(session));
@@ -8,7 +8,7 @@ async function endSession(id, { sessions, getSettings, persistSettings, dialog, 
 
   const current = getSettings();
   let removeWorktree = false;
-  if (!testMode && current.confirmConsoleEnd !== false) {
+  if (!testMode && (forceConfirmation || current.confirmConsoleEnd !== false)) {
     const savedOnly = !!target.restoreError && !target.alive;
     // A worktree console can also remove its folder, but only when nothing is uncommitted.
     const tree = target.worktree && worktrees ? await worktrees.status(target.worktree).catch(() => null) : null;
@@ -47,4 +47,15 @@ async function endSession(id, { sessions, getSettings, persistSettings, dialog, 
   return true;
 }
 
-module.exports = { endSession };
+async function endMobileSession(id, choice, valid, options) {
+  if (!['keep', 'remove'].includes(choice)) throw new Error('Choose how to close this worktree console.');
+  return endSession(id, { ...options, testMode: false, forceConfirmation: true, dialog: {
+    showMessageBox: async (_window, config) => {
+      if (!valid()) throw new Error('Console or connection changed.');
+      if (choice === 'remove' && config.buttons.length < 3) throw new Error('The worktree has changes or its status is unavailable. It was kept.');
+      return { response: choice === 'remove' ? 2 : 1 };
+    }
+  } });
+}
+
+module.exports = { endSession, endMobileSession };

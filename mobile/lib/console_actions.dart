@@ -19,7 +19,8 @@ class _NewConsoleSheetState extends State<NewConsoleSheet> {
   String? agent;
   String project = '', host = '', model = '';
   int folderIndex = 0, modelRevision = 0;
-  bool modelLoading = false, chooseModel = false;
+  bool modelLoading = false, chooseModel = false, worktree = false, repositoryRoot = false;
+  int rootRevision = 0;
   List<Map<String, dynamic>> projects = [], hosts = [], models = [];
   String error = '';
   String folder = '';
@@ -61,7 +62,7 @@ class _NewConsoleSheetState extends State<NewConsoleSheet> {
         folder = result['defaultFolder'] as String? ?? '';
         loading = false;
       });
-      await loadModels();
+      await Future.wait([loadModels(), loadRoot()]);
     } catch (_) {
       if (mounted) {
         setState(() {
@@ -69,6 +70,22 @@ class _NewConsoleSheetState extends State<NewConsoleSheet> {
           error = 'Could not load agents. Close this panel and try again.';
         });
       }
+    }
+  }
+
+  Future<void> loadRoot() async {
+    final revision = ++rootRevision;
+    setState(() { repositoryRoot = false; worktree = false; });
+    if (host.isNotEmpty || !(widget.client.state['capabilities'] as List? ?? []).contains('console.worktree')) return;
+    try {
+      final result = await widget.client.request('console.worktree.root', {
+        if (project.isNotEmpty) ...{'projectId': project, 'folderIndex': folderIndex},
+      });
+      if (mounted && current && revision == rootRevision) {
+        setState(() => repositoryRoot = result['root'] == true);
+      }
+    } catch (_) {
+      // An unavailable or unverified folder cannot enable the option.
     }
   }
 
@@ -156,6 +173,7 @@ class _NewConsoleSheetState extends State<NewConsoleSheet> {
                           chooseModel = false;
                         });
                         loadModels();
+                        loadRoot();
                       }
                     : null,
               ),
@@ -181,10 +199,10 @@ class _NewConsoleSheetState extends State<NewConsoleSheet> {
                     ),
                 ],
                 onChanged: current
-                    ? (value) => setState(() {
-                        project = value!;
-                        folderIndex = 0;
-                      })
+                    ? (value) {
+                        setState(() { project = value!; folderIndex = 0; });
+                        loadRoot();
+                      }
                     : null,
               ),
               const SizedBox(height: 12),
@@ -212,11 +230,19 @@ class _NewConsoleSheetState extends State<NewConsoleSheet> {
                       ),
                   ],
                   onChanged: current
-                      ? (value) => setState(() => folderIndex = value!)
+                      ? (value) { setState(() => folderIndex = value!); loadRoot(); }
                       : null,
                 ),
               const SizedBox(height: 12),
             ],
+            if (repositoryRoot && host.isEmpty)
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Isolated worktree'),
+                subtitle: const Text('Works on a new branch in its own folder. Your current files stay untouched.'),
+                value: worktree,
+                onChanged: current ? (value) => setState(() => worktree = value) : null,
+              ),
             TextField(
               controller: name,
               maxLength: 64,
@@ -330,6 +356,7 @@ class _NewConsoleSheetState extends State<NewConsoleSheet> {
                       if (host.isNotEmpty) 'hostId': host,
                       if (model.isNotEmpty) 'model': model,
                       'chooseModel': chooseModel,
+                      if (worktree && repositoryRoot && host.isEmpty) 'worktree': true,
                     })
                   : null,
               child: const Text('Open'),

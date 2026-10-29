@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'agent_identity.dart';
 import 'dock_client.dart';
 import 'dock_style.dart';
+import 'worktree_badge.dart';
 
 class ConsoleSwitcher extends StatefulWidget {
   static const allConsoles = '@all';
@@ -115,6 +116,7 @@ class _ConsoleSwitcherState extends State<ConsoleSwitcher> {
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                       ),
+                      if (session['worktree'] != null) WorktreeBadge(session: session),
                       if (projectName(session) case final name?)
                         Text(
                           name,
@@ -173,7 +175,8 @@ class _ConsoleSwitcherState extends State<ConsoleSwitcher> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
+                    Row(children: [
+                      Flexible(child: Text(
                       widget.name,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -183,7 +186,12 @@ class _ConsoleSwitcherState extends State<ConsoleSwitcher> {
                         color: pink,
                         fontWeight: FontWeight.w600,
                       ),
-                    ),
+                    )),
+                      if (widget.showProjectName && session?['worktree'] != null) ...[
+                        const SizedBox(width: 6),
+                        Flexible(child: WorktreeBadge(session: session!)),
+                      ],
+                    ]),
                     if (showProject)
                       Text(
                         project,
