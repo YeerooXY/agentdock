@@ -37,3 +37,14 @@
   #content[data-view=results] .result-filters { grid-template-columns:repeat(2,minmax(0,1fr)) }
   #content[data-view=results] #result-search { grid-column:1/-1 }
 }
+
+/* Settings: one darker panel with sections divided by lines, not separate cards. */
+.settings-overlay .settings-rail { background:transparent; border:0; padding:0 }
+.settings-overlay .settings-stage { background:#0c0d14; border:1px solid var(--line); border-radius:10px; padding:8px 20px 24px 32px }
+.settings-overlay .settings-content .settings-layout,
+.settings-overlay .settings-content :is(.settings-general-columns,.settings-console-grid,.tools-layout,.vault-layout) { display:block }
+.settings-overlay .settings-content .surface { background:none; border:0; border-radius:0; box-shadow:none; padding:24px 0; border-bottom:1px solid var(--line) }
+.settings-overlay .settings-content .surface:last-child,
+.settings-overlay .settings-content .settings-column:last-child>.surface:last-child { border-bottom:0 }
+.settings-overlay .settings-content .surface h2 { font-size:12px; letter-spacing:.8px; text-transform:uppercase; color:var(--muted); margin-bottom:4px }
+.settings-overlay .settings-content .toggle-row:last-of-type { border-bottom:0 }

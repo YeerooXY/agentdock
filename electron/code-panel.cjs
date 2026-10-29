@@ -135,7 +135,7 @@ class CodePanel {
         changes.push({ file, type: /D/.test(status) ? 'deleted' : status === '??' || status[0] === 'A' ? 'added' : /[RC]/.test(status) ? 'renamed' : 'modified', before, after, omitted });
       }
       if (changes.length >= 100) notes.push('Showing the first 100 changed files.');
-    } catch { notes.push('No Git changes available. Use Browse files to read this folder.'); }
+    } catch {} // Not a Git folder: the empty list says so; Browse files still works.
     return { id: randomUUID(), mode: 'working', at: Date.now(), source: source.name, changes, notes };
   }
   async report(id, refresh = false) {

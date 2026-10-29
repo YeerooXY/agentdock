@@ -38,7 +38,10 @@ export function codePanelUI({ call, getState, selectedConsole, pasteContext, esc
     const list = r.node.querySelector('[data-code-files]');
     const items = r.browse ? r.directory?.items || [] : r.report?.changes || [];
     list.innerHTML = (r.browse && r.directory?.path ? action('up', '↑ Parent folder') : '') + items.map(x => `<button type="button" data-code-path="${e(x.path || x.file)}" ${x.directory ? 'data-directory' : ''} ${r.file?.file === (x.path || x.file) ? 'aria-current="true"' : ''} title="${e(x.path || x.file)}"><span>${x.directory ? '▸ ' : ''}${e(x.name || x.file)}</span>${x.type ? `<small>${e(x.type)}</small>` : ''}</button>`).join('');
-    if (!items.length) list.innerHTML += `<p>${r.browse ? 'No previewable files in this folder.' : 'No changed files. Browse files or wait for the next turn.'}</p>`;
+    if (!items.length) list.innerHTML += `<p>${r.browse ? 'No previewable files in this folder.' : 'No changes yet.'}</p>`;
+    // An open file with nothing else to list gets the full width.
+    const bare = !items.length && !r.browse && !!r.externalFile && !!r.file;
+    list.hidden = bare; r.node.querySelector('[data-code-caption]').hidden = bare;
     const report = r.report;
     r.node.querySelector('[data-code-caption]').textContent = r.externalFile ? 'File' : r.browse ? r.directory?.path || 'Project files' : report ? `${report.mode === 'turn' ? 'Last turn' : 'Working tree'} · ${report.changes.length} ${report.changes.length === 1 ? 'file' : 'files'}` : 'Loading changes…';
     r.node.querySelector('[data-code-notes]').textContent = r.browse ? r.directory?.truncated ? 'Showing the first 500 entries.' : '' : report?.notes?.join(' ') || '';
