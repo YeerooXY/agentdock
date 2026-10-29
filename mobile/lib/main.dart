@@ -8,6 +8,7 @@ import 'dock_client.dart';
 import 'dock_style.dart';
 import 'pair_page.dart';
 import 'results_page.dart';
+import 'image_jobs_page.dart';
 import 'projects_page.dart';
 import 'settings_page.dart';
 import 'update_panel.dart';
@@ -1018,6 +1019,14 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
                     ],
                   ),
                 ),
+              if (c.state['imageJobsRunning'] == true && c.connected)
+                Align(alignment: Alignment.centerRight, child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: ActionChip(avatar: const Icon(Icons.image_outlined, size: 18),
+                    label: const Text('Image job running'),
+                    onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => ImageJobsPage(client: c))),
+                  ),
+                )),
               Expanded(
                 child: page == 0
                     ? consoleWorkspace(current)

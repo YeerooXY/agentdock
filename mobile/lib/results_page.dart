@@ -6,6 +6,7 @@ import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'dock_client.dart';
+import 'image_jobs_page.dart';
 import 'main.dart' show blue, pink, formatBytes;
 import 'result_revision.dart';
 
@@ -360,6 +361,11 @@ class _ResultsPageState extends State<ResultsPage> {
           ],
         ];
     return Column(children: [
+      if (widget.client.supportsResult('image.jobs'))
+        Align(alignment: Alignment.centerRight, child: TextButton.icon(
+          onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => ImageJobsPage(client: widget.client))),
+          icon: const Icon(Icons.image_outlined), label: const Text('Image jobs'),
+        )),
       Padding(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
         child: TextField(
