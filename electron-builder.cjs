@@ -35,7 +35,8 @@ module.exports = {
   },
   // Unsigned for now: Gatekeeper asks users to confirm the first launch.
   mac: {
-    target: ['dmg'], // one architecture per run; see dist:mac icon: 'assets/icon-1024.png', category: 'public.app-category.developer-tools',
+    target: ['dmg'], // one architecture per run; see dist:mac
+    icon: 'assets/icon-1024.png', category: 'public.app-category.developer-tools',
     artifactName: 'Paddock-${version}-Mac-${arch}.${ext}', identity: null, hardenedRuntime: false
   },
   publish: null
