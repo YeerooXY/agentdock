@@ -23,7 +23,8 @@ void main() {
     expect(find.text('App'), findsOneWidget);
     await tester.tap(find.text('Website')); await tester.pumpAndSettle();
     expect(find.text('Not allowed on the PC'), findsOneWidget);
-    expect(tester.widget<IconButton>(find.byTooltip('Reload')).onPressed, isNull);
+    // byTooltip finds the tooltip wrapper; the button is its ancestor.
+    expect(tester.widget<IconButton>(find.ancestor(of: find.byTooltip('Reload'), matching: find.byType(IconButton))).onPressed, isNull);
   });
 
   testWidgets('reload checks an allowed panel', (tester) async {
