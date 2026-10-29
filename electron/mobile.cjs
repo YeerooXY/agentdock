@@ -16,6 +16,7 @@ const { consoleModels } = require('./adapters.cjs');
 const { MobileAttachments } = require('./mobile-attachments.cjs');
 const { settingsSummary } = require('./mobile-settings.cjs');
 const mobileProjects = require('./mobile-projects.cjs');
+const { MobilePreview } = require('./mobile-preview.cjs');
 const token = () => crypto.randomBytes(32).toString('base64url');
 const digest = text => crypto.createHash('sha256').update(text).digest('hex');
 const match = (value, stored) => {
@@ -37,6 +38,7 @@ class MobileCompanion extends EventEmitter {
     super(); this.file = path.join(root, 'mobile.json'); this.crypto = safeStorage;
     this.queue = queue; this.prompts = prompts;
     this.sessions = sessions; this.results = results; this.getUsage = getUsage; this.getDefaults = getDefaults; this.testMode = testMode;
+    this.preview = new MobilePreview(sessions);
     this.getModels = getModels;
     this.getUsageTurns = getUsageTurns;
     this.refreshUsage = refreshUsage;
@@ -194,6 +196,11 @@ class MobileCompanion extends EventEmitter {
   }
   async http(req, res) {
     res.setHeader('Cache-Control', 'no-store'); res.setHeader('Content-Type', 'application/json');
+    if (req.url?.startsWith('/v1/preview/')) {
+      if (req.method !== 'GET') { res.writeHead(405); res.end(''); return; }
+      if (!this.authenticate(req)) { res.writeHead(401); res.end(''); return; }
+      this.preview.handle(req, res); return;
+    }
     if (req.method !== 'POST' || !['/v1/pair', '/v1/pair/status', '/v1/pair/cancel'].includes(req.url) || !this.acceptsPeer(req)) { res.writeHead(404); res.end('{}'); return; }
     if (!this.allowAttempt(req)) { res.writeHead(429); res.end('{}'); return; }
     const auth = req.headers.authorization?.replace(/^Bearer /, '') || '', p = this.pairing, pending = this.pendingPairing, initial = req.url === '/v1/pair';
@@ -250,7 +257,7 @@ class MobileCompanion extends EventEmitter {
     const localUrl = `https://${this.config.host}:${this.config.port}`;
     const connection = { url: localUrl };
     connection.name = this.name;
-    return { connection, projects: (typeof this.sessions.projects?.list === 'function' ? this.sessions.projects.list() || [] : []).filter(x => x.status !== 'archived').map(({ id, name, color }) => ({ id, name, ...(color ? { color } : {}) })), capabilities: [...(this.toolsStatus ? ['tools.status'] : []), ...(typeof this.getUsageTurns === 'function' ? ['usage.turns'] : []), ...(mobileProjects.available(this.sessions.projects) ? ['projects.read'] : []), 'code.read', 'results.thumbnails', 'results.actions', 'console.agents', 'console.files', 'console.close', 'console.projects', 'console.models', 'console.ssh', 'console.manage', 'console.switch', 'console.setup', 'alerts.direct', 'console.attachments', ...(this.queue ? ['console.queue'] : []), ...(this.prompts ? ['prompts', 'prompts.edit'] : [])], capacity: (this.sessions.grid?.columns || 3) * (this.sessions.grid?.rows || 3), sessions: this.sessions.list().filter(x => !x.dismissed).map(({ id, slot, name, provider, alive, state, cols, rows, consoleKey, projectId, remote, updatedAt, providerSessionId, model, modelId, effort, settingsAt, launchId, accountId, accountLabel, switchTargets, switching, purpose, draftSupported, switchOffer }) => ({ id, slot, name, provider, alive, state, cols, rows, consoleKey, projectId, remote, updatedAt, providerSessionId, model: modelId || model || null, modelName: model || null, effort: effort || null, settingsAt: settingsAt || null, launchId: launchId || null, accountId: accountId || null, accountLabel: accountLabel || null, switchTargets: switchTargets || [], switching: !!switching, purpose: purpose || 'agent', draftSupported: draftSupported === true, switchOffer: switchOffer || null })), queues: this.queue?.snapshot() || {}, prompts: this.prompts?.list() || [], alerts: this.liveAlerts, unreadResults: this.results.unreadGroups(), resultVersion: digest(this.results.list().map(x => x.id + ':' + x.seenAt + ':' + x.changeCount).join(',')).slice(0, 16) };
+    return { connection, previews: (this.sessions.codePanels?.() || []).filter(p => p.kind === 'web').map(({ id, name, url, state, phoneAllowed }) => ({ id, name, url, state, phoneAllowed: phoneAllowed === true })), projects: (typeof this.sessions.projects?.list === 'function' ? this.sessions.projects.list() || [] : []).filter(x => x.status !== 'archived').map(({ id, name, color }) => ({ id, name, ...(color ? { color } : {}) })), capabilities: [...(this.toolsStatus ? ['tools.status'] : []), ...(typeof this.getUsageTurns === 'function' ? ['usage.turns'] : []), ...(mobileProjects.available(this.sessions.projects) ? ['projects.read'] : []), 'code.read', 'results.thumbnails', 'results.actions', 'console.agents', 'console.files', 'console.close', 'console.projects', 'console.models', 'console.ssh', 'console.manage', 'console.switch', 'console.setup', 'alerts.direct', 'console.attachments', ...(this.queue ? ['console.queue'] : []), ...(this.prompts ? ['prompts', 'prompts.edit'] : [])], capacity: (this.sessions.grid?.columns || 3) * (this.sessions.grid?.rows || 3), sessions: this.sessions.list().filter(x => !x.dismissed).map(({ id, slot, name, provider, alive, state, cols, rows, consoleKey, projectId, remote, updatedAt, providerSessionId, model, modelId, effort, settingsAt, launchId, accountId, accountLabel, switchTargets, switching, purpose, draftSupported, switchOffer }) => ({ id, slot, name, provider, alive, state, cols, rows, consoleKey, projectId, remote, updatedAt, providerSessionId, model: modelId || model || null, modelName: model || null, effort: effort || null, settingsAt: settingsAt || null, launchId: launchId || null, accountId: accountId || null, accountLabel: accountLabel || null, switchTargets: switchTargets || [], switching: !!switching, purpose: purpose || 'agent', draftSupported: draftSupported === true, switchOffer: switchOffer || null })), queues: this.queue?.snapshot() || {}, prompts: this.prompts?.list() || [], alerts: this.liveAlerts, unreadResults: this.results.unreadGroups(), resultVersion: digest(this.results.list().map(x => x.id + ':' + x.seenAt + ':' + x.changeCount).join(',')).slice(0, 16) };
   }
   scheduleState() {
     if (!this.server || this.stateTimer) return;

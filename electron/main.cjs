@@ -692,6 +692,7 @@ app.whenReady().then(() => guardStartup(async () => {
           publish(); return { ok: true, value: panel };
         }
         case 'web.url': return { ok: true, value: sessions.setWebUrl(payload?.id, payload?.url) };
+        case 'web.phone': return { ok: true, value: sessions.setWebPhoneAllowed(payload?.id, payload?.allow) };
         case 'web.open': {
           const panel = sessions.items.get(payload);
           if (panel?.kind !== 'web' || !isLocal(panel.url)) throw new Error('Enter a local address first.');
