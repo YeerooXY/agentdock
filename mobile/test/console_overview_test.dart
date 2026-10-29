@@ -209,6 +209,17 @@ void main() {
     expect(client.inputs, isEmpty);
   });
 
+  testWidgets('offline banner offers Retry and the PC address', (tester) async {
+    viewport(tester, const Size(360, 800));
+    final client = consoles()..connected = false;
+    addTearDown(client.dispose);
+    await tester.pumpWidget(DockApp(client: client));
+    await tester.pump();
+    expect(find.widgetWithText(TextButton, 'Retry'), findsOneWidget);
+    expect(find.byTooltip('PC address'), findsOneWidget);
+    expect(find.text('Connection'), findsNothing);
+  });
+
   testWidgets('resizing preserves terminal, composer, focus and reading state', (tester) async {
     viewport(tester, const Size(360, 800));
     final client = FakeDock();

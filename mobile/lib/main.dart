@@ -1008,6 +1008,8 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
                   color: const Color(0xff2b2035),
                   child: Row(
                     children: [
+                      const Icon(Icons.wifi_off, size: 18),
+                      const SizedBox(width: 10),
                       Expanded(
                         child: Text(
                           c.status,
@@ -1015,8 +1017,13 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
                         ),
                       ),
                       TextButton(
+                        onPressed: () => run(c.reconnect),
+                        child: const Text('Retry'),
+                      ),
+                      IconButton(
+                        tooltip: 'PC address',
+                        icon: const Icon(Icons.tune, size: 20),
                         onPressed: () => openConnection(context, c),
-                        child: const Text('Connection'),
                       ),
                     ],
                   ),
