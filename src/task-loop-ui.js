@@ -1,11 +1,8 @@
 import './task-loop.css';
 
 export function taskLoopUI({ call, getState, getPage, escape: e, renderPage, toast, openResult }) {
-  let choices = null, selected = '', showForm = false, loading = false, busy = false, error = '', detailStamp = '', listStamp = '', announcement = '', request = 0;
-  const draft = { repo: '', title: '', criteria: '', size: '', split: false, implementer: '', model: '', effort: '', reviewer: '', reviewerModel: '', checks: '', workflow: 'current', maxRounds: '3', timeLimitMinutes: '30' };
+  let choices = null, selected = '', detailStamp = '', listStamp = '', announcement = '', request = 0;
   const planDrafts = new Map();
-  const manual = { size: false, implementer: false, model: false, reviewer: false, reviewerModel: false };
-  let choicesTimer;
   const running = job => ['planning', 'reviewing-plan', 'building', 'implementing', 'checking', 'reviewing'].includes(job.state);
   const jobs = () => getState()?.tasks || [];
   const status = value => ({ 'needs-you': 'Needs you', 'not-set': 'Not set', 'plan-ready': 'Plan ready', 'reviewing-plan': 'Reviewing plan', 'changes-requested': 'Changes requested', approve: 'Approved', unclear: 'No clear verdict', done: 'Done' }[value] || value?.replace(/^./, letter => letter.toUpperCase()) || 'Not run');
@@ -13,49 +10,10 @@ export function taskLoopUI({ call, getState, getPage, escape: e, renderPage, toa
   const elapsed = value => value == null ? 'Running' : `${Math.floor(value / 60000)}m ${Math.floor(value / 1000) % 60}s`;
   const count = value => value == null ? 'not reported' : Number(value).toLocaleString();
   const usage = value => value ? `${count(value.inputTokens)} input / ${count(value.outputTokens)} output tokens${value.cachedInputTokens != null ? ` / ${count(value.cachedInputTokens)} cached input` : ''}${value.reportedCost != null ? ` / OpenCode reported cost $${value.reportedCost}` : ''}` : 'Usage not reported';
-  const reviewerHint = () => draft.reviewer ? 'The changed code is sent to the reviewer’s vendor.' : 'No review selected.';
   const time = value => value.elapsedMs == null && value.startedAt ? `data-task-elapsed="${value.startedAt}"` : '';
   const options = (items, value) => items.map(item => `<option value="${e(item.id ?? item.path)}" ${(item.id ?? item.path) === value ? 'selected' : ''}>${e(item.label)}</option>`).join('');
-  const field = (name, label, attrs = '') => `<label for="task-${name}">${label}<input id="task-${name}" name="${name}" value="${e(draft[name])}" ${attrs}></label>`;
-  // The label sits beside the select: a wrapping label would add the selected option to its name.
-  const select = (name, label, html, attrs = '') => `<div class="task-field"><label for="task-${name}">${label}</label><select id="task-${name}" name="${name}" ${attrs}>${html}</select></div>`;
-  const staticOptions = (name, items) => items.map(([value, label]) => `<option value="${value}" ${draft[name] === value ? 'selected' : ''}>${label}</option>`).join('');
-  function form() {
-    if (!choices) return `<section class="surface" aria-busy="${loading}"><p role="status">${error ? e(error) : 'Loading repositories and accounts…'}</p>${error ? '<button type="button" data-task-action="reload">Retry</button>' : ''}</section>`;
-    const unavailable = !choices.repos.length || !choices.implementers.length;
-    return `<form id="task-form" class="surface task-form" aria-labelledby="task-form-title"><h2 id="task-form-title" tabindex="-1">New task</h2>
-      ${!choices.repos.length ? '<p>Add a project folder or open a local console to select a repository.</p>' : ''}
-      ${!choices.implementers.length ? '<p>Install and sign in to Claude Code, Codex, Kiro or OpenCode to start a task.</p>' : ''}
-      ${select('repo', 'Repository', '<option value="">Select a folder</option>' + options(choices.repos, draft.repo), 'required')}
-      ${field('title', 'Title', 'required maxlength="200" autocomplete="off"')}
-      <label for="task-criteria">Acceptance criteria<textarea id="task-criteria" name="criteria" rows="4" maxlength="12000" required>${e(draft.criteria)}</textarea></label>
-      ${select('size', 'Estimated size', staticOptions('size', [['small', 'Small'], ['medium', 'Medium'], ['large', 'Large']]), 'aria-describedby="task-size-reasons"')}
-      <p id="task-size-reasons" class="field-hint">${e(choices.estimate.reasons.join(' '))}</p>
-      <p class="field-hint" role="status">${e(assignmentReasons())}</p>
-      <label class="task-checkbox" for="task-split"><input id="task-split" type="checkbox" name="split" ${draft.split ? 'checked' : ''} aria-describedby="task-split-help">Split into subtasks</label>
-      <p id="task-split-help" class="field-hint">Review and approve a plan before agents build in separate worktrees.</p>
-      <div class="task-form-pair">${select('implementer', draft.split ? 'Planner' : 'Implementer', '<option value="">Choose an agent</option>' + options(choices.implementers, draft.implementer), 'required')}${field('model', 'Model', 'maxlength="120" placeholder="CLI default; required for OpenCode"')}</div>
-      <div class="task-form-pair">${select('reviewer', 'Reviewer', '<option value="">No review</option>' + options((choices.allReviewers || choices.reviewers).filter(choice => choice.id !== draft.implementer), draft.reviewer), 'aria-describedby="task-reviewer-reason"')}${field('reviewerModel', 'Reviewer model', `maxlength="120" placeholder="CLI default; required for OpenCode" ${!draft.reviewer ? 'disabled' : ''}`)}</div>
-      <p id="task-reviewer-reason" class="field-hint">${e(reviewerHint())}</p>
-      ${field('checks', 'Checks command (optional)', 'maxlength="4000" placeholder="npm test" spellcheck="false" aria-describedby="task-checks-help"')}
-      <p id="task-checks-help" class="field-hint">Runs in the work folder with a 15-minute timeout.</p>
-      ${select('workflow', 'Workflow', staticOptions('workflow', [['current', 'Current branch'], ['worktree', 'Separate worktree']]), `aria-describedby="task-workflow-help" ${draft.split ? 'disabled' : ''}`)}
-      <p id="task-workflow-help" class="field-hint">${draft.workflow === 'worktree' ? 'Creates a branch and worktree from HEAD. Keep or remove them manually after the task.' : 'Edits your working copy on its current branch. Pre-existing changes are excluded from the task diff.'}</p>
-      <div class="task-form-pair">${field('maxRounds', 'Max rounds', 'type="number" min="1" max="5" required')}${field('timeLimitMinutes', 'Time limit (minutes)', 'type="number" min="5" max="120" required')}</div>
-      <p class="form-error" id="task-form-error" role="alert" ${error ? 'tabindex="-1"' : ''}>${e(error)}</p>
-      <div class="task-actions"><button type="submit" class="primary" ${busy || unavailable ? 'disabled' : ''}>${busy ? 'Starting…' : 'Start'}</button>${jobs().length ? '<button type="button" data-task-action="cancel-form">Cancel</button>' : ''}</div>
-    </form>`;
-  }
-  function assignmentReasons() {
-    const { implementer, reviewer, reasons, warnings } = choices.assignment;
-    const implMatches = implementer && draft.implementer === implementer.accountId && draft.model === implementer.model;
-    const reviewMatches = reviewer && draft.reviewer === reviewer.accountId && draft.reviewerModel === reviewer.model;
-    const impl = implMatches ? reasons[0] : draft.implementer ? 'Implementer selected by you.' : 'Choose an implementer.';
-    const review = reviewMatches ? reasons[implementer ? 1 : 0] : draft.reviewer ? 'Reviewer selected by you.' : 'No reviewer selected.';
-    return [impl, review, ...warnings.filter(warning => warning !== 'No preferred implementer is available.' || !draft.implementer).filter(warning => warning !== 'No independent reviewer is available.' || !draft.reviewer)].filter(Boolean).join(' ');
-  }
   function list() {
-    return jobs().length ? jobs().map(job => `<li><button type="button" data-task-action="select" data-id="${e(job.id)}" aria-current="${job.id === selected && !showForm ? 'true' : 'false'}"><strong>${e(job.title)}</strong>${chip(job.state)}<small>${job.split ? `${(job.subtasks || []).filter(sub => sub.state === 'merged').length}/${job.subtasks?.length || 0} subtasks` : `${job.rounds.length}/${job.maxRounds} rounds`}</small></button></li>`).join('') : '<li class="field-hint">No tasks yet.</li>';
+    return jobs().length ? jobs().map(job => `<li><button type="button" data-task-action="select" data-id="${e(job.id)}" aria-current="${job.id === selected ? 'true' : 'false'}"><strong>${e(job.title)}</strong>${chip(job.state)}<small>${job.split ? `${(job.subtasks || []).filter(sub => sub.state === 'merged').length}/${job.subtasks?.length || 0} subtasks` : `${job.rounds.length}/${job.maxRounds} rounds`}</small></button></li>`).join('') : '';
   }
   function planDraft(job) {
     if (!planDrafts.has(job.id)) planDrafts.set(job.id, { assignments: Object.fromEntries((job.subtasks || []).map(sub => [sub.subtaskId, { accountId: sub.implementer?.accountId || '', model: sub.implementer?.model || '' }])), parallelLimit: job.parallelLimit || 2, implementer: { accountId: job.implementer.accountId, model: job.implementer.model || '' } });
@@ -114,52 +72,30 @@ export function taskLoopUI({ call, getState, getPage, escape: e, renderPage, toa
     </article>`;
   }
   function render() {
-    if (!selected && jobs().length) selected = jobs()[0].id;
-    if (!jobs().length) showForm = true;
+    if (!jobs().some(job => job.id === selected)) selected = jobs()[0]?.id || '';
     detailStamp = ''; listStamp = ''; announcement = '';
-    return `<div class="task-page"><header class="page-heading"><h1>Tasks</h1><div class="task-actions"><button type="button" data-task-action="refresh">Refresh</button><button type="button" class="primary" data-task-action="new">New task</button></div></header><p id="task-announcement" class="task-announcement" role="status" aria-live="polite" aria-atomic="true"></p><div class="task-layout"><nav aria-label="Repository tasks"><ul class="task-list">${list()}</ul></nav><div id="task-content">${showForm ? form() : detail(jobs().find(job => job.id === selected))}</div></div></div>`;
+    return `<div class="task-page"><header class="page-heading"><h1>Tasks</h1><div class="task-actions"><button type="button" data-task-action="refresh">Refresh</button></div></header><p id="task-announcement" class="task-announcement" role="status" aria-live="polite" aria-atomic="true"></p><p class="task-empty field-hint" ${jobs().length ? 'hidden' : ''}>Ask any agent console to run a task; its progress shows here.</p><div class="task-layout" ${jobs().length ? '' : 'hidden'}><nav aria-label="Repository tasks"><ul class="task-list">${list()}</ul></nav><div id="task-content">${detail(jobs().find(job => job.id === selected))}</div></div></div>`;
   }
   async function loadChoices() {
-    const version = ++request; loading = true;
+    const version = ++request;
     try {
-      const next = await call('tasks.candidates', { implementer: manual.implementer ? draft.implementer : '', title: draft.title, criteria: draft.criteria, size: manual.size ? draft.size : '', split: draft.split });
+      const next = await call('tasks.candidates', { split: true });
       if (version !== request) return;
-      choices = next; error = '';
-      if (!manual.size) draft.size = next.estimate.size;
-      if (!manual.implementer) {
-        const proposed = next.assignment.implementer?.accountId || '';
-        if (!manual.reviewer || !draft.reviewer || proposed !== draft.reviewer) draft.implementer = proposed;
-      }
-      if (!choices.implementers.some(choice => choice.id === draft.implementer)) draft.implementer = '';
-      if (!manual.model) draft.model = draft.implementer === next.assignment.implementer?.accountId ? next.assignment.implementer.model : '';
-      if (!manual.reviewer) draft.reviewer = next.assignment.reviewer?.accountId || '';
-      if (draft.reviewer === draft.implementer || !(choices.allReviewers || choices.reviewers).some(choice => choice.id === draft.reviewer)) draft.reviewer = '';
-      if (!manual.reviewerModel) draft.reviewerModel = draft.reviewer === next.assignment.reviewer?.accountId ? next.assignment.reviewer.model : '';
-      if (!choices.repos.some(choice => choice.path === draft.repo)) draft.repo = choices.repos[0]?.path || '';
-    } catch (failure) { if (version === request) error = failure.message; }
-    finally {
-      if (version === request) {
-        loading = false;
-        if (getPage() === 'tasks' && showForm) {
-          const active = document.activeElement?.closest('#task-form') ? document.activeElement : null, activeName = active?.name;
-          const start = active?.selectionStart, end = active?.selectionEnd;
-          document.querySelector('#task-content').innerHTML = form();
-          const restored = activeName && document.querySelector('#task-form')?.elements.namedItem(activeName);
-          if (restored) { restored.focus(); if (typeof start === 'number' && typeof restored.setSelectionRange === 'function') restored.setSelectionRange(start, end); }
-        }
-      }
-    }
+      choices = next; detailStamp = ''; sync();
+    } catch (failure) { if (version === request) toast(failure.message, true); }
   }
   function sync() {
     if (getPage() !== 'tasks') return;
     const listNode = document.querySelector('.task-list'); if (!listNode) return;
-    const nextList = JSON.stringify(jobs().map(({ id, state, title, rounds, maxRounds, subtasks }) => [id, state, title, rounds.length, maxRounds, subtasks?.map(sub => sub.state)])) + selected + showForm;
+    if (!jobs().some(job => job.id === selected)) selected = jobs()[0]?.id || '';
+    document.querySelector('.task-layout').hidden = !jobs().length;
+    document.querySelector('.task-empty').hidden = !!jobs().length;
+    const nextList = JSON.stringify(jobs().map(({ id, state, title, rounds, maxRounds, subtasks }) => [id, state, title, rounds.length, maxRounds, subtasks?.map(sub => sub.state)])) + selected;
     if (listStamp !== nextList) {
       const focusId = listNode.contains(document.activeElement) ? document.activeElement.dataset.id : null;
       listNode.innerHTML = list(); listStamp = nextList;
       if (focusId) listNode.querySelector(`[data-id="${CSS.escape(focusId)}"]`)?.focus({ preventScroll: true });
     }
-    if (showForm) return;
     const job = jobs().find(job => job.id === selected); if (!job) return;
     const subStatus = job.split ? (job.subtasks || []).map(sub => `${sub.title}: ${status(sub.state)}.`).join(' ') : '';
     const nextAnnouncement = `${job.id}:${job.state}:${subStatus}`;
@@ -191,57 +127,16 @@ export function taskLoopUI({ call, getState, getPage, escape: e, renderPage, toa
       else (event.target.dataset.sub ? settings.assignments[event.target.dataset.sub] : settings.implementer)[name] = event.target.value;
       return;
     }
-    if (!event.target.closest('#task-form') || !(event.target.name in draft)) return;
-    if (event.target.name === 'split') return;
-    const name = event.target.name; draft[name] = event.target.value;
-    if (name in manual) manual[name] = true;
-    if (['title', 'criteria', 'size', 'implementer', 'model', 'reviewer', 'reviewerModel'].includes(name)) {
-      ++request; clearTimeout(choicesTimer); choicesTimer = setTimeout(() => loadChoices(), 250);
-    }
   });
-  document.addEventListener('change', event => {
-    if (!event.target.closest('#task-form')) return;
-    if (event.target.name === 'split') {
-      draft.split = event.target.checked; if (draft.split) draft.workflow = 'worktree';
-      clearTimeout(choicesTimer); loadChoices(); return;
-    }
-    draft[event.target.name] = event.target.value;
-    if (event.target.name in manual) manual[event.target.name] = true;
-    if (['title', 'criteria', 'size', 'implementer', 'model', 'reviewer', 'reviewerModel'].includes(event.target.name)) { clearTimeout(choicesTimer); loadChoices(); }
-    if (event.target.name === 'reviewer') {
-      document.querySelector('#task-reviewerModel').disabled = !draft.reviewer;
-      document.querySelector('#task-reviewer-reason').textContent = reviewerHint();
-    }
-    if (event.target.name === 'workflow') document.querySelector('#task-workflow-help').textContent = draft.workflow === 'worktree' ? 'Creates a branch and worktree from HEAD. Keep or remove them manually after the task.' : 'Edits your working copy on its current branch. Pre-existing changes are excluded from the task diff.';
-  });
-  document.addEventListener('submit', async event => {
-    if (event.target.id !== 'task-form') return;
-    event.preventDefault(); event.stopImmediatePropagation(); if (busy || loading) return;
-    busy = true; const formNode = event.target, submit = formNode.querySelector('[type=submit]'); submit.disabled = true;
-    Object.assign(draft, Object.fromEntries([...new FormData(formNode)].filter(([name]) => name !== 'split'))); draft.split = formNode.elements.namedItem('split').checked; error = '';
-    try {
-      const job = await call('tasks.start', { repo: draft.repo, title: draft.title, criteria: draft.criteria, implementer: { accountId: draft.implementer, model: draft.model }, reviewer: draft.reviewer ? { accountId: draft.reviewer, model: draft.reviewerModel } : null,
-        split: draft.split, checks: draft.checks, workflow: draft.workflow, maxRounds: Number(draft.maxRounds), timeLimitMinutes: Number(draft.timeLimitMinutes) });
-      if (!jobs().some(item => item.id === job.id)) getState().tasks = [job, ...jobs()];
-      selected = job.id; showForm = false; renderPage(); document.querySelector('#task-detail-title')?.focus();
-    } catch (failure) {
-      error = failure.message;
-      const message = document.querySelector('#task-form-error');
-      if (message) { message.textContent = error; message.tabIndex = -1; message.focus(); }
-    } finally { busy = false; submit.disabled = false; }
-  }, true);
   document.addEventListener('click', async event => {
     const button = event.target.closest?.('[data-task-action]'); if (!button) return;
     const action = button.dataset.taskAction, id = button.dataset.id;
     if (action === 'subtask-diff') { event.preventDefault(); const details = document.getElementById(`task-sub-${button.dataset.sub}-diff`); if (details) { details.open = true; details.querySelector('pre')?.focus(); } return; }
-    if (action === 'new' || action === 'cancel-form' || action === 'select') {
-      showForm = action === 'new'; if (id) selected = id;
-      error = ''; renderPage(); document.querySelector(showForm ? '#task-form-title' : '#task-detail-title')?.focus();
-      if (showForm) loadChoices(); return;
+    if (action === 'select') {
+      selected = id; renderPage(); document.querySelector('#task-detail-title')?.focus(); return;
     }
     button.disabled = true;
     try {
-      if (action === 'reload') await loadChoices();
       if (action === 'refresh') { await call('tasks.list'); await loadChoices(); sync(); }
       if (['stop', 'accept', 'resume', 'approvePlan'].includes(action)) {
         const job = await call(`tasks.${action}`, { id, ...(action === 'approvePlan' ? planDraft(jobs().find(job => job.id === id)) : {}) });

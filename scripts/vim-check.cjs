@@ -104,12 +104,13 @@ async function checkVimControls({ page, app, invoke, eventually, capture }) {
   assert.equal(await mode(), 'normal');
 
   await sequence('gu'); await eventually(async () => await page.locator('#content h1').innerText() === 'Usage');
-  await sequence('ga'); await eventually(async () => await page.locator('#api-form').isVisible());
-  await page.locator('#api-form textarea[name=prompt]').focus();
+  await sequence('ga'); await eventually(async () => await page.locator('.settings-content .model-connections').isVisible());
+  await page.locator('#profile-editor summary').click();
+  await page.locator('#profile-form input[name=name]').focus();
   await page.keyboard.type('hjkl 123 gn gi');
-  assert.equal(await page.locator('#api-form textarea[name=prompt]').inputValue(), 'hjkl 123 gn gi');
+  assert.equal(await page.locator('#profile-form input[name=name]').inputValue(), 'hjkl 123 gn gi');
   assert.equal(await mode(), 'insert');
-  await page.locator('#api-form textarea[name=prompt]').fill('');
+  await page.locator('#profile-form input[name=name]').fill('');
   await normal(); await sequence('gs'); await openPage(page, 'console-settings'); await page.locator('[data-setting=vimControls]').waitFor();
   await key('Shift+G');
   assert.ok(await page.locator('.settings-stage').evaluate(el => el.scrollTop > 0));

@@ -5,6 +5,21 @@ export function projectLabel(item, projects = []) {
   const project = item.projectId && projects.find(p => p.id === item.projectId);
   return project?.name || (item.project || '').split(/[\\/]/).filter(Boolean).pop() || 'Unassigned';
 }
+export function resultFolders(items, projects = []) {
+  const folders = new Map();
+  for (const item of items) {
+    const key = projectKey(item);
+    if (!folders.has(key)) {
+      const project = projects.find(p => item.projectId ? p.id === item.projectId : p.folders?.some(folder => folder.path === item.project));
+      folders.set(key, { key, name: item.projectId || item.project ? projectLabel(item, projects) : 'Other', project, count: 0, unviewed: 0, at: 0 });
+    }
+    const folder = folders.get(key);
+    folder.count++;
+    if (!item.seenAt) folder.unviewed++;
+    folder.at = Math.max(folder.at, item.at || 0);
+  }
+  return [...folders.values()].sort((a, b) => Number(!!b.unviewed) - Number(!!a.unviewed) || b.at - a.at || a.name.localeCompare(b.name));
+}
 export function resultGroups(items) {
   const groups = new Map();
   for (const item of items) {

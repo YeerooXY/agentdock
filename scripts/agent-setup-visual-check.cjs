@@ -98,26 +98,9 @@ let browser; const results = [];
     if (await page.locator('#first-run').isVisible()) throw new Error(`${name}: retry did not complete: ${JSON.stringify({ error: await page.locator('#first-run-form .form-error').textContent(), calls, pi: state.agents.find(agent => agent.id === 'pi') })}`);
     assert.ok(calls.includes('agents.install'), `${name}: retry button called the installer`);
     assert.equal(installAttempts, 2, `${name}: first failed install is followed by a successful retry`);
-    await openPage(page, 'api');
-    const hint = page.locator('.key-state');
-    await hint.waitFor({ state: 'visible' });
-    const apiNavGeometry = await page.locator('.sidebar nav button[data-page="api"]').evaluate(button => {
-      const rect = button.getBoundingClientRect(), iconRect = button.querySelector('svg').getBoundingClientRect();
-      return { button: { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom }, icon: { left: iconRect.left, top: iconRect.top, right: iconRect.right, bottom: iconRect.bottom } };
-    });
-    assert.ok(apiNavGeometry.icon.left >= apiNavGeometry.button.left - 1 && apiNavGeometry.icon.top >= apiNavGeometry.button.top - 1
-      && apiNavGeometry.icon.right <= apiNavGeometry.button.right + 1 && apiNavGeometry.icon.bottom <= apiNavGeometry.button.bottom + 1,
-    `${name}: API icon stays within its sidebar button: ${JSON.stringify(apiNavGeometry)}`);
-    await page.evaluate(async () => {
-      await document.fonts.ready;
-      document.getAnimations().filter(a => a.effect?.getTiming().iterations !== Infinity).forEach(a => a.finish());
-    });
-    await page.waitForTimeout(250);
-    assert.equal(await hint.textContent(), 'Add a profile and enter or select its key in Settings → API.');
-    const apiShot = `${name}-api-hint.png`; await page.screenshot({ path: path.join(out, apiShot) });
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false, `${name}: no horizontal overflow`);
     assert.deepEqual(errors, [], `${name}: no renderer errors`); assert.deepEqual(blocked, [], `${name}: no external requests`);
-    results.push({ profile: name, engine: browser.version(), viewport: page.viewportSize(), firstRun: firstRunMetrics, screenshots: [firstRunShot, apiShot], retryStatePassed: true, apiHintPassed: true, apiIconContained: true, blockedRequests: blocked, errors });
+    results.push({ profile: name, engine: browser.version(), viewport: page.viewportSize(), firstRun: firstRunMetrics, screenshots: [firstRunShot], retryStatePassed: true, blockedRequests: blocked, errors });
     fs.writeFileSync(path.join(out, 'checks.json'), JSON.stringify(results, null, 2));
     await context.close(); await browser.close(); browser = null; console.log(`PASS ${name}`);
   }

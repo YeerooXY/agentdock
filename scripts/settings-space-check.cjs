@@ -2,7 +2,7 @@
 // Render the real frontend against isolated configuration/results fixtures.
 const { chromium, webkit, devices } = require('playwright');
 const fs = require('node:fs'), path = require('node:path'), http = require('node:http'), assert = require('node:assert/strict');
-const { openPage } = require('./ui-navigation.cjs');
+const { openPage, openResultFolder } = require('./ui-navigation.cjs');
 const root = path.resolve(__dirname, '..'), dist = path.join(root, 'dist'), out = path.join(root, 'artifacts/settings-permissions/browser');
 fs.mkdirSync(out, { recursive: true });
 const fixture = JSON.parse(fs.readFileSync(path.join(root, 'artifacts/console-layout/fixture.json'), 'utf8'));
@@ -60,6 +60,12 @@ const rows = []; let browser;
     await page.locator('.settings-navigation button').first().focus(); await page.keyboard.press('Tab');
     assert.equal(await page.locator('.settings-navigation button').nth(1).evaluate(el => el === document.activeElement), true);
     await openPage(page, 'results');
+    assert.equal(await page.locator('[data-wb="project-folder"]').count(), 1);
+    assert.equal(await page.locator('.result-folder-badge').textContent(), '4 new');
+    await page.locator('#result-search').fill('Mobile choices');
+    assert.equal(await page.locator('.result-search-results .result-card').count(), 1, 'Top-level search shows files directly');
+    await page.locator('#result-search').fill('');
+    await openResultFolder(page);
     assert.deepEqual(await page.locator('.result-console-heading h2').allTextContents(), ['Agentdock', 'Phone controls']);
     assert.equal(await page.locator('.result-batch').count(), 3);
     assert.equal(await page.getByText('Revision unavailable', { exact: true }).count(), 0);

@@ -71,7 +71,6 @@ async function installBridge(context, state, record, origin) {
         return ok({ text: f.resultText || '# Review report\n\nSynthetic saved result.' });
       }
       case 'workbench.results.seen': for (const entry of state.workbench.results) if (payload.includes(entry.id)) entry.seenAt ||= Date.now(); return ok(null);
-      case 'api.send': return ok({ text: f.apiKind === 'long' ? 'Synthetic response line.\n'.repeat(3000) : '', error: f.apiKind === 'error' ? 'Synthetic request failed. Try again.' : '', entry: { status: f.apiKind === 'error' ? 'failed' : 'completed' } });
       default:
         // A missing mock must never look like a successful backend operation.
         record.unsupportedCalls.push(method);

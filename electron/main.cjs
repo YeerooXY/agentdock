@@ -403,7 +403,7 @@ app.whenReady().then(() => guardStartup(async () => {
   vault = new Vault(path.join(root, 'vault.json'), safeStorage);
   integrations = new ToolIntegrations(root, runtime, { onChange: publish });
   mcpCatalog = new McpCatalog(root, runtime, { run: runProgram, downloads: new ManagedDownloads(root), onChange: publish });
-  workbench = new Workbench(root, runtime, require('electron'), { testMode, onChange: publish, getSessions: () => sessions, getProject: () => settings.consoleDefaults.cwd, getWindow: () => window, getHub: () => hub, getAgents: () => cliSetup.snapshot() });
+  workbench = new Workbench(root, runtime, require('electron'), { testMode, onChange: publish, getSessions: () => sessions, getProject: () => settings.consoleDefaults.cwd, getWindow: () => window, getHub: () => hub, getAgents: () => cliSetup.snapshot(), getTasks: () => tasks });
   projects = new Projects(root); projects.on('changed', publish); workbench.projects = projects;
   const taskAccounts = {
     getLimits: () => limits.map(item => ({ ...item, accountId: limitAccountId(item) })),

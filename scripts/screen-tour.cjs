@@ -31,7 +31,7 @@ const server = http.createServer((req, res) => {
   await page.goto('http://127.0.0.1:' + server.address().port);
   await page.locator('.session-card').first().waitFor();
   const settle = () => page.evaluate(async () => { document.getAnimations().filter(x => x.effect?.getTiming().iterations !== Infinity).forEach(x => x.finish()); await document.fonts.ready; });
-  for (const view of (process.env.TOUR_PAGES || 'consoles,projects,tasks,results,usage,api,settings').split(',')) {
+  for (const view of (process.env.TOUR_PAGES || 'consoles,projects,tasks,results,usage,settings').split(',')) {
     await page.locator(`[data-page=${view}]`).first().click();
     await page.waitForTimeout(400); await settle();
     await page.screenshot({ path: path.join(out, view + '.png') });

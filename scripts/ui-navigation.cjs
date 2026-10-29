@@ -14,4 +14,8 @@ async function openPage(page, target) {
   }
   await page.locator(`nav [data-page="${target}"]`).click();
 }
-module.exports = { openPage };
+async function openResultFolder(page) {
+  const folder = page.locator('[data-wb="project-folder"]').first();
+  if (await folder.count()) await folder.click();
+}
+module.exports = { openPage, openResultFolder };

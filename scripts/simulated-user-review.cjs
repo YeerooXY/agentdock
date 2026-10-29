@@ -4,7 +4,7 @@
 const { _electron: electron } = require('playwright');
 const fs = require('node:fs'), path = require('node:path'), assert = require('node:assert/strict'), crypto = require('node:crypto');
 const { execFileSync } = require('node:child_process');
-const { openPage } = require('./ui-navigation.cjs');
+const { openPage, openResultFolder } = require('./ui-navigation.cjs');
 const root = path.resolve(__dirname, '..'), parent = path.join(root, 'test-data'), out = path.join(root, 'artifacts/simulated-users');
 fs.mkdirSync(parent, { recursive: true }); fs.mkdirSync(out, { recursive: true });
 const work = fs.mkdtempSync(path.join(parent, 'user-walkthrough-')), profile = path.join(work, 'profile'), project = path.join(work, 'Website');
@@ -80,7 +80,7 @@ const started = { at: new Date().toISOString(), branch: execFileSync('git', ['br
   const grant = JSON.parse(fs.readFileSync(bridgeFile, 'utf8').replace(/^\uFEFF/, '')); fs.unlinkSync(bridgeFile);
   async function tool(name, args = {}) { const r = await fetch(grant.url, { method:'POST', headers:{ 'Content-Type':'application/json', Authorization:'Bearer '+grant.token }, body:JSON.stringify({name:'dock_call',arguments:{tool:name,arguments:args}}) }); const v=await r.json(); if(v.isError)throw Error(v.content[0].text); return JSON.parse(v.content[0].text); }
   await tool('dock/start_turn'); await tool('dock/save_result', { title:'Website check',text:'# Website check\n\nSynthetic completed result for the walkthrough. No AI work was submitted.',kind:'report',status:'passed',summary:'Example output saved by an agent.' }); await tool('dock/finish_turn');
-  await openPage(page, 'results'); await page.locator('[data-wb=preview]').first().waitFor();
+  await openPage(page, 'results'); await openResultFolder(page); await page.locator('[data-wb=preview]').first().waitFor();
   await capture('13-completed-results', 'several-projects', 'Find completed work in Results', { headings: await page.locator('.result-console-heading h2').allTextContents() }, 'Completion was supplied by the fixture, not by a paid model or participant.');
   await page.locator('[data-wb=preview]').first().click(); await page.locator('.wb-dialog[open]').waitFor();
   await capture('14-result-preview', 'first-use', 'Open the saved report', { title: await page.locator('.wb-dialog[open] h2').innerText() });

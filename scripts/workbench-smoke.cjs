@@ -1,5 +1,5 @@
 'use strict';
-const { openPage } = require('./ui-navigation.cjs');
+const { openPage, openResultFolder } = require('./ui-navigation.cjs');
 const { _electron: electron } = require('playwright');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -115,7 +115,7 @@ async function eventually(check, message='Timed out') {const end=Date.now()+4500
   const reportResult=state.workbench.results.find(x=>x.kind==='review');const preview=await call('workbench.results.preview',reportResult.id);assert.equal(JSON.parse(preview.text).checklist[0].status,'needs-work');
   await assert.rejects(tool('dock/meshy_concept',{reviewId:review.id,nativeStatus:'failed'}),/Paid generation is disabled during tests/);
   assert.equal((await call('state')).workbench.concepts.length,0);
-  await openPage(page, 'results'); await page.locator('.result-card').first().waitFor();
+  await openPage(page, 'results'); await openResultFolder(page); await page.locator('.result-card').first().waitFor();
   await eventually(async()=>page.locator('.result-image img').evaluateAll(xs=>xs.length===1&&xs.every(x=>x.complete&&x.naturalWidth>0)));
   assert.ok(await page.locator('.result-image img').evaluateAll(xs=>xs.every(x=>x.naturalWidth<=360&&x.naturalHeight<=400)),'Gallery loads bounded thumbnails');
   await capture('test-results.png');

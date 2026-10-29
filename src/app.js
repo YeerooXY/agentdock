@@ -82,11 +82,10 @@ const providerName = value => ({ codex: 'Codex', claude: 'Claude Code', shell: s
 const consoleProviders = () => [...(state?.agents?.length ? state.agents.map(x => x.id) : ['codex', 'claude']), 'shell', 'custom'];
 const number = value => Number.isFinite(value) ? Intl.NumberFormat('en', { notation: value >= 10000 ? 'compact' : 'standard', maximumFractionDigits: 1 }).format(value) : '—';
 const labels = { open: 'Open', active: 'Thinking', ready: 'Ready', attention: 'Needs attention', error: 'Error', ended: 'Ended', recent: 'Recent', interrupted: 'Interrupted' };
-let state, page = 'consoles', selectedId = null, expandedId = null, expansionRequest = 0, expansionModeIntent = null, stateReceiveVersion = 0, renderedExpansion = null, renderedConsoleVisibility = false, selectedApi = 'openai', apiBusy = false, outputText = '', toastTimer;
+let state, page = 'consoles', selectedId = null, expandedId = null, expansionRequest = 0, expansionModeIntent = null, stateReceiveVersion = 0, renderedExpansion = null, renderedConsoleVisibility = false, toastTimer;
 let usageAddOpen = false;
 let accountProfileDraft = { provider: 'codex', label: '', error: '' }, accountProfileFocus = null, accountProfileBusy = false, accountProfileCreated = null, accountProfileResetOnRender = false;
 let accountRenameOpener = null, accountRenameBusy = false;
-let apiDraft = { model: '', prompt: '', maxOutput: '1024', projectId: '' }, responseMeta = 'TEXT OUTPUT', responseError = '';
 const terminals = new Map();
 const pendingConsoleOpenings = new Set();
 const gridSize = () => state?.grid || { columns: 3, rows: 3 };
@@ -146,7 +145,6 @@ $('#app').innerHTML = `
       <button data-page="tasks">${icon('list')}Tasks</button>
       <button data-page="results"><span class="notification-icon">${icon('grid')}<span id="results-count" class="notification-badge" hidden></span></span>Results</button>
       <button data-page="usage">${icon('chart')}Usage</button>
-      <button class="console-api-link" data-page="api">${icon('api')}API requests</button>
     </nav>
     <span class="sidebar-edge" aria-hidden="true"></span>
     <div class="sidebar-bottom"><button data-page="settings">${icon('settings')}Settings</button></div>
@@ -505,7 +503,7 @@ function routingSection() {
   return `<section class="surface delegation-settings"><h2>Routing</h2><form id="routing-form"><p class="field-hint">Enter one account ID and model per line, in preference order.</p>${['small', 'medium', 'large'].map(size => `<label>${size[0].toUpperCase() + size.slice(1)} tasks<textarea name="${size}" rows="3" spellcheck="false">${escape(rows(routing[size]))}</textarea></label>`).join('')}<label>Default reviewer <input name="reviewer" value="${escape(routing.defaultReviewer ? rows([routing.defaultReviewer]) : '')}" placeholder="Account ID and model, or leave blank"></label><label class="check-row"><input type="checkbox" name="claudeReviewsOnly" ${routing.claudeReviewsOnly ? 'checked' : ''}>Suggest Claude for reviews only</label><label>Excluded models<textarea name="excludedModels" rows="5" spellcheck="false">${escape(routing.excludedModels.join('\n'))}</textarea></label><p class="form-error" role="alert"></p><button type="submit" class="secondary">Save routing</button></form></section>`;
 }
 function ledgerTable() {
-  return state.ledger.length ? `<div class="table-scroll"><table><thead><tr><th>Time</th><th>Provider / model</th><th>Input</th><th>Output</th><th>Status</th></tr></thead><tbody>${state.ledger.slice(0, 100).map(row => `<tr><td>${new Date(row.at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</td><td><strong class="ledger-provider">${accountMark(row.provider)}${escape(providerName(row.provider))}</strong><small>${escape(row.model)}</small></td><td class="mono">${number(row.usage?.input)}</td><td class="mono">${number(row.usage?.output)}</td><td><span class="ledger-status ${row.status}">${escape(row.status)}</span></td></tr>`).join('')}</tbody></table></div>` : `<div class="empty-ledger"><span class="empty-illustration">${icon('chart')}</span><h3>No API requests yet</h3><p>Requests made here will appear below.</p><button class="secondary" data-page="api">Open API workspace ${icon('arrow')}</button></div>`;
+  return state.ledger.length ? `<div class="table-scroll"><table><thead><tr><th>Time</th><th>Provider / model</th><th>Input</th><th>Output</th><th>Status</th></tr></thead><tbody>${state.ledger.slice(0, 100).map(row => `<tr><td>${new Date(row.at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</td><td><strong class="ledger-provider">${accountMark(row.provider)}${escape(providerName(row.provider))}</strong><small>${escape(row.model)}</small></td><td class="mono">${number(row.usage?.input)}</td><td class="mono">${number(row.usage?.output)}</td><td><span class="ledger-status ${row.status}">${escape(row.status)}</span></td></tr>`).join('')}</tbody></table></div>` : `<div class="empty-ledger"><span class="empty-illustration">${icon('chart')}</span><h3>No API requests yet</h3><p>Requests made through Paddock appear here.</p></div>`;
 }
 function renderUsage() {
   const summary = state.summary;
@@ -526,13 +524,6 @@ function renderUsage() {
 }
 function messageUsageTable() { return usageView.render(); }
 
-function renderApi() {
-  const profiles = state.shared.profiles;
-  if (!profiles.some(x => x.id === selectedApi)) selectedApi = profiles[0]?.id || '';
-  const profile = profiles.find(x => x.id === selectedApi);
-  const hasKey = profile && (!profile.keyId || state.vault.entries.some(x => x.id === profile.keyId));
-  return pageHeading('', 'API', 'Your shared tools and instructions are included.') + '<div class="api-columns"><form id="api-form" class="surface api-form"><h2>New request</h2><label>Project<select name="projectId"><option value="">No project</option>' + (state.projects || []).filter(x => x.status !== 'archived').map(x => '<option value="' + escape(x.id) + '">' + escape(x.name) + '</option>').join('') + '</select></label><label>API<select name="provider">' + profiles.map(x => '<option value="' + escape(x.id) + '" ' + (x.id === selectedApi ? 'selected' : '') + '>' + escape(x.name) + '</option>').join('') + '</select></label><div class="key-state ' + (hasKey ? 'saved' : '') + '">' + icon('lock') + (hasKey ? profile.keyId ? 'Key connected' : 'No key required' : 'Add a profile and enter or select its key in Settings → API.') + '</div><label>Model<input name="model" required maxlength="150" placeholder="Model ID" autocomplete="off"></label><label>Prompt<textarea name="prompt" rows="9" required maxlength="100000" placeholder="What are we working on?"></textarea></label><label>Max output tokens per step<input type="number" name="maxOutput" min="16" max="32768" value="1024" required></label><p class="field-hint">Each request starts fresh. Up to 8 model steps with tools.</p><p id="api-error" class="form-error" role="alert"></p><button type="submit" class="primary wide" ' + (!hasKey || apiBusy ? 'disabled' : '') + '>' + icon('arrow') + (apiBusy ? 'Working…' : 'Send') + '</button></form><section class="surface response-panel"><div class="section-label"><h2>Response</h2><span id="response-meta" class="small-label"></span></div><pre id="api-response">' + escape(outputText || 'Your response will appear here.') + '</pre></section></div>';
-}
 function renderTools() { return sharedViews(state, { escape, icon, pageHeading }).tools(); }
 // Connections and integration states shown by the Tools lists, without live status.
 const toolListKey = () => JSON.stringify([state.shared.connections.map(x => [x.id, x.enabled, x.integration]), (state.integrations || []).map(x => [x.id, x.connected, x.ready, x.enabled])]);
@@ -663,7 +654,7 @@ function renderPage() {
   $('#content').dataset.view = page;
   $('#launch-folder').hidden = !consoleView || !!expandedId;
   renderScreenshot();
-  const view = page === 'api' ? `${page}:${selectedApi}` : page;
+  const view = page;
   const changed = renderedView !== null && renderedView !== view;
   // Moving between Settings categories keeps the heading and tabs still; only the panel fades.
   const settingsSwitch = changed && isSettingsPage(renderedView) && isSettingsPage(page);
@@ -681,7 +672,7 @@ function renderPage() {
   document.querySelectorAll('.sidebar [data-page]').forEach(button => { if (button.classList.contains('selected') && !button.classList.contains('brand')) button.setAttribute('aria-current', 'page'); else button.removeAttribute('aria-current'); });
   explorer?.sync();
   if (consoleView) { renderConsoles(); return; }
-  const renderer = { projects: () => projects.render(), tasks: () => taskLoops.render(), results: () => workbench.render('results'), usage: renderUsage, api: renderApi, tools: renderTools, instructions: renderInstructions, settings: renderSettingsCategory }[page] || renderSettingsCategory;
+  const renderer = { projects: () => projects.render(), tasks: () => taskLoops.render(), results: () => workbench.render('results'), usage: renderUsage, tools: renderTools, instructions: renderInstructions, settings: renderSettingsCategory }[page] || renderSettingsCategory;
   const content = $('#content');
   const backgroundLayer = content.querySelector(':scope > .page-background-layer');
   content.innerHTML = (state.storageError ? `<div class="error-banner" role="alert">${escape(state.storageError)}</div>` : '') + (isSettingsPage(page) ? renderSettingsCategory() : renderer());
@@ -716,13 +707,7 @@ function renderPage() {
   if (page === 'usage') { $('#content').insertAdjacentHTML('beforeend', messageUsageTable()); usageView.mount(); }
   if (page === 'usage') $('#content').insertAdjacentHTML('beforeend', imageGenerator.usage());
   if (page === 'console-settings') launchDefaultsFields();
-  if (page === 'api') {
-    const form = $('#api-form');
-    for (const key of ['model', 'prompt', 'maxOutput', 'projectId']) form.elements[key].value = apiDraft[key];
 
-    $('#response-meta').textContent = apiBusy ? 'IN PROGRESS' : responseMeta;
-    $('#api-error').textContent = responseError;
-  }
 }
 function hudHtml() {
   const ready = state.sessions.filter(isReady).length;
@@ -1726,7 +1711,6 @@ document.addEventListener('change', async event => {
     else if (input.name === 'projectId') selectProject(input.value);
     else if (input.name === 'projectFolder') input.form.elements.cwd.value = input.value;
   }
-  if (input.form?.getAttribute('id') === 'api-form' && input.name === 'provider') { selectedApi = input.value; renderPage(); }
   if (input.form?.getAttribute('id') === 'tool-form' && input.name === 'type') toolFields();
   if (input.dataset.delegationProvider) {
     const chosen = [...document.querySelectorAll('[data-delegation-provider]')].filter(x => x.checked).map(x => x.dataset.delegationProvider);
@@ -1749,7 +1733,6 @@ document.addEventListener('input', event => {
   if (input.dataset.setting === 'starDensity') { const name = starLevels[Number(input.value)] || ''; $('#star-level-name').textContent = name; input.setAttribute('aria-valuetext', name); }
   if (input.form?.id === 'account-profile-form' && input.name === 'label') { accountProfileDraft.label = input.value; accountProfileDraft.error = ''; }
   if (input.form?.id === 'account-rename-form') input.form.querySelector('.form-error').textContent = '';
-  if (input.form?.getAttribute('id') === 'api-form' && ['model', 'prompt', 'maxOutput', 'projectId'].includes(input.name)) apiDraft[input.name] = input.value;
 });
 document.addEventListener('change', event => {
   const input = event.target;
@@ -1819,16 +1802,9 @@ document.addEventListener('submit', async event => {
       const { newKey, ...profile } = data;
       if (newKey?.trim()) { await call('vault.save', { provider: profile.id, key: newKey.trim(), label: profile.name || profile.id }); profile.keyId = profile.id; }
       await call('profiles.save', profile); renderPage(); toast('API saved.');
-    } else if (form.getAttribute('id') === 'api-form') {
-      if (apiBusy) return;
-      apiBusy = true; responseError = ''; $('#api-error').textContent = ''; $('#response-meta').textContent = 'IN PROGRESS';
-      const result = await call('api.send', data); outputText = result.text || result.error;
-      responseMeta = result.entry.status.toUpperCase();
-      responseError = result.error || '';
     }
   } catch (error) {
-    const target = form.getAttribute('id') === 'api-form' ? '#api-error' : `#${form.getAttribute('id')} .form-error`;
-    if (form.getAttribute('id') === 'api-form') { responseError = error.message; responseMeta = 'REQUEST NOT SENT'; }
+    const target = `#${form.getAttribute('id')} .form-error`;
     if (form.getAttribute('id') === 'account-profile-form') accountProfileDraft.error = error.message;
     if (form.id === 'account-rename-form') form.querySelector('.form-error').textContent = error.message;
     if ($(target)) $(target).textContent = error.message; else toast(error.message, true);
@@ -1836,7 +1812,6 @@ document.addEventListener('submit', async event => {
     if (form.id === 'account-profile-form') { accountProfileBusy = false; if (page === 'usage') renderPage(); }
     if (form.id === 'account-rename-form') { accountRenameBusy = false; if (submit?.isConnected) submit.disabled = false; }
     if (submit?.isConnected) submit.disabled = false;
-    if (form.getAttribute('id') === 'api-form') { apiBusy = false; if (page === 'api') renderPage(); }
   }
 });
 document.addEventListener('keydown', event => {

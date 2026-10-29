@@ -8,7 +8,8 @@
 /* Results keep the existing console/turn groups, with a viewer alongside. */
 #content[data-view=results] .result-heading-actions { display:flex; flex-wrap:wrap; gap:8px }
 #content[data-view=results] .result-controls { margin:0 0 16px }
-#content[data-view=results] .result-filters { display:grid; grid-template-columns:minmax(0,2fr) repeat(3,minmax(0,1fr)); gap:16px; margin:0 }
+#content[data-view=results] .result-filters { display:grid; grid-template-columns:minmax(0,2fr) repeat(2,minmax(0,1fr)); gap:16px; margin:0 }
+#content[data-view=results] .result-filters:has(#result-console[hidden]) { grid-template-columns:minmax(0,1fr) }
 #content[data-view=results] .result-filters :is(input,select) { width:100%; max-width:none; min-width:0; margin:0; height:40px }
 #content[data-view=results] .result-bulk-actions { gap:8px; margin:16px 0 0; flex-wrap:wrap }
 #content[data-view=results] .results-workspace { display:grid; grid-template-columns:minmax(0,1fr); gap:16px; align-items:start }

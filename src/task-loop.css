@@ -12,21 +12,16 @@
 .task-page h2 { font-size: 20px; overflow-wrap: anywhere; }
 .task-page h3 { font-size: 15px; margin: 20px 0 12px; }
 .task-page h4 { font-size: 13px; margin: 0; }
-.task-form, .task-detail { padding: 22px; min-width: 0; }
-.task-form label, .task-field { display: grid; gap: 8px; margin: 18px 0 0; font-size: 13px; min-width: 0; }
+.task-detail { padding: 22px; min-width: 0; }
+.task-field { display: grid; gap: 8px; margin: 18px 0 0; font-size: 13px; min-width: 0; }
 .task-field label { margin: 0; }
-.task-form :is(input, select, textarea) { width: 100%; min-width: 0; font-size: 13px; }
-.task-form .task-checkbox { display: flex; align-items: center; gap: 10px; min-height: 36px; }
-.task-form .task-checkbox input { width: auto; }
 .task-plan { border-top: 1px solid var(--line); margin-top: 20px; }
 .task-plan :is(input, select) { width: 100%; min-width: 0; }
 .task-subtasks { padding: 0; list-style: none; }
 .task-subtasks > li { border-top: 1px solid var(--line); padding: 16px 0; min-width: 0; }
 .task-subtasks h4 { overflow-wrap: anywhere; }
 .task-plan a { display: inline-block; color: var(--accent); padding: 8px 0; overflow-wrap: anywhere; }
-.task-form textarea { resize: vertical; line-height: 1.5; }
 .task-form-pair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; }
-.task-form .field-hint { margin: 8px 0 0; line-height: 1.5; }
 .task-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0; }
 .task-actions button, .task-list button { min-height: 36px; }
 .task-status { display: inline-block; border: 1px solid var(--line); padding: 4px 8px; border-radius: 5px; font-size: 12px; color: var(--text, #e5e7ef); }
@@ -49,7 +44,7 @@
 .task-page :is(button, input, select, textarea, summary, pre, a):focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 @media (max-width: 1100px) {
   .task-layout { grid-template-columns: minmax(150px, 190px) minmax(0, 1fr); gap: 14px; }
-  .task-form, .task-detail { padding: 18px; }
+  .task-detail { padding: 18px; }
   .task-form-pair { grid-template-columns: minmax(0, 1fr); gap: 0; }
 }
 @media (max-width: 760px) {

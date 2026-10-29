@@ -659,9 +659,9 @@ test('Kiro implementations report a redacted tail of their plain stdout summary'
   assert.match(f.saved[0].text, /Changed app\.js/); assert.doesNotMatch(fs.readFileSync(path.join(f.root, 'tasks', job.id + '.json'), 'utf8'), /never-store-this/);
 });
 
-test('the task form documentation advertises the available model fields', () => {
+test('the task documentation explains starting tasks through dock/start_task', () => {
   const intro = fs.readFileSync(path.join(__dirname, '..', 'docs', 'task-loop.md'), 'utf8').split(/\r?\n\r?\n/)[1];
-  assert.match(intro, /Model fields accept model identifiers\./); assert.doesNotMatch(intro, /reasoning effort/i);
+  assert.match(intro, /dock\/start_task/); assert.match(intro, /\*\*Tasks\*\* shows live progress/);
 });
 
 const splitPlan = (dependent = false) => ({ contracts: 'Store durations in milliseconds. Use the label Classes.', subtasks: [

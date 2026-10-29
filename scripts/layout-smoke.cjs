@@ -1,5 +1,5 @@
 'use strict';
-const { openPage } = require('./ui-navigation.cjs');
+const { openPage, openResultFolder } = require('./ui-navigation.cjs');
 const { _electron: electron } = require('playwright');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -174,12 +174,12 @@ async function resize(id, edge, dx, dy, cancel = false, snapshot) {
   await until(async () => (await call('state')).sessions.find(x => x.id === second.id).state === 'open');
   assert.equal(await page.locator('#ready-count').isVisible(), false);
   await secondPanel.locator('[data-action="toggle-console"]').click();
-  await openPage(page, 'results'); await page.locator('.result-console-heading h2').first().waitFor();
+  await openPage(page, 'results'); await openResultFolder(page); await page.locator('.result-console-heading h2').first().waitFor();
   assert.deepEqual(await page.locator('.result-console-heading h2').allTextContents(), ['Robonslaught']); assert.equal(await page.locator('.result-batch').count(), 2);
   await capture('results');
   assert.equal('inbox' in (await call('state')).workbench, false);
   assert.equal((await call('state')).workbench.results.length, 8);
-  await openPage(page, 'results');
+  await openPage(page, 'results'); await openResultFolder(page);
   await page.locator('[data-wb=seen-batch]').first().click(); await until(async () => (await call('state')).workbench.unreadResults === 1);
   await page.locator('[data-wb=delete-batch]').first().click(); await until(async () => (await call('state')).workbench.results.length === 3);
   await page.locator('[data-wb=seen-all]').click(); await until(async () => (await call('state')).workbench.unreadResults === 0);

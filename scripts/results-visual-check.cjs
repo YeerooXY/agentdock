@@ -1,5 +1,5 @@
 'use strict';
-const { openPage } = require('./ui-navigation.cjs');
+const { openPage, openResultFolder } = require('./ui-navigation.cjs');
 const { chromium, webkit, devices } = require('playwright');
 const fs = require('node:fs'), path = require('node:path'), http = require('node:http'), assert = require('node:assert/strict');
 const root = path.resolve(__dirname, '..'), out = path.join(root, 'artifacts/results-check'), dist = path.join(root, 'dist');
@@ -33,7 +33,7 @@ const report = []; let browser;
       assert.deepEqual(findings, [], `${name}/${view}: accessibility checks`);
       assert.equal(await page.evaluate(() => { const d = document.querySelector('dialog[open]'); return d ? d.scrollWidth > d.clientWidth + 1 || d.getBoundingClientRect().right > innerWidth + 1 : document.documentElement.scrollWidth > innerWidth + 1; }), false, `${name}/${view}: overflow`);
     }
-    await openPage(page, 'results'); await capture('gallery');
+    await openPage(page, 'results'); await capture('folders'); await openResultFolder(page); await capture('gallery');
     await page.getByRole('button',{name:'Browse 2 pictures',exact:true}).click(); await page.locator('.result-full-image').waitFor(); await capture('gallery-viewer');
     const active = await page.locator('.result-filmstrip [aria-current=true]').getAttribute('data-id');
     await page.keyboard.press(active===fixture.pictureIds[0] ? 'ArrowRight' : 'ArrowLeft');

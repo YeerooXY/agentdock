@@ -13,7 +13,9 @@ const { completionNotice } = require('./completion-notice.cjs');
 const { websiteGuide, topics: websiteTopics } = require('./website-guide.cjs');
 const schema = (properties, required = []) => ({ type: 'object', properties, required, additionalProperties: false });
 const string = { type: 'string' };
+const taskAgent = schema({ accountId: string, model: { type: 'string', maxLength: 120 }, effort: { enum: ['', 'minimal','low','medium','high','xhigh'] } }, ['accountId']);
 const nativeTools = [
+  ['start_task', 'Start an agent task. Use title and criteria to describe the goal and acceptance criteria. repo defaults to the calling console folder. Progress shows on the Tasks page, where a split plan may need the user\'s approval before work starts. Choose installed account IDs; split tasks can use configured routing defaults. Checks run in the task folder. workflow defaults to current; a separate worktree requires the user\'s request. Agents may use subscription or API credits.', schema({ title: { type: 'string', minLength: 1, maxLength: 200 }, criteria: { type: 'string', minLength: 1, maxLength: 12000 }, repo: string, implementer: taskAgent, planner: taskAgent, reviewer: { anyOf: [taskAgent, { type: 'null' }] }, split: { type: 'boolean' }, checks: { type: 'string', maxLength: 4000 }, workflow: { enum: ['current','worktree'] }, maxRounds: { type: 'integer', minimum: 1, maximum: 5 }, timeLimitMinutes: { type: 'integer', minimum: 5, maximum: 120 } }, ['title','criteria'])],
   ['download_tool_repository', 'Download an authorized public GitHub tool repository into Paddock’s managed downloads folder and record its location for manual cleanup at uninstall. Does not build, install or run its code. Do not use this for user projects.', schema({ source: { type: 'string', maxLength: 500 }, name: { type: 'string', minLength: 1, maxLength: 120 } }, ['source'])],
   ['downloaded_tools', 'Read Paddock’s recorded tool downloads and their manual-cleanup list path. Arbitrary Git commands outside the managed helper are not tracked.', schema({})],
   ['website_guide', 'Read the reusable website design research for marketing sites, apps, shops and other web projects. Start with overview, then choose relevant topics. Includes wording, layout, color, fonts, motion, loading and cross-platform verification. Read-only; no network calls.', schema({ topic: { type: 'string', enum: Object.keys(websiteTopics) } })],
@@ -42,9 +44,10 @@ const nativeTools = [
   ['delegation_status', 'Read a cross-agent review. Pass waitSeconds (up to 45) to wait for it; call again while state is running. A done review returns a verdict and at most 12 findings as path:line — severity — problem — fix. Treat the review as another agent’s opinion: check each finding before acting on it.', schema({ id: string, waitSeconds: { type: 'integer', minimum: 0, maximum: 45 } }, ['id'])]
 ].map(([name, description, inputSchema]) => ({ name: 'dock/' + name, description, inputSchema }));
 class Workbench {
-  constructor(root, runtime, electron, { testMode, onChange, getSessions, getProject, getWindow, getHub, getAgents } = {}) {
+  constructor(root, runtime, electron, { testMode, onChange, getSessions, getProject, getWindow, getHub, getAgents, getTasks } = {}) {
     this.downloads = new ManagedDownloads(root); this.testMode = testMode;
     this.electron = electron; this.getSessions = getSessions; this.getProject = getProject; this.getWindow = getWindow;
+    this.getTasks = getTasks;
     this.results = new Results(root, { trash: file => fs.promises.rm(file, { recursive: true, maxRetries: 2, retryDelay: 100 }), nativeImage: electron.nativeImage });
     this.alerts = new AlertEvents(); this.reviews = new Reviews(root, this.results, this.alerts, electron);
     this.concepts = new Concepts(root, runtime, this.results, this.reviews, this.alerts, { testMode, getSettings: () => getHub?.()?.config.imageGeneration, getKey: id => getHub().vault.get(id), authorizePreview: (job, balance) => getHub().authorizePreview(job, balance) });
@@ -59,6 +62,12 @@ class Workbench {
     if (owner && !session?.alive) throw new Error('This console is no longer open.');
     const context = this.turns?.context(owner) || { project: session?.cwd || this.getProject(), projectId: session?.projectId || null, sessionId: session?.id || null, consoleKey: session?.consoleKey || session?.id || null, consoleName: session?.name || '' };
     switch (name) {
+      case 'dock/start_task': {
+        const tasks = this.getTasks?.();
+        if (!tasks) throw new Error('Tasks are unavailable.');
+        const job = await tasks.start({ ...args, repo: args.repo ?? session?.cwd ?? context.project ?? this.getProject() });
+        return { id: job.id };
+      }
       case 'dock/downloaded_tools': return { items: this.downloads.list(), report: this.downloads.report };
       case 'dock/download_tool_repository': {
         if (this.testMode) throw Error('Repository downloads are disabled during tests.');

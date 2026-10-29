@@ -31,3 +31,24 @@ test('revision badges show commit and branch together, retain detached/unknown s
   assert.equal(revisionLabel(null), 'Revision unavailable');
   assert.equal(turnRevisions([{ git: start, gitEnd: end }, { git: start, gitEnd: end }, { git: { ...end, repository: '/other' } }]).length, 2);
 });
+
+test('project folders count each unviewed file and sort unread folders before newer viewed folders', async () => {
+  const { resultFolders } = await import('../src/results-model.js');
+  const projects = [{ id: 'game', name: 'Robonslaught', color: '#aabbcc' }];
+  const items = [
+    { id: 'a', projectId: 'game', project: 'C:/Game', at: 10, seenAt: null },
+    { id: 'b', projectId: 'game', project: 'C:/OldName', at: 20, seenAt: 1 },
+    { id: 'c', projectId: 'game', at: 15, seenAt: null },
+    { id: 'd', project: 'C:/Projects/Paddock', at: 100, seenAt: 1 },
+    { id: 'e', project: '/Projects/Research', at: 30, seenAt: null },
+    { id: 'f', at: 40, seenAt: 1 }, { id: 'g', at: 5, seenAt: null },
+  ];
+  const folders = resultFolders(items, projects);
+  assert.deepEqual(folders.map(({ name, count, unviewed, at }) => [name, count, unviewed, at]), [
+    ['Other', 2, 1, 40], ['Research', 1, 1, 30], ['Robonslaught', 3, 2, 20], ['Paddock', 1, 0, 100],
+  ]);
+  assert.equal(folders.find(folder => folder.key === 'game').project.color, '#aabbcc');
+  items.filter(item => item.projectId === 'game').forEach(item => item.seenAt = 50);
+  assert.equal(resultFolders(items, projects).find(folder => folder.key === 'game').unviewed, 0);
+  assert.deepEqual(resultFolders([]), []);
+});

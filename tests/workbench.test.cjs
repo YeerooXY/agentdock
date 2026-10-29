@@ -103,6 +103,34 @@ test('website reviews reject local files, credentials and active schemes',()=>{
   assert.equal(pageUrl('http://localhost:3000'),'http://localhost:3000/');
   for(const url of ['file:///C:/secrets','javascript:alert(1)','https://user:secret@example.com']) assert.throws(()=>pageUrl(url));
 });
+
+test('dock/start_task forwards task arguments, defaults to the caller folder and validates bridge input without launching agents', async t => {
+  const { root, project } = fixture(t), calls = [];
+  const callerFolder = path.join(project, 'caller'); fs.mkdirSync(callerFolder);
+  const sessions = { items: new Map([['live', { id: 'live', alive: true, cwd: callerFolder }]]) };
+  let tasks;
+  const workbench = new Workbench(root, {}, { nativeImage: {} }, { testMode: true, onChange() {}, getSessions: () => sessions, getProject: () => project, getTasks: () => tasks });
+  const tool = workbench.tools().find(tool => tool.name === 'dock/start_task');
+  assert.ok(tool); assert.match(tool.description, /Tasks page/); assert.match(tool.description, /approval/);
+  const args = { title: 'Build the arena', criteria: 'Movement and collisions pass.', implementer: { accountId: 'codex:default', model: 'fixture', effort: 'high' }, reviewer: { accountId: 'claude:default', model: 'fixture' }, checks: 'echo fixture', workflow: 'current', maxRounds: 2, timeLimitMinutes: 10, split: false };
+  await assert.rejects(workbench.invoke(tool.name, args, 'live'), /Tasks are unavailable/);
+  tasks = { start: async args => { calls.push(args); return { id: `task-${calls.length}` }; } };
+  const hub = new SharedHub(root, { list: () => [] }, { workbench }); await hub.start(); t.after(() => hub.close());
+  const grant = hub.grant('live');
+  const invoke = async arguments_ => (await fetch(grant.PADDOCK_BRIDGE_URL, { method: 'POST', headers: { Authorization: 'Bearer ' + grant.PADDOCK_BRIDGE_TOKEN }, body: JSON.stringify({ name: 'dock_call', arguments: { tool: tool.name, arguments: arguments_ } }) })).json();
+  const reply = await invoke(args);
+  assert.equal(reply.isError, undefined); assert.deepEqual(JSON.parse(reply.content[0].text), { id: 'task-1' });
+  assert.deepEqual(calls[0], { ...args, repo: callerFolder });
+  const split = { ...args, repo: project, split: true, planner: { accountId: 'codex:default' }, reviewer: null, workflow: 'worktree' };
+  assert.equal((await invoke(split)).isError, undefined); assert.deepEqual(calls[1], split);
+  await workbench.invoke(tool.name, args); assert.equal(calls[2].repo, project);
+  for (const invalid of [{ ...args, split: 'yes' }, { ...args, maxRounds: 6 }, { ...args, sessionId: 'someone-else' }, { criteria: 'Missing title' }]) assert.equal((await invoke(invalid)).isError, true);
+  assert.equal(calls.length, 3, 'Invalid input never reaches the task loop');
+  tasks.start = async () => { throw Error('A task is already running for this repository.'); };
+  assert.equal((await invoke(args)).isError, true);
+  sessions.items.get('live').alive = false;
+  await assert.rejects(workbench.invoke(tool.name, args, 'live'), /no longer open/);
+});
 test('Dock bridge validates native tool schemas and scopes file access to the calling console', async t => {
   const {root,project}=fixture(t); const outside=path.join(root,'private.txt'); fs.writeFileSync(outside,'DO_NOT_COPY');
   const file=path.join(project,'verification.txt'); fs.writeFileSync(file,'A real test report');

@@ -238,19 +238,10 @@ async function eventually(predicate, message) {
   assert.ok(!JSON.stringify(await invoke('state')).includes(fakeKey));
   checks.push('Actual Windows DPAPI round trip; saved key is absent from disk plaintext and renderer state');
   await capture({ path: path.join(artifacts, 'test-api-key.png') });
-  await openPage(page, 'api');
-  await page.locator('#api-form input[name=model]').fill('test-model');
-  await page.locator('#api-form textarea[name=prompt]').fill('Keep this draft while switching views.');
-  await openPage(page, 'usage');
-  await openPage(page, 'api');
-  assert.equal(await page.locator('#api-form textarea[name=prompt]').inputValue(), 'Keep this draft while switching views.');
-  await page.locator('#api-form select[name=provider]').selectOption('anthropic');
-  assert.equal(await page.locator('#api-form textarea[name=prompt]').inputValue(), 'Keep this draft while switching views.');
-  assert.equal(await page.locator('#api-form button[type=submit]').isDisabled(), true);
-  await capture({ path: path.join(artifacts, 'test-api.png') });
+  assert.equal(await page.locator('[data-page="api"], #api-form').count(), 0, 'API request page and links are removed');
   const blocked = await page.evaluate(() => window.dock.call('api.send', { provider: 'openai', model: 'test', prompt: 'Never sent' }));
   assert.equal(blocked.ok, false); assert.match(blocked.error, /disabled during tests/);
-  checks.push('Drafts survive view/provider switches; paid requests cannot run in tests');
+  checks.push('API request page is absent; paid requests cannot run in tests');
   await openPage(page, 'instructions');
   await page.locator('#shared-instructions').fill('Keep replies short and human. Follow project instructions.');
   await page.locator('#instructions-form button[type=submit]').click();
@@ -288,9 +279,7 @@ async function eventually(predicate, message) {
   await page.locator('#profile-form select[name=keyId]').selectOption('any_service');
   await page.locator('#profile-form button[type=submit]').click();
   await eventually(async () => (await invoke('state')).shared.profiles.length === 3);
-  await openPage(page, 'api');
-  await page.locator('#api-form select[name=provider]').selectOption('custom_api');
-  assert.equal(await page.locator('#api-form button[type=submit]').isDisabled(), false);
+  assert.equal(await page.locator('[data-edit-profile="custom_api"]').count(), 1, 'Custom model APIs remain configurable');
   await openPage(page, 'usage');
   assert.equal(await page.locator('#rates-form, .pricing-details').count(), 0, 'Usage has no cost estimate settings');
   await capture({ path: path.join(artifacts, 'test-usage.png') });
@@ -531,7 +520,7 @@ async function eventually(predicate, message) {
   const gridGeometry = await page.locator('.session-grid').evaluate(el => ({ bottom: el.getBoundingClientRect().bottom, screen: innerHeight, rows: [...el.children].map(child => child.getBoundingClientRect().height) }));
   assert.ok(gridGeometry.bottom >= gridGeometry.screen - 24 && gridGeometry.bottom <= gridGeometry.screen - 16);
   assert.ok(Math.max(...gridGeometry.rows) - Math.min(...gridGeometry.rows) < 2);
-  for (const view of ['tools', 'instructions', 'usage', 'api']) {
+  for (const view of ['tools', 'instructions', 'usage', 'results', 'tasks']) {
     await openPage(page, view);
     assert.equal(await page.evaluate(() => document.querySelector('#content').scrollWidth <= document.querySelector('#content').clientWidth), true, view + ' overflows');
     await capture({ path: path.join(artifacts, `test-${view}-narrow.png`) });

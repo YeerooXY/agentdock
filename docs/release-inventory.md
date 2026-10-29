@@ -69,12 +69,6 @@ Status key: **Not seen** · **Looks good** · **Needs work** · **Cut**
 | 5.2 | Request ledger | API requests made through Paddock | Empty; 1,000 rows | Needs work (layout) |
 | 5.3 | Cross-agent reviews (new) | Let agents ask another agent for a review | Off; on; running; failed; stopped | Not seen |
 
-### 6. API requests
-
-| # | Item | What it is | Extra cases | Status |
-|---|---|---|---|---|
-| 6.1 | Request workspace | Send API requests and read replies | No key; error reply; very long reply | Not seen |
-
 ### 7. Settings
 
 | # | Item | What it is | Extra cases | Status |

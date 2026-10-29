@@ -10,6 +10,10 @@ let browser;const reports=[];
     browser=await engine.launch();const context=await browser.newContext(options),state=structuredClone(fixture),errors=[],captures=[],violations=[];
     state.version='0.6.0-preview.4';state.settings.sidebarCollapsed=false;state.mode='dashboard';state.updates={current:state.version};
     state.projects.push({...state.projects[0],id:'second-project',name:'Trader',category:'App',goals:'Keep a clear record of decisions.',nextStep:'Review the position history',milestones:[],lastActiveAt:Date.now()-14*86400000});
+    state.projects[0].status='planning';
+    state.projects[0].goals='Build an arena with movement, enemy waves and saved progress. '.repeat(12);
+    state.projects[0].nextStep='Verify movement, collisions and the next enemy wave. '.repeat(12);
+    if(state.projects[0].milestones.length)state.projects[0].milestones[0].acceptance='The player can move, finish a wave and reload the saved game. '.repeat(10);
     state.messages=[{id:'demo',at:Date.now(),provider:'codex',consoleName:'Robonslaught',model:'Test model',usage:{input:12000,output:700,cached:9000},source:'Codex log',status:'completed'},{id:'api-demo',at:Date.now()-50000,provider:'openai',consoleName:'Trader',model:'Test API model',usage:{input:4200,output:500,cached:2000},estimatedCost:0.032,source:'Dock API',steps:3,status:'completed'}];
     await context.exposeFunction('fixtureCall',async(method,payload)=>{
       let value;
@@ -29,7 +33,11 @@ let browser;const reports=[];
     const small=['android','iphone'].includes(name);
     async function nav(view){if(small&&state.settings.sidebarCollapsed)await page.locator('#sidebar-toggle').click();await page.locator(`[data-page=${view}]`).first().click();if(small&&!state.settings.sidebarCollapsed)await page.locator('#sidebar-toggle').click();}
     async function capture(view){await page.evaluate(async()=>{document.getAnimations().filter(x=>x.effect?.getTiming().iterations!==Infinity).forEach(x=>x.finish());await document.fonts.ready;});const file=name+'-'+view+'.png';await page.screenshot({path:path.join(out,file)});captures.push(file);const checks=await page.evaluate(async()=>{const result=await axe.run(document,{runOnly:['color-contrast','button-name','label','aria-dialog-name']});return{overflow:document.documentElement.scrollWidth>innerWidth+1||(!document.querySelector('#content').hidden&&document.querySelector('#content').scrollWidth>document.querySelector('#content').clientWidth+1),violations:result.violations.map(x=>({id:x.id,nodes:x.nodes.map(n=>n.target)}))};});assert.equal(checks.overflow,false,`${name}/${view} overflow`);if(checks.violations.length)violations.push({view,items:checks.violations});}
-    await nav('projects');await capture('projects');await page.locator('[data-project-search]').fill('Trader');assert.equal(await page.locator('.project-card').count(),1);await page.locator('[data-project-search]').fill('');
+    await nav('projects');await capture('projects');
+    const cards=await page.locator('#project-cards .project-card').evaluateAll(nodes=>nodes.map(node=>({top:node.getBoundingClientRect().top,actions:node.querySelector('.project-actions').getBoundingClientRect().top,buttons:[...node.querySelectorAll('.project-card-footer button')].map(button=>button.getBoundingClientRect().height),clamps:[getComputedStyle(node.querySelector('.project-goals')).webkitLineClamp,getComputedStyle(node.querySelector('.project-next p')).webkitLineClamp],underwayInFooter:!node.querySelector('[data-project-underway]')||!!node.querySelector('.project-card-footer [data-project-underway]')})));
+    for(const card of cards){assert.ok(card.buttons.every(height=>Math.abs(height-40)<1),'Footer buttons are 40px');assert.deepEqual(card.clamps,['3','4']);assert.equal(card.underwayInFooter,true);}
+    for(const card of cards)for(const peer of cards.filter(peer=>Math.abs(peer.top-card.top)<1))assert.ok(Math.abs(card.actions-peer.actions)<1,'Action rows align within each grid row');
+await page.locator('[data-project-search]').fill('Trader');assert.equal(await page.locator('.project-card').count(),1);await page.locator('[data-project-search]').fill('');
     await page.locator('.page-heading [data-project-new]').click();await page.locator('#project-editor').waitFor();
     assert.equal(await page.locator('#project-form [name=name]').evaluate(x=>x===document.activeElement),true);
     for(const field of ['approach','nextStep','notes','status'])assert.equal(await page.locator(`#project-form [name=${field}]`).isVisible(),false);
@@ -37,7 +45,6 @@ let browser;const reports=[];
     await capture('new-project');await page.keyboard.press('Escape');assert.equal(await page.locator('#project-editor').isVisible(),false);assert.equal(await page.locator('.page-heading [data-project-new]').evaluate(x=>x===document.activeElement),true);
     await page.locator('[data-project-edit]').first().click();await page.locator('#project-editor').waitFor();await page.locator('#project-form [name=nextStep]').fill('Verify the next wave');await capture('project-editor');await page.keyboard.press('Escape');assert.equal(await page.locator('#project-editor').isVisible(),false);
     await nav('usage');await page.locator('.message-usage').scrollIntoViewIfNeeded();await capture('usage');
-    await nav('api');await page.locator('#api-form [name=projectId]').selectOption(state.projects[0].id);await capture('api-project');
     await nav('settings');await page.locator('#updates-settings').scrollIntoViewIfNeeded();await page.locator('[data-update=check]').click();await capture('updates');await page.locator('[data-update=download]').click();assert.equal(await page.locator('[data-update=install]').count(),1);
     await page.locator('#grid-form').scrollIntoViewIfNeeded();await capture('grid-settings');
     await nav('consoles');await capture('grid');

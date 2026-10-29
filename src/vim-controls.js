@@ -1,4 +1,4 @@
-const pageKeys = { c: 'consoles', u: 'usage', a: 'api', t: 'tools', i: 'instructions', s: 'settings' };
+const pageKeys = { c: 'consoles', u: 'usage', a: 'api-settings', t: 'tools', i: 'instructions', s: 'settings' };
 // Settings scroll inside their own layer; other pages scroll #content.
 const scroller = () => document.querySelector('.settings-stage') || document.querySelector('#content');
 const editing = element => !!element?.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"]), .xterm, [role="tree"], [role="separator"]');
@@ -17,7 +17,7 @@ export function vimControls({ context, focusSlot, action, onError }) {
       <div><dt><kbd>n</kbd> / <kbd>N</kbd></dt><dd>New console / choose agent and model</dd></div>
       <div><dt><kbd>r</kbd></dt><dd>Rename the selected slot</dd></div>
       <div><dt><kbd>g g</kbd> / <kbd>G</kbd></dt><dd>First / last slot, or top / bottom of a page</dd></div>
-      <div><dt><kbd>g c</kbd> <kbd>g u</kbd> <kbd>g a</kbd></dt><dd>Consoles · Usage · API</dd></div>
+      <div><dt><kbd>g c</kbd> <kbd>g u</kbd> <kbd>g a</kbd></dt><dd>Consoles · Usage · API settings</dd></div>
       <div><dt><kbd>g v</kbd> <kbd>g t</kbd> <kbd>g i</kbd></dt><dd>Keys · Tools · Instructions</dd></div>
       <div><dt><kbd>g s</kbd></dt><dd>Settings</dd></div>
       <div><dt><kbd>b</kbd> <kbd>f</kbd> <kbd>d</kbd></dt><dd>Sidebar · Fullscreen · Dock</dd></div>
