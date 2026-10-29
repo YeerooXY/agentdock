@@ -17,15 +17,17 @@ class WorktreeDock extends FakeDock {
 
   @override
   Future<dynamic> request(String method, [Map<String, dynamic> payload = const {}]) async {
-    if (method == 'console.agents') return {
-      'defaultProvider': '', 'defaultFolder': r'C:\repo', 'agents': <Map<String, dynamic>>[],
-      'projects': [
-        {'id': 'p', 'name': 'Project', 'folders': [
-          {'label': 'Root', 'path': r'C:\repo'},
-          {'label': 'Subfolder', 'path': r'C:\repo\sub'},
-        ]},
-      ],
-    };
+    if (method == 'console.agents') {
+      return {
+        'defaultProvider': '', 'defaultFolder': r'C:\repo', 'agents': <Map<String, dynamic>>[],
+        'projects': [
+          {'id': 'p', 'name': 'Project', 'folders': [
+            {'label': 'Root', 'path': r'C:\repo'},
+            {'label': 'Subfolder', 'path': r'C:\repo\sub'},
+          ]},
+        ],
+      };
+    }
     if (method == 'console.worktree.root') return {'root': payload['folderIndex'] != 1};
     return super.request(method, payload);
   }

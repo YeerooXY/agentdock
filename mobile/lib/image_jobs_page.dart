@@ -68,7 +68,7 @@ class _ImageJobsPageState extends State<ImageJobsPage> {
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(title: const Text('Image jobs')),
-    body: ListenableBuilder(animation: widget.client, builder: (context, _) {
+    body: ListenableBuilder(listenable: widget.client, builder: (context, _) {
       final jobs = (widget.client.state['imageJobs'] as List? ?? []).whereType<Map>().toList();
       return ListView(padding: const EdgeInsets.all(16), children: [
         if (error.isNotEmpty) Text(error, style: TextStyle(color: Theme.of(context).colorScheme.error)),

@@ -896,9 +896,11 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
                 pinnedAccountPC = '';
                 pinnedAccountGeneration = -1;
                 if (action == 'updates') openUpdates(context);
-                if (action == 'previews') Navigator.of(context).push(
-                  MaterialPageRoute<void>(builder: (_) => PreviewListPage(client: c)),
-                );
+                if (action == 'previews') {
+                  Navigator.of(context).push(
+                    MaterialPageRoute<void>(builder: (_) => PreviewListPage(client: c)),
+                  );
+                }
                 if (action == 'reconnect') run(c.reconnect);
                 if (action == 'display') displaySettings();
                 if (action == 'appearance') appearanceSettings();
