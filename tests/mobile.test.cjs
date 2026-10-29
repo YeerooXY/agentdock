@@ -918,3 +918,23 @@ test('phone prompt management validates scope, projects and library limits', asy
   await assert.rejects(c.call('prompts.remove', { id: global.id }), /already removed/);
   assert.deepEqual(f.sessions.writes, [], 'saving and deleting prompts never sends input');
 });
+
+test('the phone server retries until the Tailscale address appears after startup', async t => {
+  const { m } = await fixture(t);
+  await m.stop();
+  let up = false;
+  t.mock.method(os, 'networkInterfaces', () => ({ loopback: up ? [{ address: '127.0.0.1', family: 'IPv4', internal: true }] : [] }));
+  const delays = [];
+  m.retryStart = (original => function (delay) { delays.push(delay ?? 15000); return original.call(this, 5); })(m.retryStart);
+  await m.start();
+  assert.equal(m.snapshot().enabled, false);
+  assert.match(m.snapshot().error, /keeps trying/);
+  assert.equal(delays.length, 1);
+  up = true;
+  for (let i = 0; i < 50 && !m.server; i++) await new Promise(r => setTimeout(r, 10));
+  assert.equal(m.snapshot().enabled, true);
+  assert.equal(m.snapshot().error, '');
+  await m.stop();
+  up = false; await m.start(); await m.stop();
+  assert.equal(m.retryTimer, null);
+});

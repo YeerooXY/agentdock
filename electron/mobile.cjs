@@ -123,11 +123,17 @@ class MobileCompanion extends EventEmitter {
     this.notice = ''; delete this.config.notice;
     await this.stop(); Object.assign(this.config, { enabled: true, host, port }, options); this.persist(); await this.start();
   }
+  // Tailscale often gets its address after Paddock starts with Windows; retry until it appears.
+  retryStart(delay = 15000) {
+    if (this.retryTimer || this.stopped) return;
+    this.retryTimer = setTimeout(() => { this.retryTimer = null; this.start().catch(() => {}); }, delay); this.retryTimer.unref?.();
+  }
   async start() {
+    this.stopped = false;
     if (!this.config.enabled || this.server) return;
     if (!this.available()) throw new Error(encryptionUnavailable());
     if (!this.tailnet(this.config.host)) { this.error = 'Phones connect only through Tailscale. Choose this PC’s Tailscale address in Phone setup.'; this.emit('changed'); return; }
-    if (!interfaces().some(x => x.address === this.config.host)) { this.error = 'This PC’s Tailscale address is unavailable. Turn on Tailscale on this PC, then try again.'; this.emit('changed'); return; }
+    if (!interfaces().some(x => x.address === this.config.host)) { this.error = 'This PC’s Tailscale address is unavailable. Paddock keeps trying; turn on Tailscale on this PC if it is off.'; this.emit('changed'); this.retryStart(); return; }
     if (!this.private.identity) {
       const pems = await require('selfsigned').generate([{ name: 'commonName', value: 'Paddock' }], { keyType: 'ec', curve: 'P-256', algorithm: 'sha256', notBeforeDate: new Date(Date.now() - 60000), notAfterDate: new Date(Date.now() + 5 * 365 * 86400000) });
       this.private.identity = { cert: pems.cert, key: pems.private }; this.persist();
@@ -455,6 +461,7 @@ class MobileCompanion extends EventEmitter {
   }
   revoke(id) { this.private.devices = this.private.devices.filter(x => x.id !== id); for (const client of this.clients) if (client.device.id === id) client.ws.close(1008, 'Phone removed'); this.persist(); }
   async stop() {
+    this.stopped = true; clearTimeout(this.retryTimer); this.retryTimer = null;
     clearInterval(this.timer); clearTimeout(this.stateTimer); this.stateTimer = null; this.cancelPairing();
     for (const client of this.clients) client.ws.terminate(); this.clients.clear(); this.wss?.close();
     for (const stream of this.streams.values()) stream.dispose(); this.streams.clear();
