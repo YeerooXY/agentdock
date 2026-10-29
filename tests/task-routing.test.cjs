@@ -55,3 +55,25 @@ test('OpenCode is a default and fallback reviewer with an allowed model', () => 
   assert.deepEqual(fallback, { accountId: 'opencode:default', model: 'opencode-go/kimi-k3.1-pro' });
   assert.equal(suggestAssignment({ size: 'small', candidates: candidates.map(c => c.provider === 'opencode' ? { ...c, signedIn: false } : c), rules: defaults, now: 100 }).reviewer.accountId, 'claude:default');
 });
+
+test('split suggestions spread measured accounts within ten points and preserve unknown usage', () => {
+  const candidates = ['one', 'two', 'unknown'].map(id => ({ id: `codex:${id}`, provider: 'codex', label: id }));
+  const rules = { ...defaults, small: candidates.map(c => ({ accountId: c.id, model: 'test' })) }, now = 2_000_000;
+  const limits = [40, 35].map((usedPercent, i) => ({ accountId: candidates[i].id, observedAt: now, windows: [{ minutes: 300, usedPercent }] }));
+  const assignmentCounts = {}, ids = [];
+  for (let i = 0; i < 4; i++) {
+    const result = suggestAssignment({ size: 'small', candidates, rules, limits, now, assignmentCounts });
+    const id = result.implementer.accountId; ids.push(id); assignmentCounts[id] = (assignmentCounts[id] || 0) + 1;
+  }
+  assert.deepEqual(ids, ['codex:one', 'codex:two', 'codex:one', 'codex:two']);
+  limits[0].windows[0].usedPercent = 70;
+  assert.equal(suggestAssignment({ size: 'small', candidates, rules, limits, now, assignmentCounts }).implementer.accountId, 'codex:two');
+});
+
+test('split plan reviewers prefer a different vendor to the planner', () => {
+  const candidates = [{ id: 'codex:one', provider: 'codex', label: 'One' }, { id: 'codex:two', provider: 'codex', label: 'Two' }, { id: 'kiro:default', provider: 'kiro', label: 'Kiro' }];
+  const rules = { ...defaults, large: [{ accountId: 'codex:one', model: 'planner' }], defaultReviewer: { accountId: 'codex:two', model: 'reviewer' } };
+  const result = suggestAssignment({ size: 'large', candidates, rules, preferDifferentVendor: true });
+  assert.equal(result.implementer.model, 'planner'); assert.equal(result.reviewer.accountId, 'kiro:default');
+  assert.equal(suggestAssignment({ size: 'large', candidates: candidates.slice(0, 2), rules: { ...rules, defaultReviewer: null }, preferDifferentVendor: true }).reviewer.accountId, 'codex:two');
+});

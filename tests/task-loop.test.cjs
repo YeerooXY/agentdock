@@ -663,3 +663,256 @@ test('the task form documentation advertises the available model fields', () => 
   const intro = fs.readFileSync(path.join(__dirname, '..', 'docs', 'task-loop.md'), 'utf8').split(/\r?\n\r?\n/)[1];
   assert.match(intro, /Model fields accept model identifiers\./); assert.doesNotMatch(intro, /reasoning effort/i);
 });
+
+const splitPlan = (dependent = false) => ({ contracts: 'Store durations in milliseconds. Use the label Classes.', subtasks: [
+  { id: 'first', title: 'First module', criteria: 'Create first.js.', owns: ['first.js'], dependsOn: [], size: 'small' },
+  { id: 'second', title: 'Second module', criteria: 'Create second.js.', owns: ['second.js'], dependsOn: dependent ? ['first'] : [], size: 'small' }
+] });
+const planned = value => ({ type: 'review', reply: '```json\n' + JSON.stringify(value) + '\n```' });
+async function readyPlan(f, extra = {}) {
+  const started = await f.start({ split: true, reviewer: null, checks: '', ...extra });
+  const job = await f.done(started); assert.equal(job.state, 'plan-ready'); return job;
+}
+const approvePlan = (f, job, extra = {}) => f.loop.approvePlan({ id: job.id, parallelLimit: 1, ...extra });
+
+test('split planning is read-only, repairs exact errors once and never builds before approval', async t => {
+  const invalid = splitPlan(); invalid.subtasks[0].dependsOn = ['missing'];
+  const f = fixture(t, [planned(invalid), { ...planned(splitPlan()), inspect: invocation => assert.match(invocation.prompt, /first: unknown dependency missing/) }]);
+  const job = await readyPlan(f);
+  assert.equal(f.spawned.length, 2); assert.equal(job.rounds.length, 0); assert.equal(job.planRepairUsed, true);
+  assert.ok(f.spawned.every(invocation => invocation.args.includes('read-only')));
+  assert.ok(job.subtasks.every(sub => !sub.workFolder)); assert.equal(job.workflow, 'worktree');
+  assert.equal(job.planReview.state, 'not-set'); assert.match(f.loop.report(job), /Plan not reviewed/);
+  const failed = fixture(t, [planned(invalid), planned(invalid)]);
+  const stopped = await failed.done(await failed.start({ split: true, reviewer: null, checks: '' }));
+  assert.equal(stopped.state, 'needs-you'); assert.equal(failed.spawned.length, 2); assert.match(stopped.error, /unknown dependency/);
+});
+test('plan review feeds findings to the planner and stops after two plan rounds', async t => {
+  for (const reply of [approve, requested]) {
+    const f = fixture(t, [planned(splitPlan()), { type: 'review', reply: requested }, { ...planned(splitPlan()), inspect: invocation => assert.match(invocation.prompt, /wrong result/) }, { type: 'review', reply }]);
+    const job = await f.done(await f.start({ split: true, checks: '' }));
+    assert.equal(job.planRounds.length, 2); assert.equal(f.spawned.length, 4);
+    assert.equal(job.state, reply === approve ? 'plan-ready' : 'needs-you');
+    assert.match(f.spawned[1].prompt, /Review only the task criteria/); assert.doesNotMatch(f.spawned[1].prompt, /Diff against/);
+    assert.ok(f.spawned.every(invocation => !invocation.args.includes('workspace-write')));
+  }
+});
+test('approval validates all overrides before applying them and selects the main implementer', async t => {
+  const f = fixture(t, [planned(splitPlan()), { hold: true }]); const job = await readyPlan(f);
+  for (const override of [{ parallelLimit: 0 }, { parallelLimit: 5 }, { assignments: { missing: { accountId: codex.id } } }, { assignments: { first: { accountId: 'codex:absent' } } }, { assignments: { first: { accountId: codex.id, model: '-bad' } } }]) await assert.rejects(approvePlan(f, job, override));
+  assert.equal(job.state, 'plan-ready'); assert.equal(f.spawned.length, 1);
+  await approvePlan(f, job, { assignments: { first: { accountId: claude.id, model: 'override-model' } }, implementer: { accountId: kiro.id, model: 'main-model' } });
+  await until(() => f.spawned.length === 2);
+  assert.equal(job.subtasks[0].implementer.accountId, claude.id); assert.equal(job.subtasks[0].implementer.model, 'override-model');
+  assert.equal(job.implementer.accountId, kiro.id); assert.equal(job.subtasks[0].assignmentReason, 'Selected by you.');
+  await assert.rejects(approvePlan(f, job), /ready plan/);
+  await f.loop.stop(job.id); await f.done(job);
+});
+test('dependent worktrees include merged dependency work; final checks and review see the combined diff', async t => {
+  const f = fixture(t, [planned(splitPlan(true)), { type: 'review' },
+    { type: 'implement', edit: cwd => fs.writeFileSync(path.join(cwd, 'first.js'), 'first module\n') }, { type: 'check' }, { type: 'review' },
+    { type: 'implement', edit: cwd => fs.writeFileSync(path.join(cwd, 'second.js'), 'second module\n'), inspect: invocation => assert.equal(fs.readFileSync(path.join(invocation.options.cwd, 'first.js'), 'utf8').replace(/\r\n/g, '\n'), 'first module\n') }, { type: 'check' }, { type: 'review' },
+    { type: 'check', inspect: invocation => { assert.ok(fs.existsSync(path.join(invocation.options.cwd, 'first.js'))); assert.ok(fs.existsSync(path.join(invocation.options.cwd, 'second.js'))); } },
+    { type: 'review', inspect: invocation => { assert.match(invocation.prompt, /first module/); assert.match(invocation.prompt, /second module/); assert.match(invocation.prompt, /milliseconds/); assert.match(invocation.prompt, /Approved plan/); } }
+  ]);
+  const originalHead = git(f.repo, 'rev-parse', 'HEAD');
+  const job = await readyPlan(f, { reviewer: { accountId: claude.id }, checks: 'mock-check' });
+  await approvePlan(f, job); await f.done(job);
+  assert.equal(job.state, 'passed'); assert.ok(job.subtasks.every(sub => sub.state === 'merged'));
+  assert.equal(job.rounds.length, 1); assert.equal(job.rounds[0].implement, null);
+  for (const step of [job.rounds[0].check, job.rounds[0].review]) assert.equal(step.head, git(job.workFolder, 'rev-parse', 'HEAD').trim());
+  assert.match(git(job.workFolder, 'log', '--format=%s'), /Subtask first: First module/);
+  assert.equal(git(f.repo, 'rev-parse', 'HEAD'), originalHead);
+  const report = f.loop.report(job); assert.match(report, /## Plan/); assert.match(report, /## Usage by account/); assert.match(report, /first round 1 Implement: 100 input/); assert.doesNotMatch(report, /\d+%/);
+  await f.loop.git(job.workFolder, ['-c', 'user.name=Task tests', '-c', 'user.email=test@example.com', 'commit', '--allow-empty', '-m', 'Later head']);
+  await f.loop.refresh(job.id); assert.equal(job.state, 'needs-you'); assert.equal(job.rounds[0].check.state, 'stale'); assert.match(job.unresolved.join(' '), /Checks are out of date/);
+});
+test('integration findings use the remaining rounds with the main implementer', async t => {
+  const f = fixture(t, [planned(splitPlan()), { type: 'review' },
+    { type: 'implement', edit: cwd => fs.writeFileSync(path.join(cwd, 'first.js'), 'first\n') }, { type: 'review' },
+    { type: 'implement', edit: cwd => fs.writeFileSync(path.join(cwd, 'second.js'), 'second\n') }, { type: 'review' },
+    { type: 'review', reply: requested }, { type: 'implement', inspect: invocation => { assert.equal(invocation.executable, kiro.executable); assert.match(invocation.prompt, /wrong result/); assert.match(invocation.prompt, /milliseconds/); } }, { type: 'review' }
+  ]);
+  const job = await readyPlan(f, { reviewer: { accountId: claude.id } });
+  await approvePlan(f, job, { implementer: { accountId: kiro.id } }); await f.done(job);
+  assert.equal(job.state, 'passed'); assert.equal(job.rounds.length, 2);
+});
+test('ownership violations become fix findings and then needs-you without a merge', async t => {
+  const f = fixture(t, [planned(splitPlan()), { type: 'implement', edit: cwd => fs.writeFileSync(path.join(cwd, 'second.js'), 'wrong owner\n') }, { type: 'implement', inspect: invocation => assert.match(invocation.prompt, /You changed second.js, which belongs to second/) }]);
+  const job = await readyPlan(f, { maxRounds: 2 }); await approvePlan(f, job); await f.done(job);
+  assert.equal(job.state, 'needs-you'); assert.equal(job.subtasks[0].state, 'needs-you'); assert.equal(job.subtasks[0].rounds.length, 2);
+  assert.ok(!fs.existsSync(path.join(job.workFolder, 'second.js'))); assert.equal(job.subtasks[1].state, 'queued');
+});
+test('parallel scheduling respects the limit and dependencies', async t => {
+  const value = splitPlan(); value.subtasks.push({ id: 'third', title: 'Third module', criteria: 'Use first.js.', owns: ['third.js'], dependsOn: ['first'], size: 'small' });
+  const f = fixture(t, [planned(value), { hold: true }, { hold: true }, { hold: true }]); const job = await readyPlan(f);
+  await approvePlan(f, job, { parallelLimit: 2 }); await until(() => f.spawned.length === 3);
+  assert.equal(job.subtasks[2].state, 'queued');
+  const finish = (invocation, file) => { fs.writeFileSync(path.join(invocation.options.cwd, file), file + '\n'); invocation.child.emit('close', 0); };
+  const first = f.spawned.find(invocation => invocation.options.cwd.endsWith('-first'));
+  const second = f.spawned.find(invocation => invocation.options.cwd.endsWith('-second'));
+  finish(first, 'first.js'); await until(() => f.spawned.length === 4);
+  assert.equal(fs.readFileSync(path.join(f.spawned[3].options.cwd, 'first.js'), 'utf8').replace(/\r\n/g, '\n'), 'first.js\n');
+  assert.equal(second.child.killed, false); finish(second, 'second.js'); finish(f.spawned[3], 'third.js');
+  await f.done(job); assert.equal(job.state, 'passed'); assert.ok(job.subtasks.every(sub => sub.state === 'merged'));
+});
+test('merge conflicts are aborted and leave the integration HEAD and working tree unchanged', async t => {
+  const f = fixture(t, [planned(splitPlan()), { type: 'implement', edit: cwd => fs.writeFileSync(path.join(cwd, 'first.js'), 'subtask\n') }]);
+  const job = await readyPlan(f), base = job.integrationHead;
+  // Simulate a competing integration edit after subtask creation, just before merge.
+  const merge = f.loop.split.merge.bind(f.loop.split); let before;
+  f.loop.split.merge = async (parent, sub) => {
+    fs.writeFileSync(path.join(parent.workFolder, 'first.js'), 'integration\n'); git(parent.workFolder, 'add', '.'); git(parent.workFolder, 'commit', '-qm', 'competing integration');
+    parent.integrationHead = before = git(parent.workFolder, 'rev-parse', 'HEAD').trim();
+    return merge(parent, sub);
+  };
+  await approvePlan(f, job); await f.done(job);
+  assert.notEqual(before, base); assert.equal(job.state, 'needs-you'); assert.match(job.subtasks[0].error, /Merge conflict: first.js/);
+  assert.equal(git(job.workFolder, 'rev-parse', 'HEAD').trim(), before); assert.equal(git(job.workFolder, 'status', '--porcelain'), '');
+  assert.throws(() => git(job.workFolder, 'rev-parse', '--verify', 'MERGE_HEAD'));
+});
+test('Stop keeps split worktrees; startup interrupts children and Resume skips merged work', async t => {
+  const f = fixture(t, [planned(splitPlan(true)), { type: 'implement', edit: cwd => fs.writeFileSync(path.join(cwd, 'first.js'), 'first\n') }, { hold: true }]);
+  const job = await readyPlan(f); await approvePlan(f, job); await until(() => f.spawned.length === 3);
+  assert.equal(job.subtasks[0].state, 'merged');
+  f.loop.interruptAll(); await f.done(job); assert.equal(f.spawned[2].child.killed, true);
+  const restored = new TaskLoop(f.root, f.options); t.after(() => restored.interruptAll()); await Promise.all(restored.pending.values());
+  const recovered = restored.jobs.get(job.id); assert.equal(recovered.state, 'interrupted'); assert.equal(recovered.subtasks[1].state, 'interrupted'); assert.equal(f.spawned.length, 3);
+  const folder = recovered.subtasks[1].workFolder;
+  f.script.push({ hold: true }); const resumed = await restored.resume(job.id); await until(() => f.spawned.length === 4);
+  assert.equal(f.spawned[3].options.cwd, folder); assert.match(f.spawned[3].prompt, /Previous unresolved items/);
+  await assert.rejects(restored.resume(job.id), /Resume a split task/);
+  await restored.stop(resumed.id); await restored.pending.get(resumed.id);
+  assert.ok(recovered.subtasks.every(sub => fs.existsSync(sub.workFolder)));
+  assert.equal(recovered.subtasks[0].state, 'merged'); assert.equal(f.spawned[3].child.killed, true);
+});
+test('four provider slots are shared across tasks and cancelled queued work never starts', async t => {
+  const f = fixture(t); const releases = [];
+  for (let i = 0; i < 4; i++) releases.push(await f.loop.acquireProvider({ id: `slot-${i}` }));
+  assert.equal(f.loop.providerSlots, 4);
+  let entered = false; const waiting = f.loop.acquireProvider({ id: 'queued', parentId: 'parent' }).then(release => { entered = true; release(); });
+  await Promise.resolve(); assert.equal(entered, false); f.loop.cancelProviderQueue({ id: 'parent' }); await waiting;
+  assert.equal(f.loop.providerSlots, 4); releases.forEach(release => release()); assert.equal(f.loop.providerSlots, 0); assert.equal(f.spawned.length, 0);
+});
+
+test('OpenCode planners retain full plans with read-only permissions and reported costs', async t => {
+  const value = splitPlan(); value.contracts = 'x'.repeat(8000);
+  const output = [{ type: 'text', part: { text: '```json\n' + JSON.stringify(value) + '\n```' } }, { type: 'step_finish', part: { reason: 'stop', tokens: { input: 25, output: 12 }, cost: 0.02 } }].map(JSON.stringify).join('\n') + '\n';
+  const f = fixture(t, [{ output, inspect: invocation => assert.equal(JSON.parse(invocation.options.env.OPENCODE_PERMISSION).edit, 'deny') }], { candidates: () => [codex, opencode] });
+  const job = await readyPlan(f, { implementer: { accountId: opencode.id, model: 'opencode-go/test' } });
+  assert.equal(job.plan.contracts.length, 8000); assert.equal(job.planRounds[0].planner.usage.reportedCost, 0.02);
+  assert.match(f.loop.report(job), /OpenCode reported cost \$0.02/); assert.match(f.loop.report(job), /usage: not reported|not reported input/);
+});
+test('Stop kills every parallel subtask and keeps every worktree', async t => {
+  const f = fixture(t, [planned(splitPlan()), { hold: true }, { hold: true }]); const job = await readyPlan(f);
+  await approvePlan(f, job, { parallelLimit: 2 }); await until(() => f.spawned.length === 3);
+  await f.loop.stop(job.id); await f.done(job);
+  assert.equal(job.state, 'stopped'); assert.ok(f.spawned.slice(1).every(invocation => invocation.child.killed));
+  assert.ok(job.subtasks.every(sub => fs.existsSync(sub.workFolder))); assert.ok(fs.existsSync(job.workFolder));
+});
+test('subtask commits use fallback identity without changing repository configuration', async t => {
+  const f = fixture(t, [planned(splitPlan()), { type: 'implement' }, { type: 'implement' }]);
+  const job = await readyPlan(f), original = git(f.repo, 'config', '--get', 'user.name');
+  f.loop.run = (program, args, options, callback) => {
+    if (args.includes('config') && args.includes('--get')) { queueMicrotask(() => callback(Object.assign(new Error('not configured'), { code: 1 }), '')); return; }
+    return f.options.run(program, args, options, callback);
+  };
+  await approvePlan(f, job); await f.done(job); assert.equal(job.state, 'passed');
+  assert.equal(git(f.repo, 'config', '--get', 'user.name'), original);
+  assert.match(git(job.subtasks[0].workFolder, 'log', '-1', '--format=%an <%ae>'), /Paddock <paddock@localhost>/);
+});
+test('recovery recognizes a finished merge that was not saved before interruption', async t => {
+  const f = fixture(t, [planned(splitPlan(true)), { type: 'implement', edit: cwd => fs.writeFileSync(path.join(cwd, 'first.js'), 'first\n') }, { hold: true }]);
+  const job = await readyPlan(f); await approvePlan(f, job); await until(() => f.spawned.length === 3);
+  await f.loop.stop(job.id); await f.done(job);
+  const first = job.subtasks[0]; first.state = 'interrupted'; delete first.mergedAt; delete first.committed; job.integrationHead = job.sourceRevision;
+  await f.loop.split.recoverMerges(job);
+  assert.equal(first.state, 'merged'); assert.equal(first.committed, first.commit); assert.equal(job.integrationHead, git(job.workFolder, 'rev-parse', 'HEAD').trim()); assert.equal(f.spawned.length, 3);
+});
+
+test('Stop during a subtask commit preserves the commit and Resume merges without another implement round', async t => {
+  const f = fixture(t, [planned(splitPlan(true)),
+    { type: 'implement', edit: cwd => fs.writeFileSync(path.join(cwd, 'first.js'), 'first\n') },
+    { type: 'implement', edit: cwd => fs.writeFileSync(path.join(cwd, 'second.js'), 'second\n') }]);
+  const job = await readyPlan(f); let commitReady = false, releaseCommit;
+  f.loop.run = (program, args, options, callback) => {
+    if (!releaseCommit && args.includes('commit') && args.includes('--allow-empty') && options.cwd.endsWith('-first')) {
+      return f.options.run(program, args, options, (error, stdout, stderr) => {
+        releaseCommit = () => callback(error, stdout, stderr); commitReady = true;
+      });
+    }
+    return f.options.run(program, args, options, callback);
+  };
+  await approvePlan(f, job); await until(() => commitReady);
+  const stopping = f.loop.stop(job.id); assert.equal(job.state, 'stopped');
+  releaseCommit(); await stopping; await f.done(job);
+  const first = job.subtasks[0], saved = JSON.parse(fs.readFileSync(path.join(f.root, 'tasks', job.id + '.json'), 'utf8'));
+  assert.match(first.committed, /^[a-f0-9]{40,64}$/); assert.equal(saved.subtasks[0].committed, first.committed);
+  assert.equal(first.rounds.length, 1); assert.equal(f.spawned.length, 2);
+  assert.equal(path.basename(first.workFolder), `${job.id.slice(0, 8)}-first`);
+  await f.loop.resume(job.id); await f.done(job);
+  assert.equal(job.state, 'passed'); assert.equal(first.state, 'merged'); assert.equal(first.rounds.length, 1); assert.deepEqual(first.unresolved, []);
+  assert.equal(f.spawned.length, 3, 'Only the dependent implementer starts after Resume');
+  assert.equal(fs.readFileSync(path.join(job.workFolder, 'first.js'), 'utf8').replace(/\r\n/g, '\n'), 'first\n');
+});
+
+test('Stop after staging prevents the subtask commit from starting', async t => {
+  const f = fixture(t, [planned(splitPlan()), { type: 'implement', edit: cwd => fs.writeFileSync(path.join(cwd, 'first.js'), 'first\n') }]);
+  const job = await readyPlan(f); let staged = false, releaseAdd, commits = 0;
+  f.loop.run = (program, args, options, callback) => {
+    if (args.includes('commit') && args.includes('--allow-empty')) commits++;
+    if (!releaseAdd && args.includes('add') && args.includes('--all') && options.cwd.endsWith('-first')) {
+      return f.options.run(program, args, options, (error, stdout, stderr) => {
+        releaseAdd = () => callback(error, stdout, stderr); staged = true;
+      });
+    }
+    return f.options.run(program, args, options, callback);
+  };
+  await approvePlan(f, job); await until(() => staged);
+  const stopping = f.loop.stop(job.id); releaseAdd(); await stopping; await f.done(job);
+  assert.equal(job.state, 'stopped'); assert.equal(commits, 0); assert.equal(job.subtasks[0].committed, undefined);
+  assert.equal(git(job.subtasks[0].workFolder, 'rev-parse', 'HEAD').trim(), job.subtasks[0].baseline);
+});
+
+test('Resume ignores PIDs recorded before app start and still blocks a live process from this run', async t => {
+  const checked = []; let alive = true;
+  const f = fixture(t, [planned(splitPlan())], { now: () => 2000, processStartedAt: 1000, isProcessAlive: pid => { checked.push(pid); return alive; } });
+  const job = await readyPlan(f); await f.loop.stop(job.id);
+  job.processPid = 101; job.processRecordedAt = 999;
+  job.subtasks[0].processPid = 102; job.subtasks[0].processRecordedAt = 999; f.loop.changed(job);
+  await f.loop.resume(job.id); assert.equal(job.state, 'plan-ready'); assert.deepEqual(checked, []);
+  let saved = JSON.parse(fs.readFileSync(path.join(f.root, 'tasks', job.id + '.json'), 'utf8'));
+  assert.equal(saved.processPid, undefined); assert.equal(saved.subtasks[0].processPid, undefined);
+  await f.loop.stop(job.id); job.processPid = 103; job.processRecordedAt = 1500; f.loop.changed(job);
+  await assert.rejects(f.loop.resume(job.id), /still active/); assert.deepEqual(checked, [103]);
+  alive = false; await f.loop.resume(job.id); assert.equal(job.state, 'plan-ready'); assert.deepEqual(checked, [103, 103]);
+  saved = JSON.parse(fs.readFileSync(path.join(f.root, 'tasks', job.id + '.json'), 'utf8')); assert.equal(saved.processPid, undefined);
+});
+
+test('legacy saved PIDs without recording times are treated as predating the app', async t => {
+  const checked = [], f = fixture(t, [planned(splitPlan())], { now: () => 2000, processStartedAt: 1000, isProcessAlive: pid => { checked.push(pid); return true; } });
+  const job = await readyPlan(f); await f.loop.stop(job.id);
+  job.subtasks[0].processPid = 104; delete job.subtasks[0].processRecordedAt; f.loop.changed(job);
+  const restored = new TaskLoop(f.root, f.options); t.after(() => restored.interruptAll());
+  await restored.resume(job.id); assert.equal(restored.jobs.get(job.id).state, 'plan-ready'); assert.deepEqual(checked, []);
+  const saved = JSON.parse(fs.readFileSync(path.join(f.root, 'tasks', job.id + '.json'), 'utf8')); assert.equal(saved.subtasks[0].processPid, undefined);
+});
+
+test('a late child close persists the cleared PID on both tasks and subtasks', async t => {
+  for (const split of [false, true]) {
+    const script = split ? [planned(splitPlan()), { hold: true }] : [{ hold: true }];
+    const f = fixture(t, script, { stopTimeoutMs: 5, killProcess: child => { child.killed = true; } });
+    const job = split ? await readyPlan(f) : null;
+    const originalSpawn = f.loop.spawnProcess;
+    f.loop.spawnProcess = (...args) => { const child = originalSpawn(...args); child.pid = 123456; return child; };
+    const running = split ? await approvePlan(f, job) : await f.start({ reviewer: null, checks: '' });
+    await until(() => f.spawned.length === (split ? 2 : 1));
+    const item = f.loop.jobs.get(running.id), child = f.spawned.at(-1).child, file = path.join(f.root, 'tasks', running.id + '.json');
+    await f.loop.stop(running.id); await f.done(running);
+    const savedItem = () => { const value = JSON.parse(fs.readFileSync(file, 'utf8')); return split ? value.subtasks[0] : value; };
+    assert.equal(savedItem().processPid, 123456); assert.ok(Number.isFinite(savedItem().processRecordedAt));
+    child.emit('close', null);
+    assert.equal(savedItem().processPid, undefined); assert.equal(savedItem().processRecordedAt, undefined);
+    assert.equal(item.state, 'stopped');
+  }
+});

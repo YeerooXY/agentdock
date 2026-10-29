@@ -33,7 +33,7 @@ function estimateEffort({ criteria = '', title = '' } = {}) {
   if (!reasons.length) reasons.push('Few scope signals in the description.');
   return { size: score >= 3 ? 'large' : score >= 1 ? 'medium' : 'small', reasons };
 }
-function suggestAssignment({ size, candidates = [], limits = [], rules = defaults, now = Date.now(), selectedImplementer }) {
+function suggestAssignment({ size, candidates = [], limits = [], rules = defaults, now = Date.now(), selectedImplementer, assignmentCounts = {}, preferDifferentVendor = false }) {
   const warnings = [], reasons = [], available = [];
   const room = id => {
     const readings = limits.filter(item => item.accountId === id && Number.isFinite(item.observedAt) && item.observedAt <= now);
@@ -54,22 +54,26 @@ function suggestAssignment({ size, candidates = [], limits = [], rules = default
   }
   const measured = available.filter(item => item.usage.shortest);
   const bestUsed = measured.length ? Math.min(...measured.map(item => item.usage.shortest.usedPercent)) : null;
-  const best = measured.length ? measured.find(item => item.usage.shortest.usedPercent <= bestUsed + 10) : available[0];
+  const balanced = measured.filter(item => item.usage.shortest.usedPercent <= bestUsed + 10);
+  const best = measured.length ? balanced.reduce((choice, item) => (assignmentCounts[item.accountId] || 0) < (assignmentCounts[choice.accountId] || 0) ? item : choice) : available[0];
   let implementer = null, reviewer = null;
   if (best) {
     implementer = { accountId: best.accountId, model: best.model };
     const w = best.usage.shortest, usage = w ? `${w.label || 'Shortest window'} ${Math.round(100 - w.usedPercent)}% left (checked ${Math.floor((now - w.observedAt) / 60000)} min ago)` : 'usage unknown';
     reasons.push(`${size[0].toUpperCase() + size.slice(1)} task. ${best.candidate.label} · ${best.model}: ${available[0] === best ? 'first available choice' : 'more available headroom'}; ${usage}.`);
+    if (balanced.length > 1 && Object.keys(assignmentCounts).length) reasons[0] += ' Work spread across accounts within 10 points of the best measured usage.';
   } else warnings.push('No preferred implementer is available.');
   const reviewBase = selectedImplementer ? candidates.find(c => c.id === selectedImplementer) : best?.candidate;
-  const pool = candidates.filter(c => c.id !== reviewBase?.id && c.installed !== false && c.signedIn !== false && !room(c.id).blocked);
+  let pool = candidates.filter(c => c.id !== reviewBase?.id && c.installed !== false && c.signedIn !== false && !room(c.id).blocked);
+  if (preferDifferentVendor && pool.some(c => c.provider !== reviewBase?.provider)) pool = pool.filter(c => c.provider !== reviewBase?.provider);
   const preferred = rules.defaultReviewer, match = preferred && pool.find(c => c.id === preferred.accountId);
   if (match && !rules.excludedModels.includes(preferred.model)) { reviewer = { ...preferred }; reasons.push(`${match.label}: default reviewer.`); }
   else if (pool.length && reviewBase) {
     const openCodeModel = ['opencode-go/gpt-6-luna', 'opencode-go/kimi-k3.1-pro', 'opencode/mimo-v2.6-flash-free'].find(model => !rules.excludedModels.includes(model));
     const different = pool.filter(c => c.provider !== reviewBase.provider && (c.provider !== 'opencode' || openCodeModel));
-    const nonClaude = different.filter(c => c.provider !== 'claude');
-    if (different.length) { try { const picked = pickReviewer({ candidates: nonClaude.length ? nonClaude : different, limits, callerProvider: reviewBase.provider, now }); reviewer = { accountId: picked.choice.id, model: picked.choice.provider === 'opencode' ? openCodeModel : '' }; reasons.push(picked.why); } catch {} }
+    const eligible = different.length ? different : preferDifferentVendor ? pool.filter(c => c.provider !== 'opencode' || openCodeModel) : [];
+    const nonClaude = eligible.filter(c => c.provider !== 'claude');
+    if (eligible.length) { try { const picked = pickReviewer({ candidates: nonClaude.length ? nonClaude : eligible, limits, callerProvider: reviewBase.provider, now }); reviewer = { accountId: picked.choice.id, model: picked.choice.provider === 'opencode' ? openCodeModel : '' }; reasons.push(picked.why); } catch {} }
   }
   if (!reviewer) warnings.push('No independent reviewer is available.');
   return { implementer, reviewer, reasons, warnings };

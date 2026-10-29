@@ -611,6 +611,8 @@ app.whenReady().then(() => guardStartup(async () => {
         }
         case 'tasks.candidates': return { ok: true, value: tasks.choices(payload?.implementer, payload || {}) };
         case 'tasks.start': return { ok: true, value: await tasks.start(payload) };
+        case 'tasks.approvePlan': return { ok: true, value: await tasks.approvePlan(payload) };
+        case 'tasks.resume': return { ok: true, value: await tasks.resume(payload?.id) };
         case 'tasks.stop': return { ok: true, value: await tasks.stop(payload?.id) };
         case 'tasks.accept': return { ok: true, value: await tasks.accept(payload?.id) };
         case 'tasks.list': await tasks.refresh(); return { ok: true, value: tasks.snapshot() };

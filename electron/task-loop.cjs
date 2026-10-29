@@ -10,10 +10,15 @@ const { permitted } = require('./code-panel.cjs');
 const { usageEnvironment } = require('./subscription-usage.cjs');
 const { collectChanges, reviewBrief, pickReviewer, reviewerLaunch, parseReply, progressStream, progressLog, appendLog, killTree, redactText, REVIEWERS, git: runGit } = require('./delegation.cjs');
 const { defaults: routingDefaults, estimateEffort, suggestAssignment } = require('./task-routing.cjs');
+const { SplitTasks, ACTIVE: RUNNING, SUB_ACTIVE, contractPrompt, planReport } = require('./task-plan.cjs');
 const TASK_PROVIDERS = [...REVIEWERS, 'opencode'];
+const PROCESS_STARTED_AT = Date.now() - process.uptime() * 1000;
+function processAlive(pid) {
+  try { process.kill(pid, 0); return true; } catch (error) { return error.code !== 'ESRCH'; }
+}
 
 function openCodeEvent(state, event) {
-  if (event.type === 'text' && typeof event.part?.text === 'string') state.text = event.part.text.slice(-6000);
+  if (event.type === 'text' && typeof event.part?.text === 'string') state.text = event.part.text.slice(-(state.maxText || 6000));
   if (event.type === 'step_finish') {
     const part = event.part || {}, tokens = part.tokens || {};
     state.length ||= part.reason === 'length';
@@ -30,7 +35,6 @@ function openCodeLaunch(executable, { model, workFolder, promptFile }) {
   return programLaunch(executable, ['run', '-m', model, '--dir', workFolder, '--format', 'json', '-f', promptFile, 'Read the attached file and follow it.']);
 }
 
-const RUNNING = new Set(['implementing', 'checking', 'reviewing']);
 const REFRESHABLE = new Set(['passed', 'needs-you']), REFRESH_LIMIT = 2, MAX_HISTORY = 20, VERIFICATION_AGE = 7 * 24 * 60 * 60_000;
 class ProviderError extends Error {}
 class CheckLaunchError extends Error {}
@@ -85,33 +89,42 @@ function killAndWait(child, kill, timeoutMs) {
 }
 
 class TaskLoop extends EventEmitter {
-  constructor(root, { candidates = () => [], repositories = () => [], getLimits = () => [], getSettings = () => ({}), environment = () => ({}), saveResult, spawnProcess = spawn, run = execFile, now = Date.now, killProcess = killTree, platform = process.platform, stopTimeoutMs = 2000 } = {}) {
+  constructor(root, { candidates = () => [], repositories = () => [], getLimits = () => [], getSettings = () => ({}), environment = () => ({}), saveResult, spawnProcess = spawn, run = execFile, now = Date.now, killProcess = killTree, platform = process.platform, stopTimeoutMs = 2000, processStartedAt = PROCESS_STARTED_AT, isProcessAlive = processAlive } = {}) {
     super();
-    Object.assign(this, { root, candidates, repositories, getLimits, getSettings, environment, saveResult, spawnProcess, run, now, killProcess, platform, stopTimeoutMs });
+    Object.assign(this, { root, candidates, repositories, getLimits, getSettings, environment, saveResult, spawnProcess, run, now, killProcess, platform, stopTimeoutMs, processStartedAt, isProcessAlive });
     this.dir = path.join(root, 'tasks'); this.jobs = new Map(); this.children = new Map(); this.cancellers = new Map(); this.pending = new Map(); this.refreshing = new Map(); this.refreshedAt = new Map(); this.reserved = new Set(); this.records = new Map();
     this.fileCache = new Map(); this.cancelling = new Set(); this.cancellations = new Map();
+    this.split = new SplitTasks(this); this.providerSlots = 0; this.providerQueue = []; this.unconfirmed = new Map();
     fs.mkdirSync(this.dir, { recursive: true });
     for (const file of fs.readdirSync(this.dir).filter(file => /^[\w-]+\.json$/.test(file))) {
       const job = readJson(path.join(this.dir, file), null);
       if (!job?.id || path.basename(file, '.json') !== job.id) continue;
+      // Older task files have no recording time. Their PIDs came from an earlier
+      // app instance and cannot identify a process started by this instance.
+      for (const item of [job, ...(job.subtasks || [])]) if (Number.isInteger(item.processPid) && !Number.isFinite(item.processRecordedAt)) item.processRecordedAt = 0;
       this.jobs.set(job.id, job);
-      if (RUNNING.has(job.state) || job.rebuildReport) {
+      if (RUNNING.has(job.state) || job.rebuildReport || job.subtasks?.some(sub => SUB_ACTIVE.has(sub.state))) {
         if (RUNNING.has(job.state) || !job.finishedAt) job.finishedAt = this.now();
         job.state = 'interrupted'; job.error = 'Paddock closed before this task finished.';
         const round = job.rounds.at(-1), step = round && [round.implement, round.check, round.review].find(step => step?.state === 'running');
         if (step) { step.state = 'interrupted'; step.elapsedMs = Math.max(0, job.finishedAt - step.startedAt); }
         if (round) round.elapsedMs = Math.max(0, job.finishedAt - round.startedAt);
+        if (job.split && job.runStartedAt) { job.activeElapsedMs = (job.activeElapsedMs || 0) + Math.max(0, Math.min(this.now(), job.deadlineAt || this.now()) - job.runStartedAt); delete job.runStartedAt; }
+        this.interruptSteps(job, 'interrupted');
         job.unresolved = [...new Set([...(job.unresolved || []), job.error])]; this.persist(job);
-        const recovered = Promise.resolve().then(() => this.capture(job, { final: true })).catch(() => { job.diffError = 'The interrupted task diff could not be read.'; })
+        const recovered = Promise.resolve().then(async () => {
+          for (const sub of job.subtasks || []) if (sub.workFolder) await this.capture(sub, { final: true });
+          return this.capture(job, { final: true });
+        }).catch(() => { job.diffError = 'The interrupted task diff could not be read.'; })
           .then(() => { if (!this.closing) { job.rebuildReport = false; this.changed(job); return this.record(job); } }).finally(() => this.pending.delete(job.id));
         this.pending.set(job.id, recovered);
       }
     }
   }
-  choices(implementerId, { title = '', criteria = '', size } = {}) {
+  choices(implementerId, { title = '', criteria = '', size, split = false } = {}) {
     const accounts = this.candidates().filter(choice => TASK_PROVIDERS.includes(choice.provider));
     const estimate = estimateEffort({ title, criteria });
-    const assignment = suggestAssignment({ size: ['small', 'medium', 'large'].includes(size) ? size : estimate.size, candidates: accounts, limits: this.getLimits(), rules: this.getSettings().routing || routingDefaults, now: this.now(), selectedImplementer: implementerId });
+    const assignment = suggestAssignment({ size: split ? 'large' : ['small', 'medium', 'large'].includes(size) ? size : estimate.size, candidates: accounts, limits: this.getLimits(), rules: this.getSettings().routing || routingDefaults, now: this.now(), selectedImplementer: implementerId, preferDifferentVendor: split });
     const implementer = accounts.find(choice => choice.id === implementerId) || accounts.find(choice => choice.id === assignment.implementer?.accountId);
     let suggestion = null, why = '';
     const reviewers = accounts.filter(choice => choice.id !== implementer?.id);
@@ -125,14 +138,46 @@ class TaskLoop extends EventEmitter {
     return { implementers: accounts.map(publicChoice), reviewers: reviewers.map(publicChoice), allReviewers: accounts.map(publicChoice), suggestion, why, repos: this.repositories(), estimate, assignment };
   }
   persist(job) { atomicJson(path.join(this.dir, `${job.id}.json`), job); }
-  changed(job) { this.persist(job); this.emit('changed'); }
-  view({ baselineUntrackedState, baselineUntracked, ...job }) {
-    return structuredClone({ ...job, log: RUNNING.has(job.state) ? tail((job.log || []).join('\n'), 8000).split('\n') : [] });
+  changed(job) { this.persist(job.parentId ? this.jobs.get(job.parentId) : job); this.emit('changed'); }
+  assignment(raw, role) {
+    const account = this.candidates().find(choice => TASK_PROVIDERS.includes(choice.provider) && choice.id === raw?.accountId && choice.installed !== false && choice.signedIn !== false);
+    if (!account) throw new Error(`Choose an installed, signed-in ${role} account.`);
+    const model = input(raw.model ?? '', 120, 'a model');
+    if (model && (!/^[\w.:/-]{1,120}$/.test(model) || model.startsWith('-'))) throw new Error('Use a model name with letters, numbers, dots, colons, slashes, underscores or dashes.');
+    if (account.provider === 'opencode' && !/^(?:opencode-go\/[\w.-]+|opencode\/[\w.-]+-free)$/.test(model)) throw new Error('Choose an OpenCode Go or OpenCode free model.');
+    const effort = raw.effort ?? '';
+    if (effort && (role !== 'implementer' || account.provider !== 'codex' || !['minimal', 'low', 'medium', 'high', 'xhigh'].includes(effort))) throw new Error('Choose a supported Codex reasoning effort: minimal, low, medium, high or xhigh.');
+    return { accountId: account.id, provider: account.provider, label: account.label, model, ...(role === 'implementer' ? { effort } : {}) };
+  }
+  ensureAvailable(job) {
+    if (this.closing) throw new Error('Paddock is closing. Resume after reopening.');
+    const active = [...this.jobs.values()].filter(other => other.id !== job.id && (RUNNING.has(other.state) || other.state === 'plan-ready' || this.cancelling.has(other.id)));
+    if (this.reserved.has(job.repoKey) || active.some(other => other.repoKey === job.repoKey)) throw new Error('A task is already running for this repository.');
+    if (this.reserved.size + active.length >= 2) throw new Error('Two tasks are already running. Wait for one to finish.');
+  }
+  reviewFindings(reply) { return findings(reply); }
+  approvePlan(args) { return this.split.approve(args); }
+  resume(id) { return this.split.resume(id); }
+  startSplit(job, planning, command = job.checks) {
+    const remaining = Math.max(0, job.timeLimitMinutes * 60_000 - (job.activeElapsedMs || 0)), started = this.now();
+    job.deadlineAt = started + remaining;
+    job.runStartedAt = started; this.persist(job);
+    const timer = setTimeout(() => { if (RUNNING.has(job.state)) this.cancel(job, 'needs-you', 'The task reached its time limit.').catch(() => {}); }, remaining); timer.unref?.();
+    const running = Promise.resolve().then(() => {
+      if (!RUNNING.has(job.state)) return;
+      if (!remaining) return this.finish(job, 'needs-you', 'The task reached its time limit.');
+      return planning ? this.split.plan(job) : this.split.build(job, command);
+    }).catch(error => this.finish(job, error instanceof ProviderError ? 'failed' : 'needs-you', redactText(error.message)))
+      .finally(() => { clearTimeout(timer); job.activeElapsedMs = (job.activeElapsedMs || 0) + Math.max(0, this.now() - started); delete job.runStartedAt; this.persist(job); if (this.pending.get(job.id) === running) this.pending.delete(job.id); });
+    this.pending.set(job.id, running);
+  }
+  view({ baselineUntrackedState, baselineUntracked, processPid, processRecordedAt, ...job }) {
+    return structuredClone({ ...job, subtasks: job.subtasks?.map(({ baselineUntrackedState, baselineUntracked, processPid, processRecordedAt, ...sub }) => ({ ...sub, log: [] })), log: RUNNING.has(job.state) ? tail([...(job.log || []), ...(job.subtasks || []).flatMap(sub => (sub.log || []).slice(-10).map(line => `${sub.subtaskId}: ${line}`))].join('\n'), 8000).split('\n') : [] });
   }
   snapshot() {
     this.refresh().catch(() => {});
     const jobs = [...this.jobs.values()].sort((a, b) => b.startedAt - a.startedAt);
-    const active = job => RUNNING.has(job.state) || this.cancelling.has(job.id);
+    const active = job => RUNNING.has(job.state) || job.state === 'plan-ready' || this.cancelling.has(job.id);
     return [...jobs.filter(active), ...jobs.filter(job => !active(job)).slice(0, MAX_HISTORY)]
       .sort((a, b) => b.startedAt - a.startedAt).map(job => this.view(job));
   }
@@ -141,22 +186,16 @@ class TaskLoop extends EventEmitter {
     if (this.closing) throw new Error('Paddock is closing. Start the task after reopening.');
     const title = input(args.title, 200, 'a task title', true), criteria = input(args.criteria, 12000, 'acceptance criteria', true);
     const checks = input(args.checks ?? '', 4000, 'a checks command');
-    const workflow = args.workflow ?? 'current', maxRounds = args.maxRounds ?? 3, timeLimitMinutes = args.timeLimitMinutes ?? 30;
+    if (args.split !== undefined && typeof args.split !== 'boolean') throw new Error('Split into subtasks must be on or off.');
+    const split = args.split === true, workflow = split ? 'worktree' : args.workflow ?? 'current', maxRounds = args.maxRounds ?? 3, timeLimitMinutes = args.timeLimitMinutes ?? 30;
+    if (split && checks !== redactText(checks)) throw new Error('Use a checks command that can be saved without private text. Read credentials from the environment.');
     if (!['current', 'worktree'].includes(workflow)) throw new Error('Choose Current branch or Separate worktree.');
     if (!Number.isInteger(maxRounds) || maxRounds < 1 || maxRounds > 5) throw new Error('Use 1 to 5 rounds.');
     if (!Number.isInteger(timeLimitMinutes) || timeLimitMinutes < 5 || timeLimitMinutes > 120) throw new Error('Use a time limit of 5 to 120 minutes.');
-    const accounts = this.candidates().filter(choice => TASK_PROVIDERS.includes(choice.provider));
-    const assignment = (raw, role) => {
-      const account = accounts.find(choice => choice.id === raw?.accountId);
-      if (!account) throw new Error(`Choose an installed, signed-in ${role} account.`);
-      const model = input(raw.model ?? '', 120, 'a model');
-      if (model && (!/^[\w.:/-]{1,120}$/.test(model) || model.startsWith('-'))) throw new Error('Use a model name with letters, numbers, dots, colons, slashes, underscores or dashes.');
-      if (account.provider === 'opencode' && !/^(?:opencode-go\/[\w.-]+|opencode\/[\w.-]+-free)$/.test(model)) throw new Error('Choose an OpenCode Go or OpenCode free model.');
-      const effort = raw.effort ?? '';
-      if (effort && (role !== 'implementer' || account.provider !== 'codex' || !['minimal', 'low', 'medium', 'high', 'xhigh'].includes(effort))) throw new Error('Choose a supported Codex reasoning effort: minimal, low, medium, high or xhigh.');
-      return { accountId: account.id, provider: account.provider, label: account.label, model, ...(role === 'implementer' ? { effort } : {}) };
-    };
-    const implementer = assignment(args.implementer, 'implementer'), reviewer = args.reviewer == null ? null : assignment(args.reviewer, 'reviewer');
+    const suggested = split ? this.choices(args.planner?.accountId ?? args.implementer?.accountId, { split: true }).assignment : null;
+    const implementer = this.assignment(split ? args.planner ?? args.implementer ?? suggested.implementer : args.implementer, 'implementer');
+    const reviewerInput = args.reviewer === undefined && split ? suggested.reviewer : args.reviewer;
+    const reviewer = reviewerInput == null ? null : this.assignment(reviewerInput, 'reviewer');
     if (reviewer?.accountId === implementer.accountId) throw new Error('Choose a reviewer account different from the implementer.');
     if (typeof args.repo !== 'string' || !path.isAbsolute(args.repo) || !this.repositories().some(choice => folderKey(choice.path) === folderKey(args.repo))) throw new Error('Choose a project folder or an open local console folder.');
     let repo, repoKey;
@@ -167,7 +206,7 @@ class TaskLoop extends EventEmitter {
     } catch { throw new Error('Choose a folder in a Git working tree with a commit.'); }
     if (folderKey(args.repo) !== folderKey(repo)) throw new Error('Select the Git repository root as the project or console folder. Subfolders cannot start tasks.');
     if (this.closing) throw new Error('Paddock is closing. Start the task after reopening.');
-    const active = [...this.jobs.values()].filter(job => RUNNING.has(job.state) || this.cancelling.has(job.id));
+    const active = [...this.jobs.values()].filter(job => RUNNING.has(job.state) || job.state === 'plan-ready' || this.cancelling.has(job.id));
     if (this.reserved.has(repoKey) || active.some(job => job.repoKey === repoKey)) throw new Error('A task is already running for this repository.');
     if (this.reserved.size + active.length >= 2) throw new Error('Two tasks are already running. Wait for one to finish.');
     this.reserved.add(repoKey);
@@ -188,11 +227,13 @@ class TaskLoop extends EventEmitter {
       const suggestion = this.choices(implementer.accountId);
       const job = { id, repo, repoKey, workFolder, title: redactText(title), criteria: redactText(criteria), checks: redactText(checks), workflow, branch, sourceRevision, baseline, baselineUntracked, baselineUntrackedState,
         implementer, reviewer, why: { implementer: 'Selected by you.', reviewer: reviewer ? reviewer.accountId === suggestion.suggestion ? `Selected by you. Suggested: ${suggestion.why}` : 'Selected by you.' : 'No review selected.' },
-        maxRounds, timeLimitMinutes, startedAt: this.now(), finishedAt: null, state: 'implementing', rounds: [], unresolved: [], log: [], error: '', fingerprint: null, diffStat: '', finalDiff: '', resultId: null };
+        maxRounds, timeLimitMinutes, startedAt: this.now(), finishedAt: null, state: split ? 'planning' : 'implementing', rounds: [], unresolved: [], log: [], error: '', fingerprint: null, diffStat: '', finalDiff: '', resultId: null,
+        ...(split ? { split: true, planner: implementer, planReviewer: reviewer, planRounds: [], subtasks: [], parallelLimit: 2, activeElapsedMs: 0, integrationHead: sourceRevision } : {}) };
       this.jobs.set(id, job); this.reserved.delete(repoKey); this.changed(job);
       if (this.closing) { await this.finish(job, 'interrupted', 'Paddock closed before this task finished.'); return this.view(job); }
       // The command is held separately while running; agents only receive check output.
-      this.pending.set(id, this.runTask(job, checks).catch(error => this.finish(job, error instanceof ProviderError ? 'failed' : 'needs-you', error instanceof ProviderError ? redactText(error.message) : repositoryError(error))).finally(() => this.pending.delete(id)));
+      if (split) this.startSplit(job, true, checks);
+      else this.pending.set(id, this.runTask(job, checks).catch(error => this.finish(job, error instanceof ProviderError ? 'failed' : 'needs-you', error instanceof ProviderError ? redactText(error.message) : repositoryError(error))).finally(() => this.pending.delete(id)));
       return this.view(job);
     } finally { this.reserved.delete(repoKey); }
   }
@@ -233,6 +274,7 @@ class TaskLoop extends EventEmitter {
     const diff = await this.git(job.workFolder, ['diff', '--no-color', '--no-ext-diff', '--no-textconv', '--binary', job.baseline, '--']);
     const files = (await this.git(job.workFolder, ['ls-files', '-z', '--others', '--exclude-standard'])).split('\0').filter(Boolean).sort();
     const hash = createHash('sha256').update(diff);
+    if (job.split) { hash.update(await this.git(job.workFolder, ['rev-parse', 'HEAD'])); hash.update(await this.git(job.workFolder, ['branch', '--show-current'])); }
     for (const file of files) {
       const stamp = await this.fileStamp(job.workFolder, file);
       if (stamp) hash.update(JSON.stringify([file, stamp]));
@@ -244,30 +286,41 @@ class TaskLoop extends EventEmitter {
     const confirmed = job.rounds.flatMap(round => round.review?.findings || []);
     return [
       `Repository task: ${job.title}`, `Acceptance criteria:\n${job.criteria}`, `Source revision: ${job.sourceRevision}`, `Workflow: ${job.workflow}; work folder: ${job.workFolder}`,
+      job.split || job.parentId ? contractPrompt(job) : '',
       `Files changed so far by this task:\n${[...changes.files, ...changes.untracked].join('\n') || '(none)'}`,
       failures.length ? `Previous failed checks:\n${tail(failures.join('\n\n'), 4000)}` : '',
       confirmed.length ? `Confirmed review findings (verify each against the current code and fix remaining problems):\n${confirmed.join('\n')}` : '',
+      job.ownershipFindings?.length ? `Ownership findings:\n${job.ownershipFindings.join('\n')}` : '',
+      job.parentId && job.unresolved?.length ? `Previous unresolved items:\n${job.unresolved.join('\n')}` : '',
       'Implement the task and acceptance criteria in this folder. Preserve pre-existing work. Do not commit. Do not run Git commands that change state (including stash, reset, checkout, switch, clean, add and worktree). Do not change the checks command or task assignments. Reply with a short summary. Your summary does not determine whether the task passes.'
     ].filter(Boolean).join('\n\n');
   }
-  async runTask(job, command) {
-    const timer = setTimeout(() => this.cancel(job, 'needs-you', 'The task reached its time limit.').catch(() => {}), job.timeLimitMinutes * 60_000);
-    timer.unref?.();
+  async runTask(job, command, { verifyFirst = false, additionalRounds = false, manageTime = true } = {}) {
+    const timer = manageTime ? setTimeout(() => this.cancel(job, 'needs-you', 'The task reached its time limit.').catch(() => {}), job.timeLimitMinutes * 60_000) : null;
+    timer?.unref?.();
     try {
-      for (let number = 1; number <= job.maxRounds && RUNNING.has(job.state); number++) {
-        if (this.now() - job.startedAt >= job.timeLimitMinutes * 60_000) return await this.finish(job, 'needs-you', 'The task reached its time limit.');
+      const first = job.rounds.length + 1, last = additionalRounds ? job.rounds.length + job.maxRounds : job.maxRounds;
+      for (let number = first; number <= last && RUNNING.has(job.state); number++) {
+        if (this.now() >= (job.deadlineAt ?? job.startedAt + job.timeLimitMinutes * 60_000)) return await this.finish(job, 'needs-you', 'The task reached its time limit.');
         const changes = await this.changes(job);
         if (!RUNNING.has(job.state)) return;
         const brief = this.prompt(job, changes);
-        const round = { number, startedAt: this.now(), elapsedMs: null, implement: { ...job.implementer, state: 'running', startedAt: this.now(), elapsedMs: null, usage: null }, check: null, review: null };
-        job.rounds.push(round); job.state = 'implementing'; this.changed(job);
-        const implemented = await this.provider(job, round.implement, brief, false);
-        if (!RUNNING.has(job.state)) return;
-        round.implement.summary = tail(implemented.summary, 4000); round.implement.state = 'done'; this.changed(job);
+        const round = { number, startedAt: this.now(), elapsedMs: null, implement: null, check: null, review: null };
+        job.rounds.push(round);
+        if (!(verifyFirst && number === first)) {
+          round.implement = { ...job.implementer, state: 'running', startedAt: this.now(), elapsedMs: null, usage: null };
+          job.state = 'implementing'; this.changed(job);
+          const implemented = await this.provider(job, round.implement, brief, false);
+          if (!RUNNING.has(job.state)) return;
+          round.implement.summary = tail(implemented.summary, 4000); round.implement.state = 'done'; this.changed(job);
+          if ((job.split || job.parentId) && /CONTRACT_CHANGE_REQUIRED/i.test(implemented.summary || '')) return await this.finish(job, 'needs-you', 'The implementer requested a contract change. Review the plan before continuing.');
+          if (job.parentId) await this.split.ownership(job, round);
+        }
         const checkedTree = await this.fingerprint(job);
+        const checkedHead = job.split ? (await this.git(job.workFolder, ['rev-parse', 'HEAD'])).trim() : undefined;
         if (!RUNNING.has(job.state)) return;
         if (command) {
-          job.state = 'checking'; round.check = { state: 'running', startedAt: this.now(), elapsedMs: null, exitCode: null, output: '', fingerprint: checkedTree }; this.changed(job);
+          job.state = 'checking'; round.check = { state: 'running', startedAt: this.now(), elapsedMs: null, exitCode: null, output: '', fingerprint: checkedTree, head: checkedHead }; this.changed(job);
           let result;
           try { result = await this.process(job, checkLaunch(command, this.platform), { environment: this.checkEnvironment(), check: true, step: round.check, timeoutMs: 15 * 60_000 }); }
           catch (error) {
@@ -279,16 +332,16 @@ class TaskLoop extends EventEmitter {
           if (!RUNNING.has(job.state)) return;
           const outcome = result.code === 0 && !result.timedOut ? 'passed' : 'failed';
           Object.assign(round.check, { state: outcome, outcome, exitCode: result.code, output: result.output, timedOut: result.timedOut }); this.changed(job);
-        } else round.check = { state: 'not-set', elapsedMs: 0, fingerprint: checkedTree };
+        } else round.check = { state: 'not-set', elapsedMs: 0, fingerprint: checkedTree, head: checkedHead };
         if (job.reviewer) {
           const reviewTree = await this.fingerprint(job);
           let reviewChanges;
           try { reviewChanges = await this.changes(job, 150_000); }
           catch (error) { return await this.finish(job, 'needs-you', repositoryError(error)); }
           if (!RUNNING.has(job.state)) return;
-          job.state = 'reviewing'; round.review = { ...job.reviewer, state: 'running', startedAt: this.now(), elapsedMs: null, usage: null, findings: [], fingerprint: reviewTree };
+          job.state = 'reviewing'; round.review = { ...job.reviewer, state: 'running', startedAt: this.now(), elapsedMs: null, usage: null, findings: [], fingerprint: reviewTree, head: job.split ? (await this.git(job.workFolder, ['rev-parse', 'HEAD'])).trim() : undefined };
           this.changed(job);
-          const review = await this.provider(job, round.review, reviewBrief({ focus: `Task: ${job.title}\nAcceptance criteria:\n${job.criteria}\nReport only confirmed problems, with file and line evidence.`, changes: reviewChanges }), true);
+          const review = await this.provider(job, round.review, reviewBrief({ focus: `Task: ${job.title}\nAcceptance criteria:\n${job.criteria}${job.split || job.parentId ? '\n' + contractPrompt(job) : ''}\nReport only confirmed problems, with file and line evidence.`, changes: reviewChanges }), true);
           if (!RUNNING.has(job.state)) return;
           Object.assign(round.review, { state: 'done', verdict: review.verdict, findings: findings(review), text: tail(review.text, 6000) });
           if (round.review.findings.length && round.review.verdict === 'approve') round.review.verdict = 'changes-requested';
@@ -304,8 +357,9 @@ class TaskLoop extends EventEmitter {
         if (!RUNNING.has(job.state)) return;
         this.changed(job);
         if (!job.unresolved.length) return await this.finish(job, 'passed');
-        if (number === job.maxRounds) return await this.finish(job, 'needs-you');
+        if (number === last) return await this.finish(job, 'needs-you');
       }
+      if (RUNNING.has(job.state)) await this.finish(job, 'needs-you', 'The task used its remaining rounds.');
     } catch (error) {
       if (RUNNING.has(job.state)) await this.finish(job, error instanceof ProviderError ? 'failed' : 'needs-you', error instanceof ProviderError ? redactText(error.message) : repositoryError(error));
     } finally { clearTimeout(timer); }
@@ -315,8 +369,10 @@ class TaskLoop extends EventEmitter {
   }
   async provider(job, step, brief, review) {
     const outFile = path.join(this.dir, `${job.id}.reply.md`);
-    let tempDir;
+    let tempDir, release;
     try {
+      release = await this.acquireProvider(job);
+      if (!RUNNING.has(job.state)) return {};
       const choice = this.candidates().find(choice => choice.id === step.accountId);
       if (!choice?.executable) throw new ProviderError(`${step.label} is no longer installed or signed in.`);
       const env = { ...this.environment(step.accountId, step.provider) };
@@ -344,7 +400,7 @@ class TaskLoop extends EventEmitter {
         if (parsed.length && before === await this.fingerprint(job)) throw new ProviderError('The model hit its output limit.');
         const text = redactText(parsed.text, env).trim();
         if (review) {
-          if (!text) throw new ProviderError(`${step.label} returned no valid review answer.`);
+          if (!text && step.role !== 'planner') throw new ProviderError(`${step.label} returned no valid review answer.`);
           return { text, verdict: /VERDICT:\s*approve\b/i.test(text) ? 'approve' : /VERDICT:\s*changes-requested/i.test(text) ? 'changes-requested' : 'unclear', usage: parsed.usage };
         }
         return { summary: text || 'No summary reported.' };
@@ -353,7 +409,7 @@ class TaskLoop extends EventEmitter {
         try {
           const reply = parseReply(step.provider, result.stdout, outFile);
           return { ...reply, text: redactText(reply.text, env) };
-        } catch { throw new ProviderError(`${step.label} returned no valid review answer.`); }
+        } catch { if (step.role === 'planner') return { text: '', verdict: 'unclear' }; throw new ProviderError(`${step.label} returned no valid review answer.`); }
       }
       if (step.provider === 'claude') {
         try { return { summary: redactText(parseReply('claude', result.stdout).text, env) }; }
@@ -362,12 +418,33 @@ class TaskLoop extends EventEmitter {
       if (step.provider === 'kiro') return { summary: tail(redactText(result.stdout, env).trim(), 4000) || 'No summary reported.' };
       return { summary: result.summary || 'No summary reported.' };
     } catch (error) { throw error instanceof ProviderError ? error : new ProviderError(`${step.label} could not complete the request.`); }
-    finally { try { fs.unlinkSync(outFile); } catch {} if (tempDir) fs.rmSync(tempDir, { recursive: true, force: true }); }
+    finally { release?.(); try { fs.unlinkSync(outFile); } catch {} if (tempDir) fs.rmSync(tempDir, { recursive: true, force: true }); }
+  }
+  acquireProvider(job) {
+    return new Promise(resolve => {
+      const grant = () => {
+        this.providerSlots++;
+        let released = false;
+        resolve(() => {
+          if (released) return; released = true;
+          const free = () => { this.providerSlots--; this.providerQueue.shift()?.grant(); };
+          const lingering = this.unconfirmed.get(job.id);
+          if (lingering) lingering.once('close', free); else free();
+        });
+      };
+      if (this.providerSlots < 4) grant(); else this.providerQueue.push({ job, grant, cancel: () => resolve(() => {}) });
+    });
+  }
+  cancelProviderQueue(job) {
+    this.providerQueue = this.providerQueue.filter(item => {
+      if (item.job.id !== job.id && item.job.parentId !== job.id) return true;
+      item.cancel(); return false;
+    });
   }
   process(job, launch, { environment, brief = '', provider, check = false, step, timeoutMs } = {}) {
     return new Promise((resolve, reject) => {
       let child, finished = false, stdout = '', output = '', pending = '', summary = '', providerError = false, deadlineHit = false, exitSeen = false, stopping, timer, progressTimer;
-      const openCode = { text: '', length: false, usage: null };
+      const openCode = { text: '', length: false, usage: null, maxText: step?.role === 'planner' ? 64000 : 6000 };
       const decoder = new StringDecoder('utf8'), errDecoder = new StringDecoder('utf8');
       const privateEnvironment = check ? Object.fromEntries(Object.entries(environment).filter(([key]) => /token|secret|password|key/i.test(key))) : environment;
       const append = progressLog({ brief, environment, append: line => appendLog(job, line) });
@@ -392,6 +469,11 @@ class TaskLoop extends EventEmitter {
           if (event.type === 'item.completed' && event.item?.type === 'agent_message') summary = redactText(tail(event.item.text, 4000), environment);
         }
       };
+      const clearProcess = () => {
+        if (!Number.isInteger(child?.pid) || job.processPid !== child.pid) return;
+        delete job.processPid; delete job.processRecordedAt;
+        if (this.jobs.has(job.parentId || job.id)) this.changed(job);
+      };
       const complete = (error, code = null, timedOut = deadlineHit) => {
         if (finished) return; finished = true;
         clearTimeout(timer); clearTimeout(progressTimer); stream?.end();
@@ -399,6 +481,8 @@ class TaskLoop extends EventEmitter {
         if (check) output += last; else { stdout = tail(stdout + last, 2_000_000); consume(last + '\n'); }
         output = tail(redactText(output + errDecoder.end(), privateEnvironment), check ? 8000 : 4000);
         step.elapsedMs = this.now() - step.startedAt;
+        if (!error && child && !exitSeen) this.unconfirmed.set(job.id, child);
+        else clearProcess();
         this.children.delete(job.id); this.cancellers.delete(job.id);
         if (error) { step.state = 'failed'; reject(error); } else resolve({ code, timedOut, stdout, output, summary, openCode, providerError, exitConfirmed: exitSeen });
       };
@@ -409,6 +493,7 @@ class TaskLoop extends EventEmitter {
       };
       try {
         child = this.spawnProcess(launch.executable, launch.args, { cwd: job.workFolder, env: environment, windowsHide: true, shell: false, detached: this.platform !== 'win32', stdio: ['pipe', 'pipe', 'pipe'] });
+        if (Number.isInteger(child.pid)) { job.processPid = child.pid; job.processRecordedAt = this.now(); if (this.jobs.has(job.parentId || job.id)) this.changed(job); }
         this.children.set(job.id, child); this.cancellers.set(job.id, stopChild);
         child.stdout?.on('data', chunk => {
           if (finished) return;
@@ -419,7 +504,7 @@ class TaskLoop extends EventEmitter {
         });
         child.stderr?.on('data', chunk => { if (!finished) output = tail(output + (typeof chunk === 'string' ? chunk : errDecoder.write(chunk)), check ? 8000 : 4000); });
         child.once('error', () => complete(check ? new CheckLaunchError('The checks command could not start.') : new ProviderError(`${step.label} could not start.`)));
-        child.once('close', code => { exitSeen = true; complete(null, code); });
+        child.once('close', code => { exitSeen = true; this.unconfirmed.delete(job.id); clearProcess(); complete(null, code); });
         child.stdin?.on('error', () => {}); child.stdin?.end(brief);
         if (timeoutMs) { timer = setTimeout(() => { deadlineHit = true; stopChild({ wait: true }); }, timeoutMs); timer.unref?.(); }
       } catch { complete(check ? new CheckLaunchError('The checks command could not start.') : new ProviderError(`${step.label} could not start.`)); if (child) this.killProcess(child); }
@@ -430,9 +515,11 @@ class TaskLoop extends EventEmitter {
     const check = rounds.map(round => round.check).find(step => step?.outcome || ['failed', 'stale'].includes(step?.state));
     const review = rounds.map(round => round.review).find(step => step?.verdict || step?.state === 'stale');
     if (check?.state === 'failed' || check?.outcome === 'failed') items.push(check.timedOut ? 'Checks timed out after 15 minutes.' : `Checks failed (exit ${check.exitCode ?? 'unknown'}).`);
-    if (check?.state === 'stale') items.push('Checks are stale. Files changed during or after verification.');
+    if (check?.state === 'stale') items.push(job.split ? 'Checks are out of date. Files changed during or after verification.' : 'Checks are stale. Files changed during or after verification.');
     if (review?.state === 'stale') items.push('Review is stale. Files changed during or after verification.');
     if (review?.verdict && review.verdict !== 'approve') items.push(...(review.findings.length ? review.findings : ['The review did not approve the changes.']));
+    items.push(...(job.ownershipFindings || []));
+    if (job.split) for (const sub of job.subtasks || []) if (sub.state !== 'merged') items.push(...(sub.unresolved || []).map(item => `${sub.subtaskId}: ${item}`));
     return items;
   }
   async capture(job, { final = false, apply = true } = {}) {
@@ -470,8 +557,16 @@ class TaskLoop extends EventEmitter {
       round.elapsedMs = job.finishedAt - round.startedAt;
       for (const step of [round.implement, round.check, round.review]) if (step?.state === 'running') { step.state = state; step.elapsedMs = job.finishedAt - step.startedAt; }
     }
+    for (const planRound of job.planRounds || []) for (const step of [planRound.planner, planRound.repair, planRound.review]) if (step?.state === 'running') { step.state = state; step.elapsedMs = job.finishedAt - step.startedAt; }
     job.unresolved = [...new Set([...this.unresolved(job), ...(error ? [error] : [])])];
     this.changed(job);
+  }
+  interruptSteps(job, state) {
+    for (const round of job.planRounds || []) for (const step of [round.planner, round.repair, round.review]) if (step?.state === 'running') { step.state = state; step.elapsedMs = this.now() - step.startedAt; }
+    for (const sub of job.subtasks || []) if (SUB_ACTIVE.has(sub.state) || sub.state === 'passed' && !sub.mergedAt) {
+      if (sub.runStartedAt) { sub.elapsedMs = (sub.elapsedMs || 0) + Math.max(0, this.now() - sub.runStartedAt); delete sub.runStartedAt; }
+      this.settle(sub, state, state === 'interrupted' ? 'Paddock closed before this subtask finished.' : 'Stopped. All work was kept.');
+    }
   }
   async finish(job, state, error = '') {
     if (!RUNNING.has(job.state)) return;
@@ -486,19 +581,22 @@ class TaskLoop extends EventEmitter {
       job.unresolved = [...new Set([...job.unresolved, job.diffError])];
     }
     if (this.closing) return;
-    this.changed(job); await this.record(job);
+    this.changed(job); if (!job.parentId) await this.record(job);
   }
   cancel(job, state, error) {
     if (this.cancellations.has(job?.id)) return this.cancellations.get(job.id);
-    if (!job || !RUNNING.has(job.state)) return Promise.resolve();
+    if (!job || !RUNNING.has(job.state) && job.state !== 'plan-ready') return Promise.resolve();
     this.cancelling.add(job.id); this.settle(job, state, error);
-    const halted = this.cancellers.get(job.id)?.({ wait: true });
-    const finished = Promise.resolve(halted).then(async closed => {
+    this.interruptSteps(job, state === 'interrupted' ? 'interrupted' : 'stopped'); this.cancelProviderQueue(job);
+    const halted = [job, ...(job.subtasks || [])].map(item => this.cancellers.get(item.id)?.({ wait: true }));
+    const finished = Promise.all(halted).then(async closed => {
       if (this.closing) return;
-      if (closed === false) {
+      if (closed.includes(false)) {
         job.error += ' Process exit was not confirmed before the wait timed out.';
         job.unresolved = [...new Set([...job.unresolved, job.error])];
       }
+      if (job.split) await this.pending.get(job.id);
+      if (job.split) for (const sub of job.subtasks || []) if (sub.workFolder) try { await this.capture(sub, { final: true }); } catch { sub.diffError = 'The subtask diff could not be read.'; }
       job.finishedAt = this.now(); const round = job.rounds.at(-1); if (round) round.elapsedMs = job.finishedAt - round.startedAt;
       await this.finalize(job);
     }).finally(() => { this.cancelling.delete(job.id); this.cancellations.delete(job.id); });
@@ -515,7 +613,8 @@ class TaskLoop extends EventEmitter {
     for (const job of this.jobs.values()) if (RUNNING.has(job.state) || this.cancelling.has(job.id)) {
       job.rebuildReport = true;
       this.settle(job, 'interrupted', 'Paddock closed before this task finished.');
-      this.cancellers.get(job.id)?.();
+      this.interruptSteps(job, 'interrupted'); this.cancelProviderQueue(job);
+      for (const item of [job, ...(job.subtasks || [])]) this.cancellers.get(item.id)?.();
     }
   }
   refreshable(job) { return !this.closing && !this.cancelling.has(job?.id) && REFRESHABLE.has(job?.state) && !!job.fingerprint && !job.verificationExpired; }
@@ -575,6 +674,7 @@ class TaskLoop extends EventEmitter {
   report(job) {
     return [`# ${job.title}`, '', `Status: ${job.state}`, `Repository: ${job.repo}`, `Work folder: ${job.workFolder}`, `Workflow: ${job.workflow}${job.branch ? ` (${job.branch})` : ''}`, `Source revision: ${job.sourceRevision}`, `Baseline: ${job.baseline}`, `Checks command: ${job.checks || 'Not set'}`, `Rounds: ${job.rounds.length}/${job.maxRounds}. Time limit: ${job.timeLimitMinutes} minutes.`, '', '## Acceptance criteria', job.criteria,
       '', `Implementer: ${job.implementer.label} / ${job.implementer.model || 'CLI default'}. ${job.why.implementer}`, `Reviewer: ${job.reviewer ? `${job.reviewer.label} / ${job.reviewer.model || 'CLI default'}` : 'No review'}. ${job.why.reviewer}`, '',
+      ...planReport(job, usageText),
       ...job.rounds.flatMap(round => [`## Round ${round.number}`, `Elapsed: ${Math.round((round.elapsedMs || 0) / 1000)}s`, ...[['Implement', round.implement], ['Checks', round.check], ['Review', round.review]].flatMap(([name, step]) => !step ? [`${name}: not run`] : [
         `${name}: ${step.state}${step.label ? `; ${step.label} / ${step.model || 'CLI default'}` : ''}; ${Math.round((step.elapsedMs || 0) / 1000)}s${name === 'Checks' ? `; exit ${step.exitCode ?? 'not reported'}` : `; usage: ${usageText(step.usage)}`}`,
         step.summary || '', step.output ? `\n~~~text\n${step.output}\n~~~` : '', step.verdict ? `Verdict: ${step.verdict}` : '', ...(step.findings || [])

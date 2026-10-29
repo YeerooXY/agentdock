@@ -2,12 +2,13 @@ import './task-loop.css';
 
 export function taskLoopUI({ call, getState, getPage, escape: e, renderPage, toast, openResult }) {
   let choices = null, selected = '', showForm = false, loading = false, busy = false, error = '', detailStamp = '', listStamp = '', announcement = '', request = 0;
-  const draft = { repo: '', title: '', criteria: '', size: '', implementer: '', model: '', effort: '', reviewer: '', reviewerModel: '', checks: '', workflow: 'current', maxRounds: '3', timeLimitMinutes: '30' };
+  const draft = { repo: '', title: '', criteria: '', size: '', split: false, implementer: '', model: '', effort: '', reviewer: '', reviewerModel: '', checks: '', workflow: 'current', maxRounds: '3', timeLimitMinutes: '30' };
+  const planDrafts = new Map();
   const manual = { size: false, implementer: false, model: false, reviewer: false, reviewerModel: false };
   let choicesTimer;
-  const running = job => ['implementing', 'checking', 'reviewing'].includes(job.state);
+  const running = job => ['planning', 'reviewing-plan', 'building', 'implementing', 'checking', 'reviewing'].includes(job.state);
   const jobs = () => getState()?.tasks || [];
-  const status = value => ({ 'needs-you': 'Needs you', 'not-set': 'Not set', 'changes-requested': 'Changes requested', approve: 'Approved', unclear: 'No clear verdict', done: 'Done' }[value] || value?.replace(/^./, letter => letter.toUpperCase()) || 'Not run');
+  const status = value => ({ 'needs-you': 'Needs you', 'not-set': 'Not set', 'plan-ready': 'Plan ready', 'reviewing-plan': 'Reviewing plan', 'changes-requested': 'Changes requested', approve: 'Approved', unclear: 'No clear verdict', done: 'Done' }[value] || value?.replace(/^./, letter => letter.toUpperCase()) || 'Not run');
   const chip = value => `<span class="task-status" data-status="${e(value)}">${e(status(value))}</span>`;
   const elapsed = value => value == null ? 'Running' : `${Math.floor(value / 60000)}m ${Math.floor(value / 1000) % 60}s`;
   const count = value => value == null ? 'not reported' : Number(value).toLocaleString();
@@ -24,19 +25,21 @@ export function taskLoopUI({ call, getState, getPage, escape: e, renderPage, toa
     const unavailable = !choices.repos.length || !choices.implementers.length;
     return `<form id="task-form" class="surface task-form" aria-labelledby="task-form-title"><h2 id="task-form-title" tabindex="-1">New task</h2>
       ${!choices.repos.length ? '<p>Add a project folder or open a local console to select a repository.</p>' : ''}
-      ${!choices.implementers.length ? '<p>Install and sign in to Claude Code, Codex or Kiro to start a task.</p>' : ''}
+      ${!choices.implementers.length ? '<p>Install and sign in to Claude Code, Codex, Kiro or OpenCode to start a task.</p>' : ''}
       ${select('repo', 'Repository', '<option value="">Select a folder</option>' + options(choices.repos, draft.repo), 'required')}
       ${field('title', 'Title', 'required maxlength="200" autocomplete="off"')}
       <label for="task-criteria">Acceptance criteria<textarea id="task-criteria" name="criteria" rows="4" maxlength="12000" required>${e(draft.criteria)}</textarea></label>
       ${select('size', 'Estimated size', staticOptions('size', [['small', 'Small'], ['medium', 'Medium'], ['large', 'Large']]), 'aria-describedby="task-size-reasons"')}
       <p id="task-size-reasons" class="field-hint">${e(choices.estimate.reasons.join(' '))}</p>
       <p class="field-hint" role="status">${e(assignmentReasons())}</p>
-      <div class="task-form-pair">${select('implementer', 'Implementer', '<option value="">Choose an agent</option>' + options(choices.implementers, draft.implementer), 'required')}${field('model', 'Model', 'maxlength="120" placeholder="CLI default; required for OpenCode"')}</div>
+      <label class="task-checkbox" for="task-split"><input id="task-split" type="checkbox" name="split" ${draft.split ? 'checked' : ''} aria-describedby="task-split-help">Split into subtasks</label>
+      <p id="task-split-help" class="field-hint">Review and approve a plan before agents build in separate worktrees.</p>
+      <div class="task-form-pair">${select('implementer', draft.split ? 'Planner' : 'Implementer', '<option value="">Choose an agent</option>' + options(choices.implementers, draft.implementer), 'required')}${field('model', 'Model', 'maxlength="120" placeholder="CLI default; required for OpenCode"')}</div>
       <div class="task-form-pair">${select('reviewer', 'Reviewer', '<option value="">No review</option>' + options((choices.allReviewers || choices.reviewers).filter(choice => choice.id !== draft.implementer), draft.reviewer), 'aria-describedby="task-reviewer-reason"')}${field('reviewerModel', 'Reviewer model', `maxlength="120" placeholder="CLI default; required for OpenCode" ${!draft.reviewer ? 'disabled' : ''}`)}</div>
       <p id="task-reviewer-reason" class="field-hint">${e(reviewerHint())}</p>
       ${field('checks', 'Checks command (optional)', 'maxlength="4000" placeholder="npm test" spellcheck="false" aria-describedby="task-checks-help"')}
       <p id="task-checks-help" class="field-hint">Runs in the work folder with a 15-minute timeout.</p>
-      ${select('workflow', 'Workflow', staticOptions('workflow', [['current', 'Current branch'], ['worktree', 'Separate worktree']]), 'aria-describedby="task-workflow-help"')}
+      ${select('workflow', 'Workflow', staticOptions('workflow', [['current', 'Current branch'], ['worktree', 'Separate worktree']]), `aria-describedby="task-workflow-help" ${draft.split ? 'disabled' : ''}`)}
       <p id="task-workflow-help" class="field-hint">${draft.workflow === 'worktree' ? 'Creates a branch and worktree from HEAD. Keep or remove them manually after the task.' : 'Edits your working copy on its current branch. Pre-existing changes are excluded from the task diff.'}</p>
       <div class="task-form-pair">${field('maxRounds', 'Max rounds', 'type="number" min="1" max="5" required')}${field('timeLimitMinutes', 'Time limit (minutes)', 'type="number" min="5" max="120" required')}</div>
       <p class="form-error" id="task-form-error" role="alert" ${error ? 'tabindex="-1"' : ''}>${e(error)}</p>
@@ -52,7 +55,34 @@ export function taskLoopUI({ call, getState, getPage, escape: e, renderPage, toa
     return [impl, review, ...warnings.filter(warning => warning !== 'No preferred implementer is available.' || !draft.implementer).filter(warning => warning !== 'No independent reviewer is available.' || !draft.reviewer)].filter(Boolean).join(' ');
   }
   function list() {
-    return jobs().length ? jobs().map(job => `<li><button type="button" data-task-action="select" data-id="${e(job.id)}" aria-current="${job.id === selected && !showForm ? 'true' : 'false'}"><strong>${e(job.title)}</strong>${chip(job.state)}<small>${job.rounds.length}/${job.maxRounds} rounds</small></button></li>`).join('') : '<li class="field-hint">No tasks yet.</li>';
+    return jobs().length ? jobs().map(job => `<li><button type="button" data-task-action="select" data-id="${e(job.id)}" aria-current="${job.id === selected && !showForm ? 'true' : 'false'}"><strong>${e(job.title)}</strong>${chip(job.state)}<small>${job.split ? `${(job.subtasks || []).filter(sub => sub.state === 'merged').length}/${job.subtasks?.length || 0} subtasks` : `${job.rounds.length}/${job.maxRounds} rounds`}</small></button></li>`).join('') : '<li class="field-hint">No tasks yet.</li>';
+  }
+  function planDraft(job) {
+    if (!planDrafts.has(job.id)) planDrafts.set(job.id, { assignments: Object.fromEntries((job.subtasks || []).map(sub => [sub.subtaskId, { accountId: sub.implementer?.accountId || '', model: sub.implementer?.model || '' }])), parallelLimit: job.parallelLimit || 2, implementer: { accountId: job.implementer.accountId, model: job.implementer.model || '' } });
+    const settings = planDrafts.get(job.id);
+    for (const sub of job.subtasks || []) if (!Object.hasOwn(settings.assignments, sub.subtaskId)) settings.assignments[sub.subtaskId] = { accountId: sub.implementer?.accountId || '', model: sub.implementer?.model || '' };
+    return settings;
+  }
+  function plan(job) {
+    if (!job.split) return '';
+    const editable = job.state === 'plan-ready', settings = planDraft(job);
+    const accounts = choices?.implementers || [];
+    const accountOptions = current => options(accounts.some(account => account.id === current?.accountId) || !current?.accountId ? accounts : [...accounts, { id: current.accountId, label: current.accountId }], current?.accountId);
+    const assignmentFields = (id, value, sub = '') => `<div class="task-form-pair"><div class="task-field"><label for="${id}-account">${sub ? 'Implementer for ' + e(sub) : 'Main implementer'}</label><select id="${id}-account" data-plan-field="accountId" data-sub="${e(sub)}"><option value="">Choose an agent</option>${accountOptions(value)}</select></div><div class="task-field"><label for="${id}-model">${sub ? 'Model for ' + e(sub) : 'Main implementer model'}</label><input id="${id}-model" data-plan-field="model" data-sub="${e(sub)}" maxlength="120" value="${e(value?.model || '')}" placeholder="CLI default; required for OpenCode"></div></div>`;
+    return `<section class="task-plan" aria-labelledby="task-plan-title"><h3 id="task-plan-title">Plan</h3>
+      <p>${job.planReview?.state === 'not-set' ? 'Plan not reviewed (No review).' : job.planReview?.verdict ? `Plan review: ${e(status(job.planReview.verdict))}.` : 'Plan review pending.'}</p>
+      <details data-task-details="contracts"><summary>Contracts</summary><p class="task-criteria">${e(job.plan?.contracts || 'Available after planning.')}</p></details>
+      ${(job.planRounds || []).some(round => round.review?.findings?.length || round.planner?.errors?.length || round.repair?.errors?.length) ? `<details data-task-details="plan-findings"><summary>Plan review findings and validation</summary>${job.planRounds.map(round => `<h4>Plan round ${round.number}</h4><ul>${[...(round.planner?.errors || []), ...(round.repair?.errors || []), ...(round.review?.findings || [])].map(finding => `<li>${e(finding)}</li>`).join('')}</ul>`).join('')}</details>` : ''}
+      <ol class="task-subtasks">${(job.subtasks || []).map(sub => `<li><div class="task-detail-heading"><h4>${e(sub.title)}</h4>${chip(sub.state)}</div><p class="task-criteria">${e(sub.criteria)}</p>
+        <p>Owns: <code>${e(sub.owns.join(', '))}</code></p><p>Dependencies: ${e(sub.dependsOn.join(', ') || 'None')}</p>
+        ${editable ? assignmentFields(`task-sub-${sub.subtaskId}`, settings.assignments[sub.subtaskId], sub.subtaskId) : `<p>Implementer: ${e(sub.implementer?.label || 'Not assigned')} / ${e(sub.implementer?.model || 'CLI default')}</p>`}
+        <p class="field-hint">${e(sub.assignmentReason || '')}</p><p>${sub.rounds.length} rounds · <span ${sub.runStartedAt ? `data-task-elapsed="${sub.runStartedAt - (sub.elapsedMs || 0)}"` : ''}>${e(elapsed(sub.runStartedAt ? Date.now() - sub.runStartedAt + (sub.elapsedMs || 0) : sub.elapsedMs || 0))}</span></p>
+        ${sub.error ? `<p class="form-error">${e(sub.error)}</p>` : ''}${sub.unresolved?.length ? `<ul>${sub.unresolved.map(item => `<li>${e(item)}</li>`).join('')}</ul>` : ''}
+        <a href="#task-sub-${e(sub.subtaskId)}-diff" data-task-action="subtask-diff" data-sub="${e(sub.subtaskId)}">View diff for ${e(sub.title)}</a>
+        <details id="task-sub-${e(sub.subtaskId)}-diff" data-task-details="sub-diff-${e(sub.subtaskId)}"><summary>Subtask diff</summary><pre tabindex="0" aria-label="Diff for ${e(sub.title)}">${e(sub.finalDiff || 'No subtask changes.')}</pre></details>
+        ${sub.rounds.length ? `<details data-task-details="sub-rounds-${e(sub.subtaskId)}"><summary>Rounds for ${e(sub.title)}</summary>${sub.rounds.map(round => `<h4>Round ${round.number}</h4>${step('Implement', round.implement, `${sub.subtaskId}-${round.number}`)}${step('Checks', round.check, `${sub.subtaskId}-${round.number}`)}${step('Review', round.review, `${sub.subtaskId}-${round.number}`)}`).join('')}</details>` : ''}</li>`).join('')}</ol>
+      ${editable ? `${assignmentFields('task-main', settings.implementer)}<div class="task-field"><label for="task-parallel-limit">Maximum running subtasks</label><input id="task-parallel-limit" data-plan-field="parallelLimit" type="number" min="1" max="4" value="${settings.parallelLimit}"></div><div class="task-actions"><button class="primary" type="button" data-task-action="approvePlan" data-id="${e(job.id)}">Approve plan</button></div>` : ''}
+    </section>`;
   }
   function step(name, value, round) {
     if (!value) return `<section class="task-step"><h4>${name}</h4><span class="field-hint">Not run</span></section>`;
@@ -60,6 +90,7 @@ export function taskLoopUI({ call, getState, getPage, escape: e, renderPage, toa
     return `<section class="task-step"><div class="task-step-heading"><h4>${name}</h4>${chip(value.state)}<span ${time(value)}>${e(elapsed(value.elapsedMs))}</span></div>
       ${value.label ? `<p>${e(value.label)} / ${e(value.model || 'CLI default')}</p><p class="field-hint">${e(usage(value.usage))}</p>` : ''}
       ${value.summary ? `<p>${e(value.summary)}</p>` : ''}
+      ${value.changedFiles?.length ? `<p>Changed files: <code>${e(value.changedFiles.join(', '))}</code></p>` : ''}
       ${check && value.state !== 'not-set' ? `<p>${value.outcome && value.state === 'stale' ? `${e(status(value.outcome))} when run. ` : ''}Exit code: ${value.exitCode ?? 'not reported'}${value.timedOut ? ' · Timed out' : ''}</p><details data-task-details="check-${round}"><summary>Check output</summary><pre tabindex="0" aria-label="Round ${round} check output">${e(value.output || 'No output reported.')}</pre></details>` : ''}
       ${review && value.verdict ? `<p>Verdict: ${e(status(value.verdict))}</p>${value.findings?.length ? `<ul>${value.findings.map(finding => `<li>${e(String(finding).replace(/^\s*[-*•]\s+/, ''))}</li>`).join('')}</ul>` : ''}` : ''}
     </section>`;
@@ -70,11 +101,12 @@ export function taskLoopUI({ call, getState, getPage, escape: e, renderPage, toa
       ${job.repo !== job.workFolder ? `<p>Repository: <span class="task-folder">${e(job.repo)}</span></p>` : ''}
       <p class="task-folder">${e(job.workFolder)}</p><p>${job.workflow === 'worktree' ? 'Separate worktree' : 'Current branch'}${job.branch ? ` · ${e(job.branch)}` : ''}</p>
       <p class="field-hint">Revision: <code>${e(job.sourceRevision)}</code></p>
-      <div class="task-actions">${running(job) ? `<button type="button" data-task-action="stop" data-id="${e(job.id)}">Stop</button>` : ''}${['passed', 'needs-you'].includes(job.state) ? `<button type="button" class="primary" data-task-action="accept" data-id="${e(job.id)}">Accept</button>` : ''}${job.resultId ? `<button type="button" data-task-action="report" data-id="${e(job.id)}">Open report</button>` : ''}</div>
+      <div class="task-actions">${running(job) || job.state === 'plan-ready' ? `<button type="button" data-task-action="stop" data-id="${e(job.id)}">Stop</button>` : ''}${job.split && ['needs-you', 'interrupted', 'stopped'].includes(job.state) ? `<button type="button" data-task-action="resume" data-id="${e(job.id)}">Resume</button>` : ''}${['passed', 'needs-you'].includes(job.state) ? `<button type="button" class="primary" data-task-action="accept" data-id="${e(job.id)}">Accept</button>` : ''}${job.resultId ? `<button type="button" data-task-action="report" data-id="${e(job.id)}">Open report</button>` : ''}</div>
       ${job.reportError ? `<p class="form-error">${e(job.reportError)}</p>` : ''}
       ${job.error ? `<p class="form-error">${e(job.error)}</p>` : ''}
       <details data-task-details="criteria"><summary>Acceptance criteria and assignments</summary><p class="task-criteria">${e(job.criteria)}</p><p>Implementer: ${e(job.implementer.label)} / ${e(job.implementer.model || 'CLI default')}. ${e(job.why.implementer)}</p><p>Reviewer: ${e(job.reviewer?.label || 'No review')}${job.reviewer ? ` / ${e(job.reviewer.model || 'CLI default')}` : ''}. ${e(job.why.reviewer)}</p><p>Checks: <code>${e(job.checks || 'Not set')}</code></p><p>Limits: ${job.maxRounds} rounds · ${job.timeLimitMinutes} minutes</p></details>
       ${job.unresolved.length ? `<section class="task-unresolved"><h3>Unresolved items</h3><ul>${job.unresolved.map(item => `<li>${e(item)}</li>`).join('')}</ul></section>` : ''}
+      ${plan(job)}
       <ol class="task-rounds">${job.rounds.map(round => `<li><h3>Round ${round.number} <small ${time(round)}>${e(elapsed(round.elapsedMs))}</small></h3>${step('Implement', round.implement, round.number)}${step('Checks', round.check, round.number)}${step('Review', round.review, round.number)}</li>`).join('')}</ol>
       <section class="task-progress" ${running(job) || job.log.length ? '' : 'hidden'}><h3>Progress</h3><pre id="task-progress-log" tabindex="0" role="region" aria-label="Task progress">${e(job.log.join('\n'))}</pre></section>
       <section><h3>Diff stat</h3>${job.diffError ? `<p class="form-error">${e(job.diffError)}</p>` : ''}<pre tabindex="0">${e(job.diffStat || (running(job) ? 'Available when the round finishes.' : 'No task changes.'))}</pre></section>
@@ -90,7 +122,7 @@ export function taskLoopUI({ call, getState, getPage, escape: e, renderPage, toa
   async function loadChoices() {
     const version = ++request; loading = true;
     try {
-      const next = await call('tasks.candidates', { implementer: manual.implementer ? draft.implementer : '', title: draft.title, criteria: draft.criteria, size: manual.size ? draft.size : '' });
+      const next = await call('tasks.candidates', { implementer: manual.implementer ? draft.implementer : '', title: draft.title, criteria: draft.criteria, size: manual.size ? draft.size : '', split: draft.split });
       if (version !== request) return;
       choices = next; error = '';
       if (!manual.size) draft.size = next.estimate.size;
@@ -121,7 +153,7 @@ export function taskLoopUI({ call, getState, getPage, escape: e, renderPage, toa
   function sync() {
     if (getPage() !== 'tasks') return;
     const listNode = document.querySelector('.task-list'); if (!listNode) return;
-    const nextList = JSON.stringify(jobs().map(({ id, state, title, rounds, maxRounds }) => [id, state, title, rounds.length, maxRounds])) + selected + showForm;
+    const nextList = JSON.stringify(jobs().map(({ id, state, title, rounds, maxRounds, subtasks }) => [id, state, title, rounds.length, maxRounds, subtasks?.map(sub => sub.state)])) + selected + showForm;
     if (listStamp !== nextList) {
       const focusId = listNode.contains(document.activeElement) ? document.activeElement.dataset.id : null;
       listNode.innerHTML = list(); listStamp = nextList;
@@ -129,10 +161,11 @@ export function taskLoopUI({ call, getState, getPage, escape: e, renderPage, toa
     }
     if (showForm) return;
     const job = jobs().find(job => job.id === selected); if (!job) return;
-    const nextAnnouncement = `${job.id}:${job.state}`;
+    const subStatus = job.split ? (job.subtasks || []).map(sub => `${sub.title}: ${status(sub.state)}.`).join(' ') : '';
+    const nextAnnouncement = `${job.id}:${job.state}:${subStatus}`;
     if (nextAnnouncement !== announcement) {
       const region = document.querySelector('#task-announcement');
-      if (region) { region.textContent = `${job.title}: ${status(job.state)}.`; announcement = nextAnnouncement; }
+      if (region) { region.textContent = `${job.title}: ${status(job.state)}.${subStatus ? ' ' + subStatus : ''}`; announcement = nextAnnouncement; }
     }
     const { log, ...rest } = job, stamp = JSON.stringify(rest);
     const content = document.querySelector('#task-content');
@@ -151,7 +184,15 @@ export function taskLoopUI({ call, getState, getPage, escape: e, renderPage, toa
     for (const node of content.querySelectorAll('[data-task-elapsed]')) node.textContent = elapsed(Math.max(0, Date.now() - Number(node.dataset.taskElapsed)));
   }
   document.addEventListener('input', event => {
+    if (event.target.dataset.planField) {
+      const job = jobs().find(job => job.id === selected); if (!job || job.state !== 'plan-ready') return;
+      const settings = planDraft(job), name = event.target.dataset.planField;
+      if (name === 'parallelLimit') settings.parallelLimit = Number(event.target.value);
+      else (event.target.dataset.sub ? settings.assignments[event.target.dataset.sub] : settings.implementer)[name] = event.target.value;
+      return;
+    }
     if (!event.target.closest('#task-form') || !(event.target.name in draft)) return;
+    if (event.target.name === 'split') return;
     const name = event.target.name; draft[name] = event.target.value;
     if (name in manual) manual[name] = true;
     if (['title', 'criteria', 'size', 'implementer', 'model', 'reviewer', 'reviewerModel'].includes(name)) {
@@ -160,6 +201,10 @@ export function taskLoopUI({ call, getState, getPage, escape: e, renderPage, toa
   });
   document.addEventListener('change', event => {
     if (!event.target.closest('#task-form')) return;
+    if (event.target.name === 'split') {
+      draft.split = event.target.checked; if (draft.split) draft.workflow = 'worktree';
+      clearTimeout(choicesTimer); loadChoices(); return;
+    }
     draft[event.target.name] = event.target.value;
     if (event.target.name in manual) manual[event.target.name] = true;
     if (['title', 'criteria', 'size', 'implementer', 'model', 'reviewer', 'reviewerModel'].includes(event.target.name)) { clearTimeout(choicesTimer); loadChoices(); }
@@ -173,10 +218,10 @@ export function taskLoopUI({ call, getState, getPage, escape: e, renderPage, toa
     if (event.target.id !== 'task-form') return;
     event.preventDefault(); event.stopImmediatePropagation(); if (busy || loading) return;
     busy = true; const formNode = event.target, submit = formNode.querySelector('[type=submit]'); submit.disabled = true;
-    Object.assign(draft, Object.fromEntries(new FormData(formNode))); error = '';
+    Object.assign(draft, Object.fromEntries([...new FormData(formNode)].filter(([name]) => name !== 'split'))); draft.split = formNode.elements.namedItem('split').checked; error = '';
     try {
       const job = await call('tasks.start', { repo: draft.repo, title: draft.title, criteria: draft.criteria, implementer: { accountId: draft.implementer, model: draft.model }, reviewer: draft.reviewer ? { accountId: draft.reviewer, model: draft.reviewerModel } : null,
-        checks: draft.checks, workflow: draft.workflow, maxRounds: Number(draft.maxRounds), timeLimitMinutes: Number(draft.timeLimitMinutes) });
+        split: draft.split, checks: draft.checks, workflow: draft.workflow, maxRounds: Number(draft.maxRounds), timeLimitMinutes: Number(draft.timeLimitMinutes) });
       if (!jobs().some(item => item.id === job.id)) getState().tasks = [job, ...jobs()];
       selected = job.id; showForm = false; renderPage(); document.querySelector('#task-detail-title')?.focus();
     } catch (failure) {
@@ -188,6 +233,7 @@ export function taskLoopUI({ call, getState, getPage, escape: e, renderPage, toa
   document.addEventListener('click', async event => {
     const button = event.target.closest?.('[data-task-action]'); if (!button) return;
     const action = button.dataset.taskAction, id = button.dataset.id;
+    if (action === 'subtask-diff') { event.preventDefault(); const details = document.getElementById(`task-sub-${button.dataset.sub}-diff`); if (details) { details.open = true; details.querySelector('pre')?.focus(); } return; }
     if (action === 'new' || action === 'cancel-form' || action === 'select') {
       showForm = action === 'new'; if (id) selected = id;
       error = ''; renderPage(); document.querySelector(showForm ? '#task-form-title' : '#task-detail-title')?.focus();
@@ -197,8 +243,8 @@ export function taskLoopUI({ call, getState, getPage, escape: e, renderPage, toa
     try {
       if (action === 'reload') await loadChoices();
       if (action === 'refresh') { await call('tasks.list'); await loadChoices(); sync(); }
-      if (action === 'stop' || action === 'accept') {
-        const job = await call(`tasks.${action}`, { id });
+      if (['stop', 'accept', 'resume', 'approvePlan'].includes(action)) {
+        const job = await call(`tasks.${action}`, { id, ...(action === 'approvePlan' ? planDraft(jobs().find(job => job.id === id)) : {}) });
         getState().tasks = jobs().map(item => item.id === job.id ? job : item); sync();
       }
       if (action === 'report') { const job = jobs().find(item => item.id === id); if (job?.resultId) await openResult(job.resultId); }
