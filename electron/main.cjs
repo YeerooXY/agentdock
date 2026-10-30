@@ -24,6 +24,9 @@ const { loginPath } = require('./platform.cjs');
 const { Workbench } = require('./workbench.cjs');
 const { Delegation, REVIEWERS } = require('./delegation.cjs');
 const { TaskLoop } = require('./task-loop.cjs');
+const { OwnerConsoles } = require('./owner-consoles.cjs');
+const { CapacityReservations } = require('./capacity-reservations.cjs');
+const { registryFromRouting } = require('./worker-registry.cjs');
 const { closeReviewPanel } = require('./review-panel.cjs');
 const { resultGitContext } = require('./git-context.cjs');
 const { creativeTools } = require('./creative-tools.cjs');
@@ -70,6 +73,7 @@ const secondInstance = !app.requestSingleInstanceLock() && !testMode;
 if (secondInstance) app.quit();
 let window, tray, vault, sessions, workspace, projects, messageUsage, updates, account, root, settings, ledger, notifications, hub, integrations, mcpCatalog, workbench, cliSetup, skillPacks, turns, mobile, workPower, ssh, screenshots, accounts, draftBridge;
 let codePanel, worktrees, messageQueue, prompts, tasks;
+let ownerConsoles, capacityReservations;
 let mode = 'dashboard', quitting = false, refreshing = false, lastRefresh = 0, apiBusy = false, subscriptionUsage, usageRefresh;
 let modeTarget = null, modeTask, modeSequence = 0, transitioning = false;
 let trayHidden = false, windowDrag = null, hiddenBounds = null;
@@ -426,7 +430,15 @@ app.whenReady().then(() => guardStartup(async () => {
     openCodeAvailable = false;
     await startupStep('OpenCode check', () => { openCodeSignedIn({ executable: cliSetup.executable('opencode') }); openCodeAvailable = true; }, { optional: true, notice: 'OpenCode check failed, so OpenCode is hidden for now. Details are in the log.' });
   }
-  tasks = new TaskLoop(root, { ...taskAccounts, getSettings: () => settings, candidates: () => {
+  ownerConsoles = new OwnerConsoles(root);
+  ownerConsoles.on('persistence-error', () => { storageError = 'Console protection could not be saved.'; publish(); });
+  capacityReservations = new CapacityReservations(ownerConsoles, {
+    workers: () => registryFromRouting({ routing: settings.routing, candidates: testMode ? [] : taskAccounts.candidates() }),
+    active: () => [...(sessions?.items.values() || [])]
+    .filter(item => item.alive && item.state === 'active' && !item.remote && !item.kind)
+    .map(item => ({ quotaGroupId: ownerConsoles.records.get(item.consoleKey)?.quotaGroupId || item.accountId || `${item.provider}:default`,
+      local: ownerConsoles.records.get(item.consoleKey)?.local === true, owner: ownerConsoles.records.get(item.consoleKey)?.ownerTurn === true })) });
+  tasks = new TaskLoop(root, { ...taskAccounts, admission: capacityReservations, getSettings: () => settings, candidates: () => {
     if (testMode) return [];
     const choices = taskAccounts.candidates(), executable = cliSetup.executable('opencode');
     if (openCodeAvailable && executable && openCodeSignedIn({ executable })) choices.push({ id: 'opencode:default', provider: 'opencode', label: 'OpenCode', executable });
@@ -456,6 +468,8 @@ app.whenReady().then(() => guardStartup(async () => {
     for (const item of plan) slotNames[item.slot] = sessions.items.get(item.id)?.name || '';
     persistSettings({ ...settings, grid, slotNames, slotTrims: moveSlotTrims(settings.slotTrims, plan, sessions.items) });
   } });
+  ownerConsoles.bind(sessions, { profile: item => capacityReservations.profile({ accountId: item.accountId || `${item.provider}:default` }) });
+  sessions.on('changed', () => capacityReservations.drain());
   workPower = new WorkPower(powerSaveBlocker);
   sessions.on('changed', updatePower);
   // Shell output does not change session state; recheck so a running build keeps the PC awake.
@@ -536,7 +550,9 @@ app.whenReady().then(() => guardStartup(async () => {
   window.webContents.on('will-redirect', event => { if (!event.isMainFrame && !isLocal(event.url)) event.preventDefault(); });
   window.webContents.session.setPermissionRequestHandler((_, __, callback) => callback(false));
   window.webContents.session.setPermissionCheckHandler(() => false);
-  window.webContents.on('render-process-gone', () => { if (!quitting) window.loadFile(entryFile); });
+  window.on('unresponsive', () => ownerConsoles.freeze());
+  window.webContents.on('did-start-loading', () => ownerConsoles.freeze());
+  window.webContents.on('render-process-gone', () => { ownerConsoles.freeze(); if (!quitting) window.loadFile(entryFile); });
   window.on('close', event => { if (!quitting) { event.preventDefault(); hideToTray(); } });
   window.on('focus', () => { if (!safeMode) void startupStep('Screenshot checks', () => screenshots.refresh(), { optional: true }); });
   let readyShown = false, startupComplete = false;
@@ -573,6 +589,18 @@ app.whenReady().then(() => guardStartup(async () => {
     setInterval(() => { void startupStep('Usage checks', refreshLimits, { optional: true }); }, 120000).unref();
   }
   if (!safeMode) setInterval(refreshSwitchOffers, 60000).unref();
+  ipcMain.on('dock:owner-activity', (event, payload) => {
+    if (event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame || event.senderFrame.url !== entryUrl) return;
+    try {
+      if (payload?.kind === 'heartbeat') ownerConsoles.heartbeat(payload.consoles);
+      else {
+        const item = sessions.items.get(payload?.id);
+        if (!item || item.consoleKey !== payload.consoleKey || (item.launchId || item.id) !== payload.launchId) return;
+        ownerConsoles.interaction(item.consoleKey, item.launchId || item.id, payload.kind,
+          { trusted: true, focused: payload.focused, selection: payload.selection, draft: payload.draft });
+      }
+    } catch { /* Ignore activity for a console replaced during renderer delivery. */ }
+  });
   ipcMain.handle('dock:call', async (event, method, payload) => {
     if (event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame || event.senderFrame.url !== entryUrl) throw new Error('Untrusted client.');
     try {
@@ -838,8 +866,9 @@ app.whenReady().then(() => guardStartup(async () => {
           break;
         }
         case 'session.retry': return { ok: true, value: await sessions.retry(payload) };
+        case 'session.releaseToHub': ownerConsoles.release(payload?.consoleKey, payload?.launchId); break;
         case 'session.input': sessions.write(payload?.id, payload?.data); break;
-        case 'queue.add': return { ok: true, value: messageQueue.add(payload?.id, payload?.text) };
+        case 'queue.add': return { ok: true, value: messageQueue.add(payload?.id, payload?.text, { ownerRequested: true }) };
         case 'queue.edit': messageQueue.edit(payload?.id, payload?.entryId, payload?.text); break;
         case 'queue.remove': messageQueue.remove(payload?.id, payload?.entryId); break;
         case 'queue.move': messageQueue.move(payload?.id, payload?.entryId, payload?.offset); break;
@@ -1067,6 +1096,8 @@ app.on('before-quit', event => {
   workPower?.dispose();
   workspace?.freeze();
   tasks?.interruptAll();
+  capacityReservations?.dispose();
+  ownerConsoles?.dispose();
   workbench?.stop();
   // Drain ConPTY exits while the event loop is alive, before Electron tears down its workers.
   (async () => {

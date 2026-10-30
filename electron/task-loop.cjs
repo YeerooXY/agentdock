@@ -90,9 +90,10 @@ function killAndWait(child, kill, timeoutMs) {
 }
 
 class TaskLoop extends EventEmitter {
-  constructor(root, { candidates = () => [], repositories = () => [], getLimits = () => [], getSettings = () => ({}), environment = () => ({}), saveResult, spawnProcess = spawn, run = execFile, now = Date.now, killProcess = killTree, platform = process.platform, stopTimeoutMs = 2000, processStartedAt = PROCESS_STARTED_AT, isProcessAlive = processAlive } = {}) {
+  constructor(root, { candidates = () => [], repositories = () => [], getLimits = () => [], getSettings = () => ({}), environment = () => ({}), saveResult, admission, spawnProcess = spawn, run = execFile, now = Date.now, killProcess = killTree, platform = process.platform, stopTimeoutMs = 2000, processStartedAt = PROCESS_STARTED_AT, isProcessAlive = processAlive } = {}) {
     super();
     Object.assign(this, { root, candidates, repositories, getLimits, getSettings, environment, saveResult, spawnProcess, run, now, killProcess, platform, stopTimeoutMs, processStartedAt, isProcessAlive });
+    this.admission = admission;
     this.dir = path.join(root, 'tasks'); this.jobs = new Map(); this.children = new Map(); this.cancellers = new Map(); this.pending = new Map(); this.refreshing = new Map(); this.refreshedAt = new Map(); this.reserved = new Set(); this.records = new Map();
     this.fileCache = new Map(); this.cancelling = new Set(); this.cancellations = new Map();
     this.split = new SplitTasks(this); this.providerSlots = 0; this.providerQueue = []; this.unconfirmed = new Map();
@@ -383,8 +384,8 @@ class TaskLoop extends EventEmitter {
     const outFile = path.join(this.dir, `${job.id}.reply.md`);
     let tempDir, release;
     try {
-      release = await this.acquireProvider(job);
-      if (!RUNNING.has(job.state)) return {};
+      release = await this.acquireProvider(job, step);
+      if (!release || !RUNNING.has(job.state)) return {};
       const choice = this.candidates().find(choice => choice.id === step.accountId);
       if (!choice?.executable) throw new ProviderError(`${step.label} is no longer installed or signed in.`);
       const env = { ...this.environment(step.accountId, step.provider) };
@@ -401,6 +402,7 @@ class TaskLoop extends EventEmitter {
         launch = openCodeLaunch(choice.executable, { model: step.model, workFolder: job.workFolder, promptFile });
         before = await this.fingerprint(job);
       } else launch = review ? reviewerLaunch(step.provider, choice.executable, { outFile, model: step.model, platform: this.platform }) : implementerLaunch(step.provider, choice.executable, { ...step, platform: this.platform });
+      if (!RUNNING.has(job.state)) return {};
       const result = await this.process(job, launch, { environment: env, brief: step.provider === 'opencode' ? '' : brief, provider: step.provider, step });
       if (!RUNNING.has(job.state)) return {};
       if (result.code !== 0 || result.providerError) {
@@ -432,7 +434,15 @@ class TaskLoop extends EventEmitter {
     } catch (error) { throw error instanceof ProviderError ? error : new ProviderError(`${step.label} could not complete the request.`); }
     finally { release?.(); try { fs.unlinkSync(outFile); } catch {} if (tempDir) fs.rmSync(tempDir, { recursive: true, force: true }); }
   }
-  acquireProvider(job) {
+  acquireProvider(job, step) {
+    if (this.admission && step) return this.admission.acquire({ id: job.id, taskId: job.parentId || job.id,
+      projectId: job.projectId, accountId: step.accountId, model: step.model, workerId: step.workerId, quotaGroupId: step.quotaGroupId,
+      local: step.local === true, capacity: step.concurrency, automatic: true,
+      onQueued: reason => { if (reason) job.queueReason = reason; else delete job.queueReason; this.changed(job); }
+    }).then(release => {
+      if (!release) return null;
+      return () => { const lingering = this.unconfirmed.get(job.id); if (lingering) lingering.once('close', release); else release(); };
+    });
     return new Promise(resolve => {
       const grant = () => {
         this.providerSlots++;
@@ -448,6 +458,7 @@ class TaskLoop extends EventEmitter {
     });
   }
   cancelProviderQueue(job) {
+    this.admission?.cancel(item => item.id === job.id || item.taskId === job.id);
     this.providerQueue = this.providerQueue.filter(item => {
       if (item.job.id !== job.id && item.job.parentId !== job.id) return true;
       item.cancel(); return false;

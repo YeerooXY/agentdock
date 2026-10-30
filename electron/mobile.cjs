@@ -318,7 +318,7 @@ class MobileCompanion extends EventEmitter {
         // Queue changes apply only to the console this phone has open.
         if (!this.queue) throw new Error('Update Paddock on your PC to queue messages.');
         if (client.selected !== payload.id) throw new Error('Select an open console first.');
-        if (method === 'queue.add') return this.queue.add(payload.id, payload.text);
+        if (method === 'queue.add') return this.queue.add(payload.id, payload.text, { ownerRequested: true });
         if (method === 'queue.edit') {
           try { this.queue.edit(payload.id, payload.entryId, payload.text); }
           catch (error) {

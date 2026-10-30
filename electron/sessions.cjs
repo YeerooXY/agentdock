@@ -649,11 +649,19 @@ class Sessions extends EventEmitter {
     if (!item?.alive) return;
     if (item.switching) throw new Error('This console is switching accounts. Your composer draft stays on the phone until switching finishes.');
     if (typeof data !== 'string' || data.length > 65536) throw new Error('Terminal input is too large.');
+    if (!draft && !queued && data && (!data.startsWith('\x1b') || data.startsWith('\x1b[200~'))) {
+      this.ownerInteraction(id, 'typing', { ownerTurn: /[\r\n]/.test(data) || undefined });
+    }
     item.terminal.write(data);
     // Typed keys, not terminal reports such as focus or mouse events.
     if (!draft && !queued && !data.startsWith('\x1b')) item.lastInputAt = Date.now();
     if (!draft && /[\r\n]/.test(data)) this.projects?.touch(item.projectId);
     if (!draft && /[\r\n]/.test(data) && cliAgents.has(item.provider) && !item.remote) { item.state = 'active'; item.updatedAt = Date.now(); this.emit('changed'); }
+  }
+  ownerInteraction(id, kind, flags = {}) {
+    const item = this.items.get(id);
+    if (!item || !this.ownerConsoles) return;
+    this.ownerConsoles.interaction(item.consoleKey, item.launchId || item.id, kind, { ...flags, trusted: true });
   }
   signal(id, kind) {
     const item = this.items.get(id); if (!item?.alive || !['ready', 'question', 'error'].includes(kind)) return;

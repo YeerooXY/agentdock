@@ -44,10 +44,11 @@ class MessageQueue extends EventEmitter {
     if (index < 0) throw new Error('This queued message was already sent or removed.');
     return { queue, index };
   }
-  add(id, text) {
+  add(id, text, { ownerRequested = false } = {}) {
     const value = cleanText(text), queue = this.queue(id, true);
     if (queue.entries.length >= MAX_ENTRIES) throw new Error(`A console can queue up to ${MAX_ENTRIES} messages.`);
-    const entry = { id: crypto.randomUUID(), text: value, createdAt: Date.now() };
+    const entry = { id: crypto.randomUUID(), text: value, createdAt: Date.now(), ownerRequested: ownerRequested === true };
+    if (entry.ownerRequested) this.sessions.ownerInteraction?.(id, 'panel-control', { pendingSubmission: true });
     queue.entries.push(entry); this.changed();
     // Queued while the agent is already waiting: send it as if the turn just finished.
     if (this.sessions.items.get(id)?.state === 'ready') this.schedule(id);
@@ -74,7 +75,10 @@ class MessageQueue extends EventEmitter {
   clear(id) { if (this.queues.delete(id)) this.changed(); }
   // Explicit "Send now" ignores the pause and the agent state: the user chose it.
   async sendNow(id, entryId) {
-    this.session(id); this.entry(id, entryId);
+    this.session(id);
+    const { queue, index } = this.entry(id, entryId);
+    queue.entries[index].ownerRequested = true;
+    this.sessions.ownerInteraction?.(id, 'panel-control', { pendingSubmission: true });
     await this.send(id, entryId);
   }
   watch() {
@@ -102,6 +106,8 @@ class MessageQueue extends EventEmitter {
   async send(id, entryId) {
     if (this.sending.has(id)) throw new Error('A queued message is being sent to this console.');
     const item = this.session(id), { queue, index } = this.entry(id, entryId), [entry] = queue.entries.splice(index, 1), launchId = item.launchId;
+    const owners = this.sessions.ownerConsoles, record = owners?.records.get(item.consoleKey);
+    if (entry.ownerRequested && record && record.launchId === launchId) owners.turn(record.consoleKey, launchId, true);
     this.sending.add(id); this.prune(id); this.changed();
     try {
       const text = this.paste.get(id) ? `\x1b[200~${entry.text}\x1b[201~` : entry.text;
@@ -121,7 +127,21 @@ class MessageQueue extends EventEmitter {
     if (on > off) this.paste.set(id, true); else if (off > on) this.paste.delete(id);
   }
   prune(id) { if (this.queues.get(id)?.entries.length === 0 && !this.queues.get(id).paused) this.queues.delete(id); }
-  changed() { this.emit('changed'); }
+  changed() {
+    // Queue delivery updates demand without refreshing owner interaction time.
+    const owners = this.sessions.ownerConsoles;
+    if (owners) for (const item of this.sessions.items.values()) {
+      const record = owners.records.get(item.consoleKey);
+      if (!record || record.launchId !== item.launchId) continue;
+      const pending = this.queues.get(item.id)?.entries.some(entry => entry.ownerRequested) === true;
+      if (record.pendingSubmission !== pending) {
+        owners.updateFlags(record, { pendingSubmission: pending });
+        if (record.activityKnown) record.reserved = owners.qualifies(record);
+        owners.changed();
+      }
+    }
+    this.emit('changed');
+  }
 }
 
 module.exports = { MessageQueue, MAX_ENTRIES, MAX_TEXT };

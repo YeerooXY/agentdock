@@ -3,6 +3,7 @@
 // Headless ladder routing. The caller owns dispatch and supplies a fresh snapshot
 // of active work, including owner work; this module never opens or stops consoles.
 const { modelFamily } = require('./task-routing.cjs');
+const { ownerCapacity } = require('./owner-consoles.cjs');
 const FRESH_MS = 30 * 60_000;
 const LEVELS = new Set(['L1', 'L2', 'L3']);
 const STRATA_URL = 'http://127.0.0.1:8080/v1';
@@ -72,13 +73,14 @@ function groupHeadroom(limits, accountIds, now = Date.now()) {
     blocked: fresh.some(window => window.usedPercent >= 90), windows };
 }
 
-function routeWorker({ workers, role = 'builder', level, builderFamily, limits = [], active = [], now = Date.now(), rotation = 0 } = {}) {
+function routeWorker({ workers, role = 'builder', level, builderFamily, limits = [], active = [], now = Date.now(), rotation = 0, owners, automatic = true } = {}) {
   if (!Array.isArray(workers) || !Array.isArray(active) || !['builder', 'reviewer'].includes(role) || (role === 'builder' && !LEVELS.has(level))) throw new Error('Enter valid routing inputs.');
   if (role === 'reviewer' && !builderFamily) return { worker: null, reason: 'Needs family setup' };
   const eligible = workers.filter(w => w.available && w.roles[role] && (role !== 'builder' || (w.level === level && w.canEdit)));
   const known = eligible.filter(w => !w.needsSetup && w.family && (role !== 'reviewer' || w.family !== builderFamily));
   if (!known.length) return { worker: null, reason: eligible.some(w => w.needsSetup || !w.family) ? 'Needs family setup' : role === 'reviewer' ? 'Waiting for reviewer' : 'No eligible worker' };
-  const available = [];
+  const available = [], reservations = owners?.reservations() || new Set();
+  let ownerReserved = false;
   for (const worker of known) {
     const group = workers.filter(w => w.quotaGroupId === worker.quotaGroupId);
     const availableGroup = group.filter(w => w.available);
@@ -88,11 +90,15 @@ function routeWorker({ workers, role = 'builder', level, builderFamily, limits =
     const capacity = Math.min(...availableGroup.map(w => w.concurrency), ...(availableGroup.some(w => w.local) ? [1] : []));
     const allowance = usage.status === 'fresh' || usage.status === 'machine' ? capacity : Math.min(capacity, ...availableGroup.map(w => w.unknownAllowance));
     if (usage.blocked || occupied >= allowance) continue;
+    const reservation = ownerCapacity({ quotaGroupId: worker.quotaGroupId, capacity: allowance, active, reservations, automatic });
+    const localReserved = automatic && worker.local && owners?.snapshot().some(record => record.local && reservations.has(record.quotaGroupId));
+    if (reservation === 'Reserved for owner' || localReserved) { ownerReserved = true; continue; }
+    if (reservation) continue;
     // The machine-wide local-model limit applies across quota groups.
     if (worker.local && active.some(turn => turn.local === true || workers.some(w => w.id === turn.workerId && w.local))) continue;
     available.push({ worker, usage, occupied, capacity: allowance });
   }
-  if (!available.length) return { worker: null, reason: 'Waiting for capacity' };
+  if (!available.length) return { worker: null, reason: ownerReserved ? 'Reserved for owner' : 'Waiting for capacity' };
   // Unknown/stale groups remain eligible only under their configured allowance;
   // prefer a measured group when one is available.
   let qualified = available;
