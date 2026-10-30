@@ -649,6 +649,9 @@ class Sessions extends EventEmitter {
     if (!item?.alive) return;
     if (item.switching) throw new Error('This console is switching accounts. Your composer draft stays on the phone until switching finishes.');
     if (typeof data !== 'string' || data.length > 65536) throw new Error('Terminal input is too large.');
+    // Keep DEC 1004 focus events out of Codex's redraw path. xterm emits each
+    // report as a separate onData event; whole-event matching preserves paste contents.
+    if (item.provider === 'codex' && (data === '\x1b[I' || data === '\x1b[O')) return;
     item.terminal.write(data);
     // Typed keys, not terminal reports such as focus or mouse events.
     if (!draft && !queued && !data.startsWith('\x1b')) item.lastInputAt = Date.now();
