@@ -91,7 +91,7 @@ class Results extends EventEmitter {
     if (git) item.git = cleanGit(git);
     this.persist([item, ...this.items]); return item;
   }
-  preview(id, thumbnail = false, entry = null) {
+  preview(id, thumbnail = false, entry = null, original = false) {
     const item = this.items.find(x => x.id === id), file = this.path(id);
     if (item.ext === '.zip') return previewArchive(file, { entry, thumbnail, nativeImage: this.nativeImage });
     if (item.kind === 'code' && item.ext === '.json' && item.size < 2 * 1024 * 1024) {
@@ -101,6 +101,7 @@ class Results extends EventEmitter {
     if (imageExtensions.has(item.ext) && this.nativeImage) {
       const source = this.nativeImage.createFromPath(file);
       if (source.isEmpty()) throw new Error('This image could not be read.');
+      if (original && !thumbnail) return { image: source.toDataURL() };
       const size = source.getSize();
       const scale = Math.min(1, (thumbnail ? 360 : 1440) / size.width, (thumbnail ? 400 : 1800) / size.height);
       return { image: source.resize({ width: Math.max(1, Math.round(size.width * scale)), height: Math.max(1, Math.round(size.height * scale)) }).toDataURL() };

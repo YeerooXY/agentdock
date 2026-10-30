@@ -136,7 +136,7 @@ class Workbench {
     switch (method) {
       case 'setup.apply': return this.setup.apply(payload);
       case 'setup.dismiss': return this.setup.remove(payload);
-      case 'results.preview': return this.results.preview(typeof payload === 'string' ? payload : payload?.id, payload?.thumbnail === true, payload?.entry);
+      case 'results.preview': return this.results.preview(typeof payload === 'string' ? payload : payload?.id, payload?.thumbnail === true, payload?.entry, payload?.original === true);
       case 'results.delete': return this.results.remove(payload);
       case 'results.seen': return this.results.markSeen(payload);
       case 'results.folder': { const error = await this.electron.shell.openPath(this.results.dir); if (error) throw new Error(error); return; }
