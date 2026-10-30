@@ -27,7 +27,7 @@ function fixture(t, script = [], overrides = {}) {
     const child = new EventEmitter(); child.stdout = new EventEmitter(); child.stderr = new EventEmitter(); child.killed = false;
     child.kill = () => { child.killed = true; child.emit('close', null); };
     const invocation = { executable, args, options, child, prompt: '' }; spawned.push(invocation);
-    if (script[0]?.synchronousError) { script.shift(); throw new Error('shell missing'); }
+    if (script[0]?.synchronousError) { invocation.synchronousError = true; script.shift(); throw new Error('shell missing'); }
     child.stdin = { on() {}, end(text) {
       invocation.prompt = text;
       queueMicrotask(() => {
@@ -44,7 +44,7 @@ function fixture(t, script = [], overrides = {}) {
             if (executable === claude.executable) child.stdout.emit('data', JSON.stringify({ type: 'result', result: 'Updated app.js.', usage: { input_tokens: 10, output_tokens: 5 }, is_error: !!action.providerError }) + '\n');
             else child.stdout.emit('data', [JSON.stringify({ type: 'item.completed', item: { type: 'agent_message', text: 'Updated app.js.' } }), JSON.stringify({ type: action.providerError ? 'turn.failed' : 'turn.completed', usage: { input_tokens: 100, cached_input_tokens: 20, output_tokens: 10 } })].join('\n') + '\n');
           } else if (action.output) child.stdout.emit('data', action.output);
-          child.emit('close', action.code ?? 0);
+          child.emit('close', action.code === undefined ? 0 : action.code);
         } catch (error) { errors.push(error); child.emit('error', error); }
       });
     } };
@@ -138,6 +138,22 @@ test('failed checks are handed to the next round with a bounded output tail', as
   assert.deepEqual(job.rounds.map(round => round.attemptId), [`${job.id}-attempt-1`, `${job.id}-attempt-2`]);
 });
 
+test('timed-out and signal-terminated checks are infrastructure failures and skip review', async t => {
+  for (const { code, timedOut } of [{ code: 0, timedOut: true }, { code: null, timedOut: false }]) {
+    const f = fixture(t, [{ type: 'implement', edit }, { type: 'check', code }]);
+    const process = f.loop.process.bind(f.loop);
+    f.loop.process = async (job, launch, options) => {
+      const result = await process(job, launch, options);
+      return options.check ? { ...result, timedOut } : result;
+    };
+    const job = await f.done(await f.start({ maxRounds: 1 }));
+    assert.equal(job.state, 'needs-you');
+    assert.equal(job.rounds[0].check.state, 'failed'); assert.equal(job.rounds[0].check.exitCode, code);
+    assert.equal(job.rounds[0].check.timedOut, timedOut); assert.equal(job.rounds[0].check.failureClass, 'infrastructure');
+    assert.equal(job.rounds[0].review.state, 'skipped'); assert.equal(f.spawned.length, 2);
+  }
+});
+
 test('confirmed review findings trigger a fix round', async t => {
   const f = fixture(t, [{ type: 'implement', edit }, { type: 'review', reply: requested },
     { type: 'implement', inspect: invocation => assert.match(invocation.prompt, /app\.js:2 — high — wrong result/) }, { type: 'review' }]);
@@ -150,7 +166,8 @@ test('max rounds leaves the unsuccessful solution as needs-you', async t => {
   const f = fixture(t, [{ type: 'implement', edit }, { type: 'check', code: 2, output: 'Still failing' }]);
   const job = await f.done(await f.start({ maxRounds: 1 }));
   assert.equal(job.state, 'needs-you'); assert.equal(job.rounds.length, 1);
-  assert.match(job.unresolved.join('\n'), /Checks failed/); assert.equal(job.rounds[0].review.state, 'skipped'); assert.equal(f.spawned.length, 2);
+  assert.match(job.unresolved.join('\n'), /Checks failed/); assert.doesNotMatch(job.unresolved.join('\n'), /wrong result/);
+  assert.equal(job.rounds[0].review.state, 'skipped'); assert.equal(f.spawned.length, 2);
   assert.equal((await f.loop.accept(job.id)).state, 'accepted');
 });
 
@@ -653,6 +670,7 @@ test('a checks shell spawn error is a failed check requiring user attention', as
     assert.equal(job.state, 'needs-you'); assert.equal(job.error, 'The checks command could not start.');
     assert.equal(job.rounds[0].check.state, 'failed'); assert.equal(job.rounds[0].check.outcome, 'failed'); assert.equal(job.rounds[0].check.failureClass, 'infrastructure'); assert.equal(job.rounds[0].check.output, job.error); assert.equal(job.rounds[0].check.exitCode, null);
     assert.equal(job.rounds.length, 1); assert.equal(job.rounds[0].review, null); assert.equal(f.spawned.length, 2);
+    assert.equal(!!f.spawned[1].synchronousError, synchronous);
     assert.equal(f.spawned.filter(call => call.executable === claude.executable).length, 0);
   }
 });
