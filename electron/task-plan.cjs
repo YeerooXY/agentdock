@@ -129,6 +129,7 @@ function planReport(job, usageText) {
   for (const round of job.planRounds || []) {
     lines.push('', `### Plan round ${round.number}`);
     for (const [name, step] of [['Planner', round.planner], ['Repair', round.repair], ['Review', round.review]]) if (step) {
+      if (name === 'Review' && step.reused) { lines.push(`Review: findings from plan revision ${step.planRevision}; this revision was not re-reviewed.`); continue; }
       lines.push(`${name}: ${step.state}; usage: ${usageText(step.usage)}`, ...(step.errors || []), ...(step.findings || []));
       if (step.accountId) steps.push({ label: `Plan round ${round.number} ${name}`, step });
     }
@@ -173,17 +174,26 @@ class SplitTasks {
         if (job.planRepairUsed) return loop.finish(job, 'needs-you', `The plan is invalid: ${feedback.join(' ')}`);
         job.planRepairUsed = true; round.repair = { ...job.planner, role: 'planner', state: 'running', startedAt: loop.now(), usage: null }; loop.changed(job);
       }
-      job.plan = parsed.plan; delete job.planAnswer;
-      if (job.planReviewer) {
-        job.state = 'reviewing-plan'; round.review = { ...job.planReviewer, state: 'running', startedAt: loop.now(), usage: null, findings: [] }; loop.changed(job);
+      job.plan = parsed.plan; job.planRevision = number; delete job.planAnswer;
+      // A correction follows the one coherence check; it is presented with
+      // that check's findings for owner approval, without another review call.
+      const priorRound = job.planRounds.slice(0, -1).find(item => item.review && item.review.state !== 'not-set');
+      const previousReview = priorRound?.review;
+      if (previousReview) {
+        const reviewedRevision = previousReview.planRevision ?? priorRound.number;
+        round.review = { ...previousReview, planRevision: reviewedRevision, findings: [...(previousReview.findings || [])], reused: true };
+        job.planReview = round.review;
+        if (!previousReview.verdict) return loop.finish(job, 'needs-you', 'The plan review did not finish. Review the plan before continuing.');
+      } else if (job.planReviewer) {
+        job.state = 'reviewing-plan'; round.review = { ...job.planReviewer, planRevision: job.planRevision, state: 'running', startedAt: loop.now(), usage: null, findings: [] }; loop.changed(job);
         const reply = await loop.provider(job, round.review, planReviewPrompt(job), true);
         if (!ACTIVE.has(job.state)) return;
         const confirmed = loop.reviewFindings(reply);
-        Object.assign(round.review, { state: 'done', verdict: confirmed.length ? 'changes-requested' : reply.verdict, findings: confirmed, text: String(reply.text).slice(-6000) });
+        Object.assign(round.review, { state: 'done', verdict: reply.verdict ? (confirmed.length ? 'changes-requested' : reply.verdict) : null, findings: confirmed, text: String(reply.text || '').slice(-6000) });
         job.planReview = round.review;
+        if (!round.review.verdict) return loop.finish(job, 'needs-you', 'The plan review did not return a verdict. Review the plan before continuing.');
         if (round.review.verdict !== 'approve') {
           feedback = confirmed; job.planFeedback = feedback; loop.changed(job);
-          if (number === 2) return loop.finish(job, 'needs-you', 'The plan still has review findings after two rounds.');
           continue;
         }
       } else job.planReview = round.review = { state: 'not-set', findings: [], label: 'Plan not reviewed' };
@@ -244,10 +254,11 @@ class SplitTasks {
     loop.ensureAvailable(job);
     if (!job.approvedAt) {
       if (job.subtasks?.length && job.plan) { job.state = 'plan-ready'; job.error = ''; job.finishedAt = null; loop.changed(job); return loop.view(job); }
-      // A stopped planner can retry its unfinished round; completed reviews still
-      // consume the two-round limit, and the one validation repair stays used.
+      // A stopped planner can retry an unfinished round, but an uncertain review
+      // is never replayed automatically.
       if (job.planRounds?.at(-1)?.review?.verdict === 'approve') throw new Error('The saved plan needs inspection.');
-      if (job.planRounds?.length && !job.planRounds.at(-1).review?.verdict) job.planRounds.pop();
+      if (job.planRounds?.some(round => round.review && round.review.state !== 'not-set' && !round.review.verdict)) throw new Error('The plan review did not finish. Review the plan before continuing.');
+      if (job.planRounds?.length && !job.planRounds.at(-1).review) job.planRounds.pop();
       if ((job.planRounds?.length || 0) >= 2) throw new Error('The plan used both review rounds. Start a new task with revised criteria.');
       job.state = 'planning';
     } else {

@@ -693,15 +693,19 @@ test('split planning is read-only, repairs exact errors once and never builds be
   const stopped = await failed.done(await failed.start({ split: true, reviewer: null, checks: '' }));
   assert.equal(stopped.state, 'needs-you'); assert.equal(failed.spawned.length, 2); assert.match(stopped.error, /unknown dependency/);
 });
-test('plan review feeds findings to the planner and stops after two plan rounds', async t => {
-  for (const reply of [approve, requested]) {
-    const f = fixture(t, [planned(splitPlan()), { type: 'review', reply: requested }, { ...planned(splitPlan()), inspect: invocation => assert.match(invocation.prompt, /wrong result/) }, { type: 'review', reply }]);
-    const job = await f.done(await f.start({ split: true, checks: '' }));
-    assert.equal(job.planRounds.length, 2); assert.equal(f.spawned.length, 4);
-    assert.equal(job.state, reply === approve ? 'plan-ready' : 'needs-you');
-    assert.match(f.spawned[1].prompt, /Review only the task criteria/); assert.doesNotMatch(f.spawned[1].prompt, /Diff against/);
-    assert.ok(f.spawned.every(invocation => !invocation.args.includes('workspace-write')));
-  }
+test('one plan review feeds findings to a single correction for owner approval', async t => {
+  const f = fixture(t, [planned(splitPlan()), { type: 'review', reply: requested }, { ...planned(splitPlan()), inspect: invocation => assert.match(invocation.prompt, /wrong result/) }]);
+  const job = await f.done(await f.start({ split: true, checks: '' }));
+  assert.equal(job.planRounds.length, 2); assert.equal(f.spawned.length, 3);
+  assert.equal(job.state, 'plan-ready'); assert.equal(job.planReview.verdict, 'changes-requested');
+  assert.match(f.spawned[1].prompt, /Review only the task criteria/); assert.doesNotMatch(f.spawned[1].prompt, /Diff against/);
+  assert.ok(f.spawned.every(invocation => !invocation.args.includes('workspace-write')));
+});
+test('an approved first plan proceeds without a correction', async t => {
+  const f = fixture(t, [planned(splitPlan()), { type: 'review', reply: approve }]);
+  const job = await f.done(await f.start({ split: true, checks: '' }));
+  assert.equal(job.state, 'plan-ready'); assert.equal(f.spawned.length, 2); assert.equal(job.planRounds.length, 1);
+  assert.equal(job.planReview.planRevision, 1);
 });
 test('approval validates all overrides before applying them and selects the main implementer', async t => {
   const f = fixture(t, [planned(splitPlan()), { hold: true }]); const job = await readyPlan(f);
