@@ -254,6 +254,9 @@ body[data-platform=darwin] .window-actions :is([data-action=minimize],[data-acti
 .queue-prompts small { display:block; color:var(--muted); font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
 #queue-panel .queue-pause { margin-top:12px }
 
+/* An expanded console covers the whole window. The rail sits in a higher stacking context, so hide it instead of letting it overlap the text. */
+body.console-expanded #dashboard > #sidebar,body.console-expanded #explorer-pane { visibility:hidden }
+
 /* F11 fullscreen hides the title bar; touching the top edge or tabbing into it brings it back over the content. */
 body.titlebar-hidden #consoles-page.has-expanded-console .session-grid>.session-card.console-expanded { inset:0!important }
 body.titlebar-hidden .settings-stage { padding-top:0 }

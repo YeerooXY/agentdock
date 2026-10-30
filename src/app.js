@@ -63,6 +63,7 @@ const icons = {
   refresh: '<path d="M20 8a8 8 0 1 0 0 8m0-13v5h-5"/>',
   arrow: '<path d="M5 12h14m-6-6 6 6-6 6"/>',
   close: '<path d="m6 6 12 12M6 18 18 6"/>',
+  power: '<path d="M12 3v8"/><path d="M6.3 6.8a8 8 0 1 0 11.4 0"/>',
   folder: '<path d="M3 7V5a2 2 0 0 1 2-2h5l2 4h7a2 2 0 0 1 2 2v10H3Z"/>',
   check: '<path d="m5 12 4 4L19 6"/>',
   minus: '<path d="M5 12h14"/>',
@@ -351,7 +352,7 @@ function sessionCard(slot) {
   if (session.kind === 'review') return reviewPanels.card(session);
   const expanded = expandedId === session.id;
   const endLabel = session.restoreError ? 'Remove saved console' : 'End this console';
-  return `<article class="session-card ${escape(session.state)}${expanded ? ' console-expanded' : ''}" data-console-id="${session.id}" data-slot="${slot}"><header class="console-panel-header"><button class="console-grip" draggable="true" data-console-drag="${session.id}" aria-label="Move console ${slot}" title="Drag to move or swap. Focus here and press Alt + 1–9 to move.">${readyIcon(session)}</button><span class="slot" title="${escape(providerName(session.provider) + ' · ' + session.cwd)}">${String(slot).padStart(2, '0')}</span>${slotNameInput(slot, session)}${session.worktree ? `<span class="worktree-badge" role="img" aria-label="${escape(`Git worktree branch ${session.worktree.branch}`)}" title="${escape(`Git worktree on ${session.worktree.branch}\n${session.worktree.path}`)}"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="4" cy="3.5" r="1.6"/><circle cx="4" cy="12.5" r="1.6"/><circle cx="12" cy="5.5" r="1.6"/><path d="M4 5.1v5.8M12 7.1c0 2.6-3 3-6.6 4.4"/></svg><span class="worktree-name">${escape(session.worktree.branch.replace(/^paddock\//, ''))}</span></span>` : ''}<span class="panel-status">${badge(session.state)}</span>${accountSwitchMenu(session, 'panel')}${projectChats.button(session)}${textSizeButtons(session.id, `console ${slot}`)}${appearance.button(slot)}<button class="icon-button console-expand" data-action="toggle-console" data-id="${session.id}" aria-label="${expanded ? 'Restore console ' + slot + ' to the grid (Ctrl+Shift+Enter)' : 'Expand console ' + slot}" aria-keyshortcuts="${expanded ? 'Control+Shift+Enter' : ''}" title="${expanded ? 'Restore console · Ctrl+Shift+Enter' : 'Expand console'}">${icon(expanded ? 'restore' : 'expand')}</button><button class="icon-button console-close" data-action="end-session" data-id="${session.id}" aria-label="${endLabel} ${slot}" title="${endLabel}">${icon('close')}</button></header>${switchOfferHtml(session)}<div class="console-panel-body" data-terminal-mount="${session.id}"></div>${messageQueue?.button(session) || ''}${resizeHandles(slot)}</article>`;
+  return `<article class="session-card ${escape(session.state)}${expanded ? ' console-expanded' : ''}" data-console-id="${session.id}" data-slot="${slot}"><header class="console-panel-header"><button class="console-grip" draggable="true" data-console-drag="${session.id}" aria-label="Move console ${slot}" title="Drag to move or swap. Focus here and press Alt + 1–9 to move.">${readyIcon(session)}</button><span class="slot" title="${escape(providerName(session.provider) + ' · ' + session.cwd)}">${String(slot).padStart(2, '0')}</span>${slotNameInput(slot, session)}${session.worktree ? `<span class="worktree-badge" role="img" aria-label="${escape(`Git worktree branch ${session.worktree.branch}`)}" title="${escape(`Git worktree on ${session.worktree.branch}\n${session.worktree.path}`)}"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="4" cy="3.5" r="1.6"/><circle cx="4" cy="12.5" r="1.6"/><circle cx="12" cy="5.5" r="1.6"/><path d="M4 5.1v5.8M12 7.1c0 2.6-3 3-6.6 4.4"/></svg><span class="worktree-name">${escape(session.worktree.branch.replace(/^paddock\//, ''))}</span></span>` : ''}<span class="panel-status">${badge(session.state)}</span>${accountSwitchMenu(session, 'panel')}${projectChats.button(session)}${textSizeButtons(session.id, `console ${slot}`)}${appearance.button(slot)}<button class="icon-button console-expand" data-action="toggle-console" data-id="${session.id}" aria-label="${expanded ? 'Restore console ' + slot + ' to the grid (Ctrl+Shift+Enter)' : 'Expand console ' + slot}" aria-keyshortcuts="${expanded ? 'Control+Shift+Enter' : ''}" title="${expanded ? 'Restore console · Ctrl+Shift+Enter' : 'Expand console'}">${icon(expanded ? 'grid' : 'expand')}</button><button class="icon-button console-close" data-action="end-session" data-id="${session.id}" aria-label="${endLabel} ${slot}" title="${endLabel}">${icon('power')}</button></header>${switchOfferHtml(session)}<div class="console-panel-body" data-terminal-mount="${session.id}"></div>${messageQueue?.button(session) || ''}${resizeHandles(slot)}</article>`;
 }
 function coveredSlots() {
   return new Map(allPanels().filter(isOpenConsole).flatMap(x => Array.from({ length: x.height || 1 }, (_, y) => Array.from({ length: x.width || 1 }, (_, dx) => [x.slot + y * gridSize().columns + dx, x])).flat()));
@@ -431,7 +432,7 @@ function renderConsoles() {
       else if (session.kind === 'review') reviewPanels.mount(session, panel.querySelector('.review-panel-body'));
       else codePanels.mount(session, panel.querySelector('.code-panel-body'));
       const context = session.kind === 'review' ? ` ${String(session.slot).padStart(2, '0')}` : '';
-      const expand = panel.querySelector('[data-action="toggle-console"]'); expand.innerHTML = icon(isExpanded ? 'restore' : 'expand'); expand.setAttribute('aria-label', isExpanded ? `Restore ${kind} panel${context} to grid` : `Expand ${kind} panel${context}`); expand.setAttribute('aria-expanded', String(isExpanded));
+      const expand = panel.querySelector('[data-action="toggle-console"]'); expand.innerHTML = icon(isExpanded ? 'grid' : 'expand'); expand.setAttribute('aria-label', isExpanded ? `Restore ${kind} panel${context} to grid` : `Expand ${kind} panel${context}`); expand.setAttribute('aria-expanded', String(isExpanded));
       panel.querySelectorAll('.console-grip,.console-resize').forEach(handle => { handle.disabled = !!expanded; });
       continue;
     }
@@ -466,7 +467,7 @@ function renderConsoles() {
     expand.setAttribute('aria-label', `${isExpandedNow ? 'Restore console ' + slot + ' to the grid (Ctrl+Shift+Enter)' : 'Expand console ' + slot}`);
     expand.setAttribute('aria-keyshortcuts', isExpandedNow ? 'Control+Shift+Enter' : '');
     expand.title = isExpandedNow ? 'Restore console · Ctrl+Shift+Enter' : 'Expand console';
-    expand.innerHTML = icon(isExpandedNow ? 'restore' : 'expand');
+    expand.innerHTML = icon(isExpandedNow ? 'grid' : 'expand');
     expand.setAttribute('aria-expanded', String(isExpandedNow));
     const grip = panel.querySelector('.console-grip');
     grip.draggable = !expanded;
