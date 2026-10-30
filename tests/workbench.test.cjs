@@ -39,6 +39,26 @@ test('deletion reports failure if the saved files are still on disk', async t =>
   assert.equal(results.list().length, 1); assert.ok(fs.existsSync(results.path(item.id)));
 });
 
+test('full image previews retain intrinsic pixels while thumbnails stay bounded', t => {
+  const { results } = fixture(t), sizes = [];
+  const source = { isEmpty: () => false, getSize: () => ({ width: 4000, height: 2000 }), toDataURL: () => 'full', resize: size => { sizes.push(size); return { toDataURL: () => 'thumbnail' }; } };
+  results.nativeImage = { createFromPath: () => source };
+  const item = results.add({ buffer: Buffer.from('fixture'), ext: '.png', kind: 'screenshot' }, { trusted: true });
+  assert.equal(results.preview(item.id, false, null, true).image, 'full'); assert.deepEqual(sizes, []);
+  assert.equal(results.preview(item.id, true).image, 'thumbnail'); assert.deepEqual(sizes, [{ width: 360, height: 180 }]);
+  results.preview(item.id); assert.deepEqual(sizes[1], { width: 1440, height: 720 });
+  source.isEmpty = () => true; assert.throws(() => results.preview(item.id), /could not be read/);
+});
+
+test('image fit and actual size clamp pan independently on each axis', async () => {
+  const { imageGeometry } = await import('../src/image-viewer-geometry.js');
+  assert.deepEqual(imageGeometry(2000, 1000, 1358, 752, 'fit'), { width: 1358, height: 679, x: 0, y: 0 });
+  assert.deepEqual(imageGeometry(1000, 1600, 1358, 752, 'fit'), { width: 470, height: 752, x: 0, y: 0 });
+  assert.deepEqual(imageGeometry(100, 50, 1000, 800, 'fit'), { width: 200, height: 100, x: 0, y: 0 });
+  assert.deepEqual(imageGeometry(2000, 1000, 1358, 752, 'actual', 1000, -1000), { width: 2000, height: 1000, x: 321, y: -124 });
+  assert.deepEqual(imageGeometry(1000, 1600, 1358, 752, 'actual', 100, 1000), { width: 1000, height: 1600, x: 0, y: 424 });
+});
+
 test('old capture reports hide dependency noise without deleting the saved original or source files', t => {
   const { root, results } = fixture(t);
   const noise = { file: 'ice-age-village-research/.deps/package.dist-info/INSTALLER', type: 'modified', patch: null };

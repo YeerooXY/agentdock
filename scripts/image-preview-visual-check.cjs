@@ -68,7 +68,8 @@ let browser; const reports = [];
     await capture('meshy-sign-in', '.image-generation-settings');
     // The agent's returned image is a fixture event, never an app generation API.
     await nav('results'); await page.evaluate(() => window.dock.completeAgentPreview()); assert.equal(calls, 1);
-    await page.locator('[data-wb=preview][data-id=mock-image]').first().click(); await page.locator('#result-preview img').waitFor();
+    await page.locator('[data-wb=preview][data-id=mock-image]').first().click(); await page.locator('.image-gallery:modal #result-preview img').waitFor();
+    assert.equal(await page.locator('.result-side-panel .wb-dialog').count(), 0);
     assert.match(await page.locator('.wb-dialog').textContent(), /Mocked image response/); assert.equal(await page.locator('.wb-dialog').evaluate(x => x.scrollTop), 0); await capture('returned-image', '.wb-dialog');
     await page.keyboard.press('Escape'); await page.locator('.wb-dialog').waitFor({ state: 'hidden' });
     await nav('usage'); const usage = page.locator('.image-usage'); await usage.waitFor(); await usage.evaluate(x => x.scrollIntoView({ block: 'start' }));

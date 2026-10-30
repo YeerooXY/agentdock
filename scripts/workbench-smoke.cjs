@@ -119,7 +119,7 @@ async function eventually(check, message='Timed out') {const end=Date.now()+4500
   await eventually(async()=>page.locator('.result-image img').evaluateAll(xs=>xs.length===1&&xs.every(x=>x.complete&&x.naturalWidth>0)));
   assert.ok(await page.locator('.result-image img').evaluateAll(xs=>xs.every(x=>x.naturalWidth<=360&&x.naturalHeight<=400)),'Gallery loads bounded thumbnails');
   await capture('test-results.png');
-  const screenshot=state.workbench.results.find(x=>x.kind==='screenshot');await page.locator(`[data-wb="preview"][data-id="${screenshot.id}"]`).first().click();await page.locator('[data-wb="delete-one"]').click();await eventually(async()=>(await call('state')).workbench.results.length===2);
+  const screenshot=state.workbench.results.find(x=>x.kind==='screenshot');await page.locator(`[data-wb="preview"][data-id="${screenshot.id}"]`).first().click();await page.locator('.image-details summary').click();page.once('dialog', dialog => dialog.accept());await page.locator('[data-wb="delete-one"]').click();await eventually(async()=>(await call('state')).workbench.results.length===2);
   await page.locator('.wb-dialog [data-wb=close]').click();
   await page.reload();await page.waitForSelector('.session-grid');assert.equal((await call('state')).workbench.results.length,2);assert.equal((await tool('dock/review_details',{id:review.id})).checks[0].status,'needs-work');
   await tool('dock/delete_review',{id:review.id});assert.equal((await call('state')).workbench.results.length,0);assert.equal((await tool('dock/list_reviews')).length,0);
