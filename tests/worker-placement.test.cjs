@@ -75,7 +75,7 @@ test('mobile state exposes per-console worker and owner capabilities', () => {
   assert.equal(state.sessions[1].consoleCapabilities.close, true);
 });
 
-test('ordinary console moves preserve every other protected console', t => {
+test('owner swaps two protected consoles in an occupied slot', t => {
   const fs = require('node:fs'), os = require('node:os'), path = require('node:path');
   const { Sessions } = require('../electron/sessions.cjs');
   const { OwnerConsoles } = require('../electron/owner-consoles.cjs');
@@ -83,15 +83,16 @@ test('ordinary console moves preserve every other protected console', t => {
   const owners = new OwnerConsoles(root);
   t.after(() => { owners.dispose(); fs.rmSync(root, { recursive: true, force: true }); });
   const sessions = new Sessions(root, { pty: {}, grid: { columns: 2, rows: 2 } });
-  sessions.items.set('one', { id: 'one', consoleKey: 'one', launchId: 'one-launch', alive: true, slot: 1 });
-  sessions.items.set('owner', { id: 'owner', consoleKey: 'owner', launchId: 'owner-launch', alive: true, slot: 2 });
+  sessions.items.set('one', { id: 'one', consoleKey: 'one', launchId: 'one-launch', alive: true, slot: 1, name: 'Trader' });
+  sessions.items.set('owner', { id: 'owner', consoleKey: 'owner', launchId: 'owner-launch', alive: true, slot: 2, name: 'Game' });
   const unbind = owners.bind(sessions); t.after(unbind);
+  assert.equal(owners.isProtected('one'), true);
   assert.equal(owners.isProtected('owner'), true);
-  assert.throws(() => sessions.previewLayout({ id: 'one', slot: 2 }), /displace a protected console/);
-  assert.throws(() => sessions.move('one', 2), /displace a protected console/);
-  sessions.move('one', 3);
-  assert.equal(sessions.items.get('owner').slot, 2);
+  const preview = sessions.previewLayout({ id: 'one', slot: 2 });
+  assert.deepEqual(preview.map(({ id, slot }) => [id, slot]), [['one', 2], ['owner', 1]]);
+  sessions.move('one', 2);
+  assert.deepEqual([sessions.items.get('one').slot, sessions.items.get('one').name], [2, 'Trader']);
+  assert.deepEqual([sessions.items.get('owner').slot, sessions.items.get('owner').name], [1, 'Game']);
   sessions.layout({ id: 'one', slot: 3, width: 2, height: 1 });
   assert.equal(sessions.items.get('one').width, 2);
-  assert.equal(sessions.items.get('owner').slot, 2);
 });

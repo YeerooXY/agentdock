@@ -237,16 +237,16 @@ test('file-prompt adapters do not write mailbox steering to plaintext files', t 
   assert.equal(f.bridge.pending(f.job), false);
 });
 
-test('worker moves cannot displace another protected console, including an owner interaction during commit', t => {
+test('owner moves can swap worker and protected consoles, including during owner interaction', t => {
   const f = fixture(t);
   f.sessions.items.set('owner', { id: 'owner', consoleKey: 'owner', launchId: 'owner-launch',
     alive: true, slot: 1, width: 1, height: 1, provider: 'shell', purpose: 'agent' });
   f.sessions.emit('changed');
   const item = f.open(); assert.equal(item.slot, 2);
-  assert.throws(() => f.sessions.move(item.id, 1), /displace a protected console/);
-  assert.equal(f.sessions.items.get('owner').slot, 1); assert.equal(item.slot, 2);
+  f.sessions.move(item.id, 1);
+  assert.equal(f.sessions.items.get('owner').slot, 2); assert.equal(item.slot, 1);
   f.owners.heartbeat([...f.sessions.items.values()].map(item => ({ consoleKey: item.consoleKey, launchId: item.launchId })));
-  assert.throws(() => f.sessions.move('owner', 2, () => f.sessions.ownerInteraction(item.id, 'click')), /displace a protected console/);
+  f.sessions.move('owner', 1, () => f.sessions.ownerInteraction(item.id, 'click'));
   assert.equal(f.sessions.items.get('owner').slot, 1); assert.equal(item.slot, 2);
 });
 

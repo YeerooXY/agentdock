@@ -743,23 +743,12 @@ class Sessions extends EventEmitter {
     return this.layout({ id, slot }, beforeMove);
   }
   previewLayout(change) {
-    const plan = planLayout(this.layoutItems(), change, this.grid);
-    this.guardWorkerLayout(change, plan); return plan;
-  }
-  guardWorkerLayout(change, plan) {
-    for (const placed of plan) {
-      const current = this.items.get(placed.id);
-      if (placed.id === change.id || !current) continue;
-      if (this.ownerConsoles?.isProtected(current.consoleKey) && ['slot', 'width', 'height'].some(key => placed[key] !== (current[key] ?? 1))) {
-        throw new Error('This move would displace a protected console. Choose a vacant slot.');
-      }
-    }
+    return planLayout(this.layoutItems(), change, this.grid);
   }
   layout(change, beforeMove = () => {}) {
     if (this.starting.size) throw new Error('Wait for the new console to open before moving panels.');
     const plan = this.previewLayout(change);
     beforeMove(plan);
-    this.guardWorkerLayout(change, plan);
     for (const placed of plan) Object.assign(this.items.get(placed.id), placed);
     for (const [id, old] of this.items) if (!old.alive && !old.restoreError && plan.some(x => x.slot === old.slot)) this.items.delete(id);
     this.emit('changed');
