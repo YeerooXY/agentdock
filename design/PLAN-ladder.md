@@ -121,4 +121,6 @@ Difficulty measures reasoning risk; complexity measures moving parts, relative t
 | 11 | Combined checks and conditional whole-change review. Test serialized current-branch slices create/merge no branches, and explicitly requested worktrees merge only into task integration; Accept stays record-only. | 4, 9 | 3 | 3 | L2 · Terra/Sonnet |
 | 12 | Combined recovery/regressions: freeze/reload, main restart, merge crash and input/cleanup races across competing projects, full grids and desktop/mobile steering; update task/storage docs. | 10, 11 | 4 | 5 | L3 · Sol/Opus; recovery risk |
 
+**Row 6 status: partial.** Placement is a tested prototype; project-page and hidden-panel UI, cap integration, and desktop fixtures remain to be implemented.
+
 Future implementation validation: `npm run build`, `npm test`, then `npm run test:linux`, whose Docker runner executes `npm run test:desktop` on a virtual display. Use mocked HTTP/processes and temporary data; submit no paid model requests. Run affected desktop cases in slices 6 and 10; slice 12 runs the combined suite. This planning task runs none of those launch commands.

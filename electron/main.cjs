@@ -850,7 +850,7 @@ app.whenReady().then(() => guardStartup(async () => {
         }
         case 'session.models': return { ok: true, value: consoleModels(payload) };
         case 'grid.configure': sessions.setGrid(payload); break;
-        case 'session.layout.preview': return { ok: true, value: planLayout(sessions.items.values(), { id: payload?.id, slot: payload?.slot, width: payload?.width, height: payload?.height }, sessions.grid) };
+        case 'session.layout.preview': return { ok: true, value: sessions.previewLayout({ id: payload?.id, slot: payload?.slot, width: payload?.width, height: payload?.height }) };
         case 'session.move':
         case 'session.layout': {
           sessions.layout(method === 'session.move' ? { id: payload?.id, slot: payload?.slot } : { id: payload?.id, slot: payload?.slot, width: payload?.width, height: payload?.height }, plan => {

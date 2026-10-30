@@ -76,6 +76,7 @@ class Sessions extends EventEmitter {
     this.draftQuietMs = dependencies.draftQuietMs ?? 900;
     this.switchOperations = new Map(); this.pendingStages = new Map(); this.loginAccounts = new Map(); this.setupAccounts = new Map();
     this.grid = gridSize(dependencies.grid); this.onLayout = dependencies.onLayout || (() => {});
+    this.ownerConsoles = dependencies.ownerConsoles;
     this.contexts = new Map();
     this.refreshProjectContext = () => this.syncProjects();
     this.projects?.on('changed', this.refreshProjectContext);
@@ -730,9 +731,12 @@ class Sessions extends EventEmitter {
     if (!Number.isInteger(slot) || slot < 1 || slot > this.grid.columns * this.grid.rows) throw new Error('Choose a slot inside the console grid.');
     return this.layout({ id, slot }, beforeMove);
   }
+  previewLayout(change) {
+    return planLayout(this.items.values(), change, this.grid);
+  }
   layout(change, beforeMove = () => {}) {
     if (this.starting.size) throw new Error('Wait for the new console to open before moving panels.');
-    const plan = planLayout(this.items.values(), change, this.grid);
+    const plan = this.previewLayout(change);
     beforeMove(plan);
     for (const placed of plan) Object.assign(this.items.get(placed.id), placed);
     for (const [id, old] of this.items) if (!old.alive && !old.restoreError && plan.some(x => x.slot === old.slot)) this.items.delete(id);
