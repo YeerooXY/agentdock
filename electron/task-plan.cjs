@@ -41,6 +41,13 @@ function overlap(a, b) {
   const left = prefix(a), right = prefix(b);
   return left.startsWith(right) || right.startsWith(left);
 }
+function sizeFromRating(difficulty, complexity) {
+  const highest = Math.max(difficulty, complexity);
+  if (highest <= 2) return 'small';
+  if (highest === 3) return 'medium';
+  return 'large';
+}
+const legacySizeMap = { small: 1, medium: 3, large: 5 };
 function validatePlan(value) {
   const errors = [];
   if (!value || typeof value !== 'object' || Array.isArray(value)) return { plan: null, errors: ['Return a JSON plan object.'] };
@@ -54,7 +61,12 @@ function validatePlan(value) {
     if (ids.has(sub.id)) errors.push(`${label}: duplicate id ${sub.id}.`); ids.add(sub.id);
     if (typeof sub.title !== 'string' || !sub.title.trim() || sub.title.length > 200 || sub.title.includes('\0')) errors.push(`${label}: title must be 1 to 200 characters.`);
     if (typeof sub.criteria !== 'string' || !sub.criteria.trim() || sub.criteria.length > 4000 || sub.criteria.includes('\0')) errors.push(`${label}: criteria must be 1 to 4,000 characters.`);
-    if (!['small', 'medium', 'large'].includes(sub.size)) errors.push(`${label}: size must be small, medium or large.`);
+    if (sub.difficulty === undefined && sub.complexity === undefined) {
+      if (!['small', 'medium', 'large'].includes(sub.size)) errors.push(`${label}: size must be small, medium or large.`);
+    } else {
+      if (!Number.isInteger(sub.difficulty) || sub.difficulty < 1 || sub.difficulty > 5) errors.push(`${label}: difficulty must be a whole number from 1 to 5.`);
+      if (!Number.isInteger(sub.complexity) || sub.complexity < 1 || sub.complexity > 5) errors.push(`${label}: complexity must be a whole number from 1 to 5.`);
+    }
     if (!Array.isArray(sub.owns) || sub.owns.length < 1 || sub.owns.length > 30 || sub.owns.some(pattern => !validGlob(pattern))) errors.push(`${label}: owns must contain 1 to 30 relative globs, without .., absolute paths or .git paths.`);
     if (!Array.isArray(sub.dependsOn) || sub.dependsOn.length > 8 || sub.dependsOn.some(id => typeof id !== 'string' || !idPattern.test(id))) errors.push(`${label}: dependsOn must list subtask ids.`);
   }
@@ -76,7 +88,11 @@ function validatePlan(value) {
     const a = subtasks[i], b = subtasks[j];
     if (Array.isArray(a?.owns) && Array.isArray(b?.owns) && a.owns.some(left => typeof left === 'string' && b.owns.some(right => typeof right === 'string' && overlap(left, right))) && !depends(a.id, b.id) && !depends(b.id, a.id)) errors.push(`${a.id} and ${b.id}: ownership can overlap; order them by dependency.`);
   }
-  return { errors, plan: errors.length ? null : { contracts: value.contracts, subtasks: subtasks.map(({ id, title, criteria, owns, dependsOn, size }) => ({ id, title: title.trim(), criteria: criteria.trim(), owns: [...owns], dependsOn: [...new Set(dependsOn)], size })) } };
+  return { errors, plan: errors.length ? null : { contracts: value.contracts, subtasks: subtasks.map(({ id, title, criteria, owns, dependsOn, size, difficulty, complexity }) => {
+    const derivedDifficulty = difficulty ?? legacySizeMap[size];
+    const derivedComplexity = complexity ?? legacySizeMap[size];
+    return { id, title: title.trim(), criteria: criteria.trim(), owns: [...owns], dependsOn: [...new Set(dependsOn)], size: sizeFromRating(derivedDifficulty, derivedComplexity), difficulty: derivedDifficulty, complexity: derivedComplexity };
+  }) } };
 }
 function parsePlan(text) {
   const block = String(text).match(/```json\s*\r?\n([\s\S]*?)```/i);
@@ -90,7 +106,8 @@ function planPrompt(job, feedback = []) {
   return [
     'Plan this repository task read-only. Do not edit files or change Git state. Read the repository to establish interfaces, data shapes, timing, units, limits and exact product wording.',
     `Task: ${job.title}\nAcceptance criteria:\n${job.criteria}`,
-    'Return one fenced ```json block with {"contracts":"shared interfaces, data shapes, timings and wording", "subtasks":[{"id":"short-id","title":"title","criteria":"acceptance criteria","owns":["src/foo/**"],"dependsOn":[],"size":"small|medium|large"}]}.',
+    'Return one fenced ```json block with {"contracts":"shared interfaces, data shapes, timings and wording", "subtasks":[{"id":"short-id","title":"title","criteria":"acceptance criteria","owns":["src/foo/**"],"dependsOn":[],"difficulty":"1-5","complexity":"1-5"}]}.',
+    'Rate difficulty and complexity relative to the other subtasks. Do not estimate hours.',
     'Use 2–8 subtasks, unique ids matching [a-z0-9-]{1,32}, 1–30 relative ownership globs per subtask, criteria up to 4,000 characters each and contracts up to 12,000 characters. No .., absolute or .git paths. Dependencies must exist and be acyclic. Overlapping ownership must be ordered by dependency. Cover all task criteria. Contracts must agree across every subtask.',
     feedback.length ? `Repair the plan using these exact validation errors or confirmed review findings:\n${feedback.join('\n')}\nPrevious plan:\n${job.plan ? JSON.stringify(job.plan) : job.planAnswer || '(invalid JSON)'}` : ''
   ].filter(Boolean).join('\n\n');

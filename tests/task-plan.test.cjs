@@ -1,9 +1,35 @@
 'use strict';
 const test = require('node:test'), assert = require('node:assert/strict');
 const { validatePlan, parsePlan, ownsFile, readySubtasks } = require('../electron/task-plan.cjs');
-const sub = (id, owns = [`src/${id}/**`], dependsOn = []) => ({ id, title: id, criteria: 'Implement the criteria.', owns, dependsOn, size: 'small' });
+const sub = (id, owns = [`src/${id}/**`], dependsOn = []) => ({ id, title: id, criteria: 'Implement the criteria.', owns, dependsOn, size: 'small', difficulty: 1, complexity: 1 });
 const plan = (...subtasks) => ({ contracts: 'Use milliseconds.', subtasks: subtasks.length ? subtasks : [sub('one'), sub('two')] });
 const errors = value => validatePlan(value).errors.join('\n');
+const rated = (id, difficulty, complexity, owns = [`src/${id}/**`], dependsOn = []) => ({ id, title: id, criteria: 'Implement the criteria.', owns, dependsOn, difficulty, complexity });
+
+test('accepts relative ratings and derives routing size from max(difficulty, complexity)', () => {
+  const validated = validatePlan(plan(rated('one', 2, 1), rated('two', 3, 4)));
+  assert.deepEqual(validated.errors, []);
+  assert.deepEqual(validated.plan.subtasks, [
+    { id: 'one', title: 'one', criteria: 'Implement the criteria.', owns: ['src/one/**'], dependsOn: [], size: 'small', difficulty: 2, complexity: 1 },
+    { id: 'two', title: 'two', criteria: 'Implement the criteria.', owns: ['src/two/**'], dependsOn: [], size: 'large', difficulty: 3, complexity: 4 }
+  ]);
+});
+
+test('rejects out-of-range relative ratings', () => {
+  const value = plan(rated('one', 6, 3), rated('two', 2, 0));
+  assert.match(errors(value), /difficulty must be a whole number from 1 to 5/);
+  assert.match(errors(value), /complexity must be a whole number from 1 to 5/);
+});
+
+test('accepts a legacy size-only plan and derives ratings', () => {
+  const value = plan({ id: 'legacy', title: 'legacy', criteria: 'Implement the criteria.', owns: ['src/legacy/**'], dependsOn: [], size: 'medium' }, rated('other', 1, 2));
+  const validated = validatePlan(value);
+  assert.deepEqual(validated.errors, []);
+  assert.deepEqual(validated.plan.subtasks, [
+    { id: 'legacy', title: 'legacy', criteria: 'Implement the criteria.', owns: ['src/legacy/**'], dependsOn: [], size: 'medium', difficulty: 3, complexity: 3 },
+    { id: 'other', title: 'other', criteria: 'Implement the criteria.', owns: ['src/other/**'], dependsOn: [], size: 'small', difficulty: 1, complexity: 2 }
+  ]);
+});
 
 test('validates and parses fenced plans without mutating input', () => {
   const value = plan(); const before = JSON.stringify(value);
