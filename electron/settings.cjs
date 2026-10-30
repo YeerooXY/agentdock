@@ -1,8 +1,11 @@
 'use strict';
-const { defaults: routingDefaults, validateRouting } = require('./task-routing.cjs');
+const { defaults: routingDefaults, migrateRouting, validateRouting } = require('./task-routing.cjs');
 
 function initialSettings(saved, folder, capabilities) {
-  let routing; try { routing = validateRouting(saved.routing || routingDefaults); } catch { routing = validateRouting(routingDefaults); }
+  // Normalize saved routing before validation so older settings retain their
+  // account/model choices instead of falling back to defaults as a whole.
+  let routing;
+  try { routing = migrateRouting(saved.routing); } catch { routing = validateRouting(routingDefaults); }
   const defaults = {
     hudAlwaysOnTop: false, notifications: true, restoreConsoles: true, confirmConsoleEnd: true, keepAwakeWhileWorking: true, autoSaveResults: false, suggestProjects: true, delegationPanels: true,
     agentPermissions: 'default', codexScrollback: true, sidebarCollapsed: false, vimControls: false, trimStyle: 'classic', trimWidth: 1, lighting: 'static', lightingSpeed: 'normal', starDensity: 2, ambientMotion: true, launchEffect: true, cursorBlink: false,

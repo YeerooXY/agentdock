@@ -1,7 +1,7 @@
 'use strict';
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { defaults, validateRouting, estimateEffort, suggestAssignment } = require('../electron/task-routing.cjs');
+const { defaults, ROUTING_SCHEMA_VERSION, migrateRouting, validateRouting, estimateEffort, suggestAssignment } = require('../electron/task-routing.cjs');
 
 test('estimates effort from scope signals', () => {
   assert.equal(estimateEffort({ title: 'Fix typo', criteria: 'Correct the label.' }).size, 'small');
@@ -24,9 +24,38 @@ test('routing uses fresh account headroom and respects exclusions', () => {
 });
 
 test('validates routing settings', () => {
-  assert.deepEqual(validateRouting(defaults), defaults);
+  const validated = validateRouting(defaults);
+  assert.deepEqual(validated.small, defaults.small); assert.deepEqual(validated.medium, defaults.medium); assert.deepEqual(validated.large, defaults.large);
+  assert.equal(validated.schemaVersion, ROUTING_SCHEMA_VERSION); assert.deepEqual(validated.levels.L1.map(item => item.family), ['openai', 'openai']);
   assert.throws(() => validateRouting({ ...defaults, small: [{ accountId: 'opencode:default', model: 'paid-model' }] }));
   assert.throws(() => validateRouting({ ...defaults, claudeReviewsOnly: 'true' }));
+});
+
+test('routing migration preserves choices and reviewer policy, records unknown model families, and is idempotent', () => {
+  const old = {
+    small: [{ accountId: 'codex:default', model: 'gpt-6.1-terra' }, { accountId: 'kiro:work', model: 'terras-new-model' }],
+    medium: [{ accountId: 'claude:default', model: 'claude-sonnet-5' }], large: [],
+    defaultReviewer: { accountId: 'opencode:default', model: 'opencode-go/gpt-6-luna' },
+    claudeReviewsOnly: true, excludedModels: ['opencode-go/qwen3.8-max']
+  };
+  const migrated = migrateRouting(old);
+  assert.equal(migrated.schemaVersion, ROUTING_SCHEMA_VERSION);
+  assert.deepEqual(migrated.small, old.small); assert.deepEqual(migrated.levels.L1.map(item => item.accountId), ['codex:default', 'kiro:work']);
+  assert.equal(migrated.levels.L1[0].family, 'openai'); assert.equal(migrated.levels.L1[1].needsSetup, true);
+  assert.deepEqual(migrated.levels.L2[0], { accountId: 'claude:default', model: 'claude-sonnet-5', family: 'anthropic' });
+  assert.deepEqual(migrated.defaultReviewer, old.defaultReviewer); assert.deepEqual(migrated.excludedModels, old.excludedModels);
+  assert.equal(migrated.claudeReviewsOnly, true); assert.deepEqual(migrated.roles.claude, { builder: false, reviewer: true });
+  assert.deepEqual(migrateRouting(migrated), migrated);
+  const optedIn = migrateRouting({ ...old, claudeReviewsOnly: false });
+  assert.equal(optedIn.claudeReviewsOnly, false); assert.deepEqual(optedIn.roles.claude, { builder: true, reviewer: true });
+});
+
+test('legacy Claude roles require an explicit ladder opt-in and survive later migrations', () => {
+  const legacy = { ...defaults, claudeReviewsOnly: true, roles: { claude: { builder: true, reviewer: true } } };
+  assert.deepEqual(migrateRouting(legacy).roles.claude, { builder: false, reviewer: true });
+  assert.deepEqual(validateRouting(defaults).roles.claude, { builder: false, reviewer: true });
+  const optedIn = { ...migrateRouting(legacy), roles: { claude: { builder: true, reviewer: true } } };
+  assert.deepEqual(migrateRouting(optedIn), optedIn);
 });
 
 test('compares every candidate to the best headroom before applying the ten-point preference', () => {

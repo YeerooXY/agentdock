@@ -10,6 +10,7 @@ const { permitted } = require('./code-panel.cjs');
 const { usageEnvironment } = require('./subscription-usage.cjs');
 const { collectChanges, reviewBrief, pickReviewer, reviewerLaunch, parseReply, progressStream, progressLog, appendLog, killTree, redactText, REVIEWERS, git: runGit } = require('./delegation.cjs');
 const { defaults: routingDefaults, estimateEffort, suggestAssignment } = require('./task-routing.cjs');
+const { TASK_SCHEMA_VERSION, ATTEMPT_SCHEMA_VERSION, STEERING_SCHEMA_VERSION, attemptId, migrateTaskRecord } = require('./task-contracts.cjs');
 const { SplitTasks, ACTIVE: RUNNING, SUB_ACTIVE, contractPrompt, planReport } = require('./task-plan.cjs');
 const TASK_PROVIDERS = [...REVIEWERS, 'opencode'];
 const PROCESS_STARTED_AT = Date.now() - process.uptime() * 1000;
@@ -99,6 +100,7 @@ class TaskLoop extends EventEmitter {
     for (const file of fs.readdirSync(this.dir).filter(file => /^[\w-]+\.json$/.test(file))) {
       const job = readJson(path.join(this.dir, file), null);
       if (!job?.id || path.basename(file, '.json') !== job.id) continue;
+      const migrated = migrateTaskRecord(job);
       // Older task files have no recording time. Their PIDs came from an earlier
       // app instance and cannot identify a process started by this instance.
       for (const item of [job, ...(job.subtasks || [])]) if (Number.isInteger(item.processPid) && !Number.isFinite(item.processRecordedAt)) item.processRecordedAt = 0;
@@ -118,7 +120,7 @@ class TaskLoop extends EventEmitter {
         }).catch(() => { job.diffError = 'The interrupted task diff could not be read.'; })
           .then(() => { if (!this.closing) { job.rebuildReport = false; this.changed(job); return this.record(job); } }).finally(() => this.pending.delete(job.id));
         this.pending.set(job.id, recovered);
-      }
+      } else if (migrated) this.persist(job);
     }
   }
   choices(implementerId, { title = '', criteria = '', size, split = false } = {}) {
@@ -225,7 +227,8 @@ class TaskLoop extends EventEmitter {
         baseline = (await this.git(repo, ['stash', 'create'])).trim() || sourceRevision;
       }
       const suggestion = this.choices(implementer.accountId);
-      const job = { id, repo, repoKey, workFolder, title: redactText(title), criteria: redactText(criteria), checks: redactText(checks), workflow, branch, sourceRevision, baseline, baselineUntracked, baselineUntrackedState,
+      const job = { id, schemaVersion: TASK_SCHEMA_VERSION, attemptSchemaVersion: ATTEMPT_SCHEMA_VERSION, steeringSchemaVersion: STEERING_SCHEMA_VERSION, eventSequence: 0, steeringSequence: 0,
+        repo, repoKey, workFolder, title: redactText(title), criteria: redactText(criteria), checks: redactText(checks), workflow, branch, sourceRevision, baseline, baselineUntracked, baselineUntrackedState,
         implementer, reviewer, why: { implementer: 'Selected by you.', reviewer: reviewer ? reviewer.accountId === suggestion.suggestion ? `Selected by you. Suggested: ${suggestion.why}` : 'Selected by you.' : 'No review selected.' },
         maxRounds, timeLimitMinutes, startedAt: this.now(), finishedAt: null, state: split ? 'planning' : 'implementing', rounds: [], unresolved: [], log: [], error: '', fingerprint: null, diffStat: '', finalDiff: '', resultId: null,
         ...(split ? { split: true, planner: implementer, planReviewer: reviewer, planRounds: [], subtasks: [], parallelLimit: 2, activeElapsedMs: 0, integrationHead: sourceRevision } : {}) };
@@ -305,7 +308,7 @@ class TaskLoop extends EventEmitter {
         const changes = await this.changes(job);
         if (!RUNNING.has(job.state)) return;
         const brief = this.prompt(job, changes);
-        const round = { number, startedAt: this.now(), elapsedMs: null, implement: null, check: null, review: null };
+        const round = { attemptId: attemptId(job.id, number), schemaVersion: ATTEMPT_SCHEMA_VERSION, steeringSequenceConsumed: 0, number, startedAt: this.now(), elapsedMs: null, implement: null, check: null, review: null };
         job.rounds.push(round);
         if (!(verifyFirst && number === first)) {
           round.implement = { ...job.implementer, state: 'running', startedAt: this.now(), elapsedMs: null, usage: null };

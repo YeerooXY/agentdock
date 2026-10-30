@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const path = require('node:path');
 const fs = require('node:fs');
 const { initialSettings } = require('../electron/settings.cjs');
+const { defaults: routingDefaults, validateRouting } = require('../electron/task-routing.cjs');
 const { runtimeFiles } = require('../electron/runtime.cjs');
 const { Sessions } = require('../electron/sessions.cjs');
 
@@ -37,6 +38,31 @@ test('requested-output policy migrates old capture defaults once and retains lat
   assert.deepEqual(migrated.consoleDefaults, { provider: 'shell', cwd: folder, name: '', command: '' });
   assert.equal(initialSettings({ ...migrated, autoSaveResults: true }, folder, {}).autoSaveResults, true);
   assert.equal(initialSettings({ ...migrated, autoSaveResults: false }, folder, {}).autoSaveResults, false);
+});
+
+test('saved legacy routing is migrated before validation without losing preferences', () => {
+  const saved = { routing: {
+    small: [{ accountId: 'codex:default', model: 'gpt-6.1-terra' }, { accountId: 'kiro:default', model: 'unknown-model' }],
+    medium: [], large: [], defaultReviewer: { accountId: 'opencode:default', model: 'opencode-go/gpt-6-luna' },
+    claudeReviewsOnly: true, excludedModels: ['model-to-exclude']
+  } };
+  const migrated = initialSettings(saved, 'unused', {}).routing;
+  assert.equal(migrated.schemaVersion, 2); assert.equal(migrated.small.length, 2);
+  assert.deepEqual(migrated.levels.L1.map(item => item.accountId), ['codex:default', 'kiro:default']);
+  assert.equal(migrated.levels.L1[1].needsSetup, true); assert.deepEqual(migrated.defaultReviewer, saved.routing.defaultReviewer);
+  assert.equal(migrated.claudeReviewsOnly, true); assert.deepEqual(migrated.excludedModels, saved.routing.excludedModels);
+  assert.deepEqual(migrated.roles.claude, { builder: false, reviewer: true });
+  assert.deepEqual(initialSettings({ ...saved, routing: migrated }, 'unused', {}).routing, migrated);
+});
+
+test('malformed saved routing loads safely and migration errors fall back to defaults', () => {
+  const malformedPool = initialSettings({ routing: { ...routingDefaults, small: 'x' } }, 'unused', {});
+  assert.deepEqual(malformedPool.routing.small, routingDefaults.small);
+  // This malformed setup field is valid JSON but fails validation's string conversion.
+  const routing = { ...routingDefaults, needsSetup: [{ level: { toString: null } }] };
+  const settings = initialSettings({ routing, notifications: false }, 'unused', {});
+  assert.deepEqual(settings.routing, validateRouting(routingDefaults));
+  assert.equal(settings.notifications, false);
 });
 
 test('individual console end confirmation defaults on and accepts only an explicit false', () => {

@@ -8,7 +8,79 @@ const defaults = {
   defaultReviewer: { accountId: 'opencode:default', model: 'opencode-go/gpt-6-luna' }, claudeReviewsOnly: true,
   excludedModels: ['opencode-go/qwen3.8-max', 'opencode-go/glm-5.3', 'opencode-go/minimax-m3', 'opencode/glm-5.3-flash-free', 'opencode/mimo-v2.6-flash-free']
 };
+const ROUTING_SCHEMA_VERSION = 2;
 const modelPattern = /^[\w.:/-]{1,120}$/;
+function modelFamily(model) {
+  const name = String(model || '').toLowerCase().split('/').at(-1);
+  if (/^(?:gpt|o\d|codex)(?:[-.]|$)/.test(name)) return 'openai';
+  if (/^claude(?:[-.]|$)/.test(name)) return 'anthropic';
+  if (/^kimi(?:[-.]|$)/.test(name)) return 'moonshot';
+  if (/^qwen(?:[-.]|$)/.test(name)) return 'alibaba';
+  if (/^(?:glm|chatglm)(?:[-.]|$)/.test(name)) return 'zhipu';
+  if (/^minimax(?:[-.]|$)/.test(name)) return 'minimax';
+  if (/^mimo(?:[-.]|$)/.test(name)) return 'xiaomi';
+  if (/^deepseek(?:[-.]|$)/.test(name)) return 'deepseek';
+  if (/^gemini(?:[-.]|$)/.test(name)) return 'google';
+  if (/^llama(?:[-.]|$)/.test(name)) return 'meta';
+  return null;
+}
+const levelFromPool = { small: 'L1', medium: 'L2', large: 'L3' };
+const poolFromLevel = { L1: 'small', L2: 'medium', L3: 'large' };
+function looseAssignment(item) {
+  if (!item || typeof item !== 'object' || Array.isArray(item) || typeof item.accountId !== 'string' || typeof item.model !== 'string') return null;
+  if (!/^[a-z0-9-]{1,40}:[\w.-]{1,80}$/i.test(item.accountId) || !modelPattern.test(item.model) || item.model.startsWith('-')) return null;
+  if (item.accountId.startsWith('opencode:') && !/^opencode-go\/[\w.-]+$|^opencode\/[\w.-]+-free$/.test(item.model)) return null;
+  return { accountId: item.accountId, model: item.model };
+}
+function migrateRouting(value) {
+  const source = value && typeof value === 'object' && !Array.isArray(value) ? value : defaults;
+  const needsSetup = Array.isArray(source.needsSetup) ? source.needsSetup.filter(item => item && typeof item === 'object').slice(0, 100) : [];
+  const noteSetup = (item, level, reason = 'Model family could not be identified.') => {
+    if (!item || typeof item !== 'object') return;
+    const record = { level, accountId: typeof item.accountId === 'string' ? item.accountId.slice(0, 120) : '', model: typeof item.model === 'string' ? item.model.slice(0, 120) : '', reason };
+    if (!needsSetup.some(existing => existing.level === record.level && existing.accountId === record.accountId && existing.model === record.model)) needsSetup.push(record);
+  };
+  const pools = {};
+  for (const size of ['small', 'medium', 'large']) {
+    const configured = Array.isArray(source[size]) ? source[size] : (source.schemaVersion === ROUTING_SCHEMA_VERSION ? [] : defaults[size]);
+    pools[size] = [];
+    for (const item of configured.slice(0, 30)) {
+      const assignment = looseAssignment(item);
+      if (!assignment) { noteSetup(item, levelFromPool[size], 'Entry needs valid account and model settings.'); continue; }
+      pools[size].push(assignment);
+    }
+  }
+  const levels = {};
+  for (const level of ['L1', 'L2', 'L3']) {
+    const size = poolFromLevel[level], configured = source.schemaVersion === ROUTING_SCHEMA_VERSION && source.levels && Array.isArray(source.levels[level]) ? source.levels[level] : pools[size];
+    levels[level] = [];
+    for (const item of configured.slice(0, 30)) {
+      const assignment = looseAssignment(item);
+      if (!assignment) { noteSetup(item, level, 'Entry needs valid account and model settings.'); continue; }
+      const family = typeof item.family === 'string' && /^[a-z0-9-]{1,40}$/.test(item.family) ? item.family : modelFamily(assignment.model);
+      const entry = { ...assignment, family };
+      if (!family || item.needsSetup === true) {
+        entry.needsSetup = true;
+        noteSetup(assignment, level, item.needsSetup ? 'Model family needs setup.' : 'Model family could not be identified.');
+      }
+      levels[level].push(entry);
+    }
+  }
+  let defaultReviewer = null;
+  if (source.defaultReviewer != null) {
+    defaultReviewer = looseAssignment(source.defaultReviewer);
+    if (!defaultReviewer) noteSetup(source.defaultReviewer, 'reviewer', 'Reviewer needs valid account and model settings.');
+  }
+  const excludedModels = Array.isArray(source.excludedModels) ? source.excludedModels.filter(model => typeof model === 'string' && modelPattern.test(model) && !model.startsWith('-')).slice(0, 100) : [...defaults.excludedModels];
+  const claudeReviewsOnly = typeof source.claudeReviewsOnly === 'boolean' ? source.claudeReviewsOnly : defaults.claudeReviewsOnly;
+  return validateRouting({
+    ...pools, schemaVersion: ROUTING_SCHEMA_VERSION, levels, defaultReviewer,
+    claudeReviewsOnly, excludedModels, needsSetup,
+    // Retain the legacy role policy until ladder roles explicitly enable building.
+    roles: source.schemaVersion === ROUTING_SCHEMA_VERSION && source.roles?.claude && typeof source.roles.claude.builder === 'boolean' && typeof source.roles.claude.reviewer === 'boolean'
+      ? { claude: { ...source.roles.claude } } : { claude: { builder: !claudeReviewsOnly, reviewer: true } }
+  });
+}
 function validateRouting(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Enter routing settings.');
   const assignment = item => {
@@ -21,7 +93,22 @@ function validateRouting(value) {
     result[size] = value[size].map(assignment);
   }
   if (typeof value.claudeReviewsOnly !== 'boolean' || !Array.isArray(value.excludedModels) || value.excludedModels.length > 100 || value.excludedModels.some(model => typeof model !== 'string' || !modelPattern.test(model) || model.startsWith('-'))) throw new Error('Enter valid routing settings.');
-  return { ...result, defaultReviewer: value.defaultReviewer === null ? null : assignment(value.defaultReviewer), claudeReviewsOnly: value.claudeReviewsOnly, excludedModels: [...new Set(value.excludedModels)] };
+  const levels = {};
+  for (const level of ['L1', 'L2', 'L3']) {
+    const entries = value.levels?.[level];
+    const source = Array.isArray(entries) ? entries : result[poolFromLevel[level]];
+    if (!Array.isArray(source) || source.length > 30) throw new Error('Enter an ordered model pool for each ladder level.');
+    levels[level] = source.map(item => {
+      const valid = assignment(item);
+      const family = typeof item.family === 'string' && /^[a-z0-9-]{1,40}$/.test(item.family) ? item.family : modelFamily(valid.model);
+      return { ...valid, family, ...(family && item.needsSetup !== true ? {} : { needsSetup: true }) };
+    });
+  }
+  const roles = value.roles?.claude && typeof value.roles.claude.builder === 'boolean' && typeof value.roles.claude.reviewer === 'boolean'
+    ? { claude: { builder: value.roles.claude.builder, reviewer: value.roles.claude.reviewer } }
+    : { claude: { builder: !value.claudeReviewsOnly, reviewer: true } };
+  const needsSetup = Array.isArray(value.needsSetup) ? value.needsSetup.filter(item => item && typeof item === 'object').slice(0, 100).map(item => ({ level: String(item.level || '').slice(0, 16), accountId: String(item.accountId || '').slice(0, 120), model: String(item.model || '').slice(0, 120), reason: String(item.reason || 'Needs setup.').slice(0, 200) })) : [];
+  return { ...result, schemaVersion: ROUTING_SCHEMA_VERSION, levels, roles, needsSetup, defaultReviewer: value.defaultReviewer === null ? null : assignment(value.defaultReviewer), claudeReviewsOnly: value.claudeReviewsOnly, excludedModels: [...new Set(value.excludedModels)] };
 }
 function estimateEffort({ criteria = '', title = '' } = {}) {
   const text = `${title}\n${criteria}`, bullets = (criteria.match(/^\s*(?:[-*•]|\d+[.)])\s+/gm) || []).length, paths = (text.match(/\b[\w.-]+(?:\/[\w.-]+)+\b/g) || []).length;
@@ -78,4 +165,4 @@ function suggestAssignment({ size, candidates = [], limits = [], rules = default
   if (!reviewer) warnings.push('No independent reviewer is available.');
   return { implementer, reviewer, reasons, warnings };
 }
-module.exports = { defaults, validateRouting, estimateEffort, suggestAssignment };
+module.exports = { defaults, ROUTING_SCHEMA_VERSION, modelFamily, migrateRouting, validateRouting, estimateEffort, suggestAssignment };

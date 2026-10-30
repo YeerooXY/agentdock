@@ -133,6 +133,7 @@ test('failed checks are handed to the next round with a bounded output tail', as
   const job = await f.done(await f.start());
   assert.equal(job.state, 'passed'); assert.equal(job.rounds.length, 2);
   assert.equal(job.rounds[0].check.state, 'failed'); assert.ok(job.rounds[0].check.output.length <= 8000);
+  assert.deepEqual(job.rounds.map(round => round.attemptId), [`${job.id}-attempt-1`, `${job.id}-attempt-2`]);
 });
 
 test('confirmed review findings trigger a fix round', async t => {
@@ -179,7 +180,12 @@ test('restart interrupts every active step and never spawns a provider', async t
   }
   const restored = new TaskLoop(f.root, { ...f.options, saveResult: null });
   assert.equal(restored.snapshot().length, 3);
-  for (const job of restored.snapshot()) { assert.equal(job.state, 'interrupted'); assert.equal(job.rounds[0].implement.state, 'interrupted'); }
+  for (const job of restored.snapshot()) {
+    assert.equal(job.state, 'interrupted'); assert.equal(job.rounds[0].implement.state, 'interrupted');
+    const stored = JSON.parse(fs.readFileSync(path.join(f.root, 'tasks', `${job.id}.json`)));
+    assert.equal(stored.state, 'interrupted'); assert.equal(stored.rounds[0].implement.state, 'interrupted');
+    assert.equal(stored.rounds[0].attemptId, `${job.id}-attempt-1`); assert.equal(stored.schemaVersion, 1);
+  }
   await Promise.all([...restored.pending.values()]);
   assert.equal(f.spawned.length, 0);
   assert.equal(JSON.parse(fs.readFileSync(path.join(f.root, 'tasks', 'restart-checking.json'))).state, 'interrupted');
@@ -720,6 +726,10 @@ test('dependent worktrees include merged dependency work; final checks and revie
   await approvePlan(f, job); await f.done(job);
   assert.equal(job.state, 'passed'); assert.ok(job.subtasks.every(sub => sub.state === 'merged'));
   assert.equal(job.rounds.length, 1); assert.equal(job.rounds[0].implement, null);
+  const attemptIds = [job, ...job.subtasks].flatMap(owner => owner.rounds.map(round => {
+    assert.equal(round.attemptId, `${owner.id}-attempt-${round.number}`); return round.attemptId;
+  }));
+  assert.equal(new Set(attemptIds).size, attemptIds.length);
   for (const step of [job.rounds[0].check, job.rounds[0].review]) assert.equal(step.head, git(job.workFolder, 'rev-parse', 'HEAD').trim());
   assert.match(git(job.workFolder, 'log', '--format=%s'), /Subtask first: First module/);
   assert.equal(git(f.repo, 'rev-parse', 'HEAD'), originalHead);
