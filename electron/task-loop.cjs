@@ -329,31 +329,40 @@ class TaskLoop extends EventEmitter {
           catch (error) {
             if (!RUNNING.has(job.state)) return;
             if (!(error instanceof CheckLaunchError)) throw error;
-            Object.assign(round.check, { state: 'failed', outcome: 'failed', output: 'The checks command could not start.' });
+            Object.assign(round.check, { state: 'failed', outcome: 'failed', failureClass: 'infrastructure', output: 'The checks command could not start.' });
             return await this.finish(job, 'needs-you', 'The checks command could not start.');
           }
           if (!RUNNING.has(job.state)) return;
           const outcome = result.code === 0 && !result.timedOut ? 'passed' : 'failed';
-          Object.assign(round.check, { state: outcome, outcome, exitCode: result.code, output: result.output, timedOut: result.timedOut }); this.changed(job);
+          Object.assign(round.check, { state: outcome, outcome, ...(outcome === 'failed' ? { failureClass: result.timedOut || result.code == null ? 'infrastructure' : 'checks' } : {}), exitCode: result.code, output: result.output, timedOut: result.timedOut }); this.changed(job);
         } else round.check = { state: 'not-set', elapsedMs: 0, fingerprint: checkedTree, head: checkedHead };
-        if (job.reviewer) {
+        const reviewGatePassed = !command || (round.check.state === 'passed' && round.check.outcome === 'passed');
+        if (job.reviewer && reviewGatePassed) {
           const reviewTree = await this.fingerprint(job);
-          let reviewChanges;
-          try { reviewChanges = await this.changes(job, 150_000); }
-          catch (error) { return await this.finish(job, 'needs-you', repositoryError(error)); }
           if (!RUNNING.has(job.state)) return;
-          job.state = 'reviewing'; round.review = { ...job.reviewer, state: 'running', startedAt: this.now(), elapsedMs: null, usage: null, findings: [], fingerprint: reviewTree, head: job.split ? (await this.git(job.workFolder, ['rev-parse', 'HEAD'])).trim() : undefined };
-          this.changed(job);
-          const review = await this.provider(job, round.review, reviewBrief({ focus: `Task: ${job.title}\nAcceptance criteria:\n${job.criteria}${job.split || job.parentId ? '\n' + contractPrompt(job) : ''}\nReport only confirmed problems, with file and line evidence.`, changes: reviewChanges }), true);
-          if (!RUNNING.has(job.state)) return;
-          Object.assign(round.review, { state: 'done', verdict: review.verdict, findings: findings(review), text: tail(review.text, 6000) });
-          if (round.review.findings.length && round.review.verdict === 'approve') round.review.verdict = 'changes-requested';
-        } else round.review = { state: 'not-set', elapsedMs: 0, findings: [] };
+          if (command && reviewTree !== round.check.fingerprint) {
+            round.check.state = 'stale'; round.check.failureClass = 'stale-evidence';
+            round.review = { state: 'skipped', reason: 'stale-check-evidence', findings: [] };
+            this.changed(job);
+          } else {
+            let reviewChanges;
+            try { reviewChanges = await this.changes(job, 150_000); }
+            catch (error) { return await this.finish(job, 'needs-you', repositoryError(error)); }
+            if (!RUNNING.has(job.state)) return;
+            job.state = 'reviewing'; round.review = { ...job.reviewer, state: 'running', startedAt: this.now(), elapsedMs: null, usage: null, findings: [], fingerprint: reviewTree, head: job.split ? (await this.git(job.workFolder, ['rev-parse', 'HEAD'])).trim() : undefined };
+            this.changed(job);
+            const review = await this.provider(job, round.review, reviewBrief({ focus: `Task: ${job.title}\nAcceptance criteria:\n${job.criteria}${job.split || job.parentId ? '\n' + contractPrompt(job) : ''}\nReport only confirmed problems, with file and line evidence.`, changes: reviewChanges }), true);
+            if (!RUNNING.has(job.state)) return;
+            Object.assign(round.review, { state: 'done', verdict: review.verdict, findings: findings(review), text: tail(review.text, 6000) });
+            if (round.review.findings.length && round.review.verdict === 'approve') round.review.verdict = 'changes-requested';
+          }
+        } else if (!job.reviewer) round.review = { state: 'not-set', elapsedMs: 0, findings: [] };
+        else round.review = { state: 'skipped', reason: 'checks-failed', findings: [] };
         const verifiedTree = await this.fingerprint(job);
         if (!RUNNING.has(job.state)) return;
         job.fingerprint = verifiedTree; job.observedFingerprint = verifiedTree; this.refreshedAt.set(job.id, this.now());
-        if (round.check.fingerprint !== verifiedTree && command) round.check.state = 'stale';
-        if (round.review.fingerprint !== verifiedTree && job.reviewer) round.review.state = 'stale';
+        if (round.check.fingerprint !== verifiedTree && command) { round.check.state = 'stale'; if (round.check.outcome === 'passed') round.check.failureClass = 'stale-evidence'; }
+        if (round.review.fingerprint && round.review.fingerprint !== verifiedTree) round.review.state = 'stale';
         round.elapsedMs = this.now() - round.startedAt;
         job.unresolved = this.unresolved(job);
         await this.capture(job);
@@ -679,7 +688,7 @@ class TaskLoop extends EventEmitter {
       '', `Implementer: ${job.implementer.label} / ${job.implementer.model || 'CLI default'}. ${job.why.implementer}`, `Reviewer: ${job.reviewer ? `${job.reviewer.label} / ${job.reviewer.model || 'CLI default'}` : 'No review'}. ${job.why.reviewer}`, '',
       ...planReport(job, usageText),
       ...job.rounds.flatMap(round => [`## Round ${round.number}`, `Elapsed: ${Math.round((round.elapsedMs || 0) / 1000)}s`, ...[['Implement', round.implement], ['Checks', round.check], ['Review', round.review]].flatMap(([name, step]) => !step ? [`${name}: not run`] : [
-        `${name}: ${step.state}${step.label ? `; ${step.label} / ${step.model || 'CLI default'}` : ''}; ${Math.round((step.elapsedMs || 0) / 1000)}s${name === 'Checks' ? `; exit ${step.exitCode ?? 'not reported'}` : `; usage: ${usageText(step.usage)}`}`,
+        `${name}: ${step.state}${step.label ? `; ${step.label} / ${step.model || 'CLI default'}` : ''}; ${Math.round((step.elapsedMs || 0) / 1000)}s${name === 'Checks' ? `; exit ${step.exitCode ?? 'not reported'}${step.failureClass ? `; ${step.failureClass}` : ''}` : `; usage: ${usageText(step.usage)}`}`,
         step.summary || '', step.output ? `\n~~~text\n${step.output}\n~~~` : '', step.verdict ? `Verdict: ${step.verdict}` : '', ...(step.findings || [])
       ])]), '', '## Unresolved items', ...(job.unresolved.length ? job.unresolved : ['None.']), job.error || '', '', '## Diff stat', job.diffError || '', `~~~text\n${job.diffStat}\n~~~`, '', '## Final diff', `~~~diff\n${job.finalDiff}\n~~~`].join('\n');
   }

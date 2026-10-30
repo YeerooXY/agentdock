@@ -27,6 +27,7 @@ function fixture(t, script = [], overrides = {}) {
     const child = new EventEmitter(); child.stdout = new EventEmitter(); child.stderr = new EventEmitter(); child.killed = false;
     child.kill = () => { child.killed = true; child.emit('close', null); };
     const invocation = { executable, args, options, child, prompt: '' }; spawned.push(invocation);
+    if (script[0]?.synchronousError) { script.shift(); throw new Error('shell missing'); }
     child.stdin = { on() {}, end(text) {
       invocation.prompt = text;
       queueMicrotask(() => {
@@ -128,11 +129,12 @@ test('one round passes only after checks and independent review; saves report an
 });
 
 test('failed checks are handed to the next round with a bounded output tail', async t => {
-  const f = fixture(t, [{ type: 'implement', edit }, { type: 'check', code: 1, output: 'x'.repeat(10000) + '\nexpected 2, received 1' }, { type: 'review' },
+  const f = fixture(t, [{ type: 'implement', edit }, { type: 'check', code: 1, output: 'x'.repeat(10000) + '\nexpected 2, received 1' },
     { type: 'implement', inspect: invocation => { assert.match(invocation.prompt, /expected 2, received 1/); assert.ok(invocation.prompt.length < 6000); } }, { type: 'check' }, { type: 'review' }]);
   const job = await f.done(await f.start());
   assert.equal(job.state, 'passed'); assert.equal(job.rounds.length, 2);
-  assert.equal(job.rounds[0].check.state, 'failed'); assert.ok(job.rounds[0].check.output.length <= 8000);
+  assert.equal(job.rounds[0].check.state, 'failed'); assert.equal(job.rounds[0].check.failureClass, 'checks'); assert.equal(job.rounds[0].review.state, 'skipped');
+  assert.ok(job.rounds[0].check.output.length <= 8000); assert.equal(job.rounds[1].review.verdict, 'approve'); assert.equal(f.spawned.length, 5);
   assert.deepEqual(job.rounds.map(round => round.attemptId), [`${job.id}-attempt-1`, `${job.id}-attempt-2`]);
 });
 
@@ -145,10 +147,10 @@ test('confirmed review findings trigger a fix round', async t => {
 });
 
 test('max rounds leaves the unsuccessful solution as needs-you', async t => {
-  const f = fixture(t, [{ type: 'implement', edit }, { type: 'check', code: 2, output: 'Still failing' }, { type: 'review', reply: requested }]);
+  const f = fixture(t, [{ type: 'implement', edit }, { type: 'check', code: 2, output: 'Still failing' }]);
   const job = await f.done(await f.start({ maxRounds: 1 }));
   assert.equal(job.state, 'needs-you'); assert.equal(job.rounds.length, 1);
-  assert.match(job.unresolved.join('\n'), /Checks failed/); assert.match(job.unresolved.join('\n'), /wrong result/);
+  assert.match(job.unresolved.join('\n'), /Checks failed/); assert.equal(job.rounds[0].review.state, 'skipped'); assert.equal(f.spawned.length, 2);
   assert.equal((await f.loop.accept(job.id)).state, 'accepted');
 });
 
@@ -298,9 +300,10 @@ test('a summary cannot approve a review, and contradictory findings block approv
 });
 
 test('edits during verification make successful checks stale', async t => {
-  const f = fixture(t, [{ type: 'implement', edit }, { type: 'check', edit: cwd => fs.writeFileSync(path.join(cwd, 'app.js'), 'changed during checks\n') }, { type: 'review' }]);
+  const f = fixture(t, [{ type: 'implement', edit }, { type: 'check', edit: cwd => fs.writeFileSync(path.join(cwd, 'app.js'), 'changed during checks\n') }]);
   const job = await f.done(await f.start({ maxRounds: 1 }));
-  assert.equal(job.state, 'needs-you'); assert.equal(job.rounds[0].check.state, 'stale'); assert.equal(job.rounds[0].check.outcome, 'passed');
+  assert.equal(job.state, 'needs-you'); assert.equal(job.rounds[0].check.state, 'stale'); assert.equal(job.rounds[0].check.failureClass, 'stale-evidence');
+  assert.equal(job.rounds[0].check.outcome, 'passed'); assert.equal(job.rounds[0].review.state, 'skipped'); assert.equal(f.spawned.length, 2);
 });
 
 test('a reached deadline prevents another round', async t => {
@@ -645,15 +648,12 @@ test('baseline verification preserves transient Git failures instead of declarin
 
 test('a checks shell spawn error is a failed check requiring user attention', async t => {
   for (const synchronous of [false, true]) {
-    const f = fixture(t, [{ type: 'implement', edit }, { error: true }]);
-    if (synchronous) {
-      const spawnProcess = f.loop.spawnProcess;
-      f.loop.spawnProcess = (executable, ...args) => { if (executable !== codex.executable) throw new Error('shell missing'); return spawnProcess(executable, ...args); };
-    }
-    const job = await f.done(await f.start({ reviewer: null }));
+    const f = fixture(t, [{ type: 'implement', edit }, { error: true, synchronousError: synchronous }]);
+    const job = await f.done(await f.start());
     assert.equal(job.state, 'needs-you'); assert.equal(job.error, 'The checks command could not start.');
-    assert.equal(job.rounds[0].check.state, 'failed'); assert.equal(job.rounds[0].check.outcome, 'failed'); assert.equal(job.rounds[0].check.output, job.error); assert.equal(job.rounds[0].check.exitCode, null);
-    assert.equal(job.rounds.length, 1); assert.equal(job.rounds[0].review, null);
+    assert.equal(job.rounds[0].check.state, 'failed'); assert.equal(job.rounds[0].check.outcome, 'failed'); assert.equal(job.rounds[0].check.failureClass, 'infrastructure'); assert.equal(job.rounds[0].check.output, job.error); assert.equal(job.rounds[0].check.exitCode, null);
+    assert.equal(job.rounds.length, 1); assert.equal(job.rounds[0].review, null); assert.equal(f.spawned.length, 2);
+    assert.equal(f.spawned.filter(call => call.executable === claude.executable).length, 0);
   }
 });
 
