@@ -15,7 +15,7 @@ export function consoleQueue({ call, getState, escape: e, icon, toast, paste, ag
   const form = panel.querySelector('form'), error = form.querySelector('.form-error');
   let targetId = null, editingId = null, opener = null, busy = false;
   const session = id => getState()?.sessions.find(x => x.id === id && x.alive && !x.dismissed);
-  const eligible = s => !!s && s.alive && !s.dismissed && (s.purpose || 'agent') === 'agent' && agentProviders().includes(s.provider);
+  const eligible = s => !!s && !s.taskId && s.alive && !s.dismissed && (s.purpose || 'agent') === 'agent' && agentProviders().includes(s.provider);
   const queue = id => getState()?.queues?.[id] || { paused: false, entries: [] };
   const prompts = s => (getState()?.prompts || []).filter(p => !p.projectId || p.projectId === s?.projectId);
   const label = count => count ? `${count} queued` : 'Queue a message';

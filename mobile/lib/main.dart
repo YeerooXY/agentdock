@@ -409,6 +409,7 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
       );
 
   Future<void> liveControls(String action) async {
+    if (c.sessions.any((s) => s['id'] == c.selected && s['taskId'] != null)) return;
     stopTerminalTyping();
     composerFocus.unfocus();
     await showModalBottomSheet<void>(
@@ -588,6 +589,25 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
   }
 
   Future<void> closeConsole(Map<String, dynamic> session) async {
+    if (session['taskId'] != null) {
+      final pinned = Map<String, dynamic>.from(session);
+      final pc = c.activePC, generation = c.generation;
+      final confirmed = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
+        title: Text('Stop worker for ${pinned['name']}?'),
+        content: const Text('All work is kept.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Keep running')),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Stop worker')),
+        ],
+      ));
+      if (mounted && confirmed == true && c.activePC == pc && c.generation == generation && c.selected == pinned['id']) {
+        await run(() => c.request('worker.stop', {
+          'id': pinned['id'], 'consoleKey': pinned['consoleKey'], 'launchId': pinned['launchId'],
+          'sliceId': pinned['sliceId'], 'confirm': true,
+        }));
+      }
+      return;
+    }
     if (!supports('console.close')) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -912,7 +932,7 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
                       !['code', 'web'].contains(menuSession['purpose']))
                     PopupMenuItem(value: 'code', enabled: c.connected,
                       child: const Text('Code')),
-                  if (supports('console.manage')) ...[
+                  if (supports('console.manage') && menuSession['taskId'] == null) ...[
                     PopupMenuItem(
                       value: 'rename',
                       enabled: c.connected && menuSession['alive'] == true,
@@ -924,7 +944,7 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
                       child: const Text('Project'),
                     ),
                   ],
-                  if (['codex', 'claude'].contains(menuSession['provider']) &&
+                  if (menuSession['taskId'] == null && ['codex', 'claude'].contains(menuSession['provider']) &&
                       menuSession['draftSupported'] == true &&
                       menuSession['switching'] != true) ...[
                     for (final target
@@ -964,7 +984,7 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
                   ),
                   PopupMenuItem(
                     value: 'keyboard',
-                    enabled: c.connected,
+                    enabled: c.connected && menuSession['taskId'] == null,
                     child: const Text('Type directly in terminal'),
                   ),
                   const PopupMenuItem(
@@ -974,7 +994,7 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
                   PopupMenuItem(
                     value: 'close',
                     enabled: c.connected,
-                    child: const Text('Close console'),
+                    child: Text(menuSession['taskId'] != null ? 'Stop worker' : 'Close console'),
                   ),
                   const PopupMenuDivider(),
                 ],
@@ -1478,6 +1498,7 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
   }
 
   Future<void> terminalKeys() async {
+    if (c.sessions.any((s) => s['id'] == c.selected && s['taskId'] != null)) return;
     stopTerminalTyping();
     composerFocus.unfocus();
     await showModalBottomSheet<void>(
@@ -1690,7 +1711,7 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
                         terminal: view.terminal,
                         columns: view.cols,
                         fitWidth: fitWidth,
-                        readOnly: !c.connected,
+                        readOnly: !c.connected || session['taskId'] != null,
                         focusNode: terminalFocus,
                         theme: c.appearance.theme.terminal,
                       ),
@@ -1813,6 +1834,16 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
                 style: TextStyle(color: pink, fontSize: 12),
               ),
             ),
+          if (session['taskId'] != null && session['steeringState'] != null)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Text('${session['steeringState']}', style: const TextStyle(fontSize: 12)),
+            ),
+          if (session['taskId'] != null && (session['consoleCapabilities'] as Map?)?['steering'] != true)
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 16),
+              child: Text('Steering unavailable for this CLI', style: TextStyle(fontSize: 12)),
+            ),
           Padding(
             padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
             child: Row(
@@ -1839,7 +1870,7 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
                       autocorrect: false,
                       enableSuggestions: false,
                       decoration: InputDecoration(
-                        hintText: 'Message',
+                        hintText: session['taskId'] != null ? 'Worker message' : 'Message',
                         contentPadding: const EdgeInsets.symmetric(
                           horizontal: 14,
                           vertical: 12,
@@ -1848,7 +1879,7 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
                         suffixIcon: PopupMenuButton<String>(
                           tooltip: 'Attach',
                           icon: Icon(Icons.add, color: blue),
-                          enabled: c.connected && !sending && !attaching,
+                          enabled: c.connected && !sending && !attaching && session['taskId'] == null,
                           onSelected: (action) =>
                               consoleAction(action, session),
                           itemBuilder: (_) => [
@@ -1870,7 +1901,8 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
                 const SizedBox(width: 8),
                 DockSendButton(
                   onPressed:
-                      c.connected && !sending && composer.text.trim().isNotEmpty
+                      c.connected && !sending && composer.text.trim().isNotEmpty &&
+                      (session['taskId'] == null || (session['consoleCapabilities'] as Map?)?['steering'] == true)
                       ? send
                       : null,
                   sending: sending,

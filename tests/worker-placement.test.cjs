@@ -75,7 +75,7 @@ test('mobile state exposes per-console worker and owner capabilities', () => {
   assert.equal(state.sessions[1].consoleCapabilities.close, true);
 });
 
-test('owner layout actions can swap and resize protected consoles', t => {
+test('ordinary console moves preserve every other protected console', t => {
   const fs = require('node:fs'), os = require('node:os'), path = require('node:path');
   const { Sessions } = require('../electron/sessions.cjs');
   const { OwnerConsoles } = require('../electron/owner-consoles.cjs');
@@ -87,10 +87,11 @@ test('owner layout actions can swap and resize protected consoles', t => {
   sessions.items.set('owner', { id: 'owner', consoleKey: 'owner', launchId: 'owner-launch', alive: true, slot: 2 });
   const unbind = owners.bind(sessions); t.after(unbind);
   assert.equal(owners.isProtected('owner'), true);
-  assert.equal(sessions.previewLayout({ id: 'one', slot: 2 }).find(p => p.id === 'owner').slot, 1);
-  sessions.move('one', 2);
-  assert.equal(sessions.items.get('owner').slot, 1);
-  sessions.layout({ id: 'one', slot: 1, width: 2, height: 1 });
+  assert.throws(() => sessions.previewLayout({ id: 'one', slot: 2 }), /displace a protected console/);
+  assert.throws(() => sessions.move('one', 2), /displace a protected console/);
+  sessions.move('one', 3);
+  assert.equal(sessions.items.get('owner').slot, 2);
+  sessions.layout({ id: 'one', slot: 3, width: 2, height: 1 });
   assert.equal(sessions.items.get('one').width, 2);
-  assert.equal(sessions.items.get('owner').slot, 3);
+  assert.equal(sessions.items.get('owner').slot, 2);
 });

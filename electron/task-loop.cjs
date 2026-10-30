@@ -101,7 +101,12 @@ class TaskLoop extends EventEmitter {
     for (const file of fs.readdirSync(this.dir).filter(file => /^[\w-]+\.json$/.test(file))) {
       const job = readJson(path.join(this.dir, file), null);
       if (!job?.id || path.basename(file, '.json') !== job.id) continue;
-      const migrated = migrateTaskRecord(job);
+      let migrated = migrateTaskRecord(job);
+      // Row 7 mail is volatile. A saved dispatch or queued text reference has
+      // no recoverable payload after restart and must never be replayed.
+      for (const event of Array.isArray(job.workerSteering) ? job.workerSteering : []) if (['queued', 'delivering'].includes(event?.status)) {
+        event.status = 'uncertain'; migrated = true;
+      }
       // Older task files have no recording time. Their PIDs came from an earlier
       // app instance and cannot identify a process started by this instance.
       for (const item of [job, ...(job.subtasks || [])]) if (Number.isInteger(item.processPid) && !Number.isFinite(item.processRecordedAt)) item.processRecordedAt = 0;
@@ -165,7 +170,7 @@ class TaskLoop extends EventEmitter {
     const remaining = Math.max(0, job.timeLimitMinutes * 60_000 - (job.activeElapsedMs || 0)), started = this.now();
     job.deadlineAt = started + remaining;
     job.runStartedAt = started; this.persist(job);
-    const timer = setTimeout(() => { if (RUNNING.has(job.state)) this.cancel(job, 'needs-you', 'The task reached its time limit.').catch(() => {}); }, remaining); timer.unref?.();
+    const timer = setTimeout(() => { if (RUNNING.has(job.state)) this.deadline(job); }, remaining); timer.unref?.();
     const running = Promise.resolve().then(() => {
       if (!RUNNING.has(job.state)) return;
       if (!remaining) return this.finish(job, 'needs-you', 'The task reached its time limit.');
@@ -300,7 +305,7 @@ class TaskLoop extends EventEmitter {
     ].filter(Boolean).join('\n\n');
   }
   async runTask(job, command, { verifyFirst = false, additionalRounds = false, manageTime = true } = {}) {
-    const timer = manageTime ? setTimeout(() => this.cancel(job, 'needs-you', 'The task reached its time limit.').catch(() => {}), job.timeLimitMinutes * 60_000) : null;
+    const timer = manageTime ? setTimeout(() => this.deadline(job), job.timeLimitMinutes * 60_000) : null;
     timer?.unref?.();
     try {
       const first = job.rounds.length + 1, last = additionalRounds ? job.rounds.length + job.maxRounds : job.maxRounds;
@@ -311,7 +316,7 @@ class TaskLoop extends EventEmitter {
         const brief = this.prompt(job, changes);
         const round = { attemptId: attemptId(job.id, number), schemaVersion: ATTEMPT_SCHEMA_VERSION, steeringSequenceConsumed: 0, number, startedAt: this.now(), elapsedMs: null, implement: null, check: null, review: null };
         job.rounds.push(round);
-        if (!(verifyFirst && number === first)) {
+        if (!(verifyFirst && number === first && !this.workers?.pending(job))) {
           round.implement = { ...job.implementer, state: 'running', startedAt: this.now(), elapsedMs: null, usage: null };
           job.state = 'implementing'; this.changed(job);
           const implemented = await this.provider(job, round.implement, brief, false);
@@ -337,6 +342,7 @@ class TaskLoop extends EventEmitter {
           const outcome = result.code === 0 && !result.timedOut ? 'passed' : 'failed';
           Object.assign(round.check, { state: outcome, outcome, ...(outcome === 'failed' ? { failureClass: result.timedOut || result.code == null ? 'infrastructure' : 'checks' } : {}), exitCode: result.code, output: result.output, timedOut: result.timedOut }); this.changed(job);
         } else round.check = { state: 'not-set', elapsedMs: 0, fingerprint: checkedTree, head: checkedHead };
+        if (this.workers?.unconsumed(job)) return await this.finish(job, 'needs-you', 'Worker steering needs a builder turn and new checks. Resume this slice.');
         const reviewGatePassed = !command || (round.check.state === 'passed' && round.check.outcome === 'passed');
         if (job.reviewer && reviewGatePassed) {
           const reviewTree = await this.fingerprint(job);
@@ -361,6 +367,7 @@ class TaskLoop extends EventEmitter {
         else round.review = { state: 'skipped', reason: 'checks-failed', findings: [] };
         const verifiedTree = await this.fingerprint(job);
         if (!RUNNING.has(job.state)) return;
+        if (this.workers?.unconsumed(job)) return await this.finish(job, 'needs-you', 'Worker steering needs a builder turn and new checks. Resume this slice.');
         job.fingerprint = verifiedTree; job.observedFingerprint = verifiedTree; this.refreshedAt.set(job.id, this.now());
         if (round.check.fingerprint !== verifiedTree && command) { round.check.state = 'stale'; if (round.check.outcome === 'passed') round.check.failureClass = 'stale-evidence'; }
         if (round.review.fingerprint && round.review.fingerprint !== verifiedTree) round.review.state = 'stale';
@@ -381,6 +388,26 @@ class TaskLoop extends EventEmitter {
     return usageEnvironment(process.env);
   }
   async provider(job, step, brief, review) {
+    if (review) return this.providerTurn(job, step, [brief, this.workers?.brief(job, { review: true })].filter(Boolean).join('\n\n'), true);
+    if (!this.workers) return this.providerTurn(job, step, brief, false);
+    this.workers.open(job, step);
+    let reply;
+    do {
+      const messages = this.workers.take(job);
+      step.ownerSteering = messages.length > 0;
+      const steering = this.workers.brief(job);
+      try {
+        reply = await this.providerTurn(job, step, [brief, steering].filter(Boolean).join('\n\n'), false);
+        this.workers.acknowledge(job, messages, RUNNING.has(job.state));
+      } catch (error) { this.workers.acknowledge(job, messages, false); throw error; }
+      finally { delete step.ownerSteering; }
+      // A successful batch must exit before the next batch can start.
+      if (this.unconfirmed.has(job.id)) throw new ProviderError('Worker process exit is unconfirmed. Check the worker before resuming.');
+    } while (RUNNING.has(job.state) && this.workers.pending(job) && this.now() < (job.deadlineAt ?? Infinity));
+    if (RUNNING.has(job.state) && this.now() >= (job.deadlineAt ?? Infinity)) this.deadline(job);
+    return reply;
+  }
+  async providerTurn(job, step, brief, review) {
     const outFile = path.join(this.dir, `${job.id}.reply.md`);
     let tempDir, release;
     try {
@@ -403,12 +430,16 @@ class TaskLoop extends EventEmitter {
         before = await this.fingerprint(job);
       } else launch = review ? reviewerLaunch(step.provider, choice.executable, { outFile, model: step.model, platform: this.platform }) : implementerLaunch(step.provider, choice.executable, { ...step, platform: this.platform });
       if (!RUNNING.has(job.state)) return {};
-      const result = await this.process(job, launch, { environment: env, brief: step.provider === 'opencode' ? '' : brief, provider: step.provider, step });
+      const result = await this.process(job, launch, { environment: env, brief: step.provider === 'opencode' ? '' : brief, provider: step.provider, step, worker: !review && !!this.workers });
       if (!RUNNING.has(job.state)) return {};
       if (result.code !== 0 || result.providerError) {
         const hint = /log ?in|sign ?in|auth|credential/i.test(result.stdout + result.output) ? ` Sign in to ${step.label} in a console first.` : '';
         throw new ProviderError(`${step.label} ${result.code ? `exited with code ${result.code}` : 'could not finish the request'}.${hint}`);
       }
+      const summaryReply = summary => {
+        if (this.workers) progressLog({ brief, environment: env, append: line => this.workers.output(job, line) })(summary);
+        return { summary };
+      };
       if (step.provider === 'opencode') {
         const parsed = result.openCode;
         if (parsed.length && before === await this.fingerprint(job)) throw new ProviderError('The model hit its output limit.');
@@ -417,7 +448,7 @@ class TaskLoop extends EventEmitter {
           if (!text && step.role !== 'planner') throw new ProviderError(`${step.label} returned no valid review answer.`);
           return { text, verdict: /VERDICT:\s*approve\b/i.test(text) ? 'approve' : /VERDICT:\s*changes-requested/i.test(text) ? 'changes-requested' : 'unclear', usage: parsed.usage };
         }
-        return { summary: text || 'No summary reported.' };
+        return summaryReply(text || 'No summary reported.');
       }
       if (review) {
         try {
@@ -426,18 +457,19 @@ class TaskLoop extends EventEmitter {
         } catch { if (step.role === 'planner') return { text: '', verdict: 'unclear' }; throw new ProviderError(`${step.label} returned no valid review answer.`); }
       }
       if (step.provider === 'claude') {
-        try { return { summary: redactText(parseReply('claude', result.stdout).text, env) }; }
-        catch { return { summary: 'No summary reported.' }; }
+        try { return summaryReply(redactText(parseReply('claude', result.stdout).text, env)); }
+        catch { return summaryReply('No summary reported.'); }
       }
-      if (step.provider === 'kiro') return { summary: tail(redactText(result.stdout, env).trim(), 4000) || 'No summary reported.' };
-      return { summary: result.summary || 'No summary reported.' };
+      if (step.provider === 'kiro') return summaryReply(tail(redactText(result.stdout, env).trim(), 4000) || 'No summary reported.');
+      return summaryReply(result.summary || 'No summary reported.');
     } catch (error) { throw error instanceof ProviderError ? error : new ProviderError(`${step.label} could not complete the request.`); }
     finally { release?.(); try { fs.unlinkSync(outFile); } catch {} if (tempDir) fs.rmSync(tempDir, { recursive: true, force: true }); }
   }
   acquireProvider(job, step) {
     if (this.admission && step) return this.admission.acquire({ id: job.id, taskId: job.parentId || job.id,
       projectId: job.projectId, accountId: step.accountId, model: step.model, workerId: step.workerId, quotaGroupId: step.quotaGroupId,
-      local: step.local === true, capacity: step.concurrency, automatic: true,
+      consoleKey: job.workerSession?.consoleKey,
+      local: step.local === true, capacity: step.concurrency, automatic: !step.ownerSteering,
       onQueued: reason => { if (reason) job.queueReason = reason; else delete job.queueReason; this.changed(job); }
     }).then(release => {
       if (!release) return null;
@@ -464,13 +496,13 @@ class TaskLoop extends EventEmitter {
       item.cancel(); return false;
     });
   }
-  process(job, launch, { environment, brief = '', provider, check = false, step, timeoutMs } = {}) {
+  process(job, launch, { environment, brief = '', provider, check = false, step, timeoutMs, worker = false } = {}) {
     return new Promise((resolve, reject) => {
       let child, finished = false, stdout = '', output = '', pending = '', summary = '', providerError = false, deadlineHit = false, exitSeen = false, stopping, timer, progressTimer;
       const openCode = { text: '', length: false, usage: null, maxText: step?.role === 'planner' ? 64000 : 6000 };
       const decoder = new StringDecoder('utf8'), errDecoder = new StringDecoder('utf8');
       const privateEnvironment = check ? Object.fromEntries(Object.entries(environment).filter(([key]) => /token|secret|password|key/i.test(key))) : environment;
-      const append = progressLog({ brief, environment, append: line => appendLog(job, line) });
+      const append = progressLog({ brief, environment, append: line => { appendLog(job, line); if (worker) this.workers.output(job, line); } });
       const stream = provider ? progressStream(provider, text => append(text.replaceAll('read-only command', 'command').replaceAll('read-only tool', 'tool'))) : null;
       const consume = text => {
         const lines = (pending + text).split('\n'); pending = lines.pop();
@@ -515,6 +547,7 @@ class TaskLoop extends EventEmitter {
         return stopping;
       };
       try {
+        if (worker) this.workers.begin(job);
         child = this.spawnProcess(launch.executable, launch.args, { cwd: job.workFolder, env: environment, windowsHide: true, shell: false, detached: this.platform !== 'win32', stdio: ['pipe', 'pipe', 'pipe'] });
         if (Number.isInteger(child.pid)) { job.processPid = child.pid; job.processRecordedAt = this.now(); if (this.jobs.has(job.parentId || job.id)) this.changed(job); }
         this.children.set(job.id, child); this.cancellers.set(job.id, stopChild);
@@ -527,7 +560,8 @@ class TaskLoop extends EventEmitter {
         });
         child.stderr?.on('data', chunk => { if (!finished) output = tail(output + (typeof chunk === 'string' ? chunk : errDecoder.write(chunk)), check ? 8000 : 4000); });
         child.once('error', () => complete(check ? new CheckLaunchError('The checks command could not start.') : new ProviderError(`${step.label} could not start.`)));
-        child.once('close', code => { exitSeen = true; this.unconfirmed.delete(job.id); clearProcess(); complete(null, code); });
+        child.once('close', code => { exitSeen = true; this.unconfirmed.delete(job.id); clearProcess(); complete(null, code); if (worker) this.workers.process(job, false); });
+        if (worker) this.workers.process(job, true);
         child.stdin?.on('error', () => {}); child.stdin?.end(brief);
         if (timeoutMs) { timer = setTimeout(() => { deadlineHit = true; stopChild({ wait: true }); }, timeoutMs); timer.unref?.(); }
       } catch { complete(check ? new CheckLaunchError('The checks command could not start.') : new ProviderError(`${step.label} could not start.`)); if (child) this.killProcess(child); }
@@ -605,10 +639,12 @@ class TaskLoop extends EventEmitter {
     }
     if (this.closing) return;
     this.changed(job); if (!job.parentId) await this.record(job);
+    this.workers?.complete(job, { saved: true });
+    if (job.split) for (const sub of job.subtasks || []) this.workers?.complete(sub, { saved: true });
   }
   cancel(job, state, error) {
     if (this.cancellations.has(job?.id)) return this.cancellations.get(job.id);
-    if (!job || !RUNNING.has(job.state) && job.state !== 'plan-ready') return Promise.resolve();
+    if (!job || !RUNNING.has(job.state) && job.state !== 'plan-ready' && !this.cancellers.has(job.id) && !(job.subtasks || []).some(sub => this.cancellers.has(sub.id))) return Promise.resolve();
     this.cancelling.add(job.id); this.settle(job, state, error);
     this.interruptSteps(job, state === 'interrupted' ? 'interrupted' : 'stopped'); this.cancelProviderQueue(job);
     const halted = [job, ...(job.subtasks || [])].map(item => this.cancellers.get(item.id)?.({ wait: true }));
@@ -631,14 +667,22 @@ class TaskLoop extends EventEmitter {
     await this.cancel(job, 'stopped', 'Stopped by you. All work was kept.');
     return this.view(job);
   }
+  deadline(job) {
+    if (!this.workers) return this.cancel(job, 'needs-you', 'The task reached its time limit.').catch(() => {});
+    // Admission stops immediately. An in-flight worker finishes without a kill;
+    // its protected console and the named Stop worker action remain available.
+    this.settle(job, 'needs-you', 'The task reached its time limit. Stop any running worker explicitly.');
+    this.interruptSteps(job, 'needs-you'); this.cancelProviderQueue(job);
+  }
   interruptAll() {
     this.closing = true;
-    for (const job of this.jobs.values()) if (RUNNING.has(job.state) || this.cancelling.has(job.id)) {
+    for (const job of this.jobs.values()) if (RUNNING.has(job.state) || this.cancelling.has(job.id) || this.children.has(job.id) || (job.subtasks || []).some(sub => this.children.has(sub.id))) {
       job.rebuildReport = true;
       this.settle(job, 'interrupted', 'Paddock closed before this task finished.');
       this.interruptSteps(job, 'interrupted'); this.cancelProviderQueue(job);
       for (const item of [job, ...(job.subtasks || [])]) this.cancellers.get(item.id)?.();
     }
+    this.workers?.dispose();
   }
   refreshable(job) { return !this.closing && !this.cancelling.has(job?.id) && REFRESHABLE.has(job?.state) && !!job.fingerprint && !job.verificationExpired; }
   async refresh(id) {

@@ -26,6 +26,7 @@ import './setup.css';
 import { projectsUI } from './projects-ui.js';
 import { consoleProjects } from './console-projects.js';
 import { consoleQueue } from './console-queue.js';
+import { workerComposer } from './worker-composer.js';
 import { webPanelUI } from './web-panel-ui.js';
 import { reviewPanelUI } from './review-panel-ui.js';
 import { taskLoopUI } from './task-loop-ui.js';
@@ -90,7 +91,8 @@ let accountRenameOpener = null, accountRenameBusy = false;
 const terminals = new Map();
 const pendingConsoleOpenings = new Set();
 const gridSize = () => state?.grid || { columns: 3, rows: 3 };
-const allPanels = () => [...(state?.sessions || []), ...(state?.codePanels || [])];
+const allPanels = () => [...(state?.sessions || []), ...(state?.codePanels || [])].filter(item => !item.hidden);
+const workerComposers = workerComposer({ call, escape, toast });
 const gridCapacity = () => gridSize().columns * gridSize().rows;
 let openingConsole = false;
 let explorer, codePanels, webPanels, reviewPanels, launchGesture, chooserOpener, vim, setup, workbench, layoutMotion, phone, projects, projectChats, messageQueue, imageGenerator, updates, usageView, taskLoops;
@@ -298,6 +300,7 @@ function quotaCard(provider, accountId, accountLabel, detailed = false, hideable
   return values.length ? values.map(card).join('') : card(null);
 }
 function accountSwitchMenu(session, hostKey) {
+  if (session.taskId) return '';
   if (!['codex', 'claude'].includes(session.provider) || session.purpose === 'login') return '';
   const targets = (session.switchTargets || []).filter(target => target.ready);
   const label = session.accountLabel || providerName(session.provider);
@@ -351,7 +354,7 @@ function sessionCard(slot) {
   if (session.kind === 'web') return webPanels.card(session);
   if (session.kind === 'review') return reviewPanels.card(session);
   const expanded = expandedId === session.id;
-  const endLabel = session.restoreError ? 'Remove saved console' : 'End this console';
+  const endLabel = session.taskId ? 'Stop worker' : session.restoreError ? 'Remove saved console' : 'End this console';
   return `<article class="session-card ${escape(session.state)}${expanded ? ' console-expanded' : ''}" data-console-id="${session.id}" data-slot="${slot}"><header class="console-panel-header"><button class="console-grip" draggable="true" data-console-drag="${session.id}" aria-label="Move console ${slot}" title="Drag to move or swap. Focus here and press Alt + 1–9 to move.">${readyIcon(session)}</button><span class="slot" title="${escape(providerName(session.provider) + ' · ' + session.cwd)}">${String(slot).padStart(2, '0')}</span>${slotNameInput(slot, session)}${session.worktree ? `<span class="worktree-badge" role="img" aria-label="${escape(`Git worktree branch ${session.worktree.branch}`)}" title="${escape(`Git worktree on ${session.worktree.branch}\n${session.worktree.path}`)}"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="4" cy="3.5" r="1.6"/><circle cx="4" cy="12.5" r="1.6"/><circle cx="12" cy="5.5" r="1.6"/><path d="M4 5.1v5.8M12 7.1c0 2.6-3 3-6.6 4.4"/></svg><span class="worktree-name">${escape(session.worktree.branch.replace(/^paddock\//, ''))}</span></span>` : ''}<span class="panel-status">${badge(session.state)}</span>${accountSwitchMenu(session, 'panel')}${projectChats.button(session)}${textSizeButtons(session.id, `console ${slot}`)}${appearance.button(slot)}<button class="icon-button console-expand" data-action="toggle-console" data-id="${session.id}" aria-label="${expanded ? 'Restore console ' + slot + ' to the grid (Ctrl+Shift+Enter)' : 'Expand console ' + slot}" aria-keyshortcuts="${expanded ? 'Control+Shift+Enter' : ''}" title="${expanded ? 'Restore console · Ctrl+Shift+Enter' : 'Expand console'}">${icon(expanded ? 'grid' : 'expand')}</button><button class="icon-button console-close" data-action="end-session" data-id="${session.id}" aria-label="${endLabel} ${slot}" title="${endLabel}">${icon('power')}</button></header>${switchOfferHtml(session)}<div class="console-panel-body" data-terminal-mount="${session.id}"></div>${messageQueue?.button(session) || ''}${resizeHandles(slot)}</article>`;
 }
 function coveredSlots() {
@@ -437,6 +440,7 @@ function renderConsoles() {
       continue;
     }
     syncSlotName(panel.querySelector('.console-name'), slot, session);
+    if (session?.taskId) panel.querySelector('.console-name').readOnly = true;
     panel.tabIndex = -1;
     panel.setAttribute('aria-label', `Console ${slot}${session?.name || state.settings.slotNames?.[slot] ? ': ' + (session?.name || state.settings.slotNames[slot]) : ''}`);
     mountSky(panel, slot);
@@ -474,10 +478,11 @@ function renderConsoles() {
     grip.disabled = !!expanded;
     panel.querySelectorAll('.console-resize').forEach(handle => { handle.disabled = !!expanded; });
     const end = panel.querySelector('[data-action="end-session"]');
-    const endLabel = session.restoreError ? 'Remove saved console' : 'End this console';
+    const endLabel = session.taskId ? 'Stop worker' : session.restoreError ? 'Remove saved console' : 'End this console';
     end.title = endLabel;
     end.setAttribute('aria-label', `${endLabel} ${slot}`);
     mountTerminal(session, panel.querySelector('.console-panel-body'), true);
+    workerComposers.sync(panel, session);
   }
   codePanels?.sync();
   webPanels?.sync();
@@ -1186,7 +1191,7 @@ function mountTerminal(session, host, compact) {
         record.scrollAnchor = anchor;
       }
     }), { passive: true });
-    term.onData(data => call('session.input', { id, data }).catch(error => toast(error.message, true)));
+    term.onData(data => { if (!session.taskId) call('session.input', { id, data }).catch(error => toast(error.message, true)); });
     fileLinks(term, value => openFile(id, value));
     // Ctrl+V in a local agent console also pastes clipboard images as a file path.
     term.attachCustomKeyEventHandler(e => {
@@ -1246,7 +1251,7 @@ function mountTerminal(session, host, compact) {
     record.term.options.fontSize = textSize(session.id, compact);
     record.dimensions = null;
   }
-  record.term.options.disableStdin = !!session.switching;
+  record.term.options.disableStdin = !!session.switching || !!session.taskId;
   record.node.classList.toggle('compact', compact); record.node.hidden = false;
   return record;
 }
@@ -1647,7 +1652,12 @@ document.addEventListener('click', async event => {
       case 'quit': await call('quit'); break;
       case 'restart-normal': await call('restart.normal'); break;
       case 'dismiss-startup-notice': dismissedStartupNotices.add(Number(button.dataset.index)); renderStartupNotices(); break;
-      case 'end-session': await call('session.end', button.dataset.id || selectedId); break;
+      case 'end-session': {
+        const id = button.dataset.id || selectedId, worker = state.sessions.find(item => item.id === id && item.taskId);
+        if (worker) await call('worker.stop', { id, consoleKey: worker.consoleKey, launchId: worker.launchId });
+        else await call('session.end', id);
+        break;
+      }
       case 'paste-screenshot': await pasteScreenshot(selectedId); break;
       case 'retry-session': {
         button.disabled = true;

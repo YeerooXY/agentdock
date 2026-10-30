@@ -1,10 +1,12 @@
 'use strict';
+const { ordinaryConsole } = require('./worker-sessions.cjs');
 
 async function endSession(id, { sessions, getSettings, persistSettings, dialog, window, testMode, worktrees, forceConfirmation = false }) {
   const open = session => !session.dismissed && (session.alive || session.restoreError);
   const sameLaunch = session => (session.launchId || null) === (target.launchId || null);
   const target = sessions.list().find(session => session.id === id && open(session));
   if (!target) throw new Error('Console not found.');
+  ordinaryConsole(target);
 
   const current = getSettings();
   let removeWorktree = false;

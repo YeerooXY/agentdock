@@ -15,6 +15,8 @@ const { hasClaudeEditorContext, validateDraftText } = require('./draft-policy.cj
 const { psQuote, shQuote, quote, shellLaunch, programLaunch, customLaunch, realRoot } = require('./platform.cjs');
 const { cleanWorktree } = require('./worktrees.cjs');
 const { previewUrl } = require('./web-preview.cjs');
+const { ordinaryConsole } = require('./worker-sessions.cjs');
+const { consoleCapabilities } = require('./worker-placement.cjs');
 // Code and preview panels sit in the grid but run no process.
 const isPanel = item => ['code', 'web', 'review'].includes(item?.kind);
 function envValue(env, name) { return Object.entries(env).find(([key]) => key.toLowerCase() === name.toLowerCase())?.[1]; }
@@ -82,16 +84,18 @@ class Sessions extends EventEmitter {
     this.projects?.on('changed', this.refreshProjectContext);
     this.hub?.on?.('context-changed', this.refreshProjectContext);
   }
+  layoutItems() { return [...this.items.values()].filter(item => !item.hidden); }
   list() { return [...this.items.values()].filter(item => !isPanel(item)).map(item => ({
     ...publicSession(item),
-      ...(this.accounts && ['codex', 'claude'].includes(item.provider) && !['login', 'setup'].includes(item.purpose) ? {
+    consoleCapabilities: consoleCapabilities(item, this.ownerConsoles, !!this.workerBridge),
+      ...(this.accounts && !item.taskId && ['codex', 'claude'].includes(item.provider) && !['login', 'setup'].includes(item.purpose) ? {
       switchTargets: this.accounts.choices(item.provider).filter(x => x.id !== item.accountId).map(({ id, label, loginCompletedAt }) => ({ id, label, ready: id.endsWith(':default') || !!loginCompletedAt }))
     } : {})
   })).sort((a, b) => a.slot - b.slot); }
   codePanels() { return [...this.items.values()].filter(item => isPanel(item) && item.alive).map(publicSession); }
   createReviewPanel(job) {
     if (this.stopping) return null;
-    const used = occupied([...this.items.values(), ...this.starting.values()], this.grid);
+    const used = occupied([...this.layoutItems(), ...this.starting.values()], this.grid);
     const slot = Array.from({ length: this.grid.columns * this.grid.rows }, (_, i) => i + 1).find(x => !used.has(x));
     if (!slot) return null;
     const item = { id: crypto.randomUUID(), kind: 'review', provider: 'review', purpose: 'review', alive: true, state: 'open',
@@ -102,14 +106,14 @@ class Sessions extends EventEmitter {
     if (this.stopping || this.starting.size) throw new Error('Wait for the console to finish opening.');
     const cwd = String(raw.cwd || '');
     if (!path.isAbsolute(cwd) || !fs.statSync(cwd).isDirectory()) throw new Error('Choose an existing project folder.');
-    const opening = planOpening(this.items.values(), raw, this.grid);
+    const opening = planOpening(this.layoutItems(), raw, this.grid);
     const item = { id: crypto.randomUUID(), kind: 'code', provider: 'code', purpose: 'code', alive: true, state: 'open', name: 'Code', nameMode: 'custom', permissions: 'default', cwd,
       slot: opening.slot, width: opening.width, height: opening.height, codeSourceKey: typeof raw.codeSourceKey === 'string' ? raw.codeSourceKey.slice(0, 100) : null, consoleKey: raw.consoleKey || crypto.randomUUID(), projectId: raw.projectId || null };
     this.commitLayout(opening.plan, opening.grid); this.items.set(item.id, item); this.emit('changed'); return publicSession(item);
   }
   createWebPanel(raw = {}) {
     if (this.stopping || this.starting.size) throw new Error('Wait for the console to finish opening.');
-    const url = previewUrl(raw.url), opening = planOpening(this.items.values(), raw, this.grid);
+    const url = previewUrl(raw.url), opening = planOpening(this.layoutItems(), raw, this.grid);
     const item = { id: crypto.randomUUID(), kind: 'web', provider: 'web', purpose: 'web', alive: true, state: 'open', name: 'Preview', nameMode: 'custom', permissions: 'default', cwd: '', url, phoneAllowed: false,
       slot: opening.slot, width: opening.width, height: opening.height, codeSourceKey: typeof raw.codeSourceKey === 'string' ? raw.codeSourceKey.slice(0, 100) : null, consoleKey: raw.consoleKey || crypto.randomUUID(), projectId: null };
     this.commitLayout(opening.plan, opening.grid); this.items.set(item.id, item); this.emit('changed'); return publicSession(item);
@@ -126,7 +130,7 @@ class Sessions extends EventEmitter {
     item.phoneAllowed = allow; this.emit('changed'); return publicSession(item);
   }
   savedConsoles() {
-    return [...this.items.values()].filter(x => (x.alive || x.restoreError) && !x.dismissed && !['login', 'setup', 'review'].includes(x.purpose)).map(x => ({
+    return [...this.items.values()].filter(x => !x.taskId && (x.alive || x.restoreError) && !x.dismissed && !['login', 'setup', 'review'].includes(x.purpose)).map(x => ({
       slot: x.slot, width: x.width || 1, height: x.height || 1, consoleKey: x.consoleKey || x.id, projectId: x.projectId || null, name: x.name, nameMode: x.nameMode, cwd: x.cwd, provider: x.provider, permissions: x.permissions,
       ...(x.kind === 'code' ? { kind: 'code', codeSourceKey: x.codeSourceKey } : {}),
       ...(x.kind === 'web' ? { kind: 'web', url: x.url, codeSourceKey: x.codeSourceKey } : {}),
@@ -169,7 +173,7 @@ class Sessions extends EventEmitter {
   }
   setGrid(raw) {
     if (this.starting.size) throw new Error('Wait for the console to open.');
-    const { plan, grid } = planGrid(this.items.values(), this.grid, raw);
+    const { plan, grid } = planGrid(this.layoutItems(), this.grid, raw);
     this.commitLayout(plan, grid); this.emit('changed');
   }
   async createOne(raw, { resumeId = null, resumePath = null, claudeTarget = null, accountId = null, sessionId = null, launchId = null, stage = false, resumeModel = null, purpose = 'agent', login = false, cancelCheck = null } = {}) {
@@ -177,7 +181,7 @@ class Sessions extends EventEmitter {
     if (raw?.remoteHostId) return this.createRemote(raw);
     raw = this.projects?.launch(raw) || raw;
     if (raw.nameMode != null && !['project', 'folder', 'custom'].includes(raw.nameMode)) throw new Error('Choose project naming or a custom chat title.');
-    const opening = stage ? { slot: raw.slot, width: raw.width || 1, height: raw.height || 1, grid: this.grid, plan: [] } : planOpening([...this.items.values(), ...this.starting.values()], raw, this.grid);
+    const opening = stage ? { slot: raw.slot, width: raw.width || 1, height: raw.height || 1, grid: this.grid, plan: [] } : planOpening([...this.layoutItems(), ...this.starting.values()], raw, this.grid);
     if (!stage && this.starting.size && (JSON.stringify(opening.grid) !== JSON.stringify(this.grid) || opening.plan.some(x => { const before = this.items.get(x.id) || this.starting.get(x.id); return before && ['slot','width','height'].some(k => x[k] !== before[k]); }))) throw new Error('Wait for the console to open before changing the layout.');
     opening.plan = opening.plan.filter(x => this.items.has(x.id));
     const { slot, width, height } = opening;
@@ -369,7 +373,7 @@ class Sessions extends EventEmitter {
     if (this.loginAccounts.has(accountId)) throw new Error('A sign-in console is already open for this account.');
     if (this.setupAccounts.has(accountId)) throw new Error('A setup console is already open for this account.');
     if (!path.isAbsolute(cwd) || !fs.existsSync(cwd) || !fs.statSync(cwd).isDirectory()) cwd = this.root;
-    const opening = planOpening([...this.items.values(), ...this.starting.values()], { cwd, provider: saved.provider }, this.grid);
+    const opening = planOpening([...this.layoutItems(), ...this.starting.values()], { cwd, provider: saved.provider }, this.grid);
     if (this.starting.size) throw new Error('Wait for the console to open before starting sign-in.');
     const id = crypto.randomUUID(), launchId = crypto.randomUUID(), executable = saved.provider === 'codex' ? this.nativeCodex() : (this.claude?.path || this.findProgram('claude'));
     if (!executable) throw new Error(`${saved.provider === 'codex' ? 'Codex' : 'Claude Code'} was not found. Install it, then restart Paddock.`);
@@ -399,6 +403,7 @@ class Sessions extends EventEmitter {
     return this.list().find(x => x.id === id);
   }
   async createSetupConsole({ id, launchId, targetAccountId } = {}) {
+    ordinaryConsole(this.items.get(id));
     const source = this.items.get(id);
     if (!source?.alive || source.dismissed || source.purpose !== 'agent' || source.launchId !== launchId || source.switching || this.isBusy(id)) {
       throw new Error('This console changed. Select it again before setting up the account.');
@@ -518,6 +523,7 @@ class Sessions extends EventEmitter {
     session.providerSessionId = expectedId;
   }
   async switchAccount({ id, launchId, targetAccountId } = {}) {
+    ordinaryConsole(this.items.get(id));
     const source = this.items.get(id);
     if (!source?.alive || source.dismissed || source.purpose !== 'agent' || source.launchId !== launchId) throw new Error('This console has changed. Select it again before switching.');
     if (!['codex', 'claude'].includes(source.provider) || !this.accounts) throw new Error('Account switching is unavailable for this console.');
@@ -617,7 +623,7 @@ class Sessions extends EventEmitter {
   createRemote(raw) {
     if (!this.ssh) throw new Error('SSH connections are unavailable.');
     raw = this.projects?.launch(raw) || raw;
-    const opening = planOpening([...this.items.values(), ...this.starting.values()], raw, this.grid);
+    const opening = planOpening([...this.layoutItems(), ...this.starting.values()], raw, this.grid);
     if (this.starting.size && (JSON.stringify(opening.grid) !== JSON.stringify(this.grid) || opening.plan.some(x => { const before = this.items.get(x.id) || this.starting.get(x.id); return before && ['slot','width','height'].some(k => x[k] !== before[k]); }))) throw new Error('Wait for the console to open before changing the layout.');
     const id = crypto.randomUUID(), consoleKey = /^[a-f0-9-]{36}$/i.test(raw.consoleKey || '') ? raw.consoleKey : id;
     const launch = this.ssh.launch(raw.remoteHostId, { consoleKey, provider: raw.provider, folder: raw.remoteFolder, model: raw.model });
@@ -646,6 +652,7 @@ class Sessions extends EventEmitter {
   }
   write(id, data, { draft = false, queued = false } = {}) {
     const item = this.items.get(id);
+    ordinaryConsole(item);
     if (isPanel(item)) throw new Error(`This is a read-only ${item.kind === 'web' ? 'preview' : item.kind} panel.`);
     if (!item?.alive) return;
     if (item.switching) throw new Error('This console is switching accounts. Your composer draft stays on the phone until switching finishes.');
@@ -670,6 +677,7 @@ class Sessions extends EventEmitter {
   }
   resize(id, cols, rows) {
     const item = this.items.get(id); if (!item?.alive) return;
+    if (item.taskId) return;
     if (isPanel(item)) return;
     cols = Math.max(20, Math.min(500, Math.floor(cols) || 80)); rows = Math.max(5, Math.min(200, Math.floor(rows) || 24));
     if (item.cols === cols && item.rows === rows) return;
@@ -694,6 +702,7 @@ class Sessions extends EventEmitter {
   syncProjects() {
     let changed = false;
     for (const item of this.items.values()) {
+      if (item.taskId) continue;
       if ((!item.alive && !item.restoreError) || item.dismissed) continue;
       if (item.projectId && this.projects && !this.projects.get(item.projectId)) { item.projectId = null; if (item.nameMode === 'project') item.nameMode = 'folder'; changed = true; }
       const name = item.nameMode === 'project' ? this.projects?.get(item.projectId)?.name : item.nameMode === 'folder' ? path.basename(item.cwd) : item.name;
@@ -704,6 +713,7 @@ class Sessions extends EventEmitter {
   }
   rename(id, name) {
     const item = this.items.get(id);
+    ordinaryConsole(item);
     if (!item || (!item.alive && !item.restoreError)) throw new Error('This console is no longer open.');
     item.nameMode = name ? 'custom' : item.projectId ? 'project' : 'folder';
     item.name = name || this.projects?.get(item.projectId)?.name || path.basename(item.cwd) || `Console ${item.slot}`;
@@ -713,6 +723,7 @@ class Sessions extends EventEmitter {
   }
   assignProject(id, projectId, { useProjectName } = {}) {
     const item = this.items.get(id);
+    ordinaryConsole(item);
     if (!item || (!item.alive && !item.restoreError) || item.dismissed) throw new Error('This console is no longer open.');
     if (projectId !== null && (typeof projectId !== 'string' || !this.projects?.get(projectId))) throw new Error('Choose an existing project.');
     if (useProjectName != null && typeof useProjectName !== 'boolean') throw new Error('Choose whether to use the project name.');
@@ -732,12 +743,23 @@ class Sessions extends EventEmitter {
     return this.layout({ id, slot }, beforeMove);
   }
   previewLayout(change) {
-    return planLayout(this.items.values(), change, this.grid);
+    const plan = planLayout(this.layoutItems(), change, this.grid);
+    this.guardWorkerLayout(change, plan); return plan;
+  }
+  guardWorkerLayout(change, plan) {
+    for (const placed of plan) {
+      const current = this.items.get(placed.id);
+      if (placed.id === change.id || !current) continue;
+      if (this.ownerConsoles?.isProtected(current.consoleKey) && ['slot', 'width', 'height'].some(key => placed[key] !== (current[key] ?? 1))) {
+        throw new Error('This move would displace a protected console. Choose a vacant slot.');
+      }
+    }
   }
   layout(change, beforeMove = () => {}) {
     if (this.starting.size) throw new Error('Wait for the new console to open before moving panels.');
     const plan = this.previewLayout(change);
     beforeMove(plan);
+    this.guardWorkerLayout(change, plan);
     for (const placed of plan) Object.assign(this.items.get(placed.id), placed);
     for (const [id, old] of this.items) if (!old.alive && !old.restoreError && plan.some(x => x.slot === old.slot)) this.items.delete(id);
     this.emit('changed');
@@ -753,6 +775,7 @@ class Sessions extends EventEmitter {
   }
   end(id) {
     const item = this.items.get(id); if (!item) return;
+    ordinaryConsole(item);
     if (isPanel(item)) { this.items.delete(id); this.emit('changed'); return; }
     if (item.remote) return this.ssh.end(item.remote).then(() => {
       item.dismissed = true;
@@ -768,7 +791,7 @@ class Sessions extends EventEmitter {
   scanEvents() {
     let changed = false;
     for (const item of this.items.values()) {
-      if (['login', 'setup'].includes(item.purpose) || !item.launchId || item.switching) continue;
+      if (item.taskId || ['login', 'setup'].includes(item.purpose) || !item.launchId || item.switching) continue;
       for (const kind of ['identity', 'state', 'usage']) {
         const file = path.join(this.root, 'events', `${item.id}.${item.launchId}.${kind}.json`);
         try {
@@ -810,7 +833,7 @@ class Sessions extends EventEmitter {
     this.stopping = true;
     this.projects?.off('changed', this.refreshProjectContext);
     this.hub?.off?.('context-changed', this.refreshProjectContext);
-    const active = [...this.items.values()].filter(x => x.alive && !isPanel(x));
+    const active = [...this.items.values()].filter(x => x.alive && !x.taskId && !isPanel(x));
     const staged = [...this.pendingStages.values()];
     for (const item of staged) {
       this.pendingStages.delete(item.launchId);

@@ -36,6 +36,22 @@ function deviceName(value) {
   if (!name || [...name].length > 64) throw new Error('Use a name from 1 to 64 characters.');
   return name;
 }
+function mobileSession(item, sessions) {
+  const { id, slot, name, provider, alive, state, cols, rows, consoleKey, projectId, remote, updatedAt,
+    providerSessionId, model, modelId, effort, settingsAt, launchId, accountId, accountLabel, switchTargets,
+    switching, purpose, draftSupported, switchOffer, worktree, taskId, sliceId, steeringState, steeringSupported } = item;
+  return { id, slot, name, provider, alive, state, cols, rows, consoleKey, projectId, remote, updatedAt, providerSessionId,
+    model: modelId || model || null, modelName: model || null, effort: effort || null, settingsAt: settingsAt || null,
+    launchId: launchId || null, accountId: accountId || null, accountLabel: accountLabel || null,
+    switchTargets: switchTargets || [], switching: !!switching, purpose: purpose || 'agent', taskId: taskId || null,
+    sliceId: sliceId || null, steeringState: steeringState || null, steeringSupported: steeringSupported === true,
+    consoleCapabilities: consoleCapabilities(item, sessions.ownerConsoles, !!sessions.workerBridge),
+    draftSupported: draftSupported === true, switchOffer: switchOffer || null,
+    ...(worktree && typeof worktree.branch === 'string' && typeof worktree.path === 'string' ? { worktree: { branch: worktree.branch, path: worktree.path } } : {}) };
+}
+const WORKER_CONSOLE_READS = new Set(['console.files']);
+const WORKER_ACTIONS = new Set(['worker.submit', 'worker.stop']);
+const GLOBAL_CONSOLE_ACTIONS = new Set(['console.create', 'console.agents', 'console.worktree.root']);
 class MobileCompanion extends EventEmitter {
   constructor(root, safeStorage, { sessions, results, alerts, queue, prompts, getUsage, getUsageTurns, refreshUsage, getDefaults, getModels, getSettings, toolsStatus = false, getKey, codePanel, networkScript, program, network, worktrees, endMobileSession, concepts, redactImageText, testMode = false, isTailnet = isTailscale } = {}) {
     super(); this.file = path.join(root, 'mobile.json'); this.crypto = safeStorage;
@@ -260,7 +276,7 @@ class MobileCompanion extends EventEmitter {
     const localUrl = `https://${this.config.host}:${this.config.port}`;
     const connection = { url: localUrl };
     connection.name = this.name;
-    return { connection, previews: (this.sessions.codePanels?.() || []).filter(p => p.kind === 'web').map(({ id, name, url, state, phoneAllowed }) => ({ id, name, url, state, phoneAllowed: phoneAllowed === true })), projects: (typeof this.sessions.projects?.list === 'function' ? this.sessions.projects.list() || [] : []).filter(x => x.status !== 'archived').map(({ id, name, color }) => ({ id, name, ...(color ? { color } : {}) })), imageJobs: this.concepts ? imageJobs(this.concepts, this.redactImageText) : [], imageJobsRunning: !!this.concepts?.items.some(x => ['submitting', 'waiting', 'downloading'].includes(x.state)), capabilities: [...(this.concepts ? ['image.jobs'] : []), ...(this.toolsStatus ? ['tools.status'] : []), ...(typeof this.getUsageTurns === 'function' ? ['usage.turns'] : []), ...(mobileProjects.available(this.sessions.projects) ? ['projects.read'] : []), 'code.read', 'results.thumbnails', 'results.actions', 'console.agents', ...(this.worktrees && this.endMobileSession ? ['console.worktree'] : []), 'console.files', 'console.close', 'console.projects', 'console.models', 'console.ssh', 'console.manage', 'console.switch', 'console.setup', 'alerts.direct', 'console.attachments', ...(this.queue ? ['console.queue'] : []), ...(this.prompts ? ['prompts', 'prompts.edit'] : [])], capacity: (this.sessions.grid?.columns || 3) * (this.sessions.grid?.rows || 3), sessions: this.sessions.list().filter(x => !x.dismissed).map(({ id, slot, name, provider, alive, state, cols, rows, consoleKey, projectId, remote, updatedAt, providerSessionId, model, modelId, effort, settingsAt, launchId, accountId, accountLabel, switchTargets, switching, purpose, draftSupported, switchOffer, worktree, taskId }) => ({ id, slot, name, provider, alive, state, cols, rows, consoleKey, projectId, remote, updatedAt, providerSessionId, model: modelId || model || null, modelName: model || null, effort: effort || null, settingsAt: settingsAt || null, launchId: launchId || null, accountId: accountId || null, accountLabel: accountLabel || null, switchTargets: switchTargets || [], switching: !!switching, purpose: purpose || 'agent', taskId: taskId || null, consoleCapabilities: consoleCapabilities({ taskId, consoleKey }, this.sessions.ownerConsoles), draftSupported: draftSupported === true, switchOffer: switchOffer || null, ...(worktree && typeof worktree.branch === 'string' && typeof worktree.path === 'string' ? { worktree: { branch: worktree.branch, path: worktree.path } } : {}) })), queues: this.queue?.snapshot() || {}, prompts: this.prompts?.list() || [], alerts: this.liveAlerts, unreadResults: this.results.unreadGroups(), resultVersion: digest(this.results.list().map(x => x.id + ':' + x.seenAt + ':' + x.changeCount).join(',')).slice(0, 16) };
+    return { connection, previews: (this.sessions.codePanels?.() || []).filter(p => p.kind === 'web').map(({ id, name, url, state, phoneAllowed }) => ({ id, name, url, state, phoneAllowed: phoneAllowed === true })), projects: (typeof this.sessions.projects?.list === 'function' ? this.sessions.projects.list() || [] : []).filter(x => x.status !== 'archived').map(({ id, name, color }) => ({ id, name, ...(color ? { color } : {}) })), imageJobs: this.concepts ? imageJobs(this.concepts, this.redactImageText) : [], imageJobsRunning: !!this.concepts?.items.some(x => ['submitting', 'waiting', 'downloading'].includes(x.state)), capabilities: [...(this.concepts ? ['image.jobs'] : []), ...(this.toolsStatus ? ['tools.status'] : []), ...(typeof this.getUsageTurns === 'function' ? ['usage.turns'] : []), ...(mobileProjects.available(this.sessions.projects) ? ['projects.read'] : []), 'code.read', 'results.thumbnails', 'results.actions', 'console.agents', ...(this.worktrees && this.endMobileSession ? ['console.worktree'] : []), 'console.files', 'console.close', 'console.projects', 'console.models', 'console.ssh', 'console.manage', 'console.switch', 'console.setup', 'alerts.direct', 'console.attachments', ...(this.queue ? ['console.queue'] : []), ...(this.prompts ? ['prompts', 'prompts.edit'] : []), ...(this.sessions.workerBridge ? ['worker.submit', 'worker.stop'] : [])], capacity: (this.sessions.grid?.columns || 3) * (this.sessions.grid?.rows || 3), sessions: this.sessions.list().filter(x => !x.dismissed).map(item => mobileSession(item, this.sessions)), queues: this.queue?.snapshot() || {}, prompts: this.prompts?.list() || [], alerts: this.liveAlerts, unreadResults: this.results.unreadGroups(), resultVersion: digest(this.results.list().map(x => x.id + ':' + x.seenAt + ':' + x.changeCount).join(',')).slice(0, 16) };
   }
   scheduleState() {
     if (!this.server || this.stateTimer) return;
@@ -300,7 +316,20 @@ class MobileCompanion extends EventEmitter {
       throw new Error('This phone connection is no longer authorized.');
     }
     if (!payload || typeof payload !== 'object' || Array.isArray(payload)) throw new Error('Invalid mobile request.');
+    const explicitTarget = this.sessions.items.get(payload.id || payload.consoleId);
+    const selectedTarget = this.sessions.items.get(client.selected);
+    const target = explicitTarget || (!GLOBAL_CONSOLE_ACTIONS.has(method) ? selectedTarget : null);
+    if (target?.taskId && (method === 'input' || /^(?:console|queue|attachment|worker)\./.test(method)) &&
+        !WORKER_CONSOLE_READS.has(method) && !WORKER_ACTIONS.has(method)) {
+      throw new Error('Use the worker composer or Stop worker.');
+    }
     switch (method) {
+      case 'worker.submit': case 'worker.stop': {
+        if (!this.sessions.workerBridge || client.selected !== payload.id) throw new Error('Select a current worker first.');
+        this.sessions.workerBridge.current(payload);
+        if (method === 'worker.submit') return this.sessions.workerBridge.submit(payload);
+        return this.sessions.workerBridge.stop(payload);
+      }
       case 'projects.list': return mobileProjects.readProjects(this.sessions);
       case 'projects.detail': return mobileProjects.readProjects(this.sessions, payload.id, true);
       case 'state': return this.publicState();

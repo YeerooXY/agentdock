@@ -290,6 +290,7 @@ class SplitTasks {
     const loop = this.loop, previous = this.merging.get(job.id) || Promise.resolve();
     const pending = previous.catch(() => {}).then(async () => {
       if (!ACTIVE.has(job.state)) return;
+      if (loop.workers?.unconsumed(sub)) throw new Error('Worker steering needs a builder turn and new checks before merging.');
       await this.assertBranch(sub); await this.assertBranch(job);
       if (sub.committed) {
         if ((await loop.git(sub.workFolder, ['rev-parse', 'HEAD'])).trim() !== sub.committed || (await loop.git(sub.workFolder, ['status', '--porcelain'])).trim()) throw new Error('The committed subtask changed. Inspect its worktree before resuming.');

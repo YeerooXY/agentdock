@@ -72,10 +72,10 @@ class WorkerPlacement {
   snapshot() { return [...this.panels.values()].map(p => ({ ...p })); }
 }
 
-// Describes supported actions only; worker actions arrive with the bridge in row 7.
-function consoleCapabilities(item, owners) {
+function consoleCapabilities(item, owners, bridge = false) {
   const worker = !!item.taskId;
   return { worker, ownerManaged: !!owners?.records?.get(item.consoleKey)?.ownerManaged,
-    close: !worker, switch: !worker, setup: !worker, manage: !worker, queue: !worker };
+    close: !worker, switch: !worker, setup: !worker, manage: !worker, queue: !worker,
+    ...(worker && bridge ? { steering: item.steeringSupported === true && ['codex', 'claude', 'kiro'].includes(item.provider), stopWorker: true } : {}) };
 }
 module.exports = { WorkerPlacement, consoleCapabilities };

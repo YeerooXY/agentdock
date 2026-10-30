@@ -123,4 +123,6 @@ Difficulty measures reasoning risk; complexity measures moving parts, relative t
 
 **Row 6 status: partial.** Placement is a tested prototype; project-page and hidden-panel UI, cap integration, and desktop fixtures remain to be implemented.
 
+**Row 7 activation:** the CLI bridge and mailbox can run headless. Production automatic worker visibility remains disabled until row 6 supplies its complete presentation adapter. Placement tests use an explicitly injected prototype; no owner exception is recorded.
+
 Future implementation validation: `npm run build`, `npm test`, then `npm run test:linux`, whose Docker runner executes `npm run test:desktop` on a virtual display. Use mocked HTTP/processes and temporary data; submit no paid model requests. Run affected desktop cases in slices 6 and 10; slice 12 runs the combined suite. This planning task runs none of those launch commands.

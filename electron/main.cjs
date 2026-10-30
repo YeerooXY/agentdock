@@ -24,6 +24,7 @@ const { loginPath } = require('./platform.cjs');
 const { Workbench } = require('./workbench.cjs');
 const { Delegation, REVIEWERS } = require('./delegation.cjs');
 const { TaskLoop } = require('./task-loop.cjs');
+const { WorkerSessions } = require('./worker-sessions.cjs');
 const { OwnerConsoles } = require('./owner-consoles.cjs');
 const { CapacityReservations } = require('./capacity-reservations.cjs');
 const { registryFromRouting } = require('./worker-registry.cjs');
@@ -435,7 +436,7 @@ app.whenReady().then(() => guardStartup(async () => {
   capacityReservations = new CapacityReservations(ownerConsoles, {
     workers: () => registryFromRouting({ routing: settings.routing, candidates: testMode ? [] : taskAccounts.candidates() }),
     active: () => [...(sessions?.items.values() || [])]
-    .filter(item => item.alive && item.state === 'active' && !item.remote && !item.kind)
+    .filter(item => item.alive && item.state === 'active' && !item.remote && !item.kind && !item.taskId)
     .map(item => ({ quotaGroupId: ownerConsoles.records.get(item.consoleKey)?.quotaGroupId || item.accountId || `${item.provider}:default`,
       local: ownerConsoles.records.get(item.consoleKey)?.local === true, owner: ownerConsoles.records.get(item.consoleKey)?.ownerTurn === true })) });
   tasks = new TaskLoop(root, { ...taskAccounts, admission: capacityReservations, getSettings: () => settings, candidates: () => {
@@ -469,6 +470,7 @@ app.whenReady().then(() => guardStartup(async () => {
     persistSettings({ ...settings, grid, slotNames, slotTrims: moveSlotTrims(settings.slotTrims, plan, sessions.items) });
   } });
   ownerConsoles.bind(sessions, { profile: item => capacityReservations.profile({ accountId: item.accountId || `${item.provider}:default` }) });
+  new WorkerSessions(sessions, tasks);
   sessions.on('changed', () => capacityReservations.drain());
   workPower = new WorkPower(powerSaveBlocker);
   sessions.on('changed', updatePower);
@@ -641,7 +643,25 @@ app.whenReady().then(() => guardStartup(async () => {
         case 'tasks.start': return { ok: true, value: await tasks.start(payload) };
         case 'tasks.approvePlan': return { ok: true, value: await tasks.approvePlan(payload) };
         case 'tasks.resume': return { ok: true, value: await tasks.resume(payload?.id) };
-        case 'tasks.stop': return { ok: true, value: await tasks.stop(payload?.id) };
+        case 'tasks.stop': {
+          const affected = sessions.list().filter(item => item.taskId === payload?.id && item.processAlive);
+          if (affected.length && !testMode) {
+            const reply = await dialog.showMessageBox(window, { type: 'question', buttons: ['Keep running', 'Stop workers'], defaultId: 0, cancelId: 0,
+              message: 'Stop task workers?', detail: affected.map(item => item.name).join('\n') });
+            if (reply.response !== 1) return { ok: true, value: false };
+            const current = sessions.list().filter(item => item.taskId === payload?.id && item.processAlive);
+            if (current.length !== affected.length || current.some(item => !affected.some(prior => prior.consoleKey === item.consoleKey && prior.launchId === item.launchId))) {
+              throw new Error('The task workers changed. Review Stop again.');
+            }
+          }
+          return { ok: true, value: await tasks.stop(payload?.id) };
+        }
+        case 'worker.submit': return { ok: true, value: sessions.workerBridge.submit(payload) };
+        case 'worker.stop': {
+          return { ok: true, value: await sessions.workerBridge.stopDesktop(payload, { testMode,
+            confirm: async item => (await dialog.showMessageBox(window, { type: 'question', buttons: ['Keep running', 'Stop worker'], defaultId: 0, cancelId: 0,
+              message: `Stop worker for ${item.name}?`, detail: 'All work is kept.' })).response === 1 }) };
+        }
         case 'tasks.accept': return { ok: true, value: await tasks.accept(payload?.id) };
         case 'tasks.list': await tasks.refresh(); return { ok: true, value: tasks.snapshot() };
         case 'updates.check': return { ok: true, value: await updates.check() };

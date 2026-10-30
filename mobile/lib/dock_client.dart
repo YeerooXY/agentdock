@@ -1077,8 +1077,22 @@ class DockClient extends ChangeNotifier {
   }
 
   Future<void> input(String value, {String? id}) async {
+    if (sessions.any((s) => s['id'] == (id ?? selected) && s['taskId'] != null)) {
+      throw StateError('Use the worker composer for steering.');
+    }
     await request('input', {'id': id ?? selected, 'data': value});
     inputError = '';
+  }
+
+  final _workerSubmissions = <String, ({String text, String id})>{};
+  String workerSubmissionId(String id, String text) {
+    final key = '$activePC/$id';
+    if (_workerSubmissions[key]?.text != text) {
+      final random = Random.secure();
+      _workerSubmissions[key] = (text: text,
+        id: base64UrlEncode(List<int>.generate(24, (_) => random.nextInt(256))));
+    }
+    return _workerSubmissions[key]!.id;
   }
 
   Future<void> submit(
@@ -1098,6 +1112,19 @@ class DockClient extends ChangeNotifier {
       throw StateError('Select a connected console first.');
     }
     if (text.trim().isEmpty) return;
+    if (targetSession?['taskId'] != null) {
+      if (command) throw StateError('Use the worker composer for steering.');
+      if ((targetSession?['consoleCapabilities'] as Map?)?['steering'] != true) {
+        throw StateError('Steering is unavailable for this CLI.');
+      }
+      await request('worker.submit', {
+        'id': id, 'consoleKey': targetSession?['consoleKey'],
+        'launchId': targetSession?['launchId'],
+        'submissionId': workerSubmissionId(id, text), 'text': text,
+      });
+      _workerSubmissions.remove('$targetPC/$id');
+      return;
+    }
     if (command && !RegExp(r'^/[a-z][a-z0-9 /_-]*$').hasMatch(text)) {
       throw StateError('Choose a supported agent command.');
     }

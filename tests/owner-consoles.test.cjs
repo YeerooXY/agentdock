@@ -327,26 +327,26 @@ test('typed and pasted input count; terminal protocol reports and queued deliver
   assert.ok(writes.length > 0);
 });
 
-test('automation queue additions and delivery preserve worker ownership and owner recency', async t => {
+test('legacy worker queues cannot bypass steering or refresh owner recency', async t => {
   const f = fixture(t);
   const sessions = new Sessions(f.root, { pty: { spawn() { assert.fail('No process launch'); } } });
   sessions.items.set('a', { id: 'a', consoleKey: 'key', launchId: 'launch', taskId: 'task', accountId: 'codex:a', purpose: 'agent', provider: 'codex', state: 'active', alive: true, terminal: { write() {} } });
   f.owners.bind(sessions);
   f.owners.heartbeat([{ consoleKey: 'key', launchId: 'launch' }]);
   const queue = new MessageQueue(sessions, { submitDelay: 0, wait: () => Promise.resolve() });
-  const entry = queue.add('a', 'automatic message');
+  assert.throws(() => queue.add('a', 'automatic message'), /worker composer/);
   let record = f.owners.records.get('key');
   assert.equal(record.ownerManaged, false); assert.equal(record.lastInteractionAt, null);
   assert.equal(record.pendingSubmission, false); assert.equal(f.owners.reservations().size, 0);
-  await queue.send('a', entry.id);
+  await assert.rejects(queue.send('a', 'old-entry'), /worker composer/);
   assert.equal(record.ownerTurn, false); assert.equal(record.lastInteractionAt, null);
-  const ownerEntry = queue.add('a', 'owner submission', { ownerRequested: true });
+  assert.throws(() => queue.add('a', 'owner submission', { ownerRequested: true }), /worker composer/);
+  sessions.ownerInteraction('a', 'click');
   record = f.owners.records.get('key');
-  assert.equal(record.ownerManaged, true); assert.equal(record.lastInteractionAt, f.now()); assert.equal(record.pendingSubmission, true);
-  queue.remove('a', ownerEntry.id);
+  assert.equal(record.ownerManaged, true); assert.equal(record.lastInteractionAt, f.now()); assert.equal(record.pendingSubmission, false);
   const touched = record.lastInteractionAt; f.advance(RECENT_MS + 1);
   f.owners.heartbeat([{ consoleKey: 'key', launchId: 'launch' }]);
-  const background = queue.add('a', 'background follow-up'); await queue.send('a', background.id);
+  assert.throws(() => queue.add('a', 'background follow-up'), /worker composer/);
   assert.equal(record.lastInteractionAt, touched); assert.equal(record.ownerManaged, true);
   assert.equal(record.pendingSubmission, false); assert.equal(record.ownerTurn, false);
   assert.equal(f.owners.reservations().size, 0);

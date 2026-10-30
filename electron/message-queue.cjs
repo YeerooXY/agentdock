@@ -2,6 +2,7 @@
 const crypto = require('node:crypto');
 const { EventEmitter } = require('node:events');
 const { byId: cliAgents } = require('./cli-catalog.cjs');
+const { ordinaryConsole } = require('./worker-sessions.cjs');
 
 const MAX_ENTRIES = 20, MAX_TEXT = 16000;
 // Waits after a turn finishes so the agent's composer is ready, and gives the
@@ -30,10 +31,12 @@ class MessageQueue extends EventEmitter {
   }
   session(id) {
     const item = this.sessions.items.get(id);
+    ordinaryConsole(item);
     if (!item?.alive || item.dismissed || item.purpose !== 'agent' || !cliAgents.has(item.provider)) throw new Error('Messages can be queued for open agent consoles.');
     return item;
   }
   queue(id, create = false) {
+    ordinaryConsole(this.sessions.items.get(id));
     let queue = this.queues.get(id);
     if (!queue && create) { this.session(id); queue = { paused: false, entries: [] }; this.queues.set(id, queue); }
     if (!queue) throw new Error('This console has no queued messages.');
