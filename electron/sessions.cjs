@@ -20,6 +20,7 @@ const { consoleCapabilities } = require('./worker-placement.cjs');
 // Code and preview panels sit in the grid but run no process.
 const isPanel = item => ['code', 'web', 'review'].includes(item?.kind);
 function envValue(env, name) { return Object.entries(env).find(([key]) => key.toLowerCase() === name.toLowerCase())?.[1]; }
+const { stripInheritedSessionEnv } = require('./agent-env.cjs');
 function removeEnv(env, names) { const set = new Set(names.map(x => x.toLowerCase())); for (const key of Object.keys(env)) if (set.has(key.toLowerCase())) delete env[key]; }
 function canonical(value) { const result = path.resolve(value).replace(/[\\/]+$/, ''); return process.platform === 'win32' ? result.toLowerCase() : result; }
 const UUID_TEXT = '[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}';
@@ -301,6 +302,7 @@ class Sessions extends EventEmitter {
       Object.assign(env, { PADDOCK_DATA_DIR: this.root, PADDOCK_SESSION_ID: id, PADDOCK_LAUNCH_ID: launchId });
       if (selectedAccountId) env.PADDOCK_ACCOUNT_ID = selectedAccountId;
     }
+    stripInheritedSessionEnv(env);
     if (claudeTempRoot && bridge) env.CLAUDE_CODE_TMPDIR = claudeTempRoot;
     delete env.ELECTRON_RUN_AS_NODE;
     removeEnv(env, ['OPENAI_API_KEY', 'CODEX_API_KEY', 'CODEX_ACCESS_TOKEN', 'ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'CLAUDE_CODE_OAUTH_TOKEN', 'GOOGLE_API_KEY', 'GEMINI_API_KEY']);

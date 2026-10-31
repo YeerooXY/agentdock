@@ -1,4 +1,6 @@
 'use strict';
+// Paddock started from inside an agent session must not pass that session's markers to its consoles and workers.
+require('./agent-env.cjs').stripInheritedSessionEnv(process.env);
 const { app, BrowserWindow, ipcMain, dialog, screen, systemPreferences, globalShortcut, safeStorage, Tray, Menu, nativeImage, Notification, shell, powerSaveBlocker, clipboard } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
