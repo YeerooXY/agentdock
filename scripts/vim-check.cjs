@@ -95,9 +95,9 @@ async function checkVimControls({ page, app, invoke, eventually, capture }) {
   await key('f'); await eventually(async () => (await invoke('state')).mode === 'dashboard' && !(await invoke('state')).transitioning);
   await key('f'); await eventually(async () => (await invoke('state')).mode === 'fullscreen' && !(await invoke('state')).transitioning);
 
-  const sidebar = (await invoke('state')).settings.sidebarCollapsed;
-  await key('b'); await eventually(async () => (await invoke('state')).settings.sidebarCollapsed !== sidebar);
-  await key('b'); await eventually(async () => (await invoke('state')).settings.sidebarCollapsed === sidebar);
+  await key('b');
+  assert.equal(await page.locator('nav [data-page=consoles]').evaluate(el => el === document.activeElement), true, JSON.stringify(await page.evaluate(() => ({ active: document.activeElement?.outerHTML.slice(0, 350), mode: document.body.dataset.vimMode, moving: document.body.classList.contains('window-moving'), sidebar: document.querySelector('#sidebar').getBoundingClientRect().toJSON() }))));
+  assert.equal(await page.locator('#explorer-pane').count(), 0);
   await key('Shift+?'); await page.locator('#vim-help[open]').waitFor();
   await capture('test-vim-help.png');
   await key('Escape'); await page.locator('#vim-help').waitFor({ state: 'hidden' });

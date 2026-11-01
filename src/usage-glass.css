@@ -1,0 +1,75 @@
+﻿/* Subscription rows and ledger charts share the current window's glass palette. */
+#content[data-view=usage] .usage-heading-actions,.usage-analytics-controls { display:flex; flex-wrap:wrap; align-items:center; gap:10px }
+#content[data-view=usage] .usage-grid { display:grid; grid-template-columns:minmax(0,1fr); gap:14px }
+#content[data-view=usage] .quota-card.large { display:grid; grid-template-columns:minmax(190px,.5fr) minmax(0,1.8fr) auto; align-items:center; gap:12px 24px; padding:20px }
+#content[data-view=usage] .quota-identity { min-width:0; display:grid; gap:12px }
+#content[data-view=usage] .quota-heading { margin:0; display:flex; align-items:center; gap:14px }
+#content[data-view=usage] .quota-heading .account-mark { width:46px; height:46px; border:1px solid #ffffff40; border-radius:11px; box-shadow:inset 0 1px 1px #fff4,0 0 18px color-mix(in srgb,var(--provider-accent) 30%,transparent) }
+#content[data-view=usage] .quota-heading .account-mark img { width:34px; height:34px }
+#content[data-view=usage] .quota-heading>div { display:grid; gap:6px; min-width:0 }
+#content[data-view=usage] .quota-heading strong { font-size:20px; line-height:1.2; color:#f3f4ff }
+#content[data-view=usage] .connection { justify-self:start; font-size:14px; color:#e0e4ef; border:1px solid #ffffff30; border-radius:6px; padding:3px 7px; background:#151a254d }
+#content[data-view=usage] .connection.connected { color:#aef4df; background:#1a9b7750; border-color:#7ce4c354 }
+.quota-account-choice { display:flex; align-items:center; gap:8px; flex-wrap:wrap; min-width:0 }
+.quota-account-choice:empty { display:none }
+.quota-account-choice select { min-width:0; max-width:100%; width:auto; flex:0 1 220px; min-height:44px; font-size:14px; padding:8px 28px 8px 9px; background-color:#070b1659; border:1px solid color-mix(in srgb,var(--accent-blue) 45%,transparent); border-radius:7px }
+.quota-account-choice small,.quota-account-choice .plan { color:#e2e7f1; font-size:14px }
+.quota-readings { --quota-ring-size:120px; display:grid; grid-template-columns:var(--quota-ring-size) minmax(0,1fr); align-items:center; gap:22px; min-width:0; border-left:1px solid #ffffff22; padding-left:24px }
+.quota-ring { width:var(--quota-ring-size); height:var(--quota-ring-size); padding:8px; border-radius:50%; background:conic-gradient(var(--accent-blue) var(--remaining),#ffffff16 0); box-shadow:0 0 18px color-mix(in srgb,var(--accent-blue) 25%,transparent); color:#f4f7ff }
+.quota-ring>div { width:100%; height:100%; border-radius:50%; background:color-mix(in srgb,var(--accent-blue) 10%,#0b1020); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px }
+.quota-ring strong { font-size:30px; font-weight:650 }.quota-ring span { font-size:14px }.quota-ring small { font-size:14px; max-width:90px; text-align:center; line-height:1.15; overflow-wrap:anywhere }
+.quota-ring.unknown { background:#ffffff25; box-shadow:none }.quota-ring.unknown strong { font-size:17px }
+.quota-stale .quota-ring { opacity:.7 }
+.quota-windows { min-width:0 }
+#content[data-view=usage] .quota-window { margin:0 0 14px }
+#content[data-view=usage] .quota-window:last-child { margin-bottom:0 }
+#content[data-view=usage] .quota-window>div:first-child { font-size:15px; gap:10px; color:#e2e7f1 }
+#content[data-view=usage] .quota-window strong { font-size:15px; color:#e5ebfa; white-space:nowrap }
+#content[data-view=usage] .quota-window .meter { height:8px; margin:6px 0; background:#ffffff1a; box-shadow:inset 0 1px 3px #0005 }
+#content[data-view=usage] .quota-window .meter>span { background:linear-gradient(90deg,var(--accent-blue),var(--accent-pink)); box-shadow:0 0 12px color-mix(in srgb,var(--accent-blue) 65%,transparent) }
+#content[data-view=usage] .quota-window .meter.warning>span { background:#edba77 }
+#content[data-view=usage] .reset,#content[data-view=usage] .missing-window { font-size:14px; line-height:1.4; color:#dbe2ef }
+#content[data-view=usage] .quota-unavailable { padding:0; min-height:0 }
+#content[data-view=usage] .quota-unavailable p { font-size:13px; line-height:1.5; margin:0 }
+.quota-row-actions { display:flex; align-items:center; gap:8px; flex-wrap:wrap; width:104px; justify-content:flex-end }
+.quota-row-actions .secondary { min-width:44px; min-height:44px; padding:10px; border-radius:9px; background:color-mix(in srgb,var(--accent-blue) 15%,transparent); border:1px solid color-mix(in srgb,var(--accent-blue) 45%,transparent) }
+#content[data-view=usage] .quota-row-actions .usage-hide { font-size:14px; min-height:44px; padding:8px; margin:0 }
+#content[data-view=usage] .quota-foot { grid-column:1/-1; border:0; padding:0; margin:0; display:flex; flex-wrap:wrap; justify-content:space-between; gap:6px 14px; font-size:14px; color:#dbe2ef }
+#content[data-view=usage] .quota-card.quota-exhausted { border-color:#b97986!important; background:linear-gradient(120deg,#392c39f5,#242936f5)!important; box-shadow:inset 0 1px 1px #ffd5df26,0 7px 24px #03081766!important }
+.quota-exhausted .quota-ring { background:#985360; box-shadow:none; color:#ffe1e4 }
+.quota-exhausted .quota-ring>div { background:#302432 }
+#content[data-view=usage] .quota-exhausted .meter>span { background:#a6adbf; box-shadow:none }
+#content[data-view=usage] .quota-window-empty strong { color:#ffc5cd }
+#content[data-view=usage] .quota-window-empty .meter { background:#aa586866; box-shadow:inset 0 0 0 1px #df91a06b }
+#content[data-view=usage] .quota-local-usage { grid-column:1/-1; margin:0; font-size:12px }
+.usage-analytics { margin-top:22px; padding:20px; min-width:0 }
+#content[data-view=usage] .usage-analytics>.section-label { margin:0 0 16px; gap:12px; flex-wrap:wrap }
+#content[data-view=usage] .usage-analytics h2 { color:#f3f5ff; font-size:19px }
+#content[data-view=usage] .usage-analytics .section-label p { margin:5px 0 0; font-size:12px; color:#ced7ec }
+.usage-analytics-controls select { min-width:140px; font-size:12px; padding:9px; border:1px solid #ffffff35; background:#10182a66; border-radius:8px }
+#content[data-view=usage] .usage-analytics-controls { display:flex; flex-wrap:wrap; align-items:center; gap:10px }
+#content[data-view=usage] .usage-analytics-controls select { width:160px; flex:none }
+.usage-stat-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(145px,1fr)); gap:12px; margin-bottom:18px }
+.usage-stat-grid>div { min-width:0; display:grid; gap:7px; border:1px solid #ffffff30; border-radius:10px; padding:12px 16px; background:linear-gradient(135deg,color-mix(in srgb,var(--accent-blue) 14%,transparent),#090e1c25); box-shadow:inset 0 1px 0 #ffffff20 }
+.usage-stat-grid span { font-size:14px; color:#d5dded }.usage-stat-grid strong { font-size:25px; color:#f4f6ff; letter-spacing:-.4px }
+.usage-chart-grid { display:grid; grid-template-columns:minmax(0,1.6fr) minmax(230px,1fr); gap:18px }
+.usage-chart,.usage-provider-chart { min-width:0; border:1px solid #ffffff26; border-radius:10px; padding:14px; background:#080d1b30 }
+.usage-chart>header { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:14px }
+.usage-analytics h3 { margin:0; font-size:13px; color:#e5ebfa; font-weight:600 }
+.usage-chart svg { display:block; width:100%; max-height:160px; overflow:visible }
+.usage-chart-gridline { fill:none; stroke:#ffffff1a; stroke-width:1; stroke-dasharray:3 4 }
+.usage-chart-dates { display:flex; justify-content:space-between; gap:10px; font-size:10px; margin-top:9px; color:#c7d2e7 }
+.usage-metric-toggle { display:flex; gap:4px }.usage-metric-toggle button { border-radius:6px; padding:5px 8px; min-height:28px; color:#d4deef; border:1px solid transparent; font-size:11px; background:transparent }
+.usage-metric-toggle [aria-pressed=true] { border-color:#ffffff45; background:color-mix(in srgb,var(--accent-pink) 25%,transparent); color:white }
+.usage-chart-empty { min-height:105px; display:flex; align-items:center; justify-content:center; color:#d0d8e8; font-size:13px; margin:10px 0 }
+.usage-provider-chart h3 { margin-bottom:14px }.usage-provider-bar { display:grid; grid-template-columns:minmax(80px,1fr) minmax(40px,1fr) auto; gap:12px; align-items:center; margin:11px 0; font-size:12px; color:#e0e7f5 }
+.usage-provider-bar>span { display:flex; align-items:center; gap:7px; min-width:0; overflow-wrap:anywhere }.usage-provider-bar .account-mark { width:22px; height:22px }.usage-provider-bar .account-mark img { width:19px; height:19px }
+.usage-provider-bar>div { height:7px; background:#ffffff17; border-radius:5px; overflow:hidden }.usage-provider-bar i { display:block; height:100%; border-radius:5px; background:linear-gradient(90deg,var(--accent-blue),var(--accent-pink)) }
+.usage-provider-bar strong { font-size:11px; font-weight:500 }.usage-ledger-details { margin-top:18px; border-top:1px solid #ffffff26; padding-top:12px }.usage-ledger-details>summary { font-size:13px; cursor:pointer; padding:6px 0 }
+#content[data-view=agent-settings] .settings-layout { grid-template-columns:minmax(0,1fr) }
+#content[data-view=agent-settings] .account-switch-panel { display:grid; gap:16px; padding:24px }
+#content[data-view=agent-settings] .delegation-settings { margin-top:0 }
+#content[data-view=agent-settings] .settings-content h2 { text-transform:none; letter-spacing:0; font-size:17px }
+@media(max-width:1000px) { #content[data-view=usage] .quota-card.large { grid-template-columns:minmax(190px,.7fr) minmax(0,1fr); gap:14px 20px }.quota-row-actions { grid-column:1; grid-row:2; width:auto; justify-content:flex-start }#content[data-view=usage] .quota-foot { grid-column:2; grid-row:2 }.quota-readings { --quota-ring-size:112px; grid-template-columns:var(--quota-ring-size) minmax(0,1fr); gap:16px; padding-left:16px }.quota-ring strong { font-size:28px }.usage-chart-grid { grid-template-columns:minmax(0,1fr) } }
+@media(max-width:600px) { #content[data-view=usage] .quota-card.large { grid-template-columns:minmax(0,1fr); padding:18px; gap:16px }.quota-readings { border-left:0; padding-left:0; grid-column:1; grid-row:2; grid-template-columns:var(--quota-ring-size) minmax(0,1fr); gap:16px }.quota-row-actions { grid-column:1; grid-row:3; justify-content:flex-end }#content[data-view=usage] .quota-foot { grid-column:1; grid-row:4 }.quota-identity { gap:12px }.usage-stat-grid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:9px }.usage-stat-grid>div { padding:12px }.usage-stat-grid strong { font-size:23px }.usage-analytics { padding:16px }.usage-heading-actions { width:100% }.usage-heading-actions button { flex:1 }.usage-analytics-controls { width:100% }.usage-analytics-controls select { flex:1 }.usage-chart-grid { gap:12px }.usage-chart,.usage-provider-chart { padding:12px } }
+@media(max-width:440px) { #content[data-view=usage] .quota-readings { grid-template-columns:minmax(0,1fr) }.quota-ring { justify-self:center }.quota-window>div:first-child { flex-wrap:wrap } }

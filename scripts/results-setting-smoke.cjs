@@ -31,27 +31,33 @@ async function until(fn) { const end = Date.now() + 15000; while (Date.now() < e
     assert.equal(r.status, 200); const result = await r.json(); assert.notEqual(result.isError, true, 'Fixture tool failed: ' + name); return result;
   }
   const context = await bridge('dock_context');
-  assert.match(JSON.stringify(context), /Automatic Results capture is off/);
+  assert.match(JSON.stringify(context), /File-change capture: off/);
   assert.match(JSON.stringify(context), /requested deliverables/);
+  async function complete() {
+    const reply = await bridge('dock_call', { tool: 'dock/start_turn', arguments: {} });
+    const { turnId } = JSON.parse(reply.content[0].text);
+    const resultIds = (await call('state')).workbench.results.filter(x => x.groupId === turnId).map(x => x.id);
+    await bridge('dock_call', { tool: 'dock/finish_turn', arguments: { turnId, outcome: 'no-change', summary: 'Results policy fixture only.', nextStep: 'None', outputs: resultIds.length ? 'saved' : 'none', resultIds } });
+  }
   fs.writeFileSync(path.join(project, 'routine.js'), 'const routine = true;');
   fs.writeFileSync(path.join(project, 'routine.png'), Buffer.from('routine image fixture'));
-  await bridge('dock_call', { tool: 'dock/notify', arguments: { title: 'Ordinary edit complete', kind: 'ready' } });
+  await complete(); await bridge('dock_call', { tool: 'dock/notify', arguments: { title: 'Ordinary edit complete', kind: 'ready' } });
   assert.equal((await call('state')).workbench.results.length, 0, 'Routine edits and changed images do not become Results');
   await bridge('dock_context');
   fs.writeFileSync(path.join(project, 'app.js'), 'const value = 1;');
   await bridge('dock_call', { tool: 'dock/save_result', arguments: { title: 'Requested report', text: 'Explicit save still works.' } });
-  await bridge('dock_call', { tool: 'dock/notify', arguments: { title: 'Fixture ready', kind: 'ready' } });
+  await complete(); await bridge('dock_call', { tool: 'dock/notify', arguments: { title: 'Fixture ready', kind: 'ready' } });
   let state = await call('state');
   assert.equal(state.workbench.results.length, 1); assert.equal(state.workbench.results[0].title, 'Requested report');
   assert.equal(state.sessions.find(x => x.id === session.id).state, 'ready');
   assert.equal('inbox' in state.workbench, false);
   await toggle.check(); await until(async () => (await call('state')).settings.autoSaveResults === true);
   await bridge('dock_context'); fs.writeFileSync(path.join(project, 'app.js'), 'const value = 2;');
-  await bridge('dock_call', { tool: 'dock/finish_turn', arguments: {} });
+  await complete();
   state = await call('state'); assert.equal(state.workbench.results.filter(x => x.kind === 'code').length, 1);
   await bridge('dock_context'); fs.writeFileSync(path.join(project, 'app.js'), 'const value = 3;');
   await toggle.uncheck(); await until(async () => (await call('state')).settings.autoSaveResults === false);
-  await bridge('dock_call', { tool: 'dock/finish_turn', arguments: {} });
+  await complete();
   assert.equal((await call('state')).workbench.results.length, 2);
   await page.reload(); await page.locator('.session-grid').waitFor(); await page.locator('[data-page=settings]').click();
   assert.equal(await toggle.isChecked(), false);

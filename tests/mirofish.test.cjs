@@ -46,11 +46,11 @@ test('MiroFish uses a real MCP subprocess and mock HTTP backend; guidance and to
   const connection = await integration.prepare('mirofish', { backendUrl: `http://127.0.0.1:${server.address().port}` });
   assert.deepEqual(requests.map(x => x.route), ['/health']);
   assert.deepEqual(connection.envKeys, {}); await hub.saveConnection(connection);
-  assert.match(hub.summary(), /## Rehearsing launch scenarios/);
+  assert.match(hub.fullSummary(), /## Rehearsing launch scenarios/);
   assert.equal((await hub.list('mirofish')).filter(x => x.name).length, tools.length);
   await hub.invoke('dock_call', { tool: 'mirofish/start_simulation', arguments: { simulation_id: 'sim_a', max_rounds: 3 } });
   assert.deepEqual(JSON.parse(requests.at(-1).body), { simulation_id: 'sim_a', max_rounds: 3 });
   assert.equal(requests.at(-1).route, '/api/simulation/start');
   await hub.saveConnection({ ...connection, enabled: false });
-  assert.doesNotMatch(hub.summary(), /## Rehearsing launch scenarios/); assert.deepEqual(await hub.list('mirofish'), []);
+  assert.doesNotMatch(hub.fullSummary(), /## Rehearsing launch scenarios/); assert.deepEqual(await hub.list('mirofish'), []);
 });

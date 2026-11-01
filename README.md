@@ -4,11 +4,11 @@
 
 | Device | Download |
 | --- | --- |
-| Windows 10/11 — Intel or AMD 64-bit | **[Windows installer](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.21/Agent-Dock-0.6.0-preview.21-Setup-x64.exe)** |
-| Android — most phones (ARM64) | **[Android APK](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.20/Agent-Dock-0.6.0-preview.20-Android-arm64.apk)** |
-| Android — older 32-bit phones (ARMv7) | [Android ARMv7 APK](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.20/Agent-Dock-0.6.0-preview.20-Android-armv7.apk) |
+| Windows 10/11 — Intel or AMD 64-bit | **[Windows installer](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.28/Paddock-0.6.0-preview.28-Setup-x64.exe)** |
+| Android — most phones (ARM64) | **[Android APK](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.27/Agent-Dock-0.6.0-preview.27-Android-arm64.apk)** |
+| Android — older 32-bit phones (ARMv7) | [Android ARMv7 APK](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.27/Agent-Dock-0.6.0-preview.27-Android-armv7.apk) |
 
-Current previews: **Android 0.6.0-preview.20**, **Windows 0.6.0-preview.21**. Reading, copying, saved drafts and adjustable text size work with older PC hosts. Project/folder selection, current Codex model choices, image attachments and SSH hosts require Windows preview 15. Older hosts retain basic terminal controls. [Android release notes](https://github.com/YeerooXY/agentdock/releases/tag/v0.6.0-preview.20) · [Windows release notes](https://github.com/YeerooXY/agentdock/releases/tag/v0.6.0-preview.21) · [All releases](https://github.com/YeerooXY/agentdock/releases) · [Previous stable desktop-only release](https://github.com/YeerooXY/agentdock/releases/tag/v0.5.0).
+Current previews: **Android 0.6.0-preview.27**, **Windows 0.6.0-preview.28**. Reading, copying, saved drafts and adjustable text size work with older PC hosts. Project/folder selection, current Codex model choices, image attachments and SSH hosts require Windows preview 15. Older hosts retain basic terminal controls. [Android release notes](https://github.com/YeerooXY/agentdock/releases/tag/v0.6.0-preview.27) · [Windows release notes](https://github.com/YeerooXY/agentdock/releases/tag/v0.6.0-preview.28) · [All releases](https://github.com/YeerooXY/agentdock/releases) · [Previous stable desktop-only release](https://github.com/YeerooXY/agentdock/releases/tag/v0.5.0).
 
 A desktop app for Windows, Linux and macOS: agent consoles, projects, shared tools and usage tracking. Linux and macOS installers come from the next release; until then, run Paddock from source on those systems.
 
@@ -45,15 +45,11 @@ Open the `.dmg` for your Mac (`Mac-arm64` for Apple silicon, `Mac-x64` for Intel
 
 This release is unsigned, so Windows may show an unknown-publisher or SmartScreen prompt. Only download it from this repository's releases. Existing users keep their settings, keys and saved panels. Uninstalling leaves that local data in `%APPDATA%\Paddock`.
 
-## Code panels (current source build)
+## Workspace
 
-Press **Code** in the desktop title bar to add a read-only panel to the console grid. Choose the console to follow, then use **Changes** for its latest tracked turn or **Browse files** for its folder. Before a tracked turn is available, Changes shows the current Git working tree. Resize and expand the panel with the existing grid controls.
+Projects, Tasks, Results and Usage are available from the navigation strip. Agent account and routing settings are under **Settings ? Agents**. Click a file path in a console to preview supported files. The desktop file explorer, Code panels and embedded website Preview panels were removed in preview 28.
 
-Choose **Diff** or **File**, select code, and use **Copy** or **Add to draft**. Adding context preserves the agent's existing draft and sends no Enter key. If the console cannot safely accept a multiline paste, Paddock copies the context for manual pasting. Credential files, generated folders, external links, binary files and text files above 256 KB are excluded. Changes are folder comparisons; other agents working in the same folder may contribute. Code panels currently belong to the desktop app; the Android companion continues to list agent consoles.
-
-## Web preview panels
-
-Press **Preview** in the desktop title bar to add a panel that shows a local development server, for example `localhost:5173` or `127.0.0.1:3000`. Type the address and press Enter. The panel reloads when the console that was selected when you opened it finishes a turn (or any console, if none was selected); the reload button reloads it on demand and the arrow opens the page in your browser. Only `localhost`, `127.0.0.1` and `[::1]` load inside Paddock; a link to another site is blocked and the panel shows an error page; press reload to return. Preview panels are saved with your layout and run no process. On narrow windows, **Code** and **Preview** show as icons.
+[Preview 28 changes and limitations](docs/release-preview28.md).
 
 ## Android preview
 

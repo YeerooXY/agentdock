@@ -44,7 +44,7 @@ await page.locator('[data-project-search]').fill('Trader');assert.equal(await pa
     await page.locator('#project-form [name=name]').fill('A new idea');await page.locator('#project-form [name=goals]').fill('Make a small game that is fun to play.');
     await capture('new-project');await page.keyboard.press('Escape');assert.equal(await page.locator('#project-editor').isVisible(),false);assert.equal(await page.locator('.page-heading [data-project-new]').evaluate(x=>x===document.activeElement),true);
     await page.locator('[data-project-edit]').first().click();await page.locator('#project-editor').waitFor();await page.locator('#project-form [name=nextStep]').fill('Verify the next wave');await capture('project-editor');await page.keyboard.press('Escape');assert.equal(await page.locator('#project-editor').isVisible(),false);
-    await nav('usage');await page.locator('.message-usage').scrollIntoViewIfNeeded();await capture('usage');
+    await nav('usage');await page.locator('.usage-subscriptions').scrollIntoViewIfNeeded();assert.equal(await page.locator('.message-usage,.image-usage').count(),0);await capture('usage');
     await nav('settings');await page.locator('#updates-settings').scrollIntoViewIfNeeded();await page.locator('[data-update=check]').click();await capture('updates');await page.locator('[data-update=download]').click();assert.equal(await page.locator('[data-update=install]').count(),1);
     await page.locator('#grid-form').scrollIntoViewIfNeeded();await capture('grid-settings');
     await nav('consoles');await capture('grid');

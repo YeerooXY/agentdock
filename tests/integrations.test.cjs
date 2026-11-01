@@ -64,13 +64,13 @@ test('web guide is opt-in, reaches context when enabled and persists opt-out wit
   const root = fixture(t), vault = { list: () => [] };
   fs.writeFileSync(path.join(root, 'shared.json'), JSON.stringify({ instructions: 'Keep my wording.', connections: [], profiles: [] }));
   const hub = new SharedHub(root, vault); t.after(() => hub.close());
-  assert.doesNotMatch(hub.summary(), /Web design and page review/);
+  assert.doesNotMatch(hub.fullSummary(), /Web design and page review/);
   hub.setGuides(['web-design']); assert.match(hub.config.instructions, /Keep my wording/);
-  assert.match(hub.summary(), /full 20 page and 50 security requirements/);
-  assert.doesNotMatch(hub.summary(), /20\. \*\*Data deletion requests/);
+  assert.match(hub.fullSummary(), /full 20 page and 50 security requirements/);
+  assert.doesNotMatch(hub.fullSummary(), /20\. \*\*Data deletion requests/);
   assert.match((await hub.invoke('dock_context')).content[0].text, /dock\/website_guide/);
   assert.match(fs.readFileSync(hub.summaryPath, 'utf8'), /topics and checklist/);
-  hub.setGuides([]); assert.doesNotMatch(hub.summary(), /Web design and page review/);
+  hub.setGuides([]); assert.doesNotMatch(hub.fullSummary(), /Web design and page review/);
   assert.throws(() => hub.setGuides(['missing']), /available guide/);
   const reopened = new SharedHub(root, vault); t.after(() => reopened.close());
   assert.equal(reopened.config.instructions, 'Keep my wording.'); assert.deepEqual(reopened.config.guideIds, []);

@@ -1,6 +1,6 @@
 'use strict';
 // Usage page lists only set-up subscriptions; the rest are added from "Add subscription". Four browser profiles, synthetic state.
-const { chromium, webkit, devices } = require('playwright');
+const { chromium, webkit, devices } = require(process.env.REVIEW_PLAYWRIGHT || 'playwright');
 const fs = require('node:fs'), path = require('node:path'), http = require('node:http');
 const root = path.resolve(__dirname, '..'), dist = path.join(root, 'dist'), out = path.join(root, 'artifacts/usage-subscriptions');
 fs.mkdirSync(out, { recursive: true });

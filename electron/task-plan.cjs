@@ -198,11 +198,12 @@ class SplitTasks {
         }
       } else job.planReview = round.review = { state: 'not-set', findings: [], label: 'Plan not reviewed' };
       round.elapsedMs = loop.now() - round.startedAt;
-      const counts = {};
+      const assigned = [];
       job.subtasks = job.plan.subtasks.map(sub => {
+        const counts = parallelAssignmentCounts(job.plan.subtasks, assigned, sub.id);
         const suggested = suggestAssignment({ size: sub.size, candidates: loop.candidates(), limits: loop.getLimits(), rules: loop.getSettings().routing || defaults, now: loop.now(), assignmentCounts: counts });
         const implementer = suggested.implementer ? loop.assignment(suggested.implementer, 'implementer') : null;
-        if (implementer) counts[implementer.accountId] = (counts[implementer.accountId] || 0) + 1;
+        assigned.push({ subtaskId: sub.id, implementer });
         return { ...sub, subtaskId: sub.id, id: `${job.id}-${sub.id}`, parentId: job.id, state: 'queued', implementer, assignmentReason: implementer ? suggested.reasons[0] : suggested.warnings.join(' '), rounds: [], unresolved: [], log: [], elapsedMs: 0, finalDiff: '', diffStat: '' };
       });
       job.planFeedback = []; job.unresolved = []; job.error = ''; job.state = 'plan-ready'; loop.changed(job); await loop.record(job); return;
@@ -339,7 +340,7 @@ class SplitTasks {
         await loop.git(job.repo, existing ? ['worktree', 'add', sub.workFolder, sub.branch] : ['worktree', 'add', sub.workFolder, '-b', sub.branch, sub.baseline]);
       }
       if (!ACTIVE.has(job.state)) return;
-      Object.assign(sub, { repo: job.repo, workflow: 'worktree', contracts: job.plan.contracts, maxRounds: job.maxRounds, timeLimitMinutes: job.timeLimitMinutes, deadlineAt: job.deadlineAt, startedAt: sub.startedAt || started, baselineUntracked: [], baselineUntrackedState: {} });
+      Object.assign(sub, { repo: job.repo, workflow: 'worktree', contracts: job.plan.contracts, maxRounds: sub.implementer?.model === 'strata/local' && job.maxRoundsExplicit === false ? 1 : job.maxRounds, timeLimitMinutes: job.timeLimitMinutes, deadlineAt: job.deadlineAt, startedAt: sub.startedAt || started, baselineUntracked: [], baselineUntrackedState: {} });
       await this.assertBranch(sub);
       if (!sub.committed) await loop.runTask(sub, command, { additionalRounds: !!sub.resumeRounds, manageTime: false });
       sub.resumeRounds = false;
@@ -384,4 +385,25 @@ class SplitTasks {
   }
 }
 
-module.exports = { validatePlan, parsePlan, validGlob, ownsFile, overlap, readySubtasks, contractPrompt, planReport, SplitTasks, ACTIVE, SUB_ACTIVE };
+// Traversal/counting draft supplied locally. Keep ancestor and descendant walks
+// separate so siblings sharing a prerequisite remain independent.
+function parallelAssignmentCounts(subtasks, assigned, targetId) {
+  const parents = new Map(subtasks.map(s => [s.id, s.dependsOn])), children = new Map();
+  for (const s of subtasks) for (const id of s.dependsOn) children.set(id, [...(children.get(id) || []), s.id]);
+  const excluded = new Set([targetId]);
+  for (const graph of [parents, children]) {
+    const visited = new Set(), stack = [targetId];
+    while (stack.length) {
+      const id = stack.pop();
+      if (visited.has(id)) continue;
+      visited.add(id); excluded.add(id); stack.push(...(graph.get(id) || []));
+    }
+  }
+  const counts = Object.create(null);
+  for (const a of assigned) {
+    if (!a || excluded.has(a.subtaskId) || !a.implementer?.accountId) continue;
+    const id = a.implementer.accountId; counts[id] = (counts[id] || 0) + 1;
+  }
+  return counts;
+}
+module.exports = { validatePlan, parsePlan, validGlob, ownsFile, overlap, readySubtasks, contractPrompt, planReport, parallelAssignmentCounts, SplitTasks, ACTIVE, SUB_ACTIVE };

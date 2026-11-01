@@ -11,6 +11,8 @@ Help people understand a product, make a correct decision and complete their tas
 
 Start with [overview](references/overview.md). Then read only the relevant topics:
 
+An ordinary request to create a website activates this guidance. The user does not need to name the skill. For a new website, follow the brief, reference, visual-direction, assets, build and review handoffs in overview; read the site-type CTA playbook in content. Apply only the stages relevant to the authorized task.
+
 | Task | Read |
 | --- | --- |
 | First screen, page order, responsive arrangement | [layout](references/layout.md) |

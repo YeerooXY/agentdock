@@ -1,5 +1,3 @@
-import { codePanelUI } from './code-panel-ui.js';
-import { explorerUI } from './explorer-ui.js';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
@@ -27,7 +25,6 @@ import { projectsUI } from './projects-ui.js';
 import { consoleProjects } from './console-projects.js';
 import { consoleQueue } from './console-queue.js';
 import { workerComposer } from './worker-composer.js';
-import { webPanelUI } from './web-panel-ui.js';
 import { reviewPanelUI } from './review-panel-ui.js';
 import { taskLoopUI } from './task-loop-ui.js';
 import { imageGenerationUI } from './image-generation-ui.js';
@@ -36,7 +33,8 @@ import './ssh.css';
 import { updatesUI } from './updates-ui.js';
 import { accountIdentity, accountMark, remainingPercent } from './account-identity.js';
 import { shellPicker } from './shell-picker.js';
-import { projectUsage } from './project-usage.js';
+import { usageAnalytics } from './usage-analytics.js';
+import { quotaState } from './quota-state.js';
 import { projectDot } from './project-colors.js';
 import './account-usage.css';
 import './usage-page.css';
@@ -45,12 +43,15 @@ import './console-themes.css';
 import { isSettingsPage, settingsShell } from './settings-ui.js';
 import { fileLinks, filePreviewDialog } from './file-links.js';
 import './theme-system.css';
-import './explorer.css';
+import './navigation-rail.css';
 import './page-layout.css';
+import './workspace-glass.css';
+import './usage-glass.css';
 
 const $ = selector => document.querySelector(selector);
 const escape = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
 const icons = {
+  file: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6M8 13h8M8 17h6"/>',
   grid: '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
   terminal: '<path d="m5 7 5 5-5 5m8 0h6"/>',
   chart: '<path d="M4 20V10m8 10V4m8 16v-7"/>',
@@ -66,6 +67,9 @@ const icons = {
   close: '<path d="m6 6 12 12M6 18 18 6"/>',
   power: '<path d="M12 3v8"/><path d="M6.3 6.8a8 8 0 1 0 11.4 0"/>',
   folder: '<path d="M3 7V5a2 2 0 0 1 2-2h5l2 4h7a2 2 0 0 1 2 2v10H3Z"/>',
+  folders: '<path d="M7 4h4l2 3h7a1 1 0 0 1 1 1v10M3 8h5l2 3h7a1 1 0 0 1 1 1v8H3Z"/>',
+  clipboard: '<path d="M9 4H7a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-2"/><rect x="9" y="2" width="6" height="4" rx="1"/><path d="m8 12 2 2 5-5M8 18h7"/>',
+  result: '<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9Z"/><path d="M14 3v6h6m-12 6 3 3 5-5"/>',
   check: '<path d="m5 12 4 4L19 6"/>',
   minus: '<path d="M5 12h14"/>',
   menu: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/>',
@@ -78,24 +82,25 @@ const icons = {
 };
 let iconSequence = 0;
 const icon = (name, cls = '') => { const id = `accent-icon-${++iconSequence}`; return `<svg class="icon ${cls}" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="url(#${id})" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><defs><linearGradient id="${id}" x1="0" y1="0" x2="24" y2="24" gradientUnits="userSpaceOnUse"><stop class="icon-blue"/><stop offset="1" class="icon-pink"/></linearGradient></defs>${icons[name] || icons.terminal}</svg>`; };
-// The "Pd" tile. Its edge and letters follow the current theme's accents.
-const pdMark = (cls = '') => { const id = `pd-mark-${++iconSequence}`; return `<svg class="pd-mark ${cls}" viewBox="0 0 256 256" aria-hidden="true"><defs><linearGradient id="${id}" x1="20" y1="20" x2="236" y2="236" gradientUnits="userSpaceOnUse"><stop class="icon-blue"/><stop offset="1" class="icon-pink"/></linearGradient></defs><rect x="10" y="10" width="236" height="236" rx="50" fill="#0e0c1c"/><rect x="17" y="17" width="222" height="222" rx="44" fill="none" stroke="url(#${id})" stroke-width="10"/><g fill="none" stroke="url(#${id})" stroke-width="20"><path d="M70 188V76h34a29 29 0 0 1 0 58H70" stroke-linejoin="round"/><circle cx="158" cy="159" r="25"/><path d="M183 72v118"/></g></svg>`; };
+// The "Pa" tile. Its edge and letters follow the current theme's accents.
+const pdMark = (cls = '') => { const id = `pd-mark-${++iconSequence}`; return `<svg class="pd-mark ${cls}" viewBox="0 0 256 256" aria-hidden="true"><defs><linearGradient id="${id}" x1="20" y1="20" x2="236" y2="236" gradientUnits="userSpaceOnUse"><stop class="icon-blue"/><stop offset="1" class="icon-pink"/></linearGradient></defs><rect x="10" y="10" width="236" height="236" rx="50" fill="#0e0c1c"/><rect x="17" y="17" width="222" height="222" rx="44" fill="none" stroke="url(#${id})" stroke-width="10"/><g fill="none" stroke="url(#${id})" stroke-width="20"><path d="M70 188V76h34a29 29 0 0 1 0 58H70" stroke-linejoin="round"/><circle cx="158" cy="159" r="25"/><path d="M183 134v56"/></g></svg>`; };
 const providerName = value => ({ codex: 'Codex', claude: 'Claude Code', shell: state?.platform && state.platform !== 'win32' ? 'Shell' : 'PowerShell', custom: 'Custom', openai: 'OpenAI', anthropic: 'Anthropic' })[value] || state?.agents?.find(x => x.id === value)?.name || value;
 const consoleProviders = () => [...(state?.agents?.length ? state.agents.map(x => x.id) : ['codex', 'claude']), 'shell', 'custom'];
 const number = value => Number.isFinite(value) ? Intl.NumberFormat('en', { notation: value >= 10000 ? 'compact' : 'standard', maximumFractionDigits: 1 }).format(value) : '—';
 const labels = { open: 'Open', active: 'Thinking', ready: 'Ready', attention: 'Needs attention', error: 'Error', ended: 'Ended', recent: 'Recent', interrupted: 'Interrupted' };
 let state, page = 'consoles', selectedId = null, expandedId = null, expansionRequest = 0, expansionModeIntent = null, stateReceiveVersion = 0, renderedExpansion = null, renderedConsoleVisibility = false, toastTimer;
-let usageAddOpen = false;
+let usageAddOpen = false, usagePeriod = 30, usageMetric = 'requests';
+const usageAccountSelection = new Map();
 let accountProfileDraft = { provider: 'codex', label: '', error: '' }, accountProfileFocus = null, accountProfileBusy = false, accountProfileCreated = null, accountProfileResetOnRender = false;
 let accountRenameOpener = null, accountRenameBusy = false;
 const terminals = new Map();
 const pendingConsoleOpenings = new Set();
 const gridSize = () => state?.grid || { columns: 3, rows: 3 };
-const allPanels = () => [...(state?.sessions || []), ...(state?.codePanels || [])].filter(item => !item.hidden);
+const allPanels = () => [...(state?.sessions || []), ...(state?.codePanels || [])].filter(item => !item.hidden && !['code', 'web'].includes(item.kind));
 const workerComposers = workerComposer({ call, escape, toast });
 const gridCapacity = () => gridSize().columns * gridSize().rows;
 let openingConsole = false;
-let explorer, codePanels, webPanels, reviewPanels, launchGesture, chooserOpener, vim, setup, workbench, layoutMotion, phone, projects, projectChats, messageQueue, imageGenerator, updates, usageView, taskLoops;
+let reviewPanels, launchGesture, chooserOpener, vim, setup, workbench, layoutMotion, phone, projects, projectChats, messageQueue, imageGenerator, updates, taskLoops;
 const nameSaves = new Map();
 const launchHint = 'title="Click to open. Hold or right-click to choose." aria-haspopup="dialog"';
 let renderedView = null, viewAnimation, windowMoving = false, pageBeforeSettings = 'consoles';
@@ -139,23 +144,21 @@ function resizeHandles(slot) {
 
 $('#app').innerHTML = `
 <div id="dashboard" class="app-shell">
+  <div class="workspace">
+    <header class="titlebar">
   <aside id="sidebar" class="sidebar">
     <button class="brand" data-page="consoles" aria-label="Paddock home"><span class="brand-mark">${pdMark()}</span><span>pad<span class="brand-light">dock</span></span></button>
     <nav aria-label="Main navigation">
-      <button id="explorer-toggle" data-action="sidebar" aria-label="Explorer" title="Explorer" aria-controls="explorer-pane" aria-expanded="true">${icon('folder')}</button>
       <button data-page="consoles"><span class="notification-icon">${icon('terminal')}<span id="ready-count" class="notification-badge" hidden></span></span>Consoles <span id="nav-count">0</span></button>
-      <button data-page="projects">${icon('folder')}Projects</button>
-      <button data-page="tasks">${icon('list')}Tasks</button>
-      <button data-page="results"><span class="notification-icon">${icon('grid')}<span id="results-count" class="notification-badge" hidden></span></span>Results</button>
+      <button data-page="projects">${icon('folders')}Projects</button>
+      <button data-page="tasks">${icon('clipboard')}Tasks</button>
+      <button data-page="results"><span class="notification-icon">${icon('result')}<span id="results-count" class="notification-badge" hidden></span></span>Results</button>
       <button data-page="usage">${icon('chart')}Usage</button>
     </nav>
     <span class="sidebar-edge" aria-hidden="true"></span>
     <div class="sidebar-bottom"><button data-page="settings">${icon('settings')}Settings</button></div>
   </aside>
-  <button id="explorer-backdrop" aria-label="Close Explorer" tabindex="-1" hidden></button>
-  <aside id="explorer-pane" aria-label="Explorer"></aside>
-  <div class="workspace">
-    <header class="titlebar"><button id="sidebar-toggle" class="icon-button" data-action="sidebar" aria-label="Hide sidebar" title="Hide sidebar" aria-controls="sidebar" aria-expanded="true">${icon('menu')}</button><button id="launch-folder" class="launch-folder" data-action="launch-folder" aria-label="Choose launch folder">${icon('folder')}<span></span></button><button type="button" class="subtle code-open" data-code-action="create" title="Open a read-only code panel">${icon('api')}Code</button><button type="button" class="subtle code-open" data-web-action="create" title="Preview a local web server">${icon('globe')}Preview</button><div class="window-drag-handle" data-window-drag title="Drag to move. Double-click for fullscreen." aria-hidden="true"><span></span></div><div class="window-actions"><button data-action="hud" title="Collapse to corner HUD" aria-label="Collapse to corner HUD">${icon('corner')}</button><button data-action="minimize" aria-label="Minimize">${icon('minus')}</button><button data-action="fullscreen" aria-label="Fullscreen" title="Fullscreen">${icon('expand')}</button><button data-action="tray" aria-label="Hide in system tray" title="Hide in system tray">${icon('close')}</button></div></header>
+    <div class="window-drag-handle" data-window-drag title="Drag to move. Double-click for fullscreen." aria-hidden="true"><span></span></div><div class="window-actions"><button data-action="hud" title="Collapse to corner HUD" aria-label="Collapse to corner HUD">${icon('corner')}</button><button data-action="minimize" aria-label="Minimize">${icon('minus')}</button><button data-action="fullscreen" aria-label="Fullscreen" title="Fullscreen">${icon('expand')}</button><button data-action="tray" aria-label="Hide in system tray" title="Hide in system tray">${icon('close')}</button></div></header>
     <div id="startup-notices" aria-live="polite"></div>
     <main id="content" tabindex="-1"></main>
     <section id="consoles-page" class="console-grid-view" hidden aria-label="Consoles"><div class="consoles-only"><div class="session-grid"></div></div><button id="grid-add" class="primary" data-action="new" aria-label="Add console" title="Add console · Ctrl Shift N" hidden>${icon('plus')}</button></section>
@@ -251,9 +254,8 @@ $('#account-rename-dialog').addEventListener('close', () => {
   if (focusReturned || focusVacant) target?.focus({ preventScroll: true });
   accountRenameOpener = null;
 });
-$('#sidebar-toggle').insertAdjacentHTML('afterend', `<button id="results-shortcut" class="results-shortcut" data-page="results" hidden title="New results"><span class="notification-icon">${icon('folder')}<span class="notification-badge"></span></span></button>`);
-$('#launch-folder').insertAdjacentHTML('afterend', '<button class="vim-mode" data-action="vim-normal" hidden></button>');
-$('#launch-folder').insertAdjacentHTML('afterend', '<button id="screenshot-spot" class="screenshot-spot" data-action="paste-screenshot" draggable="true" hidden><img alt="" width="48" height="27"><span>Paste screenshot</span></button>');
+$('.titlebar').insertAdjacentHTML('afterbegin', '<button class="vim-mode" data-action="vim-normal" hidden></button>');
+$('.titlebar .window-actions').insertAdjacentHTML('beforebegin', '<button id="screenshot-spot" class="screenshot-spot" data-action="paste-screenshot" draggable="true" hidden><img alt="" width="48" height="27"><span>Paste screenshot</span></button>');
 const openFile = filePreviewDialog({ call, toast, icon });
 const appearance = consoleAppearance({ call, getState: () => state });
 $('#screenshot-spot').addEventListener('dragstart', e => { e.dataTransfer.setData(SCREENSHOT_DRAG, '1'); e.dataTransfer.effectAllowed = 'copy'; });
@@ -263,42 +265,41 @@ document.querySelectorAll('.sidebar [data-page]').forEach(button => {
   for (const node of [...button.childNodes]) if (node.nodeType === Node.TEXT_NODE) node.remove();
   button.append(label);
 });
-$('#explorer-toggle').insertAdjacentHTML('beforeend', '<span class="rail-tooltip">Explorer</span>');
 document.querySelectorAll('.sidebar button').forEach(button => {
   button.removeAttribute('title');
-  const position = () => { const tooltip = button.querySelector('.rail-tooltip'); if (tooltip) tooltip.style.top = `${button.getBoundingClientRect().top + 8}px`; };
-  button.addEventListener('pointerenter', position); button.addEventListener('focus', position);
 });
 
 function pageHeading(eyebrow, title, description, action = '') {
   return `<div class="page-heading"><div><div class="eyebrow">${eyebrow}</div><h1>${title}</h1><p>${description}</p></div>${action}</div>`;
 }
-function quotaCard(provider, accountId, accountLabel, detailed = false, hideable = false) {
+function quotaCard(provider, accountId, accountLabel, detailed = false, hideable = false, accounts = []) {
   const values = state.limits.filter(x => x.provider === provider && (x.accountId || (provider === 'codex' ? 'codex:default' : provider === 'claude' && x.id === 'claude:account' ? 'claude:default' : x.id)) === accountId);
-  const display = providerName(provider);
-  const check = state.usageChecks?.find(item => item.accountId === accountId);
+  const display = providerName(provider), check = state.usageChecks?.find(item => item.accountId === accountId);
   const card = entry => {
     const windows = Array.isArray(entry?.windows) ? entry.windows : [];
     const stale = entry && (!Number.isFinite(entry.observedAt) || entry.observedAt > Date.now() || Date.now() - entry.observedAt > 5 * 60000 || windows.some(w => w.resetsAt && w.resetsAt <= Date.now()) || (check && !['current', 'refreshing'].includes(check.status)));
     const status = check?.status === 'refreshing' ? 'Checking' : entry ? stale ? 'Cached' : 'Current' : ({ 'sign-in': 'Sign in', 'missing-key': 'Add key', 'not-installed': 'Not installed', unsupported: 'Unavailable', limited: 'Try later', timeout: 'Timed out', unavailable: 'Unavailable' })[check?.status] || 'Not checked';
-    const message = check?.message || (provider === 'opencode' ? 'Account limits: add an OpenCode key in Keys to show them' : '') || (provider === 'codex' && state.accountError) || 'Refresh to check account usage.';
-    return `<article class="quota-card ${detailed ? 'large' : ''}" style="--provider-accent:${accountIdentity(provider).color}">
-    <div class="quota-heading">${accountMark(provider)}<strong>${escape(accountLabel)}${entry?.name && entry.name !== display && entry.name !== accountLabel ? ` · ${escape(entry.name)}` : ''}</strong>${entry?.plan ? `<span class="plan">${escape(entry.plan)}</span>` : ''}<span class="connection ${entry && !stale ? 'connected' : ''}" role="status">${status}</span></div>
-    ${windows.length ? windows.map(w => {
-      const left = remainingPercent(w.usedPercent), known = left !== null;
-      const label = w.unlimited ? 'Unlimited' : known ? `${number(left)}% left` : 'Unknown';
-      const name = w.label || windowLabel(w.minutes);
-      return `<div class="quota-window"><div><span>${escape(name)}</span><strong>${escape(label)}</strong></div>${w.unlimited ? '' : `<div class="meter ${known ? left <= 10 ? 'warning' : '' : 'unknown'}" role="progressbar" aria-label="${escape(display)} ${escape(name)} remaining" ${known ? `aria-valuenow="${left}"` : ''} aria-valuetext="${escape(label)}" aria-valuemin="0" aria-valuemax="100"><span style="width:${left ?? 0}%"></span></div>`}<span class="reset">${Number.isFinite(w.used) && Number.isFinite(w.total) ? escape(`${w.used} of ${w.total} ${w.unit || "credits"} used`) + " ? " : ""}${w.resetLabel ? escape(w.resetLabel) : w.unlimited && !w.resetsAt ? '' : resetTime(w.resetsAt)}</span></div>`;
-    }).join('') : `<div class="quota-unavailable"><span class="empty-value">—</span><p>${escape(message)}</p></div>`}
-    ${windows.length && check?.message ? `<p class="section-note" role="status">${escape(check.message)}</p>` : ''}
-    ${entry && ['codex', 'claude'].includes(provider) && !windows.some(w => w.minutes === 300) ? '<div class="missing-window">5-hour limit not reported</div>' : ''}
-    ${entry && ['codex', 'claude'].includes(provider) && !windows.some(w => w.minutes === 10080) ? '<div class="missing-window">Weekly limit not reported</div>' : ''}
-    ${provider === 'opencode' ? `<p class="section-note">Used on this PC (last 7 days): ${check?.localSpending?.week ? `$${check.localSpending.week.cost.toFixed(2)} · ${number(check.localSpending.week.input)} input, ${number(check.localSpending.week.output)} output, ${number(check.localSpending.week.cacheRead)} cache read tokens` : 'Unavailable'}</p>` : ''}
-    <div class="quota-foot">${entry ? `${stale ? 'Stale snapshot · ' : ''}${age(entry.observedAt)}` : 'No estimated limits'}${detailed && entry ? `<span>${escape(entry.source)}</span>` : ''}${hideable ? `<button class="subtle usage-hide" data-usage-hide="${escape(accountId)}" aria-label="Hide ${escape(accountLabel)} from Usage">Hide</button>` : ''}</div>
-  </article>`;
+    const message = check?.message || (provider === 'opencode' ? 'Add an OpenCode key in Settings to check account limits.' : '') || (provider === 'codex' && state.accountError) || 'Refresh to check account usage.';
+    const { primary, exhausted } = quotaState(provider, windows), remaining = remainingPercent(primary?.usedPercent);
+    const ringLabel = primary?.unlimited ? 'Unlimited' : remaining === null ? 'Unknown' : `${number(remaining)}%`;
+    const ring = `<div class="quota-ring ${remaining === null || primary?.unlimited ? 'unknown' : ''}" style="--remaining:${remaining ?? 0}%" aria-hidden="true"><div><strong>${escape(ringLabel)}</strong>${remaining !== null && !primary?.unlimited ? '<span>left</span>' : ''}<small>${escape(primary ? primary.label || windowLabel(primary.minutes) : 'No reading')}</small></div></div>`;
+    return `<article class="quota-card ${detailed ? 'large' : ''} ${stale ? 'quota-stale' : ''} ${exhausted ? 'quota-exhausted' : ''}" data-usage-provider="${escape(provider)}" data-usage-account-id="${escape(accountId)}" aria-label="${escape(display)}${exhausted ? ' allowance exhausted' : ''}" style="--provider-accent:${accountIdentity(provider).color}">
+      <div class="quota-identity"><div class="quota-heading">${accountMark(provider)}<div><strong>${escape(display)}</strong>${status === 'Current' ? '' : `<span class="connection" role="status">${status}</span>`}</div></div><div class="quota-account-choice">${accounts.length > 1 ? `<select data-usage-account="${escape(provider)}" aria-label="${escape(display)} account">${accounts.map(account => `<option value="${escape(account.id)}" ${account.id === accountId ? 'selected' : ''}>${escape(account.label)}</option>`).join('')}</select>` : accountLabel && accountLabel !== display && !/^Default\s/i.test(accountLabel) ? `<span>${escape(accountLabel)}</span>` : ''}${entry?.plan ? `<span class="plan">${escape(entry.plan)}</span>` : ''}</div></div>
+      <div class="quota-readings">${ring}<div class="quota-windows">${windows.length ? windows.map(w => {
+        const left = remainingPercent(w.usedPercent), known = left !== null;
+        const label = w.unlimited ? 'Unlimited' : known ? `${number(left)}% left` : 'Unknown', name = w.label || windowLabel(w.minutes);
+        return `<div class="quota-window ${left === 0 && !w.unlimited ? 'quota-window-empty' : ''}"><div><span>${escape(name)}</span><strong>${escape(label)}</strong></div>${w.unlimited ? '' : `<div class="meter ${known ? left <= 10 ? 'warning' : '' : 'unknown'}" role="progressbar" aria-label="${escape(display)} ${escape(name)} remaining" ${known ? `aria-valuenow="${left}"` : ''} aria-valuetext="${escape(label)}" aria-valuemin="0" aria-valuemax="100"><span style="width:${left ?? 0}%"></span></div>`}<span class="reset">${Number.isFinite(w.used) && Number.isFinite(w.total) ? escape(`${w.used} of ${w.total} ${w.unit || 'credits'} used`) + ' · ' : ''}${w.resetLabel ? escape(w.resetLabel) : w.unlimited && !w.resetsAt ? '' : resetTime(w.resetsAt)}</span></div>`;
+      }).join('') : `<div class="quota-unavailable"><p>${escape(message)}</p></div>`}
+      ${entry && ['codex', 'claude'].includes(provider) && !windows.some(w => w.minutes === 300) ? '<div class="missing-window">5-hour limit not reported</div>' : ''}
+      ${entry && ['codex', 'claude'].includes(provider) && !windows.some(w => w.minutes === 10080) ? '<div class="missing-window">Weekly limit not reported</div>' : ''}</div></div>
+      <div class="quota-row-actions"><button class="secondary" type="button" data-page="agent-settings" aria-label="Manage ${escape(display)} accounts" title="Manage accounts">${icon('settings')}</button>${hideable ? `<button class="subtle usage-hide" data-usage-hide="${escape(accountId)}" aria-label="Hide ${escape(accountLabel)} from Usage">Hide</button>` : ''}</div>
+      ${stale || (windows.length && check?.message) ? `<div class="quota-foot">${stale ? `<span>Cached ${age(entry.observedAt)}</span>` : ''}${windows.length && check?.message ? `<span role="status">${escape(check.message)}</span>` : ''}</div>` : ''}
+      ${provider === 'opencode' ? `<p class="section-note quota-local-usage">Used on this PC (last 7 days): ${check?.localSpending?.week ? `$${check.localSpending.week.cost.toFixed(2)} · ${number(check.localSpending.week.input)} input, ${number(check.localSpending.week.output)} output, ${number(check.localSpending.week.cacheRead)} cache read tokens` : 'Unavailable'}</p>` : ''}
+    </article>`;
   };
   return values.length ? values.map(card).join('') : card(null);
 }
+
 function accountSwitchMenu(session, hostKey) {
   if (session.taskId) return '';
   if (!['codex', 'claude'].includes(session.provider) || session.purpose === 'login') return '';
@@ -350,8 +351,6 @@ const isOpenConsole = session => !!session && !session.dismissed && (session.ali
 function sessionCard(slot) {
   const session = allPanels().find(x => x.slot === slot && isOpenConsole(x));
   if (!session) return `<article class="session-card empty" data-slot="${slot}"><header class="empty-panel-header">${slotNameInput(slot)}${appearance.button(slot)}</header><button class="console-launch" data-action="new" data-slot="${slot}" aria-label="Open console ${slot}" ${launchHint} ${openingConsole ? 'disabled' : ''}>${newConsoleMark()}</button></article>`;
-  if (session.kind === 'code') return codePanels.card(session);
-  if (session.kind === 'web') return webPanels.card(session);
   if (session.kind === 'review') return reviewPanels.card(session);
   const expanded = expandedId === session.id;
   const endLabel = session.taskId ? 'Stop worker' : session.restoreError ? 'Remove saved console' : 'End this console';
@@ -428,12 +427,10 @@ function renderConsoles() {
     appearance.sync(panel, slot);
     panel.style.gridColumn = `${(slot - 1) % gridSize().columns + 1} / span ${session?.width || 1}`;
     panel.style.gridRow = `${Math.floor((slot - 1) / gridSize().columns) + 1} / span ${session?.height || 1}`;
-    if (['code', 'web', 'review'].includes(session?.kind)) {
-      const kind = session.kind === 'web' ? 'preview' : session.kind;
+    if (session?.kind === 'review') {
+      const kind = session.kind;
       panel.classList.toggle('console-expanded', isExpanded); panel.setAttribute('aria-label', `${kind} panel`);
-      if (session.kind === 'web') webPanels.mount(session, panel.querySelector('.web-panel-body'));
-      else if (session.kind === 'review') reviewPanels.mount(session, panel.querySelector('.review-panel-body'));
-      else codePanels.mount(session, panel.querySelector('.code-panel-body'));
+      reviewPanels.mount(session, panel.querySelector('.review-panel-body'));
       const context = session.kind === 'review' ? ` ${String(session.slot).padStart(2, '0')}` : '';
       const expand = panel.querySelector('[data-action="toggle-console"]'); expand.innerHTML = icon(isExpanded ? 'grid' : 'expand'); expand.setAttribute('aria-label', isExpanded ? `Restore ${kind} panel${context} to grid` : `Expand ${kind} panel${context}`); expand.setAttribute('aria-expanded', String(isExpanded));
       panel.querySelectorAll('.console-grip,.console-resize').forEach(handle => { handle.disabled = !!expanded; });
@@ -484,8 +481,6 @@ function renderConsoles() {
     mountTerminal(session, panel.querySelector('.console-panel-body'), true);
     workerComposers.sync(panel, session);
   }
-  codePanels?.sync();
-  webPanels?.sync();
   if (refreshDecorations) refreshSky();
   renderedExpansion = expanded?.id || null;
   renderedConsoleVisibility = consoleVisible;
@@ -497,38 +492,52 @@ function renderConsoles() {
 }
 // Cross-agent reviews: optional, off by default, limited to the user's own Claude Code and Codex sign-ins.
 function delegationSection() {
-  const on = state.settings.delegationEnabled === true, allowed = state.settings.delegationProviders || ['claude', 'codex', 'kiro'];
+  const on = state.settings.delegationEnabled === true, allowed = state.settings.delegationProviders || ['claude', 'codex', 'kiro', 'antigravity', 'copilot', 'grok'];
   const states = { running: 'Reviewing', done: 'Done', failed: 'Failed', stopped: 'Stopped' };
   const rows = (state.delegations || []).filter((job, index) => job.state === 'running' || index < 6).map(job => `<div class="delegation-row"><span><strong>${escape(job.reviewer.label)}</strong> · ${states[job.state] || escape(job.state)}${job.verdict ? ' · ' + (job.verdict === 'approve' ? 'Approved' : job.verdict === 'changes-requested' ? 'Changes requested' : 'No clear verdict') : ''}${job.noFreeSlot ? ' · No free slot' : ''}<small>For ${escape(job.consoleName || 'a console')}. ${escape(job.error || job.why)}</small></span>${job.state === 'running' ? `<button class="secondary" data-delegation-stop="${escape(job.id)}">Stop</button>` : ''}</div>`).join('');
-  return `<section class="surface delegation-settings"><div class="section-label"><div><h2>Cross-agent reviews</h2><p>An agent can ask another of your subscriptions to review its changes.</p></div></div><label class="check-row"><input type="checkbox" data-setting="delegationEnabled" ${on ? 'checked' : ''}>Allow cross-agent reviews</label><label class="check-row"><input type="checkbox" data-setting="delegationPanels" ${state.settings.delegationPanels !== false ? 'checked' : ''}>Show reviews in the console grid</label><fieldset class="delegation-reviewers" ${on ? '' : 'disabled'}><legend>Reviewers</legend>${[['claude', 'Claude Code'], ['codex', 'Codex'], ['kiro', 'Kiro']].map(([id, name]) => `<label class="check-row"><input type="checkbox" data-delegation-provider="${id}" ${allowed.includes(id) ? 'checked' : ''}>${name}</label>`).join('')}</fieldset><p class="field-hint">Paddock runs the reviewer’s own CLI read-only with your sign-in, picks the account with the most usage left and saves each review in Results. The changed code goes to the reviewer’s vendor. Up to 2 at a time and 20 an hour.</p>${rows ? `<div class="delegation-list">${rows}</div>` : ''}</section>`;
+  return `<section class="surface delegation-settings"><div class="section-label"><div><h2>Cross-agent reviews</h2><p>An agent can ask another of your subscriptions to review its changes.</p></div></div><label class="check-row"><input type="checkbox" data-setting="delegationEnabled" ${on ? 'checked' : ''}>Allow cross-agent reviews</label><label class="check-row"><input type="checkbox" data-setting="delegationPanels" ${state.settings.delegationPanels !== false ? 'checked' : ''}>Show reviews in the console grid</label><fieldset class="delegation-reviewers" ${on ? '' : 'disabled'}><legend>Reviewers</legend>${[['claude', 'Claude Code'], ['codex', 'Codex'], ['kiro', 'Kiro'], ['antigravity', 'Antigravity'], ['copilot', 'GitHub Copilot'], ['grok', 'Grok Build']].map(([id, name]) => `<label class="check-row"><input type="checkbox" data-delegation-provider="${id}" ${allowed.includes(id) ? 'checked' : ''}>${name}</label>`).join('')}</fieldset><p class="field-hint">Paddock runs the reviewer’s own CLI read-only with your sign-in, chooses an eligible account and saves each review in Results. The changed code goes to the reviewer’s vendor. Up to 2 at a time and 20 an hour.</p>${rows ? `<div class="delegation-list">${rows}</div>` : ''}</section>`;
 }
 function routingSection() {
   const routing = state.settings.routing;
   if (!routing) return '';
   const rows = list => list.map(item => `${item.accountId} ${item.model}`).join('\n');
-  return `<section class="surface delegation-settings"><h2>Routing</h2><form id="routing-form"><p class="field-hint">Enter one account ID and model per line, in preference order.</p>${['small', 'medium', 'large'].map(size => `<label>${size[0].toUpperCase() + size.slice(1)} tasks<textarea name="${size}" rows="3" spellcheck="false">${escape(rows(routing[size]))}</textarea></label>`).join('')}<label>Default reviewer <input name="reviewer" value="${escape(routing.defaultReviewer ? rows([routing.defaultReviewer]) : '')}" placeholder="Account ID and model, or leave blank"></label><label class="check-row"><input type="checkbox" name="claudeReviewsOnly" ${routing.claudeReviewsOnly ? 'checked' : ''}>Suggest Claude for reviews only</label><label>Excluded models<textarea name="excludedModels" rows="5" spellcheck="false">${escape(routing.excludedModels.join('\n'))}</textarea></label><p class="form-error" role="alert"></p><button type="submit" class="secondary">Save routing</button></form></section>`;
+  return `<section class="surface delegation-settings"><h2>Routing</h2><form id="routing-form"><label class="check-row"><input type="checkbox" name="discoverAccounts" ${routing.discoverAccounts ? 'checked' : ''}>Discover connected accounts</label><label class="check-row"><input type="checkbox" name="preferFree" ${routing.preferFree !== false ? 'checked' : ''}>Prefer free cloud allowances</label><label>Account funding<textarea name="accountFunding" rows="3" spellcheck="false" placeholder="antigravity:default free">${escape(Object.entries(routing.accountFunding || {}).map(([id, kind]) => `${id} ${kind}`).join('\n'))}</textarea></label><p class="field-hint">Use an account ID and free, included, metered or unknown. Unlisted accounts use their reported plan. Metered accounts require an explicit task assignment.</p><p class="field-hint">Enter one account ID and model per line, in preference order.</p>${['small', 'medium', 'large'].map(size => `<label>${size[0].toUpperCase() + size.slice(1)} tasks<textarea name="${size}" rows="3" spellcheck="false">${escape(rows(routing[size]))}</textarea></label>`).join('')}<label>Default reviewer <input name="reviewer" value="${escape(routing.defaultReviewer ? rows([routing.defaultReviewer]) : '')}" placeholder="Account ID and model, or leave blank"></label><label class="check-row"><input type="checkbox" name="claudeReviewsOnly" ${routing.claudeReviewsOnly ? 'checked' : ''}>Suggest Claude for reviews only</label><label>Excluded models<textarea name="excludedModels" rows="5" spellcheck="false">${escape(routing.excludedModels.join('\n'))}</textarea></label><p class="form-error" role="alert"></p><button type="submit" class="secondary">Save routing</button></form></section>`;
 }
 function ledgerTable() {
   return state.ledger.length ? `<div class="table-scroll"><table><thead><tr><th>Time</th><th>Provider / model</th><th>Input</th><th>Output</th><th>Status</th></tr></thead><tbody>${state.ledger.slice(0, 100).map(row => `<tr><td>${new Date(row.at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</td><td><strong class="ledger-provider">${accountMark(row.provider)}${escape(providerName(row.provider))}</strong><small>${escape(row.model)}</small></td><td class="mono">${number(row.usage?.input)}</td><td class="mono">${number(row.usage?.output)}</td><td><span class="ledger-status ${row.status}">${escape(row.status)}</span></td></tr>`).join('')}</tbody></table></div>` : `<div class="empty-ledger"><span class="empty-illustration">${icon('chart')}</span><h3>No API requests yet</h3><p>Requests made through Paddock appear here.</p></div>`;
 }
+function accountSettingsSection() {
+  const profileCards = (state.accounts || []).filter(account => account.profile).map(account => `<article class="account-profile-row"><div>${accountMark(account.provider)}<span><strong>${escape(account.label)}</strong><small>${providerName(account.provider)} · ${account.loginCompletedAt ? 'Signed in' : 'Sign-in needed'}</small></span></div><span><button class="subtle" data-action="account-login" data-id="${escape(account.id)}">${account.loginCompletedAt ? 'Sign in again' : 'Sign in'}</button><button class="subtle" data-action="account-rename" data-id="${escape(account.id)}" data-label="${escape(account.label)}">Rename</button><button class="subtle danger" data-action="account-remove" data-id="${escape(account.id)}" aria-label="Remove ${escape(account.label)}">Remove</button></span></article>`).join('');
+  return `<section class="surface account-switch-panel"><div class="section-label"><h2>Accounts</h2></div><form id="account-profile-form" class="account-profile-form"><label>Provider<select name="provider" ${accountProfileCreated ? 'disabled' : ''}><option value="codex" ${accountProfileDraft.provider === 'codex' ? 'selected' : ''}>Codex</option><option value="claude" ${accountProfileDraft.provider === 'claude' ? 'selected' : ''}>Claude Code</option></select></label><label>Account name<input name="label" required maxlength="64" autocomplete="off" value="${escape(accountProfileDraft.label)}" ${accountProfileCreated ? 'disabled' : ''}></label><button class="secondary" type="submit" ${accountProfileBusy ? 'disabled' : ''}>${accountProfileCreated ? 'Retry sign-in' : 'Add account'}</button>${accountProfileCreated ? '<p class="field-hint">This account is saved. Retry sign-in to open its console.</p>' : ''}<p class="form-error" role="alert">${escape(accountProfileDraft.error)}</p></form><div class="account-profile-list">${profileCards || '<p class="section-note">No additional accounts.</p>'}</div><div class="account-switch-threshold"><label>Offer a switch at <input type="number" min="50" max="100" data-setting="accountSwitchThreshold" value="${state.settings.accountSwitchThreshold ?? 90}">%</label><label><input type="checkbox" data-setting="autoSwitchAccounts" ${state.settings.autoSwitchAccounts ? 'checked' : ''}>Switch automatically while idle</label><p class="field-hint">Automatic switching is off by default. It needs fresh usage for both accounts and an idle console.</p></div><p class="section-note">Use subscriptions within provider terms. Switching accounts must respect each provider’s rate limits and restrictions.</p></section>`;
+}
+function renderUsageAnalytics() {
+  const data = usageAnalytics(state.ledger || [], usagePeriod), values = data.points.map(point => point[usageMetric]);
+  const measuredTokens = group => group.unknownUsage && !group.tokens ? '—' : number(group.tokens) + (group.unknownUsage ? '+' : '');
+  const maximum = Math.max(1, ...values), height = 125, width = 680;
+  const points = values.map((value, index) => `${index * width / Math.max(1, values.length - 1)},${height - value / maximum * (height - 12)}`).join(' ');
+  const metricName = usageMetric === 'tokens' ? 'Reported tokens' : 'API requests';
+  const date = at => new Date(at).toLocaleDateString([], { month: 'short', day: 'numeric' });
+  return `<section class="surface usage-analytics"><header class="section-label"><div><h2>API ledger &amp; analytics</h2><p>Requests recorded by Paddock.</p></div><div class="usage-analytics-controls"><select data-usage-period aria-label="API activity period">${[7,30,90].map(days => `<option value="${days}" ${days === usagePeriod ? 'selected' : ''}>Last ${days} days</option>`).join('')}</select><button class="secondary" data-action="export">${icon('arrow')}Export</button></div></header>
+    <div class="usage-stat-grid"><div><span>API requests</span><strong>${number(data.requests)}</strong></div><div><span>Cloud API tokens</span><strong>${measuredTokens(data.cloud)}</strong></div><div><span>Local tokens</span><strong>${measuredTokens(data.local)}</strong></div><div><span>Average request time</span><strong>${data.averageMs === null ? '—' : (data.averageMs / 1000).toFixed(1) + 's'}</strong></div><div><span>Failed requests</span><strong>${number(data.failed)}</strong></div></div>
+    <div class="usage-chart-grid"><section class="usage-chart"><header><h3>${metricName}</h3><div class="usage-metric-toggle">${['requests','tokens'].map(metric => `<button type="button" data-usage-metric="${metric}" aria-pressed="${usageMetric === metric}">${metric === 'requests' ? 'Requests' : 'Tokens'}</button>`).join('')}</div></header>${data.requests ? `<svg viewBox="0 0 ${width} ${height + 4}" role="img" aria-label="${metricName} over the last ${usagePeriod} days. Highest daily count: ${number(Math.max(...values))}."><defs><linearGradient id="usage-chart-fill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--accent-blue)" stop-opacity=".45"/><stop offset="1" stop-color="var(--accent-pink)" stop-opacity="0"/></linearGradient></defs>${[0, .5, 1].map(y => `<path class="usage-chart-gridline" d="M0 ${height * y}H${width}"/>`).join('')}<polygon points="0,${height} ${points} ${width},${height}" fill="url(#usage-chart-fill)"/><polyline points="${points}" fill="none" stroke="var(--accent-blue)" stroke-width="2.5" vector-effect="non-scaling-stroke"/></svg><div class="usage-chart-dates"><span>${date(data.points[0].at)}</span><span>${date(data.points[Math.floor(data.points.length / 2)].at)}</span><span>${date(Date.now())}</span></div>` : '<p class="usage-chart-empty">No API requests in this period.</p>'}</section>
+    <section class="usage-provider-chart"><h3>Requests by provider</h3>${data.providers.length ? data.providers.slice(0,6).map(item => `<div class="usage-provider-bar"><span>${accountMark(item.provider)}${escape(providerName(item.provider))}</span><div><i style="width:${100 * item.requests / data.requests}%"></i></div><strong>${number(item.requests)}</strong></div>`).join('') : '<p class="usage-chart-empty">No recorded providers.</p>'}</section></div>
+    ${data.unknownUsage ? `<p class="field-hint">Token usage was not reported for ${data.unknownUsage} request${data.unknownUsage === 1 ? '' : 's'}.</p>` : ''}${data.measured < data.requests ? `<p class="field-hint">Request time is available for ${data.measured} of ${data.requests} records.</p>` : ''}
+    <details class="usage-ledger-details"><summary>Request log</summary>${ledgerTable()}<p class="ledger-foot">Latest 100 records shown. Export includes all records. Tool steps count as separate requests.</p></details></section>`;
+}
 function renderUsage() {
-  const summary = state.summary;
   const subscriptions = [...(state.usageAccounts || state.accounts || [])].sort((a,b) => Number(!!(b.hasUsage || state.limits.some(x => (x.accountId || x.id) === b.id))) - Number(!!(a.hasUsage || state.limits.some(x => (x.accountId || x.id) === a.id))));
-  // Only set-up subscriptions are listed; the rest wait behind Add subscription.
   const limitOnly = state.limits.filter(entry => entry.provider !== 'opencode' && !subscriptions.some(account => account.id === (entry.accountId || (entry.provider === 'codex' ? 'codex:default' : entry.id === 'claude:account' ? 'claude:default' : entry.id)))).map(entry => ({ id: entry.accountId || entry.id, provider: entry.provider, label: entry.name || providerName(entry.provider), hasUsage: true }));
   const hidden = new Set(state.settings.usageHidden || []), shown = new Set(state.settings.usageShown || []);
+  for (const id of new Set([...hidden, ...shown])) if (![...subscriptions, ...limitOnly].some(account => account.id === id)) { const provider = id.split(':')[0]; subscriptions.push({ id, provider, label: providerName(provider) }); }
   const listed = [...subscriptions, ...limitOnly], visible = listed.filter(account => !hidden.has(account.id) && (account.hasUsage || account.inUse || shown.has(account.id)));
+  const groups = new Map(); for (const account of visible) { if (!groups.has(account.provider)) groups.set(account.provider, []); groups.get(account.provider).push(account); }
+  const accountCards = [...groups.entries()].map(([provider, accounts]) => { const account = accounts.find(item => item.id === usageAccountSelection.get(provider)) || accounts[0]; return quotaCard(provider, account.id, account.label, true, true, accounts); }).join('') || '<p class="section-note usage-empty">No subscriptions yet. Add one to see its limits.</p>';
   const addable = listed.filter(account => !visible.includes(account));
-  const accountCards = visible.map(account => quotaCard(account.provider, account.id, account.label, true, true)).join('') || '<p class="section-note usage-empty">No subscriptions yet. Add one to see its limits.</p>';
-  const addPanel = usageAddOpen ? `<div class="usage-add" id="usage-add-panel" role="group" aria-label="Add a subscription">${addable.length ? `<p>Installed agents</p><div class="usage-add-list">${addable.map(account => `<button type="button" class="secondary" data-usage-show="${escape(account.id)}">${accountMark(account.provider)}<span>${escape(account.label)}</span></button>`).join('')}</div>` : ''}<p>Another account</p><div class="usage-add-list"><button type="button" class="secondary" data-usage-new-account="codex">${accountMark('codex')}<span>Codex account</span></button><button type="button" class="secondary" data-usage-new-account="claude">${accountMark('claude')}<span>Claude Code account</span></button></div></div>` : '';
-  const profileCards = (state.accounts || []).filter(account => account.profile).map(account => `<article class="account-profile-row"><div>${accountMark(account.provider)}<span><strong>${escape(account.label)}</strong><small>${providerName(account.provider)} · ${account.loginCompletedAt ? 'Signed in' : 'Sign-in needed'}</small></span></div><span><button class="subtle" data-action="account-login" data-id="${escape(account.id)}">${account.loginCompletedAt ? 'Sign in again' : 'Sign in'}</button><button class="subtle" data-action="account-rename" data-id="${escape(account.id)}" data-label="${escape(account.label)}">Rename</button><button class="subtle danger" data-action="account-remove" data-id="${escape(account.id)}" aria-label="Remove ${escape(account.label)}">Remove</button></span></article>`).join('');
-  return pageHeading('', 'Usage', 'Account-wide subscription limits, checked every two minutes.', '<button class="secondary" data-action="refresh" ' + (state.refreshing ? 'disabled aria-busy="true"' : '') + '>' + icon('refresh') + (state.refreshing ? 'Checking accounts…' : 'Refresh') + '</button>') +
-    `<section class="surface account-switch-settings usage-subscriptions"><div class="section-label"><h2>Subscriptions</h2><button type="button" class="secondary" data-action="usage-add" aria-expanded="${usageAddOpen}" aria-controls="usage-add-panel">${icon('plus')}Add subscription</button></div>${addPanel}<div class="usage-grid">${accountCards}</div></section>` +
-    `<div class="usage-management"><section class="surface account-switch-panel"><div class="section-label"><h2>Account switching</h2></div><form id="account-profile-form" class="account-profile-form"><label>Provider<select name="provider" ${accountProfileCreated ? 'disabled' : ''}><option value="codex" ${accountProfileDraft.provider === 'codex' ? 'selected' : ''}>Codex</option><option value="claude" ${accountProfileDraft.provider === 'claude' ? 'selected' : ''}>Claude Code</option></select></label><label>Account name<input name="label" required maxlength="64" autocomplete="off" value="${escape(accountProfileDraft.label)}" ${accountProfileCreated ? 'disabled' : ''}></label><button class="secondary" type="submit" ${accountProfileBusy ? 'disabled' : ''}>${accountProfileCreated ? 'Retry sign-in' : 'Add account'}</button>${accountProfileCreated ? '<p class="field-hint">This account is saved. Retry sign-in to open its console.</p>' : ''}<p class="form-error" role="alert">${escape(accountProfileDraft.error)}</p></form><div class="account-profile-list">${profileCards || '<p class="section-note">No additional accounts.</p>'}</div><div class="account-switch-threshold"><label>Offer a switch at <input type="number" min="50" max="100" data-setting="accountSwitchThreshold" value="${state.settings.accountSwitchThreshold ?? 90}">%</label><label><input type="checkbox" data-setting="autoSwitchAccounts" ${state.settings.autoSwitchAccounts ? 'checked' : ''}>Switch automatically while idle</label><p class="field-hint">Automatic switching is off by default. It needs fresh usage for both accounts and an idle console.</p></div><p class="section-note">Use subscriptions within provider terms. Switching accounts must respect each provider’s rate limits and restrictions.</p></section><section class="surface ledger-panel"><div class="section-label"><div><h2>API ledger</h2><p>Requests made through Paddock.</p></div><button class="subtle" data-action="export">Export</button></div>` +
-    '<div class="stats-row usage-stats"><div class="stat"><span>API requests · 30 days</span><strong>' + summary.requests + '</strong></div><div class="stat"><span>API tokens · 30 days</span><strong>' + (summary.unknownUsage && !summary.tokens ? '—' : number(summary.tokens) + (summary.unknownUsage ? '+' : '')) + '</strong></div></div>' +
-    `${ledgerTable()}<div class="ledger-foot">${state.ledger.length > 100 ? 'Latest 100 shown. Export includes all records. ' : ''}Tool steps count as separate requests.</div></section></div>${delegationSection()}${routingSection()}`;
+  const addGroup = (title, items, restoring = false) => items.length ? `<p>${title}</p><div class="usage-add-list">${items.map(account => `<button type="button" class="secondary" data-usage-show="${escape(account.id)}" ${restoring ? 'data-usage-hidden-item' : ''}>${accountMark(account.provider)}<span>${restoring ? 'Show ' : ''}${escape(account.label)}</span></button>`).join('')}</div>` : '';
+  const addPanel = usageAddOpen ? `<div class="usage-add" id="usage-add-panel" role="group" aria-label="Add a subscription">${addGroup('Hidden accounts', addable.filter(account => hidden.has(account.id)), true)}${addGroup('Installed agents', addable.filter(account => !hidden.has(account.id)))}<p>Another account</p><div class="usage-add-list"><button type="button" class="secondary" data-usage-new-account="codex">${accountMark('codex')}<span>Codex account</span></button><button type="button" class="secondary" data-usage-new-account="claude">${accountMark('claude')}<span>Claude Code account</span></button></div></div>` : '';
+  return pageHeading('', 'Usage', 'Account-wide limits, checked every two minutes.', `<div class="usage-heading-actions"><button class="secondary" data-action="refresh" ${state.refreshing ? 'disabled aria-busy="true"' : ''}>${icon('refresh')}${state.refreshing ? 'Checking accounts…' : 'Refresh'}</button>${hidden.size ? `<button type="button" class="secondary" data-action="usage-hidden" aria-expanded="${usageAddOpen}" aria-controls="usage-add-panel">Hidden accounts (${hidden.size})</button>` : ''}<button type="button" class="primary" data-action="usage-add" aria-expanded="${usageAddOpen}" aria-controls="usage-add-panel">${icon('plus')}Add subscription</button></div>`) +
+    `<section class="surface account-switch-settings usage-subscriptions">${addPanel}<div class="usage-grid">${accountCards}</div></section>${renderUsageAnalytics()}`;
 }
-function messageUsageTable() { return usageView.render(); }
 
 function renderTools() { return sharedViews(state, { escape, icon, pageHeading }).tools(); }
 // Connections and integration states shown by the Tools lists, without live status.
@@ -547,7 +556,7 @@ function refreshToolSections() {
 function renderInstructions() { return sharedViews(state, { escape, icon, pageHeading }).instructions(); }
 function renderLaunchDefaults() {
   const defaults = state.settings.consoleDefaults;
-  return `<form id="console-defaults-form" class="surface"><h2>Console defaults</h2><p class="field-hint">Used when you click +.</p><div class="form-pair"><label>Agent or shell<select name="provider">${consoleProviders().map(provider => `<option value="${provider}" ${defaults.provider === provider ? 'selected' : ''}>${providerName(provider)}</option>`).join('')}</select></label><label id="default-permissions">Permissions<select name="permissions" data-setting="agentPermissions"><option value="unrestricted" ${state.settings.agentPermissions === 'unrestricted' ? 'selected' : ''}>Unrestricted</option><option value="default" ${state.settings.agentPermissions !== 'unrestricted' ? 'selected' : ''}>Agent defaults</option></select></label></div><label>Project folder<div class="folder-input"><input name="cwd" required value="${escape(defaults.cwd)}"><button type="button" data-action="pick-folder" aria-label="Choose default project folder">${icon('folder')}</button></div></label><label>Name <span class="optional">optional</span><input name="name" maxlength="64" value="${escape(defaults.name)}" placeholder="Uses the folder name"></label><label id="default-command">Custom command<textarea name="command" rows="3" maxlength="4000" spellcheck="false" placeholder="The command to run">${escape(defaults.command)}</textarea></label><p id="default-provider-hint" class="field-hint"></p><p class="form-error" role="alert"></p><button type="submit" class="primary">Save defaults</button></form>`;
+  return `<form id="console-defaults-form" class="surface"><h2>Console defaults</h2><div class="form-pair"><label>Agent or shell<select name="provider">${consoleProviders().map(provider => `<option value="${provider}" ${defaults.provider === provider ? 'selected' : ''}>${providerName(provider)}</option>`).join('')}</select></label><label id="default-permissions">Permissions<select name="permissions" data-setting="agentPermissions"><option value="unrestricted" ${state.settings.agentPermissions === 'unrestricted' ? 'selected' : ''}>Unrestricted</option><option value="default" ${state.settings.agentPermissions !== 'unrestricted' ? 'selected' : ''}>Agent defaults</option></select></label></div><label>Startup folder<div class="folder-input"><input name="cwd" required value="${escape(defaults.cwd)}"><button type="button" data-action="pick-folder" aria-label="Choose startup folder">${icon('folder')}</button></div></label><label>Name <span class="optional">optional</span><input name="name" maxlength="64" value="${escape(defaults.name)}" placeholder="Uses the folder name"></label><label id="default-command">Custom command<textarea name="command" rows="3" maxlength="4000" spellcheck="false" placeholder="The command to run">${escape(defaults.command)}</textarea></label><p id="default-provider-hint" class="field-hint"></p><p class="form-error" role="alert"></p><button type="submit" class="primary">Save defaults</button></form>`;
 }
 function renderBaseSettings() {
   const installed = (state.agents || []).map(agent => '<div class="connection-row"><span>' + escape(agent.name) + '</span><span>' + (agent.installed ? 'Installed' : 'Not installed') + '</span><button class="subtle" data-docs="' + agent.id + '">Guide</button></div>').join('');
@@ -563,6 +572,7 @@ function renderSettingsCategory() {
   let content;
   if (page === 'appearance') content = renderAppearanceSettings();
   else if (page === 'console-settings') content = '<div class="settings-column">' + renderLaunchDefaults() + renderKeyboardSettings() + '</div><div class="settings-column">' + renderGridSettings() + (sections[1]?.outerHTML || '') + '</div>';
+  else if (page === 'agent-settings') content = accountSettingsSection() + delegationSection() + routingSection();
   else if (page === 'devices') content = (remoteHosts?.html() || '') + (phone?.renderSettings() || '');
   else if (page === 'api-settings') content = views.apis();
   else if (page === 'tools') { content = renderTools(); renderedToolList = toolListKey(); }
@@ -631,6 +641,11 @@ function renderKeyboardSettings() {
 }
 function renderPage() {
   if (!state) return;
+  const routingForm = page === 'agent-settings' ? document.querySelector('#routing-form') : null;
+  const routingFields = routingForm ? [...routingForm.elements].filter(node => node.name).map(node => ({ name: node.name, value: node.value, checked: node.checked })) : [];
+  const routingFocus = routingForm?.contains(document.activeElement) ? document.activeElement.name : null;
+  const usageFocus = page === 'usage' && document.activeElement?.closest('#content') ? { account: document.activeElement.dataset.usageAccount, period: document.activeElement.hasAttribute('data-usage-period'), metric: document.activeElement.dataset.usageMetric } : null;
+  const ledgerOpen = page === 'usage' && document.querySelector('.usage-ledger-details')?.open;
   queueMicrotask(() => vim?.refresh());
   applySidebar();
   projectChats?.sync();
@@ -658,7 +673,6 @@ function renderPage() {
   $('#consoles-page').hidden = !consoleView;
   $('#content').hidden = consoleView;
   $('#content').dataset.view = page;
-  $('#launch-folder').hidden = !consoleView || !!expandedId;
   renderScreenshot();
   const view = page;
   const changed = renderedView !== null && renderedView !== view;
@@ -676,13 +690,12 @@ function renderPage() {
   }
   document.querySelectorAll('[data-page]').forEach(button => button.classList.toggle('selected', button.dataset.page === page || button.closest('.sidebar-bottom') && isSettingsPage(page)));
   document.querySelectorAll('.sidebar [data-page]').forEach(button => { if (button.classList.contains('selected') && !button.classList.contains('brand')) button.setAttribute('aria-current', 'page'); else button.removeAttribute('aria-current'); });
-  explorer?.sync();
   if (consoleView) { renderConsoles(); return; }
   const renderer = { projects: () => projects.render(), tasks: () => taskLoops.render(), results: () => workbench.render('results'), usage: renderUsage, tools: renderTools, instructions: renderInstructions, settings: renderSettingsCategory }[page] || renderSettingsCategory;
   const content = $('#content');
   const backgroundLayer = content.querySelector(':scope > .page-background-layer');
   content.innerHTML = (state.storageError ? `<div class="error-banner" role="alert">${escape(state.storageError)}</div>` : '') + (isSettingsPage(page) ? renderSettingsCategory() : renderer());
-  if (page === 'usage') {
+  if (page === 'agent-settings') {
     const form = $('#account-profile-form');
     if (form) {
       form.elements.provider.value = accountProfileDraft.provider;
@@ -710,9 +723,17 @@ function renderPage() {
   if (settingsSwitch && !windowMoving && !reducedMotion.matches) { viewAnimation?.cancel(); viewAnimation = $('.settings-content')?.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 120, easing: 'ease-out' }); }
   if (page === 'tools') { $('.settings-content .page-heading').insertAdjacentHTML('afterend', imageGenerator.render()); imageGenerator.mount(); }
 
-  if (page === 'usage') { $('#content').insertAdjacentHTML('beforeend', messageUsageTable()); usageView.mount(); }
-  if (page === 'usage') $('#content').insertAdjacentHTML('beforeend', imageGenerator.usage());
   if (page === 'console-settings') launchDefaultsFields();
+  if (page === 'agent-settings') {
+    const form = document.querySelector('#routing-form');
+    for (const field of routingFields) { const node = form?.elements[field.name]; if (node) { node.value = field.value; if (node.type === 'checkbox') node.checked = field.checked; } }
+    if (routingFocus) form?.elements[routingFocus]?.focus({ preventScroll: true });
+  }
+  if (page === 'usage') {
+    if (ledgerOpen) document.querySelector('.usage-ledger-details').open = true;
+    const selector = usageFocus?.account ? `[data-usage-account="${CSS.escape(usageFocus.account)}"]` : usageFocus?.period ? '[data-usage-period]' : usageFocus?.metric ? `[data-usage-metric="${usageFocus.metric}"]` : null;
+    if (selector) document.querySelector(selector)?.focus({ preventScroll: true });
+  }
 
 }
 function hudHtml() {
@@ -761,7 +782,7 @@ function renderStartupNotices() {
   const markup = (state.safeMode ? `<div class="startup-notice"><span>Safe mode: your consoles weren't reopened and background checks are off. Consoles opened in safe mode won't be saved.</span><button type="button" class="secondary" data-action="restart-normal">Restart normally</button></div>` : '') + notices.map(item => `<div class="startup-notice"><span>${escape(item.message)}</span><button type="button" class="secondary" data-action="dismiss-startup-notice" data-index="${item.index}" aria-label="Dismiss notice">Dismiss</button></div>`).join('');
   if (markup !== startupNoticeMarkup) { $('#startup-notices').innerHTML = markup; startupNoticeMarkup = markup; }
 }
-let bareFullscreen = false; // set when F11, not a console expansion, entered fullscreen
+let bareFullscreen = false, fullscreenPending = false; // set when F11, not a console expansion, entered fullscreen
 function receive(next) {
   next = { ...next, sessions: Array.isArray(next.sessions) ? next.sessions : [], codePanels: Array.isArray(next.codePanels) ? next.codePanels : [], delegations: Array.isArray(next.delegations) ? next.delegations : [] };
   ++stateReceiveVersion;
@@ -851,9 +872,6 @@ function receive(next) {
   const readyCount = state.sessions.filter(isReady).length;
   $('#ready-count').textContent = readyCount; $('#ready-count').hidden = !readyCount;
   $('#ready-count').closest('button').setAttribute('aria-label', readyCount ? `Consoles, ${readyCount} ready for you` : 'Consoles');
-  const launchFolder = state.settings.consoleDefaults.cwd;
-  $('#launch-folder span').textContent = launchFolder.split(/[\\/]/).filter(Boolean).pop() || launchFolder;
-  $('#launch-folder').title = `New consoles start in ${launchFolder}`;
   renderScreenshot();
   applySidebar();
   if (page === 'tools') for (const connection of state.shared.connections) {
@@ -869,7 +887,7 @@ function receive(next) {
     if (section && section.dataset.items !== next) { const template = document.createElement('template'); template.innerHTML = setupRequests(state, escape); template.content.firstElementChild.dataset.items = next; section.replaceWith(template.content.firstElementChild); }
   }
   if (hud && !launchGesture?.active && !$('#console-chooser').open && !document.body.classList.contains('window-dragging')) $('#hud').innerHTML = hudHtml();
-  else if (['overview', 'consoles', 'usage'].includes(page)) renderPage();
+  else if (['overview', 'consoles', 'usage', 'agent-settings'].includes(page)) renderPage();
   for (const [id, effect] of sessionEffects) {
     const panel = state.mode === 'hud'
       ? [...document.querySelectorAll('.hud-console[data-session]')].find(item => item.dataset.session === id)
@@ -879,67 +897,16 @@ function receive(next) {
   if (!windowMoving) scheduleFits();
   vim?.refresh();
 }
-const explorerDrawer = window.matchMedia('(max-width:899px)');
-let drawerOpen = false;
-explorerDrawer.addEventListener('change', () => { if (explorerDrawer.matches) drawerOpen = false; if (state) applySidebar(); });
-$('#explorer-backdrop').addEventListener('click', () => { void closeExplorer().catch(error => toast(error.message, true)); });
 function applySidebar() {
-  const collapsed = explorerDrawer.matches ? !drawerOpen : !!state.settings.sidebarCollapsed, blocked = collapsed || !!expandedId;
-  const sidebar = $('#sidebar'), toggle = $('#sidebar-toggle'), titlebar = $('.titlebar'), content = $('#content');
+  const sidebar = $('#sidebar'), titlebar = $('.titlebar'), content = $('#content');
   document.body.style.setProperty('--titlebar-h', titlebar.offsetHeight + 'px');
-  const initialized = sidebar.hasAttribute('data-collapsed');
-  if (expandedId && (sidebar.contains(document.activeElement) || content.contains(document.activeElement))) {
-    if (expandedId) document.querySelector(`.session-card[data-console-id="${CSS.escape(expandedId)}"] [data-action="toggle-console"]`)?.focus({ preventScroll: true });
-  }
-  sidebar.inert = !!expandedId;
-  sidebar.setAttribute('aria-hidden', String(!!expandedId));
-  const pane = $('#explorer-pane');
-  const reopening = !blocked && (pane.hidden || pane.inert);
-  if (blocked && (pane.contains(document.activeElement) || document.activeElement === $('#explorer-backdrop'))) $('#explorer-toggle').focus({ preventScroll: true });
-  pane.inert = blocked; pane.hidden = blocked;
-  $('#explorer-backdrop').hidden = blocked || !explorerDrawer.matches || isSettingsPage(page);
-  if (blocked) explorer?.cancelFocus();
-  explorer?.sync();
-  if (reopening) explorer?.focusTree();
+  if (expandedId && content.contains(document.activeElement)) document.querySelector(`.session-card[data-console-id="${CSS.escape(expandedId)}"] [data-action="toggle-console"]`)?.focus({ preventScroll: true });
+  sidebar.inert = false;
+  sidebar.removeAttribute('aria-hidden');
   titlebar.inert = false;
   titlebar.removeAttribute('aria-hidden');
   content.inert = !!expandedId;
-  toggle.disabled = !!expandedId;
   sidebar.dataset.collapsed = 'false';
-  $('#explorer-toggle').setAttribute('aria-expanded', String(!blocked));
-  if (!initialized) {
-    // Apply the saved layout before enabling motion on later toggles.
-    sidebar.getBoundingClientRect();
-    sidebar.classList.add('sidebar-animated');
-  }
-  $('#sidebar-toggle').setAttribute('aria-expanded', String(!collapsed));
-  $('#sidebar-toggle').setAttribute('aria-controls', 'explorer-pane');
-  $('#sidebar-toggle').setAttribute('aria-label', collapsed ? 'Show Explorer' : 'Hide Explorer');
-  $('#sidebar-toggle').title = collapsed ? 'Show Explorer' : 'Hide Explorer';
-}
-async function setExplorerCollapsed(collapsed) {
-  const previous = !!state.settings.sidebarCollapsed;
-  const previousDrawer = drawerOpen;
-  drawerOpen = !collapsed;
-  // Visibility and focus change together, before the settings IPC round trip.
-  state.settings = { ...state.settings, sidebarCollapsed: collapsed };
-  applySidebar();
-  try { await call('settings', { sidebarCollapsed: collapsed }); }
-  catch (error) {
-    if (state.settings.sidebarCollapsed === collapsed) {
-      drawerOpen = previousDrawer;
-      state.settings = { ...state.settings, sidebarCollapsed: previous };
-      applySidebar();
-    }
-    throw error;
-  }
-}
-function toggleExplorer() {
-  return setExplorerCollapsed(explorerDrawer.matches ? !!drawerOpen : !state.settings.sidebarCollapsed);
-}
-async function closeExplorer() {
-  if (explorerDrawer.matches) { drawerOpen = false; applySidebar(); }
-  else await setExplorerCollapsed(true);
 }
 const acknowledgments = new Set();
 async function acknowledgeSession(id) {
@@ -954,7 +921,7 @@ async function selectSession(id) {
   if (!target) return false;
   const launchId = target.launchId || null;
   const sameTarget = session => isOpenConsole(session) && (session.launchId || null) === launchId;
-  selectedId = id; explorer?.sync();
+  selectedId = id;
   const request = ++expansionRequest;
   const modeIntent = { request, mode: 'fullscreen' };
   expansionModeIntent = modeIntent;
@@ -967,7 +934,7 @@ async function selectSession(id) {
     if (request !== expansionRequest || current.mode !== 'fullscreen' || current.transitioning || !sameTarget(latestTarget)) return false;
     if (current === fresh) receive(fresh);
     if (request !== expansionRequest || state.mode !== 'fullscreen' || state.transitioning || !sameTarget(openConsole(id))) return false;
-    selectedId = id; explorer?.sync();
+    selectedId = id;
     expandedId = id;
     page = 'consoles';
     renderPage();
@@ -1134,7 +1101,7 @@ async function pasteScreenshot(id) {
 const textSteps = (() => { try { return JSON.parse(localStorage.getItem('console-text-steps') || '{}'); } catch { return {}; } })();
 // Keyed by the console's stable key: session ids change when Paddock restarts.
 const textKey = id => state.sessions.find(s => s.id === id)?.consoleKey || id;
-const textStep = id => textSteps[textKey(id)] ?? textSteps[id] ?? 0;
+const textStep = id => textSteps[textKey(id)] ?? textSteps[id] ?? 10;
 const textSize = (id, compact) => (compact ? 11 : 14) + textStep(id);
 function textSizeButtons(id, name) {
   const step = textStep(id);
@@ -1143,7 +1110,7 @@ function textSizeButtons(id, name) {
 function changeTextSize(id, delta) {
   const step = Math.max(-4, Math.min(10, textStep(id) + delta));
   delete textSteps[id];
-  if (step) textSteps[textKey(id)] = step; else delete textSteps[textKey(id)];
+  textSteps[textKey(id)] = step;
   try { localStorage.setItem('console-text-steps', JSON.stringify(textSteps)); } catch { /* keep the size for this session only */ }
   const record = terminals.get(id);
   if (record) { record.term.options.fontSize = textSize(id, record.compact); record.dimensions = null; scheduleFits(); }
@@ -1182,15 +1149,26 @@ function mountTerminal(session, host, compact) {
     record.output = terminalOutput((data, done) => queueTerminalWrite(record, data).then(() => { keepFollowing(record); done?.(); }), updatePreview);
     // Only the user's own scrolling stops a console following new output. Moves,
     // resizes and hidden periods can leave xterm's viewport behind otherwise.
-    for (const event of ['wheel', 'keyup', 'pointerup']) node.addEventListener(event, () => requestAnimationFrame(() => {
-      const buffer = term.buffer.active; record.follow = buffer.viewportY >= buffer.baseY;
-      if (record.follow) clearTerminalAnchor(record);
-      else {
-        const anchor = visibleTerminalAnchor(record);
+    for (const event of ['wheel', 'keyup', 'pointerup']) node.addEventListener(event, e => {
+      // xterm consumes wheel events inside its viewport. Capture the user's
+      // intent before that, and stop following before another output write.
+      if (e.type === 'wheel' && e.deltaY < 0) {
+        record.follow = false;
         clearTerminalAnchor(record);
-        record.scrollAnchor = anchor;
       }
-    }), { passive: true });
+      // xterm applies wheel movement on an animation frame. Read the resulting
+      // viewport after that frame, rather than re-enabling follow too early.
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        if (terminals.get(id) !== record) return;
+        const buffer = term.buffer.active; record.follow = buffer.viewportY >= buffer.baseY;
+        if (record.follow) clearTerminalAnchor(record);
+        else {
+          const anchor = visibleTerminalAnchor(record);
+          clearTerminalAnchor(record);
+          record.scrollAnchor = anchor;
+        }
+      }));
+    }, { passive: true, capture: true });
     term.onData(data => { if (!session.taskId) call('session.input', { id, data }).catch(error => toast(error.message, true)); });
     fileLinks(term, value => openFile(id, value));
     // Ctrl+V in a local agent console also pastes clipboard images as a file path.
@@ -1210,7 +1188,7 @@ function mountTerminal(session, host, compact) {
       e.preventDefault();
       call('clipboard.menu', term.getSelection()).catch(error => toast(error.message, true));
     });
-    node.addEventListener('focusin', () => { selectedId = id; projectChats?.sync(); explorer?.sync(); });
+    node.addEventListener('focusin', () => { selectedId = id; projectChats?.sync(); });
     node.addEventListener('dragover', e => { if (e.dataTransfer.types.includes(SCREENSHOT_DRAG)) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; } });
     node.addEventListener('drop', e => { if (!e.dataTransfer.types.includes(SCREENSHOT_DRAG)) return; e.preventDefault(); e.stopPropagation(); selectedId = id; pasteScreenshot(id).catch(error => toast(error.message, true)); });
     // A focused console can finish while the user is reading. Wait for their
@@ -1282,7 +1260,12 @@ window.dock.onOutput(packet => {
   if (record.loading) record.queued.push(packet); else record.output.push(packet.data);
 });
 document.fonts.ready.then(() => { for (const record of terminals.values()) record.dimensions = null; scheduleFits(); });
-window.dock.onSelect(id => selectSession(id).catch(error => toast(error.message, true)));
+window.dock.onSelect(selection => {
+  const id = typeof selection === 'string' ? selection : selection?.id;
+  if (!id) return;
+  if (selection?.textSize === 'largest') changeTextSize(id, 10 - textStep(id));
+  selectSession(id).catch(error => toast(error.message, true));
+});
 window.dock.onNotice?.(item => {
   for (const dialog of document.querySelectorAll('dialog[open]')) dialog.close();
   if (item.destination === 'phone-pairing') { phone.open({ pair: true }); return; }
@@ -1343,7 +1326,7 @@ async function chooserModels() {
   const select = form.elements.model;
   select.innerHTML = '<option value="">Agent default</option><option value="__custom__">Enter a model…</option>';
   form.elements.customModel.value = ''; chooserFields();
-  if (form.elements.remoteHostId.value || !['codex', 'claude'].includes(provider)) return;
+  if (form.elements.remoteHostId.value || !['codex', 'claude', 'opencode'].includes(provider)) return;
   try {
     const models = await call('session.models', provider);
     if (request !== chooserModelRequest || !$('#console-chooser').open) return;
@@ -1554,9 +1537,14 @@ document.addEventListener('keydown', event => {
     (current + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
   event.preventDefault(); items[index].focus({ preventScroll: true });
 }, true);
+document.addEventListener('change', event => {
+  if (event.target.dataset.usageAccount) { const provider = event.target.dataset.usageAccount; usageAccountSelection.set(provider, event.target.value); renderPage(); document.querySelector(`[data-usage-account="${CSS.escape(provider)}"]`)?.focus({ preventScroll: true }); }
+  if (event.target.matches('[data-usage-period]')) { usagePeriod = Number(event.target.value); renderPage(); document.querySelector('[data-usage-period]')?.focus({ preventScroll: true }); }
+});
 document.addEventListener('click', async event => {
   const button = event.target.closest('button'); if (!button) return;
   try {
+    if (button.dataset.usageMetric) { usageMetric = button.dataset.usageMetric; renderPage(); document.querySelector(`[data-usage-metric="${usageMetric}"]`)?.focus({ preventScroll: true }); return; }
     if (button.dataset.usageShow || button.dataset.usageHide) {
       const id = button.dataset.usageShow || button.dataset.usageHide, show = !!button.dataset.usageShow;
       const shown = new Set(state.settings.usageShown || []), hidden = new Set(state.settings.usageHidden || []);
@@ -1564,11 +1552,11 @@ document.addEventListener('click', async event => {
       if (show) usageAddOpen = false;
       await call('settings', { usageShown: [...shown], usageHidden: [...hidden] });
       if (show) void call('refresh').catch(() => {});
-      toast(show ? 'Added to Usage. Checking its limits.' : 'Hidden from Usage. Add it again any time.'); return;
+      toast(show ? 'Added to Usage. Checking its limits.' : 'Hidden from Usage. Restore it under Hidden accounts.'); return;
     }
     if (button.dataset.usageNewAccount) {
       // renderPage reads the draft back from the form, so set the field itself.
-      usageAddOpen = false; const provider = $('#account-profile-form [name=provider]'); if (provider && !provider.disabled) provider.value = button.dataset.usageNewAccount; renderPage();
+      usageAddOpen = false; accountProfileDraft.provider = button.dataset.usageNewAccount; navigatePage('agent-settings'); const provider = $('#account-profile-form [name=provider]'); if (provider && !provider.disabled) provider.value = button.dataset.usageNewAccount;
       const form = $('#account-profile-form'); form?.scrollIntoView({ block: 'center', behavior: reducedMotion.matches ? 'auto' : 'smooth' }); form?.elements.label.focus({ preventScroll: true }); return;
     }
     if (button.dataset.delegationStop) { button.disabled = true; await call('workbench.delegation.stop', button.dataset.delegationStop); return; }
@@ -1577,7 +1565,7 @@ document.addEventListener('click', async event => {
     if (button.dataset.docs) return await call('docs', button.dataset.docs);
     if (button.dataset.setupApply) {
       button.disabled = true;
-      try { await call('workbench.setup.apply', button.dataset.setupApply); state = await call('state'); renderPage(); toast('Connected. Your agents can use it now.'); }
+      try { await call('workbench.setup.apply', button.dataset.setupApply); state = await call('state'); renderPage(); toast('Settings saved.'); }
       finally { button.disabled = false; }
       return;
     }
@@ -1590,11 +1578,14 @@ document.addEventListener('click', async event => {
       await call('workbench.setup.dismiss', item.id); toast('Key saved and encrypted.'); return;
     }
     if (button.dataset.apiPreset) {
-      const preset = apiPresets[button.dataset.apiPreset], form = $('#profile-form');
+      const preset = state.shared.profiles.find(item => item.id === button.dataset.apiPreset) || apiPresets[button.dataset.apiPreset];
+      if (!preset) return;
+      if (!$('#profile-form')) navigatePage('api-settings');
+      const form = $('#profile-form');
       form.reset(); form.elements.id.readOnly = false;
       if (!form.elements.keyId.querySelector(`[value="${preset.keyId}"]`)) form.elements.keyId.add(new Option(preset.keyId + ' (paste the key beside this)', preset.keyId));
       for (const [key, value] of Object.entries(preset)) form.elements[key].value = value;
-      $('#profile-editor').open = true; form.elements.keyId.focus(); return;
+      $('#profile-editor').open = true; form.elements.url.focus(); return;
     }
     if (button.dataset.removeKey) { await call('vault.remove', button.dataset.removeKey); renderPage(); toast('Key removed.'); return; }
     if (button.dataset.editTool) { editTool(button.dataset.editTool); return; }
@@ -1623,22 +1614,11 @@ document.addEventListener('click', async event => {
       case 'cancel-console': if (!openingConsole) $('#console-chooser').close(); break;
       case 'vim-normal': vim.enterNormal(); break;
       case 'vim-help': vim.showHelp(); break;
-      case 'sidebar':
-        button.disabled = true;
-        try { await toggleExplorer(); }
-        finally { button.disabled = false; }
-        break;
       case 'reset-tool': $('#tool-form').reset(); $('#tool-form').elements.id.readOnly = false; $('#tool-form-title').textContent = 'Add a tool'; toolFields(); break;
       case 'pick-folder': {
         const form = button.closest('form');
         const folder = await call('pickFolder', { cwd: form.elements.cwd.value });
         if (folder) { form.elements.cwd.value = folder; form.elements.cwd.dispatchEvent(new Event('input', { bubbles: true })); }
-        break;
-      }
-      case 'launch-folder': {
-        button.disabled = true;
-        try { const folder = await call('pickFolder'); if (folder) await call('settings', { consoleDefaults: { ...state.settings.consoleDefaults, cwd: folder } }); }
-        finally { button.disabled = false; }
         break;
       }
       case 'agent-setup': setup.open(); break;
@@ -1649,6 +1629,7 @@ document.addEventListener('click', async event => {
       case 'tray': await call('tray'); break;
       case 'refresh': await call('refresh'); break;
       case 'usage-add': usageAddOpen = !usageAddOpen; renderPage(); $('#usage-add-panel button, [data-action=usage-add]')?.focus({ preventScroll: true }); break;
+      case 'usage-hidden': usageAddOpen = !usageAddOpen; renderPage(); $('[data-usage-hidden-item], [data-action=usage-hidden]')?.focus({ preventScroll: true }); break;
       case 'quit': await call('quit'); break;
       case 'restart-normal': await call('restart.normal'); break;
       case 'dismiss-startup-notice': dismissedStartupNotices.add(Number(button.dataset.index)); renderStartupNotices(); break;
@@ -1756,7 +1737,7 @@ document.addEventListener('submit', async event => {
     try {
       const parse = text => text.split(/\r?\n/).map(line => line.trim()).filter(Boolean).map(line => { const parts = line.split(/\s+/); if (parts.length !== 2) throw new Error('Enter an account ID and model on each line.'); return { accountId: parts[0], model: parts[1] }; });
       const reviewer = parse(data.reviewer || ''); if (reviewer.length > 1) throw new Error('Enter one default reviewer.');
-      await call('settings', { routing: { small: parse(data.small), medium: parse(data.medium), large: parse(data.large), defaultReviewer: reviewer[0] || null, claudeReviewsOnly: !!data.claudeReviewsOnly, excludedModels: data.excludedModels.split(/\r?\n/).map(line => line.trim()).filter(Boolean) } });
+      await call('settings', { routing: { discoverAccounts: !!data.discoverAccounts, preferFree: !!data.preferFree, accountFunding: Object.fromEntries(parse(data.accountFunding || '').map(row => [row.accountId, row.model])), small: parse(data.small), medium: parse(data.medium), large: parse(data.large), defaultReviewer: reviewer[0] || null, claudeReviewsOnly: !!data.claudeReviewsOnly, excludedModels: data.excludedModels.split(/\r?\n/).map(line => line.trim()).filter(Boolean) } });
       toast('Routing saved.');
     } catch (error) { form.querySelector('.form-error').textContent = error.message; }
     return;
@@ -1781,7 +1762,7 @@ document.addEventListener('submit', async event => {
       await call('accounts.login', { id: accountProfileCreated.id });
       accountProfileCreated = null;
       accountProfileDraft = { provider: 'codex', label: '', error: '' }; accountProfileFocus = null;
-      accountProfileResetOnRender = page === 'usage' && !!$('#account-profile-form');
+      accountProfileResetOnRender = page === 'agent-settings' && !!$('#account-profile-form');
       toast('Account added. Sign in from the new console.');
     } else if (form.id === 'account-rename-form') {
       await call('accounts.rename', { id: form.dataset.id, label: data.label });
@@ -1820,7 +1801,7 @@ document.addEventListener('submit', async event => {
     if (form.id === 'account-rename-form') form.querySelector('.form-error').textContent = error.message;
     if ($(target)) $(target).textContent = error.message; else toast(error.message, true);
   } finally {
-    if (form.id === 'account-profile-form') { accountProfileBusy = false; if (page === 'usage') renderPage(); }
+    if (form.id === 'account-profile-form') { accountProfileBusy = false; if (page === 'agent-settings') renderPage(); }
     if (form.id === 'account-rename-form') { accountRenameBusy = false; if (submit?.isConnected) submit.disabled = false; }
     if (submit?.isConnected) submit.disabled = false;
   }
@@ -1845,7 +1826,12 @@ document.addEventListener('keydown', event => {
     event.preventDefault(); event.stopImmediatePropagation();
     if (!event.repeat) void openNew();
   }
-  if (event.key === 'F11') { event.preventDefault(); bareFullscreen = state.mode !== 'fullscreen'; call('mode', bareFullscreen ? 'fullscreen' : 'dashboard'); }
+  if (event.key === 'F11') {
+    event.preventDefault(); event.stopPropagation();
+    if (event.repeat || state.transitioning || fullscreenPending) return;
+    fullscreenPending = true; bareFullscreen = state.mode !== 'fullscreen';
+    call('mode', bareFullscreen ? 'fullscreen' : 'dashboard').catch(error => toast(error.message, true)).finally(() => { fullscreenPending = false; });
+  }
 }, true);
 
 // In F11 fullscreen the title bar stays hidden until the pointer reaches the top edge.
@@ -1924,7 +1910,7 @@ async function vimAction(action, value) {
     if (page === 'consoles') focusVimSlot(vim.slot); else $('#content').focus({ preventScroll: true });
     return;
   }
-  if (action === 'sidebar') { await toggleExplorer(); return; }
+  if (action === 'navigation') { $('#sidebar nav [data-page="consoles"]').focus({ preventScroll: true }); return; }
   if (action === 'fullscreen') { await call('mode', state.mode === 'fullscreen' ? 'dashboard' : 'fullscreen'); return; }
   if (action === 'dock') { await call('mode', 'hud'); focusVimSlot(vim.slot); return; }
   const session = coveredSlots().get(value);
@@ -1949,50 +1935,14 @@ vim = vimControls({
   context: () => ({ enabled: state?.settings.vimControls === true, view: state?.mode === 'hud' ? 'hud' : expandedId ? 'terminal' : page, sessions: state?.sessions || [], grid: gridSize(), busy: windowMoving || openingConsole }),
   focusSlot: focusVimSlot, action: vimAction, onError: message => toast(message, true)
 });
-webPanels = webPanelUI({ call, getState: () => state, selectedConsole: () => selectedId, escape, icon, resizeHandles, toast, navigate: navigatePage });
 reviewPanels = reviewPanelUI({ call, getState: () => state, escape, icon, resizeHandles, toast, openResult: id => workbench.openResult(id) });
-codePanels = codePanelUI({ call, getState: () => state, selectedConsole: () => selectedId, escape, icon, resizeHandles, toast, navigate: navigatePage,
-  pasteContext: async (id, text) => {
-    const session = state.sessions.find(x => x.id === id && x.alive && !x.switching);
-    const record = terminals.get(id);
-    if (!session || !record) throw new Error('Open this agent console before adding context.');
-    if (!record.term.modes.bracketedPasteMode) { await call('clipboard.write', text); toast('Context copied. Paste it into the console when its prompt is ready.'); return; }
-    record.term.paste(text); toast('Context added to the console draft.');
-  }
-});
-explorer = explorerUI({ host: $('#explorer-pane'), call, getState: () => state, selectedConsole: () => selectedId, escape, icon, collapse: closeExplorer,
-  openFile: async (root, path) => {
-    const normalize = value => {
-      const name = value?.replaceAll('\\', '/').replace(/\/$/, '');
-      return document.body.dataset.platform === 'win32' ? name?.toLocaleLowerCase() : name;
-    };
-    let panel = state.codePanels?.find(p => {
-      const source = state.sessions.find(s => (s.consoleKey || s.id) === p.codeSourceKey);
-      return p.alive && p.kind === 'code' && !source?.remote && !source?.remoteHostId && normalize(source?.cwd || p.cwd) === normalize(root);
-    });
-    if (!panel) panel = await call('code.create', { root });
-    if (page !== 'consoles' || expandedId) navigatePage('consoles');
-    const deadline = performance.now() + 2500;
-    let rendered = false;
-    while (!codePanels.isMounted(panel.id)) {
-      if (performance.now() >= deadline) throw new Error('Code panel could not be placed in the console grid. Free a slot and try again.');
-      await new Promise(resolve => requestAnimationFrame(resolve));
-      if (!rendered && !layoutMotion?.active && state.codePanels?.some(p => p.id === panel.id)) { rendered = true; renderConsoles(); }
-    }
-    await codePanels.openFile(panel.id, path);
-  },
-  afterOpenFile: async () => {
-    if (explorerDrawer.matches) await closeExplorer();
-  }
-});
 phone = mobileUI({ call, escape, icon, getState: () => state, toast, navigate: navigatePage });
-projects = projectsUI({ call, getState: () => state, escape, icon, toast, renderPage, openNew, preview: value => openFile(null, value) });
+projects = projectsUI({ call, getState: () => state, escape, icon, toast, renderPage, openNew, preview: value => openFile(null, value), openResult: id => workbench.openResult(id) });
 projectChats = consoleProjects({ call, getState: () => state, getView: () => ({ page, selectedId }), projects, navigate: navigatePage, escape, icon, toast });
 messageQueue = consoleQueue({ call, getState: () => state, escape, icon, toast, paste: (id, text) => { const record = terminals.get(id); if (!record) throw new Error('This console is no longer open.'); record.term.paste(text); record.term.focus(); }, agentProviders: () => (state?.agents || []).map(x => x.id) });
 imageGenerator = imageGenerationUI({ call, getState: () => state, escape, toast });
 remoteHosts = sshUI({ call, escape, getState: () => state, toast, render: renderPage });
 updates = updatesUI({ call, getState: () => state, escape, icon, toast });
-usageView = projectUsage({ getState: () => state, escape, providerName, number, mark: shellMark });
 setup = firstRun({ call, escape, icon, pdMark, getState: () => state });
 windowDragging(call, () => state);
 layoutMotion = consoleMotion({ render: renderConsoles, fit: scheduleFits });

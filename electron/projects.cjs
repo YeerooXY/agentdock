@@ -21,6 +21,13 @@ class Projects extends EventEmitter {
   constructor(root) { super(); this.file = path.join(root, 'projects.json'); this.items = readJson(this.file, []); this.proposalFile = path.join(root, 'project-proposals.json'); this.proposals = readJson(this.proposalFile, []); }
   list() { return this.items.map(x => ({ ...x, color: projectColor(x.color, x.id), progress: { done: x.milestones.filter(m => m.done).length, total: x.milestones.length } })).sort((a, b) => (b.lastActiveAt || b.createdAt) - (a.lastActiveAt || a.createdAt)); }
   get(id) { return this.items.find(x => x.id === id); }
+  forFolder(folderPath) {
+    if (!folderPath) return null;
+    const key = value => { const resolved = path.resolve(value); return process.platform === 'win32' ? resolved.toLowerCase() : resolved; };
+    const target = key(folderPath), matches = this.items.flatMap(p => p.folders.map(f => ({ p, folder: key(f.path) }))).filter(x => target === x.folder || target.startsWith(x.folder + path.sep)).sort((a, b) => b.folder.length - a.folder.length);
+    if (!matches.length || matches.some(x => x.folder.length === matches[0].folder.length && x.p.id !== matches[0].p.id)) return null;
+    return matches[0].p;
+  }
   commit(items) { atomicJson(this.file, items); this.items = items; this.emit('changed'); }
   commitProposals(items) { atomicJson(this.proposalFile, items); this.proposals = items; this.emit('changed'); }
   checkFolders(folders) {
@@ -66,6 +73,7 @@ class Projects extends EventEmitter {
     const milestones = planning.milestones(raw.milestones || []);
     const item = { id: before?.id || randomUUID(), decisions: before?.decisions || [], name, category: text(raw.category || '', 60, 'Category'), goals: text(raw.goals || '', 10000, 'Goals'), approach: text(raw.approach || '', 10000, 'Plan'), notes: text(raw.notes || '', 20000, 'Notes'), nextStep: text(raw.nextStep || '', 1000, 'Next step'), status: raw.status || 'active', folders, milestones, createdAt: before?.createdAt || Date.now(), updatedAt: Date.now(), lastActiveAt: before?.lastActiveAt || null };
     item.color = projectColor(raw.color ?? before?.color, item.id);
+    if (before?.lastProgress) item.lastProgress = before.lastProgress;
     if (before?.plan) {
       planning.checkRevision(before, raw.revision);
       item.plan = structuredClone(before.plan);
@@ -156,6 +164,21 @@ class Projects extends EventEmitter {
     if (item.plan) updated.plan = { ...item.plan, revision: item.plan.revision + 1 };
     return this.store(updated);
   }
+  recordOutcome(id, record) {
+    const item = this.get(id); if (!item) throw new Error('The linked project no longer exists.');
+    const lastProgress = { turnId: record.turnId, summary: record.summary, nextStep: record.nextStep, at: record.at };
+    if (item.lastProgress?.turnId === record.turnId && item.lastProgress.summary === record.summary && item.nextStep === record.nextStep) return item;
+    // Keep a current outcome on the card; the completion journal retains history.
+    return this.store({ ...item, nextStep: record.nextStep, lastProgress, updatedAt: record.at, lastActiveAt: record.at });
+  }
+  brief(id, worker = false) {
+    const p = this.get(id); if (!p) return null;
+    const decisions = (p.decisions || []).filter(d => d.status === 'approved').map(d => d.reason ? `${d.text} (${d.reason})` : d.text);
+    const clip = (text, length) => String(text || '').slice(0, length);
+    return { id: p.id, name: p.name, status: p.status, goals: worker ? p.goals : clip(p.goals, 600), nextStep: clip(p.nextStep, 500),
+      ...(worker ? { approach: p.approach, decisions, milestones: p.milestones, references: p.plan?.references || [], scope: p.plan?.scope || '', excluded: p.plan?.excluded || '', approvals: p.plan?.approvals || {}, planRevision: p.plan?.revision || null }
+        : { lastOutcome: clip(p.lastProgress?.summary, 400), approvedDecisions: decisions.length, milestones: { done: p.milestones.filter(x => x.done).length, total: p.milestones.length }, planRevision: p.plan?.revision || null, details: 'Use dock_context({includeProject:true}) for decisions, scope, milestones and references in the task-start call; detail:"project" remains available separately. History: dock_context({detail:"history"}).' }) };
+  }
   // Decisions are durable project choices and preferences. Agents can only
   // propose one; the user approves, edits or rejects it in Projects.
   proposeDecision(id, raw, agent) {
@@ -192,13 +215,13 @@ class Projects extends EventEmitter {
     const nameMode = raw.nameMode || (raw.name?.trim() && raw.name.trim() !== item.name ? 'custom' : 'project');
     return { ...raw, projectId: item.id, nameMode, name: nameMode === 'project' ? item.name : raw.name?.trim() || item.name, cwd: folder(raw.cwd || item.folders[0].path) };
   }
-  chatSummary(session) {
+  chatSummary(session, { includeBrief = true } = {}) {
     if (!session) return '';
     const p = this.get(session.projectId);
     const binding = { projectId: p?.id || null, projectName: p?.name || null, chatTitle: session.name || '', launchDirectory: session.cwd || '' };
     return '\n\n## Current chat binding\n' + JSON.stringify(binding, null, 2) + '\n' + (p
-      ? 'This is the project explicitly linked to this chat. Use its ID and project context, even when the chat has a custom title. If a request points to a different project, ask the user to change the link before project-specific work. Refresh dock_context each turn; an earlier chat message or title does not override the current binding.\n'
-      : 'No saved project is linked to this chat. Do not guess one from the chat title or earlier conversation. Use the launch directory and the user’s explicit instructions; ask which project or folder they mean when the target is unclear. When the user works in a folder that is not a project, you may propose one with dock/propose_project; the user decides whether to create it. The console folder button lets the user choose a project.\n') + this.summary(p?.id);
+      ? 'This is the project explicitly linked to this chat. Use its ID and project context, even when the chat has a custom title. If a request points to a different project, ask the user to change the link before project-specific work. Refresh dock_context at task start; pass your own sinceContextRevision to omit unchanged instructions. An earlier chat message or title does not override the current binding.\n'
+      : 'No saved project is linked. Use the launch directory and explicit user instructions; do not infer a project from the chat title. Use dock/propose_project when appropriate.\n') + (p && includeBrief ? '\n## Project brief\n' + JSON.stringify(this.brief(p.id)) : '');
   }
   summary(id) {
     const p = this.get(id); if (!p) return '';

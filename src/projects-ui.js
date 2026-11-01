@@ -1,8 +1,9 @@
 import './projects.css';
 import { projectColor, projectDot } from './project-colors.js';
+import { projectActivity } from './project-activity.js';
 import { projectPlanUI, milestoneLines, parseMilestones, waitingProposal } from './project-plan-ui';
 
-export function projectsUI({ call, getState, escape: e, icon, toast, renderPage, openNew, preview }) {
+export function projectsUI({ call, getState, escape: e, icon, toast, renderPage, openNew, preview, openResult }) {
   let query = '', category = '', status = 'open', opener, afterSave;
   const plan = projectPlanUI({ call, getState, escape: e, icon, toast, renderPage, openNew, preview });
   const dialog = document.createElement('dialog'); dialog.id = 'project-editor'; dialog.setAttribute('aria-labelledby', 'project-editor-title');
@@ -12,8 +13,8 @@ export function projectsUI({ call, getState, escape: e, icon, toast, renderPage,
     <label>Goals<textarea name="goals" maxlength="10000" rows="3" placeholder="What do you want to make?"></textarea></label>
     <div data-project-new-fields><label>Audience<textarea name="audience" maxlength="10000" rows="2" placeholder="Who is this for?"></textarea></label><label>Success criteria<textarea name="success" maxlength="10000" rows="2" placeholder="What would make it successful?"></textarea></label></div>
     <label data-project-existing>How it will work<textarea name="approach" maxlength="10000" rows="3"></textarea></label>
-    <label data-project-existing>Next step<input name="nextStep" maxlength="1000" placeholder="One clear thing to pick up next time"></label>
-    <label>Initial milestones<textarea name="milestones" rows="4" placeholder="Milestone | Done when"></textarea><span class="field-hint">Start with the outcomes you know. Refine them during planning.</span></label>
+    <label data-project-existing>Next step<input name="nextStep" maxlength="1000" placeholder="Next task"></label>
+    <label>Initial milestones<textarea name="milestones" rows="4" placeholder="Milestone | Done when"></textarea></label>
     <label>Project folders<textarea name="folders" required rows="2" placeholder="One folder per line. Optional label: Game | C:\\Projects\\Game"></textarea></label><button type="button" class="secondary" data-project-folder>${icon('folder')}Add folder</button>
     <details data-project-existing><summary>Notes and status</summary><label>Project notes<textarea name="notes" maxlength="20000" rows="5"></textarea></label><label>Status<select name="status"><option value="planning">Planning</option><option value="active">Active</option><option value="paused">Paused</option><option value="complete">Complete</option><option value="archived">Archived</option></select></label></details>
     <p class="field-hint" data-project-new-note>New projects start in Planning.</p>
@@ -48,37 +49,53 @@ export function projectsUI({ call, getState, escape: e, icon, toast, renderPage,
       <form class="decision-add" data-decision-add><label>Add a decision<input name="text" maxlength="500" required placeholder="For example: use tabs, not spaces"></label><label>Reason (optional)<input name="reason" maxlength="1000"></label><button class="secondary" type="submit">Add</button></form></details>`;
   }
   function cards() {
+    const activity = projectActivity(getState());
     const items = projects().filter(p => (!category || p.category === category) && (!status || status === 'open' ? !status || ['active', 'planning'].includes(p.status) : p.status === status) && `${p.name} ${p.category} ${p.goals} ${p.nextStep}`.toLowerCase().includes(query.toLowerCase()));
     return items.length ? items.map(p => {
-      const done = p.milestones.filter(x => x.done).length, total = p.milestones.length;
-      const stale = p.status === 'active' && Date.now() - (p.lastActiveAt || p.createdAt) > 7 * 86400000;
+      const current = activity.get(p.id), done = p.milestones.filter(x => x.done).length, total = p.milestones.length;
       const waiting = p.plan && !p.plan.approvals.roadmap, proposal = p.plan && waitingProposal(p.plan);
-      const milestoneRow = (m, i) => `<label><input type="checkbox" data-project-milestone="${i}" ${m.done ? 'checked' : ''}><span>${e(m.text)}${m.acceptance ? `<small>Done when: ${e(m.acceptance)}</small>` : ''}</span></label>`;
-      return `<article class="surface project-card" data-project-id="${e(p.id)}"><div class="project-card-heading"><div><span class="project-category">${e(p.category || 'Uncategorized')}</span><h2>${projectDot(p)}${e(p.name)}</h2></div><span class="project-state" data-status="${e(p.status)}">${e(p.status)}</span></div>
-        <p class="project-goals">${e(p.goals || 'No goals recorded.')}</p>
-        <div class="project-next"><span>Next step</span><p>${e(proposal ? 'Review the agent proposal' : p.nextStep || 'No next step recorded.')}</p></div>
-        <div class="project-progress"><span>${done} / ${total} milestones${waiting ? ' · Draft' : ''}</span>${total ? `<progress max="${total}" value="${done}" aria-label="${e(p.name)} milestone progress"></progress>` : ''}</div>
-        ${total ? `<div class="project-milestone-list" aria-label="Milestones${waiting ? ' · Draft' : ''}">${p.milestones.slice(0, 5).map(milestoneRow).join('')}${total > 5 ? `<details class="project-milestones"><summary>+${total - 5} more</summary>${p.milestones.slice(5).map((m, i) => milestoneRow(m, i + 5)).join('')}</details>` : ''}</div>` : ''}
-        ${decisions(p)}
-        <div class="project-folder-links">${p.folders.map((f, index) => `<button class="subtle" data-project-folder-open="${e(p.id)}" data-folder-index="${index}" title="${e(f.path)}">${icon('folder')}<span>${e(f.label || f.path)}</span></button>`).join('')}</div>
-        ${p.plan?.files?.error ? `<p class="form-error">Project files need attention. Open Roadmap to retry.</p>` : ''}
-        <footer class="project-card-footer"><div class="project-underway">${p.plan && p.status === 'planning' ? `<p class="field-hint">Sets the project to Active and marks open plan sections not needed. Waiting proposals stay.</p><button class="secondary" data-project-underway="${e(p.id)}">Already under way</button>` : ''}</div><div class="project-actions"><button class="secondary" data-project-open="${e(p.id)}">${icon('terminal')}Open console</button><button class="${proposal ? 'primary' : 'subtle'}" data-project-plan="${e(p.id)}">${proposal ? 'Review proposal' : 'Plan'}</button><button class="subtle" data-project-edit="${e(p.id)}">Edit</button></div><div class="project-last"><time title="${p.lastActiveAt ? e(new Date(p.lastActiveAt).toLocaleString()) : ''}">Last worked: ${since(p.lastActiveAt)}</time>${stale ? '<span class="project-return">Inactive for 7+ days</span>' : ''}</div></footer></article>`;
+      const milestoneRow = (m, i) => `<label title="${e(m.acceptance || '')}"><input type="checkbox" data-project-milestone="${i}" ${m.done ? 'checked' : ''}><span>${e(m.text)}</span></label>`;
+      return `<article class="surface project-card" data-project-id="${e(p.id)}" style="--project-color:${projectColor(p)}">
+        <header class="project-card-heading"><span class="project-card-icon" aria-hidden="true">${icon(p.category?.toLowerCase() === 'game' ? 'grid' : 'folder')}</span><span class="project-state" data-status="${e(p.status)}">${e(p.status)}</span></header>
+        <h2>${e(p.name)}</h2><p class="project-goals">${e(p.goals || 'No goals recorded.')}</p>
+        <div class="project-tags">${[p.category, ...p.folders.map(f => f.label)].filter(Boolean).slice(0, 3).map(tag => `<span>${e(tag)}</span>`).join('')}</div>
+        <div class="project-activity"><span>${current.running} running${current.consoles ? ` · ${current.consoles} consoles` : ''}</span>${current.attention ? `<span class="project-attention">${current.attention} needs attention</span>` : ''}<time title="${current.lastActiveAt ? e(new Date(current.lastActiveAt).toLocaleString()) : ''}">Activity: ${since(current.lastActiveAt)}</time></div>
+        ${current.latestResult ? `<button class="project-latest-result subtle" data-project-result="${e(current.latestResult.id)}" title="${e(current.latestResult.title)}">${icon('file')}<span>${e(current.latestResult.title)}</span></button>` : ''}
+        <div class="project-progress"><span>Milestones${waiting ? ' · Draft' : ''}</span><span>${done} / ${total}</span></div>
+        ${total ? `<div class="project-milestone-list" aria-label="Milestones${waiting ? ' · Draft' : ''}">${p.milestones.slice(0, 4).map(milestoneRow).join('')}${total > 4 ? `<details class="project-milestones"><summary>${total - 4} more</summary>${p.milestones.slice(4).map((m, i) => milestoneRow(m, i + 4)).join('')}</details>` : ''}</div>` : '<p class="field-hint">No milestones recorded.</p>'}
+        ${p.plan?.files?.error ? '<p class="form-error">Project files need attention.</p>' : ''}
+        <footer class="project-card-footer"><time class="project-notes-date" title="${p.updatedAt ? e(new Date(p.updatedAt).toLocaleString()) : ''}">Details edited: ${since(p.updatedAt)}</time>
+          <div class="project-actions"><button class="secondary" data-project-plan="${e(p.id)}">${proposal ? 'Review proposal' : 'View project'}</button>
+          <details class="project-more"><summary aria-label="More actions for ${e(p.name)}">•••</summary><div class="project-more-content">
+            <button class="secondary" data-project-open="${e(p.id)}">${icon('terminal')}Open console</button><button class="subtle" data-project-edit="${e(p.id)}">Edit project</button>
+            ${p.nextStep ? `<div class="project-next"><span>Recorded next step</span><p>${e(p.nextStep)}</p></div>` : ''}
+            ${decisions(p)}
+            <div class="project-folder-links">${p.folders.map((f, index) => `<button class="subtle" data-project-folder-open="${e(p.id)}" data-folder-index="${index}" title="${e(f.path)}">${icon('folder')}<span>${e(f.label || f.path)}</span></button>`).join('')}</div>
+            ${p.plan && p.status === 'planning' ? `<p class="field-hint">Sets the project to Active and marks open plan sections not needed. Waiting proposals stay.</p><button class="secondary" data-project-underway="${e(p.id)}">Already under way</button>` : ''}
+          </div></details></div>
+        </footer></article>`;
     }).join('') : `<div class="surface project-empty"><h2>${projects().length ? 'No matching projects' : 'No projects'}</h2>${projects().length ? '<p>Try a different filter.</p>' : ''}<button class="primary" data-project-new>${icon('plus')}New project</button></div>`;
   }
+
   function refreshCards(force = false) {
     plan.refresh();
     const proposalsHost = document.querySelector('#project-proposals');
     if (proposalsHost) { const value = JSON.stringify(proposals()); if (proposalsHost.dataset.fingerprint !== value) { proposalsHost.dataset.fingerprint = value; proposalsHost.innerHTML = proposalSection(); } }
     const host = document.querySelector('#project-cards'); if (!host) return;
-    const fingerprint = JSON.stringify([projects(), query, category, status, editingDecision]);
+    if (!force && host.contains(document.activeElement) && document.activeElement.closest('form')) return;
+    const fingerprint = JSON.stringify([projects(), [...projectActivity(getState())], query, category, status, editingDecision, Math.floor(Date.now() / 60000)]);
     if (force) delete host.dataset.fingerprint;
     if (host.dataset.fingerprint === fingerprint) return;
     host.dataset.fingerprint = fingerprint;
     const open = [...host.querySelectorAll('details[open]')].map(x => [x.closest('[data-project-id]').dataset.projectId, x.className]);
-    const focused = document.activeElement, focusId = focused?.closest('[data-project-id]')?.dataset.projectId, milestone = focused?.dataset.projectMilestone;
+    const focused = document.activeElement, focusId = focused?.closest('[data-project-id]')?.dataset.projectId;
+    const focusAttribute = [...(focused?.attributes || [])].find(attribute => attribute.name.startsWith('data-'));
+    const focusSelector = focused?.matches('summary') && focused.parentElement.className
+      ? `details.${CSS.escape(focused.parentElement.className)} > summary`
+      : focusAttribute ? `[${focusAttribute.name}="${CSS.escape(focusAttribute.value)}"]` : null;
     host.innerHTML = cards();
     for (const [id, kind] of open) { const details = host.querySelector(`[data-project-id="${id}"] details.${kind}`); if (details) details.open = true; }
-    if (focusId && milestone !== undefined) host.querySelector(`[data-project-id="${focusId}"] [data-project-milestone="${milestone}"]`)?.focus({ preventScroll: true });
+    if (focusId && focusSelector) host.querySelector(`[data-project-id="${CSS.escape(focusId)}"] ${focusSelector}`)?.focus({ preventScroll: true });
   }
   function render() {
     const categories = [...new Set(projects().map(x => x.category).filter(Boolean))].sort();
@@ -173,5 +190,10 @@ export function projectsUI({ call, getState, escape: e, icon, toast, renderPage,
     const card = [...document.querySelectorAll('.project-card')].find(x => x.dataset.projectId === id);
     if (card) { card.tabIndex = -1; card.focus({ preventScroll: true }); card.scrollIntoView({ block: 'nearest' }); }
   }
+  setInterval(() => { if (document.visibilityState === 'visible' && document.querySelector('#project-cards')) refreshCards(); }, 60000);
+  document.addEventListener('click', event => {
+    const target = event.target.closest('[data-project-result]');
+    if (target) openResult(target.dataset.projectResult).catch(error => toast(error.message, true));
+  });
   return { render, edit, refreshCards, reveal };
 }

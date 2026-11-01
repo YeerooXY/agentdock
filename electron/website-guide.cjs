@@ -6,6 +6,8 @@ const path = require('node:path');
 const folder = path.join(__dirname, '..', 'skills', 'web-ux-ui', 'references');
 
 const topics = Object.freeze({
+  worker: 'Compact website implementation contract',
+  creative: 'Distinctive screen concepts and image prompts',
   overview: 'Choose the page and user task',
   layout: 'First screen, hierarchy and responsive arrangement',
   visual: 'Color, typography, motion and loading',
@@ -19,7 +21,7 @@ const topics = Object.freeze({
 function websiteGuide(topic = 'overview') {
   if (typeof topic !== 'string' || !Object.hasOwn(topics, topic)) throw new Error('Choose an available website guide topic.');
   return {
-    topic, title: topics[topic], revision: '2026-10-23',
+    topic, title: topics[topic], revision: '2026-11-01',
     evidence: 'Working guidance based on published sources and observed website patterns. Recheck changing standards; observations do not prove conversion gains.',
     content: fs.readFileSync(topic === 'checklist' ? path.join(__dirname, '..', 'guides', 'web-design.md') : path.join(folder, `${topic}.md`), 'utf8'),
     topics: Object.entries(topics).map(([id, title]) => ({ id, title }))

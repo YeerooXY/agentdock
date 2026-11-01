@@ -53,5 +53,5 @@ test('uninstall hook is a non-deleting notice and creative recommendations do no
   assert.doesNotMatch(hook, /\b(?:RMDir|Delete|ExecWait)\b/);
   const hub = new SharedHub(root(t), { list: () => [] }); t.after(() => hub.close());
   assert.equal(creativeTools.length, 7); assert.equal(hub.snapshot().creativeTools.length, 7);
-  assert.equal(hub.config.connections.length, 0); assert.match(hub.summary(), /Use the user's preferred or already configured tools first/);
+  assert.equal(hub.config.connections.length, 0); assert.match(hub.fullSummary(), /Use the user's preferred or already configured tools first/);
 });

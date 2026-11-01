@@ -38,10 +38,10 @@ test('user and agent can check draft milestones with the current revision', asyn
   const f = fixture(t); let p = f.store.progress(f.p.id, { revision: f.p.plan.revision, milestone: 0, done: true });
   assert.equal(p.milestones[0].done, true); assert.equal(p.plan.approvals.roadmap, undefined);
   const sessions = new Map([['agent', { id: 'agent', alive: true, cwd: f.folder, projectId: p.id }]]);
-  const bridge = Object.create(Workbench.prototype); Object.assign(bridge, { projects: f.store, getSessions: () => ({ items: sessions }), getProject: () => f.folder, alerts: { send() {} } });
+  const bridge = Object.create(Workbench.prototype); Object.assign(bridge, { projects: f.store, completion: { invalidate() {}, isStudyConversation: () => false }, getSessions: () => ({ items: sessions }), getProject: () => f.folder, alerts: { send() {} } });
   await assert.rejects(bridge.invoke('dock/project_progress', { revision: p.plan.revision - 1, milestone: 0, done: false }, 'agent'), /project changed/);
   p = await bridge.invoke('dock/project_progress', { revision: p.plan.revision, milestone: 0, done: false }, 'agent');
-  assert.equal(p.milestones[0].done, false);
+  assert.equal(f.store.get(f.p.id).milestones[0].done, false); assert.equal(p.projectId, f.p.id);
 });
 function approveAll(f) {
   f.review('brief', {}); f.review('research', { purpose: 'personal', evidence: 'Used only for my own notes.' });
@@ -80,7 +80,7 @@ test('references: links are validated, files are copied into the plan folder and
 test('agent proposals cannot approve, replace pending proposals, overwrite user edits or change another project', async t => {
   const f = fixture(t), original = f.store.plan(f.p.id);
   const sessions = new Map([['agent', { id: 'agent', name: 'Planner', alive: true, cwd: f.folder, projectId: f.p.id }]]);
-  const bridge = Object.create(Workbench.prototype); Object.assign(bridge, { projects: f.store, getSessions: () => ({ items: sessions }), getProject: () => f.folder, alerts: { send() {} } });
+  const bridge = Object.create(Workbench.prototype); Object.assign(bridge, { projects: f.store, completion: { invalidate() {}, isStudyConversation: () => false }, getSessions: () => ({ items: sessions }), getProject: () => f.folder, alerts: { send() {} } });
   await bridge.invoke('dock/propose_project_plan', { revision: original.revision, section: 'brief', changes: { goals: 'Reviewed goal' } }, 'agent');
   assert.equal(f.store.get(f.p.id).goals, 'Practice class notes'); assert.deepEqual(f.store.get(f.p.id).plan.approvals, {});
   assert.throws(() => f.store.propose(f.p.id, { revision: f.store.get(f.p.id).plan.revision, section: 'brief', changes: { goals: 'Overwrite' } }, 'Second agent'), /waiting for the user/);

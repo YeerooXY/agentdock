@@ -76,6 +76,13 @@ let app;
   await second.locator('[data-setup-apply]').click();
   await second.waitForFunction(async () => (await window.dock.call('state')).value.shared.profiles.some(x => x.id === 'testapi'));
   await second.waitForFunction(async () => (await window.dock.call('state')).value.workbench.setupRequests.length === 0);
+  await second.locator('.local-ai [data-api-preset=strata]').click();
+  assert.equal(await second.locator('#profile-form [name=keyId]').inputValue(), '');
+  await second.locator('#profile-form [type=submit]').click();
+  await second.waitForFunction(async () => (await window.dock.call('state')).value.shared.profiles.some(x => x.id === 'strata'));
+  const localChoices = await second.evaluate(async () => (await window.dock.call('session.models', 'opencode')).value);
+  assert.equal(localChoices[0].id, 'strata/local');
+  assert.equal((await second.evaluate(async () => (await window.dock.call('state')).value)).settings.consoleDefaults.provider, 'shell');
   assert.deepEqual(errors, []);
   console.log('PASS: optional setup, launch immediately in the chosen folder, manual reopen, installation guard, persisted agent request and Apply. No third-party installs or paid requests.');
 })().catch(e => { console.error(e); process.exitCode = 1; }).finally(async () => {

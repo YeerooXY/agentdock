@@ -10,11 +10,19 @@ const { SetupRequests } = require('./setup-requests.cjs');
 const { resultGitContext } = require('./git-context.cjs');
 const { ManagedDownloads } = require('./managed-downloads.cjs');
 const { completionNotice } = require('./completion-notice.cjs');
+const { isForeground } = require('./notifications.cjs');
+const { TurnCompletion } = require('./turn-completion.cjs');
 const { websiteGuide, topics: websiteTopics } = require('./website-guide.cjs');
+const { LocalAssist, localAssistSchema } = require('./local-assist.cjs');
+const { checkWebsiteCopy } = require('./website-copy.cjs');
 const schema = (properties, required = []) => ({ type: 'object', properties, required, additionalProperties: false });
 const string = { type: 'string' };
 const taskAgent = schema({ accountId: string, model: { type: 'string', maxLength: 120 }, effort: { enum: ['', 'minimal','low','medium','high','xhigh'] } }, ['accountId']);
 const nativeTools = [
+  ['check_website_copy', 'Check supplied rendered visible text for known generic slogans, website demo labels, promotional reversals and possible encoding errors. Deterministic; no model call or file edits. Return evidence and line positions. This is a narrow check, not proof of complete rule compliance or factual accuracy.', schema({ text: { type: 'string', maxLength: 100000 } }, ['text'])],
+  ['local_assist', 'Run one bounded text request on the configured local Strata server: extract facts, draft a component, critique supplied text or propose creative compositions. No tools, file edits, automatic retries or cloud fallback. Supply only relevant text (up to 24000 characters). Default 2048 output tokens, reasoning none, 90-second deadline. Reuse requestId only for the same request in this turn; the last 128 requests are deduplicated until app restart. Output requires caller verification. No Tasks or Results entry is created; usage goes to the API ledger.', localAssistSchema],
+  ['task_candidates', 'List available task accounts, funding types, allowance freshness, suggested assignments and project folders. Any connected console can use these task tools. A saved local Strata connection appears as opencode:strata with model strata/local; its server must be running. Local accounts need no cloud sign-in. Discover accounts before start_task.', schema({ title: string, criteria: string, size: { enum: ['small','medium','large'] } })],
+  ['task_status', 'Read task progress, checks, review findings and changes. Use the id returned by start_task and the same repo (defaults to the calling console folder). Wait for the task to finish before editing its files; inspect its diff and verification before accepting its work.', schema({ id: string, repo: string }, ['id'])],
   ['start_task', 'Start an agent task. Use title and criteria to describe the goal and acceptance criteria. repo defaults to the calling console folder. Progress shows on the Tasks page, where a split plan may need the user\'s approval before work starts. Choose installed account IDs; split tasks can use configured routing defaults. Checks run in the task folder. workflow defaults to current; a separate worktree requires the user\'s request. Agents may use subscription or API credits.', schema({ title: { type: 'string', minLength: 1, maxLength: 200 }, criteria: { type: 'string', minLength: 1, maxLength: 12000 }, repo: string, implementer: taskAgent, planner: taskAgent, reviewer: { anyOf: [taskAgent, { type: 'null' }] }, split: { type: 'boolean' }, checks: { type: 'string', maxLength: 4000 }, workflow: { enum: ['current','worktree'] }, maxRounds: { type: 'integer', minimum: 1, maximum: 5 }, timeLimitMinutes: { type: 'integer', minimum: 5, maximum: 120 } }, ['title','criteria'])],
   ['download_tool_repository', 'Download an authorized public GitHub tool repository into Paddock’s managed downloads folder and record its location for manual cleanup at uninstall. Does not build, install or run its code. Do not use this for user projects.', schema({ source: { type: 'string', maxLength: 500 }, name: { type: 'string', minLength: 1, maxLength: 120 } }, ['source'])],
   ['downloaded_tools', 'Read Paddock’s recorded tool downloads and their manual-cleanup list path. Arbitrary Git commands outside the managed helper are not tracked.', schema({})],
@@ -26,8 +34,9 @@ const nativeTools = [
   ['propose_project_plan', 'Propose changes to one planning section after discussing it with the user. Each section holds at most one waiting proposal. This cannot approve a plan or activate a project. Changes remain separate until the user reviews them in Projects. Roadmap fields: scope (included), excluded (not included) and milestones. Read project_plan first for the field names and current revision.', schema({ section: { enum: ['brief', 'research', 'infrastructure', 'roadmap'] }, revision: { type: 'integer' }, changes: { type: 'object' } }, ['section', 'revision', 'changes'])],
   ['add_later_feature', 'Save an extra idea in the current project’s Later features file. This does not add it to approved scope or authorize implementation. Read project_plan for the current revision.', schema({ revision: { type: 'integer' }, text: { type: 'string', maxLength: 1000 } }, ['revision', 'text'])],
   ['start_turn', 'Track a new task and group requested outputs by chat and Git revision. Idempotent until finish_turn or a ready notification. Called automatically by dock_context. File-change capture is optional and off by default.', schema({})],
-  ['finish_turn', 'Finish this task and link its saved outputs. With default settings this creates no Results entry unless an output was saved. Optional file-change capture requires an explicit setting.', schema({})],
-  ['setup_status', 'Inspect installed agents, saved key names and shared tool/API settings. Never returns key values.', schema({})],
+  ['agent_response', 'CLI lifecycle callback. Start or check a provider response. Ordinary unlinked study conversations can continue quietly; tracked work still requires an explicit finish_turn record. Does not declare outcomes or complete unfinished work.', schema({ event: { enum: ['start', 'complete'] } }, ['event'])],
+  ['finish_turn', 'Required completion check. Supply the current turnId, outcome, concise summary, nextStep and outputs. Changed work records project progress automatically; no-change explains why no update was needed. Saved outputs require resultIds from this turn. An empty call only checks an already recorded completion, including CLI stop callbacks. Returns notifyReady:false when Paddock is focused; then omit the separate ready notification call. Does not create a gallery report.', schema({ interrupted: { type: 'boolean' }, turnId: string, outcome: { enum: ['changed', 'no-change'] }, summary: { type: 'string', minLength: 1, maxLength: 1200 }, nextStep: { type: 'string', minLength: 1, maxLength: 500 }, outputs: { enum: ['none', 'saved'] }, resultIds: { type: 'array', maxItems: 100, items: string } })],
+  ['setup_status', 'Inspect the built-in tool catalog, setup readiness, connections, installed agents and saved key names. Includes unconnected tools such as Reverse Engineer Anything (REA). Never returns key values.', schema({})],
   ['prepare_setup', 'Prepare a tool connection, model API, image generator or key-entry request in Tools. The user reviews and applies it there. config uses the Tools form fields: tool {id,name,type,command,args,envKeys} or {id,name,type,url,headerKeys}; API {id,name,protocol,url,keyId}; image {provider,model,url,keyId,previewFirst} with provider agent/openai/gemini/meshy/compatible; key {id,name}. Key bindings use vault IDs, never secret values. Does not install software, send API requests or change an active connection.', schema({ kind: { enum: ['tool','api','key','image'] }, config: { type: 'object' } }, ['kind','config'])],
   ['save_result', 'Save a requested deliverable or a file the user chooses to keep: a document, image, design, research report, dataset or export. Do not save routine replies, progress logs, raw test data or patch copies just because a turn finished. Save requested files individually for previews; ZIP is optional. Files must be inside your project folder. The gallery keeps a copy.', schema({ file: string, text: string, title: string, kind: { enum: ['screenshot','concept','test','report','asset'] }, status: { enum: ['passed','failed','needs-review'] }, summary: string, groupId: string, ext: { enum: ['.md','.json','.txt'] } }, ['title'])],
   ['list_results', 'List saved results, newest first.', schema({})],
@@ -40,14 +49,16 @@ const nativeTools = [
   ['meshy_concept', 'Fallback only: generate a 2D page concept with Meshy after your own image generator is unavailable or has failed. Uploads the reference screenshot to Meshy and uses credits. Requires Meshy CLI sign-in.', schema({ reviewId: string, nativeStatus: { enum: ['unavailable','failed'] }, prompt: string }, ['reviewId','nativeStatus'])],
   ['generate_preview', 'Generate a screen preview using the user-selected image generator. Sends the screenshot and prompt to that provider and may use paid credits. Supply a completed reviewId or saved screenshot referenceId, and a stable requestId; repeat that ID to retrieve the same job, never a new charge. The default agent mode returns guidance to use your own generator; nativeStatus enables its Meshy fallback only after your generator is unavailable or failed. Save and show the preview before an ambiguous redesign.', schema({ reviewId: string, referenceId: string, requestId: { type: 'string', pattern: '^[a-zA-Z0-9_-]{1,100}$' }, prompt: { type: 'string', maxLength: 4000 }, nativeStatus: { enum: ['unavailable','failed'] } }, ['requestId'])],
   ['concept_status', 'Read image generation job status and saved result IDs. Never resubmit a waiting job.', schema({})],
-  ['delegate_review', 'Ask another of the user’s subscriptions (Claude Code or Codex) to review this console’s uncommitted changes, read-only. Paddock builds the diff itself, picks the reviewer with the most measured usage left (another vendor preferred) and returns a job ID. Use it after finishing a change, not for every edit. Give a short focus; list files only to narrow a large diff.', schema({ focus: { type: 'string', maxLength: 2000 }, base: { type: 'string', maxLength: 100 }, files: { type: 'array', items: string, maxItems: 50 }, reviewer: { type: 'string', maxLength: 100 } })],
+  ['delegate_review', 'Ask another connected account with a bounded reviewer adapter to review this console’s uncommitted changes, read-only. Use task_candidates to discover supported accounts and quotas. Paddock builds the diff, prefers eligible free allocations and measured headroom, and returns a job ID. Use one focused review after a completed change. List files to narrow a large diff.', schema({ focus: { type: 'string', maxLength: 2000 }, base: { type: 'string', maxLength: 100 }, files: { type: 'array', items: string, maxItems: 50 }, reviewer: { type: 'string', maxLength: 100 } })],
   ['delegation_status', 'Read a cross-agent review. Pass waitSeconds (up to 45) to wait for it; call again while state is running. A done review returns a verdict and at most 12 findings as path:line — severity — problem — fix. Treat the review as another agent’s opinion: check each finding before acting on it.', schema({ id: string, waitSeconds: { type: 'integer', minimum: 0, maximum: 45 } }, ['id'])]
 ].map(([name, description, inputSchema]) => ({ name: 'dock/' + name, description, inputSchema }));
 class Workbench {
-  constructor(root, runtime, electron, { testMode, onChange, getSessions, getProject, getWindow, getHub, getAgents, getTasks } = {}) {
+  constructor(root, runtime, electron, { testMode, onChange, getSessions, getProject, getWindow, getHub, getAgents, getTasks, onLocalEntry } = {}) {
+    this.completion = new TurnCompletion(root, this);
     this.downloads = new ManagedDownloads(root); this.testMode = testMode;
     this.electron = electron; this.getSessions = getSessions; this.getProject = getProject; this.getWindow = getWindow;
     this.getTasks = getTasks;
+    this.localAssist = new LocalAssist({ getProfiles: () => getHub?.()?.config.profiles || [], onEntry: onLocalEntry, testMode });
     this.results = new Results(root, { trash: file => fs.promises.rm(file, { recursive: true, maxRetries: 2, retryDelay: 100 }), nativeImage: electron.nativeImage });
     this.alerts = new AlertEvents(); this.reviews = new Reviews(root, this.results, this.alerts, electron);
     this.concepts = new Concepts(root, runtime, this.results, this.reviews, this.alerts, { testMode, getSettings: () => getHub?.()?.config.imageGeneration, getKey: id => getHub().vault.get(id), authorizePreview: (job, balance) => getHub().authorizePreview(job, balance) });
@@ -60,12 +71,37 @@ class Workbench {
   async invoke(name, args, owner) {
     const session = owner ? this.getSessions().items.get(owner) || this.turns?.session(owner) : null;
     if (owner && !session?.alive) throw new Error('This console is no longer open.');
+    // Study conversations normally have no tracked turn. Mutating work must
+    // acquire one before choosing output context or changing project state.
+    if (owner && [
+      'dock/save_result', 'dock/start_task', 'dock/project_progress', 'dock/project_decision',
+      'dock/propose_project', 'dock/propose_project_plan', 'dock/add_later_feature',
+      'dock/download_tool_repository', 'dock/prepare_setup', 'dock/review_page',
+      'dock/review_check', 'dock/delete_review', 'dock/meshy_concept',
+      'dock/generate_preview', 'dock/delegate_review'
+    ].includes(name) && this.completion.isStudyConversation(owner)) await this.turns.begin(owner);
     const context = this.turns?.context(owner) || { project: session?.cwd || this.getProject(), projectId: session?.projectId || null, sessionId: session?.id || null, consoleKey: session?.consoleKey || session?.id || null, consoleName: session?.name || '' };
+    if (['dock/project_decision', 'dock/propose_project_plan', 'dock/add_later_feature'].includes(name)) this.completion.invalidate(owner);
     switch (name) {
+      case 'dock/check_website_copy': return checkWebsiteCopy(args.text);
+      case 'dock/local_assist': return this.localAssist.run(args, context);
+      case 'dock/task_candidates': {
+        const tasks = this.getTasks?.();
+        if (!tasks) throw new Error('Tasks are unavailable.');
+        return tasks.choices(undefined, args);
+      }
+      case 'dock/task_status': {
+        const tasks = this.getTasks?.();
+        if (!tasks) throw new Error('Tasks are unavailable.');
+        return tasks.status(args.id, args.repo ?? session?.cwd ?? context.project ?? this.getProject());
+      }
       case 'dock/start_task': {
         const tasks = this.getTasks?.();
         if (!tasks) throw new Error('Tasks are unavailable.');
-        const job = await tasks.start({ ...args, repo: args.repo ?? session?.cwd ?? context.project ?? this.getProject() });
+        if (owner) await this.turns?.begin(owner);
+        const job = await tasks.start({ ...args, repo: args.repo ?? session?.cwd ?? context.project ?? this.getProject(), ...(session?.projectId ? { projectId: session.projectId } : {}) });
+        const turn = this.turns?.active.get(owner);
+        if (turn) { (turn.taskIds ||= []).push(job.id); this.completion.invalidate(owner); }
         return { id: job.id };
       }
       case 'dock/downloaded_tools': return { items: this.downloads.list(), report: this.downloads.report };
@@ -74,7 +110,7 @@ class Workbench {
         return this.downloads.download(args);
       }
       case 'dock/website_guide': return websiteGuide(args.topic);
-      case 'dock/project_progress': return this.projects.progress(session?.projectId, args);
+      case 'dock/project_progress': { const result = this.projects.progress(session?.projectId, args); this.completion.invalidate(owner); return { projectId: result.id, nextStep: result.nextStep, revision: result.plan?.revision, progress: result.progress }; }
       case 'dock/propose_project': {
         const proposal = this.projects.proposeProject(args, session);
         this.alerts.send({ title: 'Project proposed: ' + proposal.name, kind: 'question', sessionId: session?.id, destination: 'projects' });
@@ -93,17 +129,28 @@ class Workbench {
       }
       case 'dock/add_later_feature': { const p = this.projects.addLater(session?.projectId, args); return { revision: p.plan.revision, laterFeatures: p.plan.laterFeatures, files: p.plan.files }; }
       case 'dock/start_turn': return { turnId: await this.turns?.begin(owner), autoCapture: this.turns?.active.get(owner)?.capture === true };
-      case 'dock/finish_turn': return { turnId: await this.turns?.finish(owner) || context.turnId || null };
+      case 'dock/agent_response': return this.completion.agentResponse(owner, args.event);
+      case 'dock/finish_turn': {
+        if (args.interrupted === true) { this.completion.invalidate(owner); return { turnId: await this.turns?.finish(owner) || context.turnId || null, completion: 'interrupted' }; }
+        if (args.outcome) await this.completion.complete(owner, args);
+        else this.completion.check(owner);
+        const turnId = await this.turns?.finish(owner) || context.turnId || null;
+        const notifyReady = !isForeground(this.getWindow?.());
+        if (!notifyReady) this.getSessions()?.signal?.(context.sessionId, 'ready');
+        return { turnId, completion: 'recorded', notifyReady };
+      }
       case 'dock/setup_status': return this.setup.status();
       case 'dock/prepare_setup': {
         const result = this.setup.prepare(args, context);
         this.alerts.send({ title: 'Setup ready: ' + (args.config.name || args.config.id || 'Screen previews'), message: result.message, kind: 'question', destination: 'tools' });
         return result;
       }
-      case 'dock/save_result': return this.results.add(args, await resultGitContext(args, context, this.results.root));
+      case 'dock/save_result': { const result = this.results.add(args, await resultGitContext(args, context, this.results.root)); this.completion.invalidate(owner); return result; }
       case 'dock/list_results': return this.results.list();
       case 'dock/notify': {
         const kind = args.kind || 'ready';
+        if (kind === 'ready') this.completion.check(owner);
+        else if (kind === 'error') this.completion.invalidate(owner);
         args = { ...args, title: args.title || (kind === 'ready' ? 'Ready' : kind === 'question' ? 'Needs your input' : 'Needs attention') };
         const turnId = ['ready', 'error'].includes(kind) ? await this.turns?.finish(owner) || context.turnId : context.turnId;
         this.getSessions().signal?.(context.sessionId, kind);

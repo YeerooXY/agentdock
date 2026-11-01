@@ -18,7 +18,8 @@ async function checkToolsAndWindow({ app, page, invoke, eventually, capture, dat
   await page.locator('#shared-instructions').fill(original);
   await capture('test-working-guides.png');
   await openPage(page, 'tools');
-  assert.equal(await page.locator('.integrations [data-integration]').count(), 5, 'Blender, Unity, Meshy, REA and MiroFish');
+  assert.equal(await page.locator('.integrations [data-integration]').count(), 6, 'Blender, Unity, Meshy, REA, MiroFish and Upscayl');
+  assert.match(await page.locator('[data-integration=upscayl]').textContent(), /Vulkan GPU/);
   assert.equal(await page.locator('[name=projectPath]').inputValue(), '');
   await app.evaluate(({ dialog }, folder) => { globalThis.toolFolderDialog = dialog.showOpenDialog; dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [folder] }); }, dataDir);
   await page.locator('[data-unity-folder]').click();

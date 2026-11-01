@@ -16,7 +16,7 @@ test('registry preserves actual model family, role policy and local profile', ()
 });
 
 test('registry builds from migrated pools without altering assignments or enabling legacy Claude builds', () => {
-  const routing = migrateRouting({ ...defaults, medium: [{ accountId: 'claude:work', model: 'claude-sonnet-5' }, { accountId: 'codex:work', model: 'unknown-model' }] });
+  const routing = migrateRouting({ ...defaults, claudeReviewsOnly: true, medium: [{ accountId: 'claude:work', model: 'claude-sonnet-5' }, { accountId: 'codex:work', model: 'unknown-model' }] });
   const before = JSON.stringify(routing);
   const candidates = [{ id: 'claude:work', provider: 'claude' }, { id: 'codex:work', provider: 'codex' }];
   const workers = registryFromRouting({ routing, candidates, profiles: { 'claude:work': { quotaGroupId: 'shared', concurrency: 2 } } });

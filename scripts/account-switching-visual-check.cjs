@@ -1,6 +1,6 @@
 'use strict';
 // Isolated renderer review. Run npm run test:desktop first to create the fixture.
-const { chromium, webkit, devices } = require('playwright');
+const { chromium, webkit, devices } = require(process.env.REVIEW_PLAYWRIGHT || 'playwright');
 const fs = require('node:fs');
 const path = require('node:path');
 const http = require('node:http');
@@ -62,6 +62,7 @@ let browser;
 (async () => {
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   for (const [name, engine, options] of profiles) {
+    console.log('Checking ' + name);
     browser = await engine.launch();
     const context = await browser.newContext(options), state = fixtureState(), errors = [], external = [];
     await context.addInitScript(initialState => {
@@ -154,10 +155,14 @@ let browser;
     assert.equal(await page.evaluate(() => document.activeElement?.matches('[data-account-menu-toggle]')), true, `${name}: Escape returns focus to the account control`);
     await toggle.click(); await menu.waitFor({ state: 'visible' });
     await page.screenshot({ path: path.join(shots, `${name}-account-menu.png`) });
-    await menu.getByRole('menuitem', { name: 'Set up Backup subscription profile' }).click({ delay: 1100 });
+    const setupItem = menu.getByRole('menuitem', { name: 'Set up Backup subscription profile' });
+    if (options.hasTouch) await setupItem.tap();
+    else await setupItem.click({ delay: 1100 });
     assert.equal(await page.evaluate(() => window.__setupCalls), 1, `${name}: first-use setup stays pinned to the original console`);
     await toggle.click(); await menu.waitFor({ state: 'visible' });
-    await menu.getByRole('menuitem', { name: 'Switch to Backup subscription profile' }).click();
+    const switchItem = menu.getByRole('menuitem', { name: 'Switch to Backup subscription profile' });
+    if (options.hasTouch) await switchItem.tap();
+    else await switchItem.click();
     await page.getByTitle('Account: Backup subscription profile').waitFor();
     assert.equal(await page.evaluate(() => window.__fixtureData.sessions[0].accountId), beta, `${name}: selected account updates in place`);
     const header = page.locator('.console-panel-header').first();
@@ -172,7 +177,7 @@ let browser;
     assert.equal(bounds.expand.right <= bounds.end.left, true, `${name}: expand and end controls remain separate`);
     await page.screenshot({ path: path.join(shots, `${name}-account-header.png`) });
 
-    await page.locator('[data-page="usage"]').evaluate(node => node.click());
+    await page.locator('.sidebar-bottom [data-page=settings]').click(); await page.locator('.settings-navigation [data-page=agent-settings]').click();
     await page.locator('#account-profile-form').waitFor();
     const betaRow = page.locator('.account-profile-row').filter({ hasText: 'Backup subscription profile' });
     await betaRow.getByRole('button', { name: 'Rename' }).click();
@@ -211,7 +216,7 @@ let browser;
     assert.equal(await page.evaluate(() => window.__loginCalls), 2, `${name}: retry starts the same profile login`);
     assert.equal(await page.evaluate(() => window.__renameCalls), 2, `${name}: rename failure and retry use the in-app dialog`);
     assert.equal(await page.locator('.account-profile-row').filter({ hasText: longLabel }).count(), 1);
-    await page.screenshot({ path: path.join(shots, `${name}-usage-accounts.png`) });
+    await page.screenshot({ path: path.join(shots, `${name}-agent-settings-accounts.png`) });
     await page.evaluate(async () => { await document.fonts.ready; await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))); });
     await page.addScriptTag({ url: '/_axe.js' });
     const violations = await page.evaluate(async () => (await window.axe.run(document, { runOnly: ['button-name', 'aria-allowed-attr', 'aria-required-children', 'aria-required-parent'] })).violations.map(item => ({ id: item.id, nodes: item.nodes.map(node => node.target) })));
@@ -219,7 +224,7 @@ let browser;
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true, `${name}: no horizontal overflow`);
     assert.deepEqual(errors, [], `${name}: no renderer errors`);
     assert.deepEqual(external, [], `${name}: no external requests`);
-    reports.push({ profile: name, emulated: name !== 'windows-chromium', checks: ['account popover open through unchanged state update', 'focus and target click', 'Arrow, Escape and focus return', 'account setup pinned to the original console', 'selected account header refresh and bounds', 'long account form retained through broadcast', 'retry login without duplicate profile and clear the successful form', 'selected ARIA checks', 'viewport overflow', 'no external requests'], screenshots: [`screenshots/${name}-account-menu.png`, `screenshots/${name}-account-header.png`, `screenshots/${name}-usage-accounts.png`] });
+    reports.push({ profile: name, emulated: true, checks: ['account popover open through unchanged state update', 'focus and target click', 'Arrow, Escape and focus return', 'account setup pinned to the original console', 'selected account header refresh and bounds', 'long account form retained through broadcast', 'retry login without duplicate profile and clear the successful form', 'selected ARIA checks', 'viewport overflow', 'no external requests'], screenshots: [`screenshots/${name}-account-menu.png`, `screenshots/${name}-account-header.png`, `screenshots/${name}-agent-settings-accounts.png`] });
     await context.close(); await browser.close(); browser = null;
   }
   fs.writeFileSync(path.join(runRoot, 'account-switching-visual-report.json'), JSON.stringify(reports, null, 2));

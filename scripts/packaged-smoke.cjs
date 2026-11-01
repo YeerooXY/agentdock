@@ -41,9 +41,10 @@ async function eventually(predicate) {
   const unexpected = packaged.filter(file => !allowed.has(file.split('/').filter(Boolean)[0]));
   assert.deepEqual(unexpected.slice(0, 20), [], 'Only allowlisted app files and production dependencies are packaged');
   assert.ok(!packaged.some(file => /\/(vault|workspace|settings|ledger)\.json$/.test(file) || /\/(test-data|artifacts|\.git)(\/|$)/.test(file)), 'No user data or development artifacts');
+  assert.ok(packaged.some(file => file.endsWith('/electron/pi-worker-runner.mjs')), 'The Pi worker runner ships with the app');
   const runtime = path.join(resources, 'runtime'), node = path.join(runtime, windows ? 'node.exe' : path.join('bin', 'node'));
   assert.equal(fs.existsSync(path.join(resources, 'mobile-network.ps1')), windows, 'The Windows router and firewall helper ships only on Windows, outside ASAR');
-  assert.deepEqual(fs.readdirSync(runtime).sort(), ['agent-event.cjs', 'agent-tools.cjs', 'draft-editor.cjs', 'draft-policy.cjs', 'meshy-cli', 'meshy-mcp.cjs', 'mirofish-mcp.cjs', 'npm', ...(windows ? ['node.exe'] : ['bin', 'node-source.sha256']), 'NODE-LICENSE.txt', 'THIRD-PARTY-NOTICES.txt', 'runtime.json'].sort());
+  assert.deepEqual(fs.readdirSync(runtime).sort(), ['agent-event.cjs', 'agent-tools.cjs', 'draft-editor.cjs', 'draft-policy.cjs', 'meshy-cli', 'meshy-mcp.cjs', 'mirofish-mcp.cjs', 'upscayl-mcp.cjs', 'npm', ...(windows ? ['node.exe'] : ['bin', 'node-source.sha256']), 'NODE-LICENSE.txt', 'THIRD-PARTY-NOTICES.txt', 'runtime.json'].sort());
   assert.equal(execFileSync(node, [path.join(runtime, 'npm', 'bin', 'npm-cli.js'), '--version'], { env, windowsHide: true, encoding: 'utf8' }).trim(), require('npm/package.json').version, 'Bundled installer runs without system Node/npm');
   const localPackage = path.join(work, 'fixture-cli'), installedCli = path.join(work, 'installed-cli');
   fs.mkdirSync(localPackage); fs.writeFileSync(path.join(localPackage, 'package.json'), JSON.stringify({ name: 'dock-offline-fixture', version: '1.0.0', bin: { 'dock-fixture': 'cli.js' } }));
@@ -102,8 +103,8 @@ async function eventually(predicate) {
   assert.equal((await client.callTool({ name: 'dock_context', arguments: {} })).content[0].text, 'PACKAGED_CONTEXT_OK');
   await client.close(); client = null;
 
-  // The web design guide is opt-in; turning it on adds it to the shared instructions.
-  assert.doesNotMatch((await invoke('state')).shared.summary, /website_guide/);
+  // Website tasks receive the guide in the compact startup instructions.
+  assert.match((await invoke('state')).shared.summary, /website_guide/);
   await invoke('shared.guides', ['web-design']);
   assert.match((await invoke('state')).shared.summary, /website_guide/);
   await invoke('vault.save', { provider: 'meshy', label: 'Meshy test', key: 'TEST_ONLY_NO_REQUESTS' });

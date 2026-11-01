@@ -1,6 +1,6 @@
 export const settingsSections = [
   ['general-settings', 'General'], ['appearance', 'Appearance'],
-  ['console-settings', 'Consoles'], ['devices', 'Devices'],
+  ['console-settings', 'Consoles'], ['agent-settings', 'Agents'], ['devices', 'Devices'],
   ['api-settings', 'API'], ['tools', 'Tools'],
   ['instructions', 'Instructions'],
 ];

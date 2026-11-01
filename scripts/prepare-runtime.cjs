@@ -100,7 +100,7 @@ async function download(url) {
   try { previousVersion = JSON.parse(fs.readFileSync(path.join(output, 'runtime.json'), 'utf8')).node; } catch {}
   if (!fs.existsSync(license) || previousVersion !== version) fs.writeFileSync(license, await download(`https://raw.githubusercontent.com/nodejs/node/v${version}/LICENSE`));
   const result = await build({
-    absWorkingDir: root, entryPoints: { 'mirofish-mcp': 'electron/mirofish-mcp.cjs', 'agent-event': 'electron/agent-event.cjs', 'agent-tools': 'electron/agent-tools.cjs', 'meshy-mcp': 'node_modules/@meshy-ai/meshy-mcp-server/dist/index.js' },
+    absWorkingDir: root, entryPoints: { 'upscayl-mcp': 'electron/upscayl-mcp.cjs', 'mirofish-mcp': 'electron/mirofish-mcp.cjs', 'agent-event': 'electron/agent-event.cjs', 'agent-tools': 'electron/agent-tools.cjs', 'meshy-mcp': 'node_modules/@meshy-ai/meshy-mcp-server/dist/index.js' },
     alias: { dotenv: path.join(root, 'electron', 'no-dotenv.cjs') },
     plugins: [meshyZodPlugin()],
     outdir: output, outExtension: { '.js': '.cjs' }, bundle: true,

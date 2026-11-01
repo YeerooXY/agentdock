@@ -93,11 +93,15 @@ class Screenshots extends EventEmitter {
     return this.save(this.clip.image, item.hash);
   }
   save(image, hash) {
+    // Reusing the same clipboard image must keep its path across clock ticks.
+    // If that saved file was removed, the next paste recreates it normally.
+    if (this.savedClip?.hash === hash && fs.existsSync(this.savedClip.file)) return this.savedClip.file;
     fs.mkdirSync(this.saved, { recursive: true });
     const stamp = new Date().toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 15);
     const file = path.join(this.saved, `screenshot-${stamp}-${hash.slice(0, 6)}.png`);
     if (!fs.existsSync(file)) fs.writeFileSync(file, image.toPNG());
     this.prune();
+    this.savedClip = { hash, file };
     return file;
   }
   format(session, file) {

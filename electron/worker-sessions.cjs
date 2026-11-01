@@ -144,9 +144,13 @@ class WorkerSessions {
     if (saved) this.outcomes.add(job.id);
     const item = this.sessions.items.get(job.workerSession?.id);
     if (!item || item.processAlive || this.loop.unconfirmed.has(job.id)) return;
+    const stateChanged = item.state !== job.state;
     item.state = job.state;
     if (!this.outcomes.has(job.id)) return;
-    if (!this.sessions.ownerConsoles || this.sessions.ownerConsoles.isProtected(item.consoleKey)) { this.sessions.emit('changed'); return; }
+    if (!this.sessions.ownerConsoles || this.sessions.ownerConsoles.isProtected(item.consoleKey)) {
+      if (stateChanged || saved) this.sessions.emit('changed');
+      return;
+    }
     this.sessions.items.delete(item.id); this.placement?.panels.delete(item.consoleKey); this.history.delete(job.id); this.sessions.emit('changed');
   }
   dispose() { this.sessions.ownerConsoles?.removeListener('changed', this.reconcile); this.mail.clear(); this.history.clear(); this.outcomes.clear(); }

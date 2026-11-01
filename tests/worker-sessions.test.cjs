@@ -228,6 +228,38 @@ test('completion saves the outcome before removing an untouched worker', async t
   assert.equal(f.sessions.items.has(item.id), false);
 });
 
+test('typing around a retained completed worker does not republish unchanged sessions', async t => {
+  const f = fixture(t, [{}, {}]);
+  await f.loop.runTask(f.job, 'mock-check');
+  const item = f.sessions.items.get(f.job.workerSession.id);
+  assert.equal(f.owners.interaction(item.consoleKey, item.launchId, 'typing', { trusted: true }), true);
+  let now = Date.now(), changes = 0;
+  f.owners.now = () => ++now;
+  f.sessions.on('changed', () => changes++);
+  for (let index = 0; index < 100; index++) {
+    assert.equal(f.owners.interaction(item.consoleKey, item.launchId, 'typing', { trusted: true }), true);
+  }
+  assert.equal(changes, 0, 'owner activity must not repeatedly publish a finished worker');
+  assert.equal(f.sessions.items.get(item.id), item, 'the owner-managed panel remains available');
+  assert.equal(item.state, 'passed');
+});
+
+test('retained worker completion publishes saved outcomes and real state changes', t => {
+  const f = fixture(t), item = f.open();
+  let changes = 0;
+  f.sessions.on('changed', () => changes++);
+  f.job.state = 'passed';
+  f.bridge.complete(f.job, { saved: true });
+  assert.equal(changes, 1);
+  f.bridge.complete(f.job);
+  assert.equal(changes, 1, 'unknown activity preserves the panel without another update');
+  f.job.state = 'needs-you';
+  f.bridge.complete(f.job);
+  assert.equal(changes, 2);
+  assert.equal(item.state, 'needs-you');
+  assert.equal(f.sessions.items.get(item.id), item);
+});
+
 test('file-prompt adapters do not write mailbox steering to plaintext files', t => {
   const f = fixture(t); f.job.implementer.provider = 'opencode';
   const item = f.open();

@@ -2,7 +2,7 @@
 const test = require('node:test'), assert = require('node:assert/strict'), fs = require('node:fs'), os = require('node:os'), path = require('node:path');
 const { Projects } = require('../electron/projects.cjs');
 const { Sessions } = require('../electron/sessions.cjs');
-const { cells, planOpening, planLayout, planGrid } = require('../electron/console-layout.cjs');
+const { cells, occupied, planOpening, planLayout, planGrid } = require('../electron/console-layout.cjs');
 const { MessageUsage, apiMessages, codexMessages, claudeMessage } = require('../electron/message-usage.cjs');
 const { runApi } = require('../electron/api-run.cjs');
 const temp = t => { const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dock-project-test-')); t.after(() => fs.rmSync(root, { recursive: true, force: true })); return root; };
@@ -62,6 +62,23 @@ test('a full three-row layout shrinks one panel; the tenth console grows the gri
   const moved = planLayout([...full, { id:'10', slot:10, alive:true }], { id:'10', slot:12 }, tenth.grid);
   assert.equal(moved.find(x=>x.id==='10').slot,12);
 });
+test('hidden workers without grid slots do not block opening owner consoles', () => {
+  const grid = { columns: 2, rows: 2 };
+  const items = [
+    { id: 'owner', slot: 1, width: 2, height: 1, alive: true },
+    { id: 'restore', slot: 3, alive: false, restoreError: 'Retry available' },
+    { id: 'worker', slot: null, width: 1, height: 1, alive: true, hidden: true }
+  ];
+  const before = structuredClone(items);
+  assert.deepEqual([...occupied(items, grid)], [1, 2, 3]);
+  const opening = planOpening(items, {}, grid);
+  assert.equal(opening.slot, 4);
+  assert.deepEqual(opening.grid, grid);
+  assert.deepEqual(opening.plan.map(x => x.id), ['owner', 'restore']);
+  assert.deepEqual(items, before, 'layout calculation must preserve owner and worker state');
+  assert.throws(() => occupied([{ id: 'invalid', slot: null, alive: true }], grid), /inside the console grid/);
+});
+
 test('Codex per-turn counters include all tool steps, deduplicate updates and leave truncated baselines unknown', () => {
   const at = '2026-10-18T12:00:00Z', event = payload => ({ type:'event_msg', timestamp:at, payload });
   const tokens = (input,output) => event({ type:'token_count', info:{ total_token_usage:{ input_tokens:input, output_tokens:output, cached_input_tokens:0 } } });

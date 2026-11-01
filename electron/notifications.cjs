@@ -1,5 +1,10 @@
 'use strict';
 
+function isForeground(window) {
+  return !!(window && !window.isDestroyed?.() && window.isFocused?.() &&
+    window.isVisible?.() !== false && window.isMinimized?.() !== true);
+}
+
 // Keep native notifications alive until they close, including while Paddock is in
 // the tray. The same activation path handles Windows toast and balloon clicks.
 class DockNotifications {
@@ -19,8 +24,10 @@ class DockNotifications {
     window.webContents.send('dock:notice', item);
   }
   show(item) {
+    if (isForeground(this.getWindow())) return;
     const activate = () => this.open(item).catch(() => this.reveal());
     const fallback = () => {
+      if (isForeground(this.getWindow())) return;
       const tray = this.getTray();
       if (tray && process.platform === 'win32') {
         this.balloonClick = activate;
@@ -39,4 +46,4 @@ class DockNotifications {
     } catch { fallback(); }
   }
 }
-module.exports = { DockNotifications };
+module.exports = { DockNotifications, isForeground };

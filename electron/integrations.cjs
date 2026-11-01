@@ -7,6 +7,7 @@ const { readJson, atomicJson } = require('./storage.cjs');
 const { findProgram } = require('./adapters.cjs');
 const { mirofishEndpoint, checkMiroFish } = require('./mirofish.cjs');
 const { ManagedDownloads } = require('./managed-downloads.cjs');
+const { discoverUpscayl, installUpscayl, VERSION: UPSCAYL_VERSION } = require('./upscayl-install.cjs');
 const BLENDER_VERSION = '2.1.9';
 const MESHY_VERSION = '0.6.4';
 const REA_VERSION = '6.7.0';
@@ -15,7 +16,8 @@ const definitions = [
   { id: 'unity', name: 'Unity', description: 'Work with scenes, assets and scripts in your Unity project.', version: 'Unity CLI', docs: 'https://docs.unity.com/en-us/unity-cli/unity-cli-reference' },
   { id: 'meshy', name: 'Meshy AI', description: 'Generate, texture, rig and download 3D assets.', version: MESHY_VERSION, docs: 'https://www.meshy.ai/developers/keys' },
   { id: 'rea', name: 'Reverse Engineer Anything', description: 'Inspect existing apps, websites and binaries, trace features and explain the evidence.', version: REA_VERSION, docs: 'https://github.com/morluto/rea#readme' },
-  { id: 'mirofish', name: 'MiroFish', description: 'Connect a local MiroFish service to rehearse audience reactions and explore launch scenarios.', version: 'HTTP adapter', docs: 'https://github.com/666ghj/MiroFish#readme' }
+  { id: 'mirofish', name: 'MiroFish', description: 'Connect a local MiroFish service to rehearse audience reactions and explore launch scenarios.', version: 'HTTP adapter', docs: 'https://github.com/666ghj/MiroFish#readme' },
+  { id: 'upscayl', name: 'Upscayl', description: 'Enlarge local images with your GPU and save new PNG copies.', version: UPSCAYL_VERSION, docs: 'https://github.com/upscayl/upscayl/wiki/Guide' }
 ];
 function directories(root) { try { return fs.readdirSync(root, { withFileTypes: true }).filter(x => x.isDirectory()).map(x => path.join(root, x.name)).sort((a, b) => b.localeCompare(a, undefined, { numeric: true })); } catch { return []; } }
 function existing(files) { return files.filter(Boolean).find(file => fs.existsSync(file)); }
@@ -47,7 +49,9 @@ function unityProject(value) {
   return path.resolve(value);
 }
 class ToolIntegrations {
-  constructor(root, runtime, { detect = discover, run = runProgram, probeMiroFish = checkMiroFish, onChange = () => {} } = {}) {
+  constructor(root, runtime, { detect = discover, run = runProgram, probeMiroFish = checkMiroFish, onChange = () => {}, platform = process.platform, detectUpscayl = discoverUpscayl, installImageTool = installUpscayl } = {}) {
+    Object.assign(this, { dataRoot: root, platform, detectUpscayl, installImageTool });
+    this.upscayl = detectUpscayl(root, platform);
     this.downloads = new ManagedDownloads(root);
     this.root = path.join(root, 'integrations'); fs.mkdirSync(this.root, { recursive: true });
     this.runtime = runtime; this.detect = detect; this.run = run; this.probeMiroFish = probeMiroFish; this.onChange = onChange;
@@ -60,16 +64,25 @@ class ToolIntegrations {
   reaPackageReady() { return fs.existsSync(this.reaServer()) && readJson(path.join(this.reaFolder(), 'node_modules', 'rea-agents', 'package.json'), {}).version === REA_VERSION; }
   reaReady() { return this.installed.rea === REA_VERSION && this.reaPackageReady(); }
   mirofishAvailable() { return !!this.runtime.node && fs.existsSync(this.runtime.mirofish || ''); }
-  refresh() { this.programs = this.detect(); }
+  refresh() { this.programs = this.detect(); this.upscayl = this.detectUpscayl(this.dataRoot, this.platform); }
   snapshot(connections, keys) {
     return definitions.map(item => {
       const connection = connections.find(x => x.integration === item.id);
+      if (item.id === 'upscayl') {
+        const available = this.platform === 'win32' && !!this.runtime.node && fs.existsSync(this.runtime.upscayl || '');
+        return { ...item, available, ready: available && !!this.upscayl, connected: !!connection, enabled: connection?.enabled !== false, setupNote: '', job: this.jobs.get(item.id) || null };
+      }
       const ready = item.id === 'mirofish' ? this.mirofishAvailable() && !!connection : item.id === 'rea' ? !!this.runtime.node && this.reaReady() : item.id === 'blender' ? fs.existsSync(this.blenderServer()) && this.installed.blender === BLENDER_VERSION : item.id === 'unity' ? !!this.programs.unity && !!connection?.projectPath : !!this.runtime.node && fs.existsSync(this.runtime.meshy) && !!connection && keys.some(x => x.id === connection.envKeys?.MESHY_API_KEY?.key);
       return { ...item, ready, connected: !!connection, enabled: connection?.enabled !== false, setupNote: item.id === 'blender' ? this.installed.blenderNote || '' : '', projectPath: connection?.projectPath || '', backendUrl: connection?.backendUrl || 'http://127.0.0.1:5001', keyId: connection?.envKeys?.MESHY_API_KEY?.key || '', available: item.id === 'mirofish' ? this.mirofishAvailable() : item.id === 'rea' ? !!this.runtime.node && fs.existsSync(this.runtime.npm || '') : item.id === 'blender' ? !!this.programs.blender && !!this.programs.python : item.id === 'unity' ? !!this.programs.unity : !!this.runtime.node && fs.existsSync(this.runtime.meshy), job: this.jobs.get(item.id) || null };
     });
   }
   resolve(connection) {
     if (!connection.integration) return connection;
+    if (connection.integration === 'upscayl') {
+      const app = this.detectUpscayl(this.dataRoot, this.platform);
+      if (!app || !this.runtime.node || !fs.existsSync(this.runtime.upscayl || '')) throw new Error('Set up Upscayl from Tools first.');
+      return { ...connection, command: this.runtime.node, args: [this.runtime.upscayl, app.engine, app.models], cwd: app.directory };
+    }
     if (connection.integration === 'mirofish') {
       if (!this.mirofishAvailable()) throw new Error('The MiroFish adapter is missing. Reinstall Paddock.');
       return { ...connection, command: this.runtime.node, args: [this.runtime.mirofish, mirofishEndpoint(connection.backendUrl)], cwd: this.root };
@@ -98,7 +111,12 @@ class ToolIntegrations {
     try {
       this.refresh();
       let details;
-      if (id === 'blender') {
+      if (id === 'upscayl') {
+        if (!this.runtime.node || !fs.existsSync(this.runtime.upscayl || '')) throw new Error('The Upscayl adapter is missing. Rebuild or reinstall Paddock.');
+        if (this.platform !== 'win32') throw new Error('Paddock’s Upscayl integration currently supports Windows.');
+        this.upscayl = this.upscayl || await this.installImageTool(this.dataRoot, { platform: this.platform, progress });
+        details = { command: this.runtime.node, args: [this.runtime.upscayl, this.upscayl.engine, this.upscayl.models], cwd: this.upscayl.directory, envKeys: {} };
+      } else if (id === 'blender') {
         if (!this.programs.blender || !this.programs.python) throw new Error('Install Blender first, then check again.');
         const folder = path.join(this.root, 'blender'), python = path.join(folder, 'Scripts', 'python.exe');
         progress('Installing Blender tools…');

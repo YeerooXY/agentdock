@@ -79,7 +79,7 @@ const started = { at: new Date().toISOString(), branch: execFileSync('git', ['br
   await until(() => fs.existsSync(bridgeFile));
   const grant = JSON.parse(fs.readFileSync(bridgeFile, 'utf8').replace(/^\uFEFF/, '')); fs.unlinkSync(bridgeFile);
   async function tool(name, args = {}) { const r = await fetch(grant.url, { method:'POST', headers:{ 'Content-Type':'application/json', Authorization:'Bearer '+grant.token }, body:JSON.stringify({name:'dock_call',arguments:{tool:name,arguments:args}}) }); const v=await r.json(); if(v.isError)throw Error(v.content[0].text); return JSON.parse(v.content[0].text); }
-  await tool('dock/start_turn'); await tool('dock/save_result', { title:'Website check',text:'# Website check\n\nSynthetic completed result for the walkthrough. No AI work was submitted.',kind:'report',status:'passed',summary:'Example output saved by an agent.' }); await tool('dock/finish_turn');
+  const reportTurn = await tool('dock/start_turn'); const reportOutput = await tool('dock/save_result', { title:'Website check',text:'# Website check\n\nSynthetic completed result for the walkthrough. No AI work was submitted.',kind:'report',status:'passed',summary:'Example output saved by an agent.' }); await tool('dock/finish_turn', { turnId: reportTurn.turnId, outcome: 'no-change', summary: 'Synthetic review fixture.', nextStep: 'None', outputs: 'saved', resultIds: [reportOutput.id] });
   await openPage(page, 'results'); await openResultFolder(page); await page.locator('[data-wb=preview]').first().waitFor();
   await capture('13-completed-results', 'several-projects', 'Find completed work in Results', { headings: await page.locator('.result-console-heading h2').allTextContents() }, 'Completion was supplied by the fixture, not by a paid model or participant.');
   await page.locator('[data-wb=preview]').first().click(); await page.locator('.wb-dialog[open]').waitFor();
@@ -87,7 +87,8 @@ const started = { at: new Date().toISOString(), branch: execFileSync('git', ['br
   await page.keyboard.press('Escape');
   await call('settings', { notifications:false });
   const before = (await call('state')).workbench.results.length;
-  await tool('dock/start_turn');
+  const emptyTurn = await tool('dock/start_turn');
+  await tool('dock/finish_turn', { turnId: emptyTurn.turnId, outcome: 'no-change', summary: 'Synthetic text-only fixture.', nextStep: 'None', outputs: 'none' });
   const empty = await tool('dock/notify', { title:'Text-only completion fixture',kind:'ready' });
   await app.evaluate(({ BrowserWindow }, notice) => BrowserWindow.getAllWindows()[0].webContents.send('dock:notice',notice), empty);
   // Text-only turns open their console when it is still open; otherwise Results explains.

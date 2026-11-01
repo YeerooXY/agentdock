@@ -32,6 +32,7 @@ test('picks the newest screenshot file and quotes paths with spaces', async t =>
 });
 
 test('a new clipboard snip is saved once and only app-saved files are pruned', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-10-31T12:00:00Z') });
   const { root, folder, clipboard, shots } = fixture(t);
   fs.writeFileSync(path.join(folder, 'old.png'), 'a'); fs.utimesSync(path.join(folder, 'old.png'), new Date(1000), new Date(1000));
   await shots.refresh({ initial: true });
@@ -42,6 +43,7 @@ test('a new clipboard snip is saved once and only app-saved files are pruned', a
   fs.mkdirSync(saved); fs.writeFileSync(keep, 'x');
   for (let i = 0; i < 25; i++) fs.writeFileSync(path.join(saved, `screenshot-20260101-0000${String(i).padStart(2, '0')}-abcdef.png`), 'x');
   const first = shots.file();
+  t.mock.timers.tick(2000);
   assert.equal(shots.file(), first);
   assert.equal(fs.readFileSync(first, 'utf8'), 'png:snip');
   assert.ok(fs.existsSync(keep));
@@ -82,11 +84,20 @@ test('plain PowerShell/CMD consoles are refused with a clear message', async t =
 });
 
 test('Ctrl+V pastes a clipboard image as a saved path and text as text', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-10-31T12:00:00Z') });
   const { root, clipboard, shots } = fixture(t);
   clipboard.text = 'plain text';
   assert.equal(await shots.paste(open), 'plain text');
   clipboard.image = 'pasted';
   const value = await shots.paste(open);
   assert.ok(value.includes(path.join(root, 'screenshots')));
+  t.mock.timers.tick(2000);
+  assert.equal(await shots.paste(open), value);
+  const saved = shots.savedClip.file;
+  fs.unlinkSync(saved);
+  await shots.paste(open);
+  assert.ok(fs.existsSync(shots.savedClip.file));
+  clipboard.image = 'different';
+  assert.notEqual(await shots.paste(open), value);
   await assert.rejects(shots.paste({ alive: true, provider: 'shell' }), /cannot open images/);
 });

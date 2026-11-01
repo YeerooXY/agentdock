@@ -20,7 +20,7 @@ export function vimControls({ context, focusSlot, action, onError }) {
       <div><dt><kbd>g c</kbd> <kbd>g u</kbd> <kbd>g a</kbd></dt><dd>Consoles · Usage · API settings</dd></div>
       <div><dt><kbd>g v</kbd> <kbd>g t</kbd> <kbd>g i</kbd></dt><dd>Keys · Tools · Instructions</dd></div>
       <div><dt><kbd>g s</kbd></dt><dd>Settings</dd></div>
-      <div><dt><kbd>b</kbd> <kbd>f</kbd> <kbd>d</kbd></dt><dd>Sidebar · Fullscreen · Dock</dd></div>
+      <div><dt><kbd>b</kbd> <kbd>f</kbd> <kbd>d</kbd></dt><dd>Navigation · Fullscreen · Dock</dd></div>
       <div><dt><kbd>?</kbd></dt><dd>This shortcut list</dd></div>
     </dl><p class="vim-help-note">On other pages, j/k scroll; Ctrl+d/u move half a page. Terminal keys, including Escape and Ctrl+w, keep working while you type.</p>`;
   document.querySelector('#app').append(help);
@@ -124,7 +124,7 @@ export function vimControls({ context, focusSlot, action, onError }) {
         const occupied = current.sessions.filter(x => x.alive || x.restoreError).flatMap(x => Array.from({ length: x.height || 1 }, (_, y) => Array.from({ length: x.width || 1 }, (_, dx) => x.slot + y * columns + dx)).flat());
         const empty = !occupied.includes(slot) ? slot : Array.from({ length: columns * rows }, (_, i) => i + 1).find(x => !occupied.includes(x));
         if (empty) select(empty); run(key === 'n' ? 'new' : 'choose', empty || 0);
-      } else run({ i: 'type', r: 'rename', b: 'sidebar', f: 'fullscreen', d: 'dock' }[key]);
+      } else run({ i: 'type', r: 'rename', b: 'navigation', f: 'fullscreen', d: 'dock' }[key]);
     }
   }, true);
   return { refresh, enterNormal, showHelp, get slot() { return slot; } };

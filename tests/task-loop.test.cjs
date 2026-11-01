@@ -5,6 +5,7 @@ const { EventEmitter } = require('node:events');
 const { execFile, execFileSync } = require('node:child_process');
 const { TaskLoop, implementerLaunch, openCodeEvents, checkLaunch } = require('../electron/task-loop.cjs');
 const { collectChanges } = require('../electron/delegation.cjs');
+const { strataTaskCandidates, STRATA_MODEL, STRATA_ACCOUNT } = require('../electron/local-models.cjs');
 
 const codex = { id: 'codex:default', provider: 'codex', label: 'Codex', executable: '/fake/codex.exe' };
 const claude = { id: 'claude:default', provider: 'claude', label: 'Claude Code', executable: '/fake/claude.exe' };
@@ -61,6 +62,159 @@ function fixture(t, script = [], overrides = {}) {
   return { loop, start, done, root, repo, temp, options, spawned, saved, calls, repositories, script };
 }
 const edit = cwd => fs.writeFileSync(path.join(cwd, 'app.js'), 'const a = 1;\nconst b = 2;\n');
+
+function nativeEvents(provider, text, failed = false) {
+  if (provider === 'cline') return JSON.stringify({ type: 'run_result', finishReason: failed ? 'error' : 'completed', text, aggregateUsage: { inputTokens: 100, outputTokens: 5, cacheReadTokens: 80 } }) + '\n';
+  if (provider === 'gemini') return [{ type: 'message', role: 'assistant', content: text }, { type: 'result', status: failed ? 'error' : 'success', stats: { input_tokens: 100, output_tokens: 5, cached: 80 } }].map(JSON.stringify).join('\n') + '\n';
+  if (provider === 'droid') return JSON.stringify({ type: 'result', subtype: failed ? 'error' : 'success', is_error: failed, result: text, usage: { input_tokens: 20, cache_read_input_tokens: 80, cache_creation_input_tokens: 0, output_tokens: 5 } }) + '\n';
+  if (provider === 'kimi') return JSON.stringify(failed ? { type: 'error' } : { role: 'assistant', content: text }) + '\n';
+  return (provider === 'antigravity' ? [{ event: 'result', result: { status: failed ? 'ERROR' : 'SUCCESS', response: text,
+    usage: { input_tokens: 20, cache_read_tokens: 80, output_tokens: 5 } } }]
+    : provider === 'grok' ? [{ type: 'text', data: text }, { type: 'end', stopReason: failed ? 'max_turns' : 'end_turn',
+      usage: { input_tokens: 20, cache_read_input_tokens: 80, cache_creation_input_tokens: 0, output_tokens: 5 } }]
+    : [{ type: 'assistant.message', data: { content: text } }, { type: 'session.usage_checkpoint', data: {
+      accountingSnapshot: { modelMetrics: { auto: { usage: { inputTokens: 100, cacheReadTokens: 80, outputTokens: 5 } } } } } },
+      { type: 'result', exitCode: failed ? 1 : 0 }]).map(e => JSON.stringify(e)).join('\n') + '\n';
+}
+for (const provider of ['cline', 'gemini', 'droid', 'kimi']) test(`${provider} native adapter integrates both task roles with temporary settings`, async t => {
+  const account = { id: `${provider}:default`, provider, label: provider, executable: `/fake/${provider}.exe`, signedIn: true, funding: 'free' };
+  const f = fixture(t, [{ output: nativeEvents(provider, 'Updated app.js.'), edit }, { type: 'check' }, { type: 'review' }], { candidates: () => [account, claude] });
+  const built = await f.done(await f.start({ implementer: { accountId: account.id }, maxRounds: 1 }));
+  assert.equal(built.state, 'passed');
+  if (provider === 'cline') assert.equal(f.spawned[0].options.env.CLINE_SESSION_BACKEND_MODE, 'local');
+  if (provider === 'gemini') assert.ok(f.spawned[0].options.env.GEMINI_CLI_SYSTEM_SETTINGS_PATH);
+  f.loop.candidates = () => [codex, account]; f.script.push({ type: 'implement', edit }, { type: 'check' }, { output: nativeEvents(provider, approve) });
+  const reviewed = await f.done(await f.start({ reviewer: { accountId: account.id }, maxRounds: 1 }));
+  assert.equal(reviewed.state, 'passed'); assert.equal(reviewed.rounds[0].review.verdict, 'approve');
+});
+for (const provider of ['antigravity', 'copilot', 'grok']) {
+  const account = { id: `${provider}:default`, label: provider, provider, executable: `/fake/${provider}.exe`, signedIn: true, funding: 'free' };
+  test(`${provider} builds and reviews through the common task path with context and usage`, async t => {
+    let promptFile;
+    const inspect = invocation => {
+      let brief = invocation.prompt;
+      if (provider === 'grok') { promptFile = invocation.args[invocation.args.indexOf('--prompt-file') + 1]; brief = fs.readFileSync(promptFile, 'utf8'); }
+      if (provider === 'antigravity') brief = JSON.parse(brief).message.content;
+      assert.match(brief, /Use the selected paper ribbon composition/);
+      assert.equal(invocation.args.some(a => a.includes('selected paper ribbon')), false);
+    };
+    const f = fixture(t, [{ output: nativeEvents(provider, 'Updated app.js.'), edit, inspect }, { type: 'check' }, { type: 'review' }],
+      { candidates: () => [account, claude], getInstructions: () => 'Use the selected paper ribbon composition.' });
+    const job = await f.done(await f.start({ implementer: { accountId: account.id }, maxRounds: 1 }));
+    assert.equal(job.state, 'passed'); assert.equal(job.rounds[0].review.verdict, 'approve');
+    const status = await f.loop.status(job.id, f.repo);
+    assert.equal(status.rounds[0].implement.usage.inputTokens, 100);
+    assert.equal(status.usageSummary.byFunding.free.input, 100); assert.equal(status.usageSummary.byFunding.free.cached, 80);
+    assert.equal(status.usageSummary.cloudComplete, false);
+    if (promptFile) assert.equal(fs.existsSync(promptFile), false);
+    f.options.candidates = () => [codex, account]; f.loop.candidates = f.options.candidates;
+    f.script.push({ type: 'implement', edit }, { type: 'check' }, { output: nativeEvents(provider, approve), inspect });
+    const reviewed = await f.done(await f.start({ reviewer: { accountId: account.id }, maxRounds: 1 }));
+    assert.equal(reviewed.state, 'passed'); assert.equal(reviewed.rounds[0].review.usage.inputTokens, 100);
+  });
+  test(`${provider} reports provider failure and keeps usage without another attempt`, async t => {
+    const f = fixture(t, [{ output: nativeEvents(provider, 'Could not finish.', true) }], { candidates: () => [account] });
+    const job = await f.done(await f.start({ implementer: { accountId: account.id }, reviewer: null, checks: '' }));
+    assert.notEqual(job.state, 'passed'); assert.equal(f.spawned.length, 1); assert.equal(job.maxRounds, 1);
+    assert.equal(job.rounds[0].implement.usage.inputTokens, 100);
+    assert.equal((await f.loop.status(job.id, f.repo)).usageSummary.byFunding.free.failed, 1);
+  });
+  test(`${provider} stop terminates its worker and removes any private prompt`, async t => {
+    const f = fixture(t, [{ hold: true }], { candidates: () => [account] });
+    const job = await f.start({ implementer: { accountId: account.id }, reviewer: null, checks: '' });
+    for (let i = 0; !f.spawned.length && i < 100; i++) await new Promise(r => setTimeout(r, 10));
+    assert.equal(f.spawned.length, 1);
+    await f.loop.stop(job.id); await f.done(job);
+    assert.equal(f.spawned[0].child.killed, true); assert.equal(f.loop.jobs.get(job.id).state, 'stopped');
+    if (provider === 'grok') assert.equal(fs.existsSync(f.spawned[0].args[f.spawned[0].args.indexOf('--prompt-file') + 1]), false);
+  });
+}
+
+test('each builder and reviewer turn receives current shared guidance', async t => {
+  let guidance = 'Use the selected bakery reference.';
+  const f = fixture(t, [{ type: 'implement', edit, inspect: invocation => {
+    assert.ok(invocation.prompt.includes(guidance));
+    guidance = 'Keep the actual opening hours during review.';
+  } }, { type: 'check' }, { type: 'review', inspect: invocation => {
+    assert.ok(invocation.prompt.includes(guidance));
+    assert.ok(!invocation.args.some(arg => arg.includes(guidance)));
+  } }], { getInstructions: (job, phase) => {
+    assert.equal(phase.role, guidance.startsWith('Use') ? 'builder' : 'reviewer');
+    assert.equal(phase.followup, false);
+    return guidance;
+  } });
+  assert.equal((await f.done(await f.start())).state, 'passed');
+});
+
+test('fix prompts supersede old findings and retain the last review when checks skip a new one', () => {
+  const job = { title: 'Repair page', criteria: 'Keep the selected design', workFolder: '/repo', rounds: [
+    { number: 1, check: { state: 'failed', output: 'obsolete failure' }, review: { state: 'done', findings: ['old defect'] } },
+    { number: 2, check: { state: 'passed' }, review: { state: 'done', findings: ['current defect', 'current defect'] } },
+    { number: 3, check: { state: 'failed', output: 'current failure' }, review: { state: 'skipped', findings: [] } }
+  ] };
+  const brief = TaskLoop.prototype.prompt(job, { files: ['page.html'], untracked: [] });
+  assert.ok(!brief.includes('obsolete failure')); assert.ok(!brief.includes('old defect'));
+  assert.ok(brief.includes('current failure')); assert.equal(brief.match(/current defect/g).length, 1);
+  assert.equal(job.rounds[0].review.findings[0], 'old defect', 'History remains intact.');
+});
+
+test('OpenCode receives shared guidance in its prompt file without broader permissions', async t => {
+  const guidance = 'Use the supplied website study.';
+  const f = fixture(t, [{ output: JSON.stringify({ type: 'text', part: { text: 'Updated the page.' } }) + '\n', edit, inspect: invocation => {
+    const file = invocation.args[invocation.args.indexOf('-f') + 1];
+    assert.ok(fs.readFileSync(file, 'utf8').includes(guidance));
+    assert.equal(JSON.parse(invocation.options.env.OPENCODE_PERMISSION).external_directory, 'deny');
+  } }], { candidates: () => [opencode], getInstructions: () => guidance });
+  const job = await f.done(await f.start({ implementer: { accountId: opencode.id, model: 'opencode-go/test' }, reviewer: null, checks: '' }));
+  assert.equal(job.state, 'passed');
+});
+test('local implementation edits, runs checks and returns an independent review through task status', async t => {
+  const profiles = [{ id: 'strata', protocol: 'chat', url: 'http://localhost:9090/v1/chat/completions', keyId: '' }];
+  const f = fixture(t, [{ output: JSON.stringify({ type: 'text', part: { text: 'Updated app.js locally.' } }) + '\n', edit, inspect: invocation => {
+    assert.equal(invocation.args[2], STRATA_MODEL);
+    const config = JSON.parse(invocation.options.env.OPENCODE_CONFIG_CONTENT);
+    assert.equal(config.model, STRATA_MODEL); assert.equal(config.small_model, STRATA_MODEL);
+    assert.deepEqual(config.enabled_providers, ['strata']);
+    assert.equal(config.provider.strata.options.baseURL, 'http://localhost:9090/v1');
+    assert.equal(config.provider.strata.options.apiKey, undefined);
+    assert.equal(config.permission.edit, 'allow'); assert.equal(config.permission.bash, 'deny');
+    assert.equal(config.permission.webfetch, 'deny');
+  } }, { type: 'check', output: 'Checks passed' }, { type: 'review' }], {
+    candidates: () => [...strataTaskCandidates(opencode.executable, profiles), claude], getProfiles: () => profiles,
+    environment: () => ({ OPENCODE_CONFIG_CONTENT: '{"model":"cloud/unsafe"}', OPENCODE_PERMISSION: 'unsafe' })
+  });
+  assert.equal(f.loop.choices().implementers.find(choice => choice.id === STRATA_ACCOUNT).model, STRATA_MODEL);
+  assert.throws(() => f.loop.assignment({ accountId: STRATA_ACCOUNT, model: 'opencode-go/test' }, 'implementer'), /supported/);
+  const job = await f.done(await f.start({ implementer: { accountId: STRATA_ACCOUNT } }));
+  assert.equal(job.maxRounds, 1, 'Local implementation defaults to one checked round');
+  assert.equal(job.state, 'passed'); assert.equal(job.rounds[0].review.verdict, 'approve');
+  const status = await f.loop.status(job.id, f.repo);
+  assert.equal(status.usageSummary.scope, 'workers');
+  assert.equal(status.usageSummary.cloudComplete, false);
+  assert.equal(status.usageSummary.local.calls, 1);
+  assert.equal(status.rounds[0].implement.summary, 'Updated app.js locally.');
+  assert.match(status.finalDiff, /const b = 2/); assert.equal(status.rounds[0].check.exitCode, 0);
+  assert.equal(status.processPid, undefined); assert.equal(status.baselineUntrackedState, undefined);
+  await assert.rejects(f.loop.status(job.id, f.temp), /unavailable/);
+  await assert.rejects(f.loop.status('missing', f.repo), /unavailable/);
+  profiles.length = 0;
+  assert.throws(() => f.loop.assignment({ accountId: STRATA_ACCOUNT }, 'implementer'), /available/);
+});
+
+test('local task refuses a removed profile before launching and local reviewers cannot edit', async t => {
+  let profiles = [{ id: 'strata', protocol: 'chat', url: 'http://127.0.0.1:8080/v1/chat/completions', keyId: '' }];
+  const candidates = [...strataTaskCandidates(opencode.executable, profiles), codex];
+  const f = fixture(t, [{ type: 'implement', edit }, { output: JSON.stringify({ type: 'text', part: { text: approve } }) + '\n', inspect: invocation => {
+    assert.equal(JSON.parse(invocation.options.env.OPENCODE_CONFIG_CONTENT).permission.edit, 'deny');
+  } }], { candidates: () => candidates, getProfiles: () => profiles });
+  const job = await f.done(await f.start({ reviewer: { accountId: STRATA_ACCOUNT }, checks: '' }));
+  assert.equal(job.state, 'passed');
+  const step = { ...f.loop.assignment({ accountId: STRATA_ACCOUNT }, 'implementer'), role: 'implementer' };
+  profiles = [];
+  await assert.rejects(f.loop.provider({ ...job, state: 'implementing' }, step, 'A task', false), /could not complete/);
+  assert.equal(f.spawned.length, 2);
+});
+
 test('OpenCode uses a temporary prompt and permission config, and reads events', async t => {
   const events = [
     { type: 'text', part: { text: 'First' } },
@@ -71,6 +225,8 @@ test('OpenCode uses a temporary prompt and permission config, and reads events',
   const f = fixture(t, [{ output: events, edit, inspect: invocation => {
     assert.deepEqual(invocation.args.slice(0, 5), ['run', '-m', 'opencode-go/test', '--dir', f.repo]);
     const file = invocation.args[invocation.args.indexOf('-f') + 1];
+    assert.equal(invocation.args.at(-1), file, 'The array-valued --file flag must not consume the task message');
+    assert.ok(invocation.args.indexOf('Read the attached file and follow it.') < invocation.args.indexOf('-f'));
     assert.ok(file.startsWith(f.root)); assert.ok(!file.startsWith(f.repo));
     assert.match(fs.readFileSync(file, 'utf8'), /b must be 2/);
     assert.ok(!invocation.args.some(arg => arg.includes('b must be 2')));
@@ -80,7 +236,7 @@ test('OpenCode uses a temporary prompt and permission config, and reads events',
   } }], { candidates: () => [opencode, claude], environment: () => ({ OPENCODE_CONFIG_CONTENT: 'unsafe', OPENCODE_PERMISSION: 'unsafe', opencode_other: 'unsafe', OTHER: 'kept' }) });
   const job = await f.done(await f.start({ implementer: { accountId: opencode.id, model: 'opencode-go/test' }, reviewer: null, checks: '' }));
   assert.equal(job.state, 'passed'); assert.equal(job.rounds[0].implement.summary, 'Updated app.js.');
-  assert.equal(job.rounds[0].implement.usage.inputTokens, 14); assert.equal(job.rounds[0].implement.usage.outputTokens, 3);
+  assert.equal(job.rounds[0].implement.usage.inputTokens, 17); assert.equal(job.rounds[0].implement.usage.outputTokens, 3);
   assert.equal(job.rounds[0].implement.usage.cachedInputTokens, 3); assert.ok(Math.abs(job.rounds[0].implement.usage.reportedCost - 0.03) < 1e-9);
   assert.equal(openCodeEvents(events).text, 'Updated app.js.');
 });
@@ -156,7 +312,11 @@ test('timed-out and signal-terminated checks are infrastructure failures and ski
 
 test('confirmed review findings trigger a fix round', async t => {
   const f = fixture(t, [{ type: 'implement', edit }, { type: 'review', reply: requested },
-    { type: 'implement', inspect: invocation => assert.match(invocation.prompt, /app\.js:2 — high — wrong result/) }, { type: 'review' }]);
+    { type: 'implement', inspect: invocation => assert.match(invocation.prompt, /app\.js:2 — high — wrong result/) }, { type: 'review', inspect: invocation => {
+      assert.match(invocation.prompt, /Previous review findings to verify/);
+      assert.match(invocation.prompt, /app\.js:2 — high — wrong result/);
+      assert.match(invocation.prompt, /Current checks: not-set/);
+    } }]);
   const job = await f.done(await f.start({ checks: '' }));
   assert.equal(job.state, 'passed'); assert.equal(job.rounds.length, 2);
   assert.equal(job.rounds[0].review.findings.length, 1); assert.equal(job.rounds[0].check.state, 'not-set');
@@ -240,13 +400,27 @@ test('later edits to new files mark checks and review stale on snapshot refresh'
   assert.match(job.finalDiff, /third/);
 });
 
+test('a different commit or branch invalidates verification even when file contents match', async t => {
+  for (const change of ['commit', 'branch']) {
+    const f = fixture(t, [{ type: 'implement', edit }, { type: 'check' }, { type: 'review' }]);
+    const job = await f.done(await f.start());
+    assert.equal(job.state, 'passed');
+    if (change === 'commit') git(f.repo, 'commit', '--allow-empty', '-qm', 'New revision');
+    else git(f.repo, 'switch', '-c', 'same-files');
+    await f.loop.refresh(job.id);
+    assert.equal(job.state, 'needs-you', change);
+    assert.equal(job.rounds[0].check.state, 'stale');
+    assert.equal(job.rounds[0].review.state, 'stale');
+  }
+});
+
 test('rejects identical accounts, invalid limits, and folders outside the picker', async t => {
   const f = fixture(t);
   await assert.rejects(f.start({ reviewer: { accountId: codex.id } }), /different from the implementer/);
   for (const maxRounds of [0, 6, 1.5, '3']) await assert.rejects(f.start({ maxRounds }), /1 to 5/);
   for (const timeLimitMinutes of [4, 121]) await assert.rejects(f.start({ timeLimitMinutes }), /5 to 120/);
   await assert.rejects(f.start({ repo: f.temp }), /project folder/);
-  await assert.rejects(f.start({ implementer: { accountId: 'missing' } }), /signed-in/);
+  await assert.rejects(f.start({ implementer: { accountId: 'missing' } }), /available/);
   assert.equal(f.spawned.length, 0);
 });
 

@@ -152,7 +152,10 @@ test('every catalog launch preserves the project, supplies shared context and ne
     const result = prepareCli(agent.id, { directory, runtime, summary: 'Shared user instructions', summaryPath, home, model: 'test-model', permissions: 'unrestricted' });
     assert.equal(validateConsoleDefaults({ provider: agent.id, cwd: root }).provider, agent.id);
     if (agent.model) assert.equal(result.args[result.args.indexOf(agent.model) + 1], 'test-model');
-    if (agent.unrestricted) for (const flag of agent.unrestricted) assert.ok(result.args.includes(flag));
+    if (agent.unrestricted) for (const flag of agent.unrestricted) {
+      if (agent.id === 'kiro' && flag.startsWith('--trust-tools=')) for (const tool of flag.slice('--trust-tools='.length).split(',')) assert.ok(result.args.find(x => x.startsWith('--trust-tools=')).split(/[=,]/).includes(tool));
+      else assert.ok(result.args.includes(flag));
+    }
     const files = fs.readdirSync(directory); assert.ok(files.includes('mcp.json'));
     if (agent.mcp) assert.ok(fs.existsSync(path.join(home, agent.mcp)));
     assert.ok(!JSON.stringify(result).includes('PRIVATE_SESSION_TOKEN'));
@@ -170,6 +173,68 @@ test('every catalog launch preserves the project, supplies shared context and ne
     sessions.end(session.id);
   }
 });
+
+test('Cline consoles use their own bridge environment without reusing a shared hub or saving its token', t => {
+  const { root, runtime } = fixture(t), home = path.join(root, 'home'); fs.mkdirSync(home);
+  const existing = path.join(home, '.cline/data/settings/cline_mcp_settings.json');
+  fs.mkdirSync(path.dirname(existing), { recursive: true });
+  const before = JSON.stringify({ mcpServers: { personal: { command: 'personal-server' } } }); fs.writeFileSync(existing, before);
+  const launches = ['one', 'two'].map(name => {
+    const directory = path.join(root, name); fs.mkdirSync(directory);
+    const summaryPath = path.join(directory, 'PADDOCK.md'); fs.writeFileSync(summaryPath, 'Local first.');
+    return prepareCli('cline', { directory, runtime, summary: 'Local first.', summaryPath, home });
+  });
+  for (const launch of launches) {
+    assert.equal(launch.env.CLINE_SESSION_BACKEND_MODE, 'local');
+    assert.equal(launch.env.CLINE_MCP_SETTINGS_PATH, undefined, 'retain the owner native MCP inventory');
+    const config = JSON.parse(fs.readFileSync(existing, 'utf8'));
+    assert.deepEqual(config.mcpServers.paddock, { command: runtime.node, args: [runtime.tools] });
+    assert.equal(config.mcpServers.paddock.env, undefined, 'inherit the current process grant; never expand secrets to disk');
+    assert.deepEqual(config.mcpServers.personal, { command: 'personal-server' });
+  }
+  assert.equal(fs.readFileSync(existing + '.paddock-backup', 'utf8'), before);
+});
+
+test('Kiro trusts exact Paddock action IDs while retaining file permissions chosen for the console', t => {
+  const { root, runtime } = fixture(t), home = path.join(root, 'home'); fs.mkdirSync(home);
+  for (const permissions of ['standard', 'unrestricted']) {
+    const directory = path.join(root, permissions); fs.mkdirSync(directory);
+    const launch = prepareCli('kiro', { directory, runtime, summary: 'Local first.', summaryPath: path.join(directory, 'PADDOCK.md'), home, permissions });
+    const flags = launch.args.filter(arg => arg.startsWith('--trust-tools=')); assert.equal(flags.length, 1);
+    const trusted = flags[0].slice('--trust-tools='.length).split(',');
+    assert.ok(['mcp_paddock_dock_context', 'mcp_paddock_dock_tools', 'mcp_paddock_dock_call'].every(tool => trusted.includes(tool)));
+    assert.equal(trusted.includes('fs_read'), permissions === 'unrestricted');
+    assert.equal(trusted.includes('fs_write'), permissions === 'unrestricted');
+    assert.ok(!trusted.some(tool => /\*|bash|shell/.test(tool)));
+    assert.ok(!launch.args.includes('--trust-all-tools'));
+  }
+});
+test('Copilot launch and refreshed instruction copies retain the current project and owner rules', async t => {
+  const { root, runtime } = fixture(t), calls = [], errors = [];
+  let shared = 'Call dock_context before work. No art callout labels.', project = 'Project A: selected paper composition.';
+  const hub = { summary: () => shared, grant: () => ({}), revoke() {} };
+  const sessions = new Sessions(root, { hub, runtime, agentHome: root, studyContext: () => '',
+    projects: { on() {}, touch() {}, launch: raw => raw, chatSummary: () => project }, findProgram: () => process.execPath,
+    pty: { spawn(command, args, options) { calls.push(options); return { onData() {}, onExit() {}, write() { throw Error('Do not send prompts.'); }, kill() {} }; } } });
+  sessions.on('context-error', error => errors.push(error));
+  const created = await sessions.create({ provider: 'copilot', cwd: root });
+  const item = sessions.items.get(created.id), dir = path.join(root, 'sessions', created.id);
+  const read = name => fs.readFileSync(path.join(dir, name), 'utf8');
+  assert.ok(calls[0].env.COPILOT_CUSTOM_INSTRUCTIONS_DIRS.split(',').includes(dir));
+  assert.equal(read('AGENTS.md'), shared + project); assert.equal(read('PADDOCK.md'), read('AGENTS.md'));
+  shared = 'Call dock_context before work. Preserve selected artwork and color.'; project = 'Project B: changed binding.';
+  sessions.refreshContextFile(item);
+  assert.equal(read('AGENTS.md'), shared + project); assert.equal(read('PADDOCK.md'), read('AGENTS.md'));
+  assert.doesNotMatch(read('AGENTS.md'), /Project A/); assert.equal(calls.length, 1, 'Keep the active process');
+  // A failed second write must not cache the new summary and prevent recovery.
+  fs.mkdirSync(path.join(dir, 'AGENTS.md.tmp')); shared = 'Updated rule after a write failure.';
+  sessions.refreshContextFile(item); assert.equal(errors.length, 1);
+  fs.rmdirSync(path.join(dir, 'AGENTS.md.tmp')); sessions.refreshContextFile(item);
+  assert.equal(read('AGENTS.md'), shared + project); assert.equal(read('PADDOCK.md'), read('AGENTS.md'));
+  const stamp = fs.statSync(path.join(dir, 'AGENTS.md')).mtimeMs; sessions.refreshContextFile(item);
+  assert.equal(fs.statSync(path.join(dir, 'AGENTS.md')).mtimeMs, stamp);
+});
+
 test('managed MCP merges keep other servers and a backup; conflicts and invalid JSON leave files untouched', t => {
   const { root, runtime } = fixture(t), file = path.join(root, 'mcp.json'), before = JSON.stringify({ theme: 'dark', mcpServers: { other: { command: 'other.exe' } } });
   fs.writeFileSync(file, before); const server = { command: runtime.node, args: [runtime.tools] };
@@ -182,6 +247,46 @@ test('managed MCP merges keep other servers and a backup; conflicts and invalid 
   const toml = path.join(root, 'config.toml'); fs.writeFileSync(toml, 'model = "existing"\n');
   saveManagedMcp(toml, server); const after = fs.readFileSync(toml, 'utf8'); saveManagedMcp(toml, server);
   assert.equal(fs.readFileSync(toml, 'utf8'), after); assert.match(after, /^model = "existing"/);
+});
+// Local draft supplied the preservation/conflict test cases; use synchronous
+// fixtures and reproduce Grok's actual marker-free serialization here.
+test('Grok rewritten TOML reconnects without changing settings or separated env tables', t => {
+  const { root, runtime } = fixture(t), file = path.join(root, 'config.toml');
+  const server = { command: runtime.node, args: [runtime.tools], env: { PADDOCK_BRIDGE_TOKEN: '${PADDOCK_BRIDGE_TOKEN}' } };
+  const before = `model = "existing"\n[mcp_servers.paddock]\ncommand = '${runtime.node}'\nargs = ['${runtime.tools}']\nenabled = true\n[mcp_servers.other]\ncommand = "other"\n[mcp_servers.paddock.env]\nPADDOCK_BRIDGE_TOKEN = "\${PADDOCK_BRIDGE_TOKEN}"\n[ui]\ncompact_mode = true\n`;
+  fs.writeFileSync(file, before);
+  for (let i = 0; i < 2; i++) assert.equal(saveManagedMcp(file, server).changed, false);
+  assert.equal(fs.readFileSync(file, 'utf8'), before);
+  assert.equal(fs.existsSync(file + '.paddock-backup'), false, 'No backup or write is needed for an unchanged connection');
+});
+test('marker-free TOML recognizes quoted names and multiline launch arrays', t => {
+  const { root, runtime } = fixture(t), file = path.join(root, 'config.toml');
+  const server = { command: runtime.node, args: [runtime.tools] };
+  const before = `[mcp_servers."paddock"]\ncommand = ${JSON.stringify(runtime.node)} # runtime\nargs = [\n # bridge\n ${JSON.stringify(runtime.tools)},\n]\n[mcp_servers.other]\ncommand = "foreign"\nargs = []\n`;
+  fs.writeFileSync(file, before); assert.equal(saveManagedMcp(file, server).changed, false);
+  assert.equal(fs.readFileSync(file, 'utf8'), before);
+});
+test('different TOML launch commands or extra arguments remain protected', t => {
+  const { root, runtime } = fixture(t), file = path.join(root, 'config.toml');
+  const server = { command: runtime.node, args: [runtime.tools] };
+  for (const launch of [{ ...server, command: 'foreign' }, { ...server, args: [...server.args, 'foreign'] }, { ...server, args: ['other-agent-tools.cjs'] }]) {
+    const before = `[mcp_servers.paddock]\ncommand = ${JSON.stringify(launch.command)}\nargs = ${JSON.stringify(launch.args)}\n`;
+    fs.writeFileSync(file, before); assert.throws(() => saveManagedMcp(file, server), /different/);
+    assert.equal(fs.readFileSync(file, 'utf8'), before);
+  }
+});
+test('a Grok console restores after its CLI removes Paddock markers', async t => {
+  const { root, runtime } = fixture(t), file = path.join(root, '.grok', 'config.toml'), calls = [];
+  const sessions = new Sessions(root, { runtime, agentHome: root, hub: { summary: () => 'Shared context', grant: () => ({}), revoke() {} },
+    cliSetup: { executable: () => 'grok.exe' }, pty: { spawn(command, args, options) { calls.push({ command, args, options }); return { onData() {}, onExit(fn) { this.exit = fn; }, kill() { this.exit({ exitCode: 0 }); } }; } } });
+  t.after(() => { for (const session of sessions.list()) if (session.alive) sessions.end(session.id); });
+  const first = await sessions.create({ provider: 'grok', cwd: root, name: 'Grok project' });
+  const saved = sessions.savedConsoles()[0]; sessions.end(first.id);
+  fs.writeFileSync(file, `[mcp_servers.paddock]\ncommand = '${runtime.node}'\nargs = ['${runtime.tools}']\n[mcp_servers.paddock.env]\nPADDOCK_BRIDGE_TOKEN = "\${PADDOCK_BRIDGE_TOKEN}"\n[ui]\ncompact_mode = true\n`);
+  const rewritten = fs.readFileSync(file, 'utf8'), restored = await sessions.restore(saved);
+  assert.equal(restored.alive, true); assert.equal(restored.restoreError, undefined); assert.equal(calls.length, 2);
+  assert.equal(restored.name, 'Grok project'); assert.equal(restored.cwd, root);
+  assert.equal(fs.readFileSync(file, 'utf8'), rewritten);
 });
 test('entries written under the former Agent Dock name are replaced, foreign agent_dock entries are kept', t => {
   const { root, runtime } = fixture(t), server = { command: runtime.node, args: [runtime.tools] }, file = path.join(root, 'old.json');
@@ -196,7 +301,7 @@ test('entries written under the former Agent Dock name are replaced, foreign age
 });
 test('agent setup drafts never change connections before Apply and keys remain direct-entry only', async t => {
   const { root } = fixture(t), connections = [], profiles = [], keys = [];
-  const hub = { vault: { list: () => keys }, config: { connections, profiles }, redact: x => JSON.parse(JSON.stringify(x).replaceAll('KNOWN_SECRET', '[credential removed]')), async saveConnection(x) { connections.push(x); }, saveProfile(x) { profiles.push(x); } };
+  const hub = { vault: { list: () => keys }, config: { connections, profiles }, builtinTools: () => [], redact: x => JSON.parse(JSON.stringify(x).replaceAll('KNOWN_SECRET', '[credential removed]')), async saveConnection(x) { connections.push(x); }, saveProfile(x) { profiles.push(x); } };
   const setup = new SetupRequests(root, { getHub: () => hub, getAgents: () => [] });
   assert.throws(() => setup.prepare({ kind: 'key', config: { id: 'zai', key: 'SECRET' } }, {}), /secret values/);
   assert.throws(() => setup.prepare({ kind: 'tool', config: { id: 'test', type: 'stdio', command: 'node', args: ['KNOWN_SECRET'] } }, {}), /saved credential/);

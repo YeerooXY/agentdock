@@ -1,0 +1,19 @@
+# Creative direction
+
+Use this step for an open visual brief or a substantial redesign. A concrete repair or already selected direction needs a fidelity check. The creative role can be performed by the main agent or a bounded local helper; it does not require a separate manager or permanent agent.
+
+Read the actual brief, assets, visitor task, factual constraints and owner feedback. Produce three short composition ideas before requesting images. Each must change at least two of spatial organization, information order, evidence treatment and interaction. Font and palette changes alone do not qualify. Explain the content-specific idea, how the visitor acts, the phone arrangement and one implementation cost. Keep the notes compact.
+
+Make one distinctive idea carry the screen. For example, a bakery's supplied product cutouts could occupy a continuous counter with an anchored hours/address rail; a music portfolio could organize work as a playable score; a study app could use a large real application view with an adjustable time strip. These are examples, not templates. Do not reuse a motif just because it appeared in this guide. Avoid a stack of interchangeable boxed sections or three equally weighted images without a content reason.
+
+For each idea, draft an image prompt that specifies actual spatial relationships, scale, cropping, typography, negative space, primary action and phone adaptation. State which assets are real evidence and which would be generated artwork. An adjective such as “creative” does not specify a composition. The image generator renders the idea; it does not decide the facts or approve the design.
+
+Follow the owner's screen-preview setting. For an existing screen, inspect its screenshot before generating. Present the concept comparison in one image when practical, or the selected direction when the owner has already chosen. Use the configured image-capable tool; a text-only local model returns a prompt, not an image. Let the owner select an open direction before substantial implementation. An authorized unattended run uses its declared selection rule and records that the owner has not reviewed the choice.
+
+Handoff: selected concept and chooser, desktop/phone arrangement, one distinctive element to preserve, exact facts, asset paths, primary interaction and acceptance checks. Build a representative section and compare it against the concept before expanding. A new image is needed only when the direction changes. Check that implementation preserved the composition, not just its colors. Technical checks and owner visual preference remain separate; a high automated score does not establish originality.
+
+Carry an explicit owner exclusion list through every prompt, handoff and visual review. Current exclusions: three short radiating accent strokes around objects; explanatory callout labels and pointer lines on artwork; interchangeable boxed rows and three equally weighted images without a content reason. Use references to derive new spatial relationships and content-specific objects. Record who originated the idea, who changed it and which tool rendered it.
+
+For reusable website artwork, generate text-free components with transparent backgrounds where needed. Keep headings, wordmarks, labels, timers and controls as accessible live interface elements. Specify each asset's bounds, layering, crop and phone behavior. A paper ribbon can be a separate image beneath live content, with separate distraction and focus objects arranged around it; it need not become a flattened screenshot. Inspect generated assets for accidental lettering and banned decorations before handoff.
+
+Keep development status in the handoff. Do not call the website a demo or decorate it with preview banners. Necessary limitations belong beside the relevant action. Use concrete wording and omit generic motivational slogans.

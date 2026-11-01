@@ -1,5 +1,5 @@
 'use strict';
-// Rasterize assets/icon.svg (the "Pd" tile) for Windows, the tray, the
+// Rasterize assets/icon.svg (the "Pa" tile) for Windows, the tray, the
 // Android launcher and the 1024px macOS/Linux app icon. The ICO holds one PNG per size, rendered at that size.
 const { chromium } = require('playwright');
 const fs = require('node:fs'), path = require('node:path');

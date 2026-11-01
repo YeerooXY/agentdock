@@ -28,7 +28,7 @@ export function workbenchUI({ call, getState, getPage, renderPage, escape: e, to
   const visible = () => resultPages().slice(resultPage * 12, (resultPage + 1) * 12).flat();
   const pagination = () => button('previous-results','Previous','','subtle',resultPage === 0) + `<span class="result-page-number">${resultPage + 1} / ${Math.max(1, Math.ceil(resultPages().length / 12))}</span>` + button('next-results','Next','','subtle',(resultPage + 1) * 12 >= resultPages().length);
   const bulkActions = () => `${button('select-all','Select visible')}${selected.size ? button('delete-selected',`Delete selected (${selected.size})`,'','subtle danger') : ''}${button('seen-all','Mark all viewed')}`;
-  const card = x => `<article class="result-card ${!x.image && x.ext !== '.zip' ? 'result-document' : ''}"><button class="result-image" data-wb="preview" data-id="${x.id}" aria-label="Open ${e(x.title)}">${!x.image ? `<span class="result-file">${x.kind === 'code' ? '&lt;/&gt;' : e(x.ext.slice(1).toUpperCase())}</span>` : ''}${x.image || x.ext === '.zip' ? `<img data-result-image="${x.id}" alt="${e(x.title)}">` : ''}</button><div class="result-copy"><div class="result-meta"><span>${e(x.kind)}</span>${!project ? `<span>${e(projectName(x))}</span>` : ''}<label class="result-select"><input type="checkbox" data-result-select="${x.id}" aria-label="Select ${e(x.title)}" ${selected.has(x.id) ? 'checked' : ''}></label></div><button class="result-title" data-wb="preview" data-id="${x.id}">${e(x.title)}</button><p>${e(x.summary || 'Saved file')}</p><div class="result-meta"><time>${date(x.at)}</time><span>${e(x.status.replaceAll('-', ' '))}</span></div></div></article>`;
+  const card = x => `<article class="result-card ${!x.image && x.ext !== '.zip' ? 'result-document' : ''}"><button class="result-image" data-wb="preview" data-id="${x.id}" aria-label="Open ${e(x.title)}">${!x.image ? `<span class="result-file">${x.kind === 'code' ? '&lt;/&gt;' : e(x.ext.slice(1).toUpperCase())}</span>` : ''}${x.image || x.ext === '.zip' ? `<img data-result-image="${x.id}" alt="${e(x.title)}">` : ''}</button><div class="result-copy"><div class="result-meta"><span>${e(x.kind)}</span>${!project ? `<span>${e(projectName(x))}</span>` : ''}<label class="result-select"><input type="checkbox" data-result-select="${x.id}" aria-label="Select ${e(x.title)}" ${selected.has(x.id) ? 'checked' : ''}></label></div><button class="result-title" data-wb="preview" data-id="${x.id}">${e(x.title)}</button><p>${e(x.summary || 'Saved file')}</p><div class="result-meta"><time>${x.updatedAt ? 'Updated ' + date(x.updatedAt) : date(x.at)}</time><span class="result-status" data-status="${e(x.status)}">${e(x.status === 'needs-review' ? 'Needs review' : x.status === 'failed' ? 'Failed' : ['test', 'review'].includes(x.kind) ? 'Passed when saved' : 'Saved copy')}</span></div></div></article>`;
   const resultsList = () => {
     const consoles = new Map();
     for (const item of visible()) {
@@ -43,9 +43,9 @@ export function workbenchUI({ call, getState, getPage, renderPage, escape: e, to
       return `<section class="result-console-group"><header class="result-console-heading"><h2>${e(consoleName(first))}</h2></header>${[...groups.values()].map(items => {
         const first = items[0], all = batch(first.id), unread = all.some(x => !x.seenAt), code = all.find(x => x.kind === 'code'), revisions = turnRevisions(all);
         const pictures = items.filter(x => x.image), files = items.filter(x => !x.image && x.ext !== '.json' || x.kind === 'code' && x.changeCount !== 0), supporting = items.filter(x => x.ext === '.json' && x.kind !== 'code');
-        return `<section class="result-batch ${unread ? 'unread' : ''}"><header class="result-batch-heading"><div><strong>${e(resultTurnTitle(items))}</strong><time>${date(first.at)}</time>${unread ? '<span class="result-new">New</span>' : ''}</div><div>${code && code.changeCount !== 0 ? button('preview','Code changes',code.id,'secondary') : ''}${unread ? button('seen-batch','Mark viewed',first.id) : ''}${button('delete-batch','Delete results',first.id,'subtle danger')}</div></header><p class="result-turn-summary">${e(all.find(x => x.kind !== 'code' && x.summary)?.summary || (code?.changeCount ? `${code.changeCount} files changed` : ''))}</p><details class="result-technical"><summary>Details</summary><span>${e(projectName(first))}</span>${revisions.map(git => revision(git, revisions.length > 1)).join('')}</details><div class="result-batch-grid">${pictures.length ? imageGroup(pictures) : ''}${files.map(card).join('')}</div>${supporting.length ? `<details class="result-supporting-data"><summary>Supporting files (${supporting.length})</summary><div class="result-batch-grid">${supporting.map(card).join('')}</div></details>` : ''}${!pictures.length && !files.length && !supporting.length ? '<p class="field-hint">No code changes or pictures saved in this turn.</p>' : ''}</section>`;
+        return `<section class="result-batch ${unread ? 'unread' : ''}"><header class="result-batch-heading"><div><strong>${e(consoleName(first))}</strong>${items.length > 1 ? `<span>${e(resultTurnTitle(items))}</span>` : ''}${pictures.length || items.length > 1 ? `<time>${date(first.at)}</time>` : ''}${unread ? '<span class="result-new">New</span>' : ''}</div><div>${code && code.changeCount !== 0 ? button('preview','Code changes',code.id,'secondary') : ''}${unread ? button('seen-batch','Mark viewed',first.id) : ''}${button('delete-batch','Delete results',first.id,'subtle danger')}</div></header><details class="result-technical"><summary>Details</summary><span>${e(projectName(first))}</span>${revisions.map(git => revision(git, revisions.length > 1)).join('')}</details><div class="result-batch-grid">${pictures.length ? imageGroup(pictures) : ''}${files.map(card).join('')}</div>${supporting.length ? `<details class="result-supporting-data"><summary>Supporting files (${supporting.length})</summary><div class="result-batch-grid">${supporting.map(card).join('')}</div></details>` : ''}${!pictures.length && !files.length && !supporting.length ? '<p class="field-hint">No code changes or pictures saved in this turn.</p>' : ''}</section>`;
       }).join('')}</section>`;
-    }).join('') || empty('Screenshots, test reports and concepts will appear here.');
+    }).join('') || empty('No saved results.');
   };
   function imageGroup(items) {
     const first = items.find(x => !x.seenAt) || items[0], viewed = items.filter(x => x.seenAt).length;
@@ -98,16 +98,21 @@ export function workbenchUI({ call, getState, getPage, renderPage, escape: e, to
     }
     loadImages(dialog);
   }
-  async function preview(id, entry = null) {
+  async function preview(id, entry = null, refreshing = false) {
     const item = data().results.find(x => x.id === id); if (!item) throw new Error('This result was deleted.');
     if (!dialog.contains(document.activeElement)) { previewOpener = document.activeElement; previewOpenerKey = previewOpener?.dataset?.wb === 'preview' ? { id: previewOpener.dataset.id, className: previewOpener.className } : null; }
     if (item.image && entry == null) return previewImage(item);
-    detail = { type: 'result', id, entry }; const version = ++modalVersion;
+    const scroll = refreshing ? dialog.scrollTop : 0;
+    const focused = refreshing && dialog.contains(document.activeElement) ? document.activeElement?.dataset?.wb : null;
+    detail = { type: 'result', id, entry, revision: item.contentRevision || 0 }; const version = ++modalVersion;
     dialog.classList.remove('image-gallery');
     imageResize.disconnect();
     const code = batch(id).find(x => x.kind === 'code');
-    show(`<h2>${e(item.title)}</h2><div class="result-detail-meta"><span>${e(consoleName(item))} · ${e(item.status.replaceAll('-', ' '))} · ${date(item.at)}</span>${code && code.id !== id ? button('preview','Code changes',code.id,'secondary') : ''}</div><div id="result-preview" aria-live="polite">Loading…</div><div class="wb-toolbar">${button('export','Export',id,'secondary')}${button('delete-one','Delete saved copy',id,'subtle danger')}</div>`, wideResults.matches && getPage() === 'results');
-    const heading = dialog.querySelector('h2'); heading.tabIndex = -1; heading.focus({ preventScroll: true }); dialog.scrollTop = 0;
+    show(`<h2>${e(item.title)}</h2><div class="result-detail-meta"><span>${e(consoleName(item))} · ${e(item.status.replaceAll('-', ' '))} · Saved ${date(item.at)}${item.updatedAt ? ` · Updated ${date(item.updatedAt)}` : ''}</span>${code && code.id !== id ? button('preview','Code changes',code.id,'secondary') : ''}</div><div id="result-preview" aria-live="polite">Loading…</div><div class="wb-toolbar">${button('export','Export',id,'secondary')}${button('delete-one','Delete saved copy',id,'subtle danger')}</div>`, wideResults.matches && getPage() === 'results');
+    const heading = dialog.querySelector('h2'); heading.tabIndex = -1;
+    if (!refreshing) heading.focus({ preventScroll: true });
+    else if (focused) [...dialog.querySelectorAll('[data-wb]')].find(node => node.dataset.wb === focused)?.focus({ preventScroll: true });
+    dialog.scrollTop = scroll;
     try {
       const content = await api('results.preview',{ id, entry });
       const ext = content.entry?.ext || item.ext;
@@ -119,7 +124,8 @@ export function workbenchUI({ call, getState, getPage, renderPage, escape: e, to
         const target = dialog.querySelector('.result-text');
         if (target) target.outerHTML = `<p>${e(item.summary || 'Supporting data for this turn.')}</p><details class="result-supporting-data"><summary>Show data</summary><pre class="result-text">${e(content.text)}</pre></details>`;
       }
-      if (entry != null) dialog.querySelector(`[data-entry="${entry}"]`)?.focus({ preventScroll: true });
+      if (entry != null && !refreshing) dialog.querySelector(`[data-entry="${entry}"]`)?.focus({ preventScroll: true });
+      if (refreshing) dialog.scrollTop = scroll;
       await api('results.seen', [id]);
       if (version !== modalVersion || !dialog.open) return;
       item.seenAt ||= Date.now();
@@ -196,6 +202,8 @@ export function workbenchUI({ call, getState, getPage, renderPage, escape: e, to
     }
   }
   function refreshGallery() {
+    const oldGrid = document.querySelector('.results-grid'), active = document.activeElement;
+    const focused = oldGrid?.contains(active) ? { action: active.dataset.wb, id: active.dataset.id, selection: active.dataset.resultSelect, className: active.className } : null;
     const name = document.querySelector('.result-folder-name'); if (name) name.textContent = folders().find(x => x.key === project)?.name || folderName;
     for (const [id, values, selectedValue, label] of [
       ['result-console', new Map(data().results.filter(x => !project || projectKey(x) === project).map(x => [consoleKey(x), consoleName(x)])), consoleFilter, 'All consoles']
@@ -211,6 +219,11 @@ export function workbenchUI({ call, getState, getPage, renderPage, escape: e, to
     const grid = document.querySelector('.results-grid'); if (grid) { grid.innerHTML = resultContent(); loadImages(grid); }
     for (const id of ['result-console', 'result-kind']) { const node = document.getElementById(id); if (node) node.hidden = showingFolders(); }
     refreshBulkActions();
+    if (focused) {
+      const candidates = [...document.querySelectorAll('.results-grid [data-wb], .results-grid [data-result-select]')];
+      const replacement = candidates.find(node => focused.selection ? node.dataset.resultSelect === focused.selection : node.dataset.wb === focused.action && node.dataset.id === focused.id && node.className === focused.className);
+      (replacement?.getClientRects().length ? replacement : document.querySelector('#result-search'))?.focus({ preventScroll: true });
+    }
   }
   function refreshBulkActions() {
     const controls = document.querySelector('.result-bulk-actions');
@@ -220,7 +233,7 @@ export function workbenchUI({ call, getState, getPage, renderPage, escape: e, to
     const result = await api('results.delete', ids);
     for (const id of result.deleted) { selected.delete(id); previews.delete(id); }
     if (result.failed.length) toast(`${result.failed.length} files could not be deleted. Try again.`,true);
-    if (getPage() === 'results') renderPage();
+    if (getPage() === 'results') refreshGallery();
   }
   document.addEventListener('input', event => {
     if (event.target.id === 'result-search') { filter = event.target.value; resultPage = 0; selected.clear(); if (showingFolders()) { kind = ''; consoleFilter = ''; if (dialog.open) dialog.close(); } refreshGallery(); }
@@ -279,7 +292,12 @@ export function workbenchUI({ call, getState, getPage, renderPage, escape: e, to
     document.body.append(dialog);
     dialog.classList.remove('result-inline-preview');
     const replacement = previewOpenerKey && [...document.querySelectorAll('[data-wb="preview"]')].find(node => node.dataset.id === previewOpenerKey.id && node.className === previewOpenerKey.className);
-    (previewOpener?.isConnected ? previewOpener : replacement || document.querySelector('.result-image-group [data-wb="preview"], .result-card [data-wb="preview"], #result-search'))?.focus({ preventScroll: true });
+    const candidates = [previewOpener, replacement, ...document.querySelectorAll('.result-image-group [data-wb="preview"], .result-card [data-wb="preview"], #result-search')];
+    for (const node of candidates) {
+      if (!node?.isConnected || node.disabled || !node.getClientRects().length || getComputedStyle(node).visibility === 'hidden') continue;
+      node.focus({ preventScroll: true });
+      if (document.activeElement === node && node !== document.body) break;
+    }
     previewOpener = null; previewOpenerKey = null;
   });
   // A non-modal desktop preview needs the same Escape behavior as the dialog.
@@ -353,8 +371,6 @@ export function workbenchUI({ call, getState, getPage, renderPage, escape: e, to
       const count = d.unreadResults ?? new Set(d.results.filter(x => !x.seenAt).map(groupKey)).size;
       const resultBadge = document.querySelector('#results-count');
       if (resultBadge) { resultBadge.textContent = count || ''; resultBadge.hidden = !count; resultBadge.closest('button').classList.toggle('has-new-results', !!count); resultBadge.closest('button').setAttribute('aria-label', count ? `Results, ${count} new ${count === 1 ? 'batch' : 'batches'}` : 'Results'); }
-      const shortcut = document.querySelector('#results-shortcut');
-      if (shortcut) { shortcut.hidden = !count; shortcut.querySelector('.notification-badge').textContent = count; shortcut.setAttribute('aria-label', `Results, ${count} new ${count === 1 ? 'batch' : 'batches'}`); }
       if (next === stamp) return; stamp = next;
       for (const id of selected) if (!d.results.some(x=>x.id===id)) selected.delete(id);
       for (const id of previews.keys()) if (!d.results.some(x=>x.id===id)) previews.delete(id);
@@ -364,6 +380,8 @@ export function workbenchUI({ call, getState, getPage, renderPage, escape: e, to
         else { detail = null; ++modalVersion; dialog.close(); }
       }
       if (getPage() === 'results') refreshGallery();
+      const current = detail?.type === 'result' && d.results.find(x => x.id === detail.id);
+      if (current && (current.contentRevision || 0) !== (detail.revision || 0)) preview(current.id, detail.entry, true).catch(error => toast(error.message, true));
     }
   };
 }

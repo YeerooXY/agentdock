@@ -22,10 +22,10 @@ test('Meshy preview authorization runs before reference upload or paid submissio
 test('image preference persists without keys, reaches shared context and fixes official provider destinations', async t => {
   const root = temp(t), vault = { list: () => [{ id: 'image-key', label: 'Image account' }], get: () => { assert.fail('Saving settings must not resolve a key'); } };
   const hub = new SharedHub(root, vault);
-  assert.match(hub.summary(), /ambiguous visual request/); assert.match(hub.summary(), /own image generation capability first/);
+  assert.match(hub.fullSummary(), /ambiguous visual request/); assert.match(hub.fullSummary(), /own image generation capability first/);
   hub.setImageGeneration({ provider: 'openai', keyId: 'image-key', url: 'https://attacker.invalid/', previewFirst: true });
   const restored = new SharedHub(root, vault); assert.equal(restored.config.imageGeneration.url, 'https://api.openai.com/v1/images/edits');
-  assert.match(restored.summary(), /user selected openai/); assert.match(restored.summary(), /dock\/generate_preview/);
+  assert.match(restored.fullSummary(), /user selected openai/); assert.match(restored.fullSummary(), /dock\/generate_preview/);
   assert.throws(() => hub.setImageGeneration({ provider: 'gemini', keyId: 'missing' }), /Paste this API key/);
   hub.setImageGeneration({ provider: 'agent', previewFirst: false }); assert.doesNotMatch(imageInstructions(hub.config.imageGeneration), /try to generate one/);
   for (const url of ['http://example.com/api', 'https://secret@example.com/api', 'https://example.com/api?key=secret', 'file:///tmp/images']) assert.throws(() => imageSettings({ provider: 'compatible', model: 'local-image', url }));

@@ -19,7 +19,7 @@ test('preview addresses are limited to local servers', () => {
   assert.equal(isLocal('not a url'), false);
 });
 
-test('a preview panel is saved and restored with its address and linked console', async t => {
+test('legacy preview panels retain local-only guards and are excluded from restoration', async t => {
   const { Sessions } = require('../electron/sessions.cjs');
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dock-web-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -37,12 +37,11 @@ test('a preview panel is saved and restored with its address and linked console'
   assert.throws(() => sessions.setWebUrl(panel.id, 'https://example.com'), /local servers only/);
   sessions.setWebUrl(panel.id, '127.0.0.1:8080/docs');
   assert.equal(sessions.codePanels()[0].phoneAllowed, false);
-  const saved = sessions.savedConsoles().find(x => x.kind === 'web');
-  assert.deepEqual({ url: saved.url, provider: saved.provider, codeSourceKey: saved.codeSourceKey }, { url: 'http://127.0.0.1:8080/docs', provider: 'web', codeSourceKey: 'console-a' });
+  assert.equal(sessions.savedConsoles().find(x => x.kind === 'web'), undefined);
+  const saved = { kind: 'web', provider: 'web', url: 'http://127.0.0.1:8080/docs', codeSourceKey: 'console-a' };
   const restored = new Sessions(path.join(root, 'b'), { pty: { spawn() { return { onData() {}, onExit() {}, kill() {} }; } }, findProgram: () => null });
   const again = await restored.restore(saved);
-  assert.equal(again.url, 'http://127.0.0.1:8080/docs');
-  assert.equal(again.phoneAllowed, false);
+  assert.equal(again, null);
   assert.equal(await restored.restore({ ...saved, url: 'https://example.com' }), null, 'a tampered address is not restored');
   sessions.end(panel.id);
   assert.equal(sessions.codePanels().length, 0);

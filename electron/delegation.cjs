@@ -10,11 +10,13 @@ const { EventEmitter } = require('node:events');
 const { StringDecoder } = require('node:string_decoder');
 const { permitted } = require('./code-panel.cjs');
 const { programLaunch } = require('./platform.cjs');
+const { names, isNativeWorker, workerLaunch, workerInput, workerPrompt, workerReply, workerProgress } = require('./provider-workers.cjs');
+const { claudeTokens } = require('./native-token-usage.cjs');
+const { fundingFromLimits } = require('./account-funding.cjs');
 
-const REVIEWERS = ['claude', 'codex', 'kiro'];
+const REVIEWERS = Object.keys(names);
 const MAX_DIFF = 150_000, MAX_REPLY = 6000, MAX_FOCUS = 2000, MAX_FILES = 50;
 const MAX_RUNNING = 2, MAX_PER_HOUR = 20, FRESH_MS = 30 * 60_000, FULL_PERCENT = 90;
-const names = { claude: 'Claude Code', codex: 'Codex', kiro: 'Kiro' };
 
 function git(cwd, args, run = execFile) {
   const safeArgs = args[0] === 'diff' ? ['diff', '--no-textconv', '--no-ext-diff', ...args.slice(1)] : args;
@@ -83,11 +85,15 @@ function hours(ms) { const h = Math.round(ms / 3_600_000); return h < 1 ? 'under
 
 // Chooses the reviewer with the most measured room, preferring a different
 // vendor than the caller for an independent second opinion.
-function pickReviewer({ candidates, limits, callerProvider, requested, now = Date.now() }) {
+function pickReviewer({ candidates, limits, callerProvider, requested, now = Date.now(), rules = {} }) {
   let pool = candidates;
   if (requested && requested !== 'auto') {
     pool = candidates.filter(c => c.id === requested || c.provider === requested);
     if (!pool.length) throw new Error(`${requested} is not an allowed, installed reviewer. Allowed: ${candidates.map(c => c.id).join(', ') || 'none'}.`);
+  } else {
+    pool = pool.filter(c => fundingFromLimits(c, limits, rules) !== 'metered');
+    const free = pool.filter(c => fundingFromLimits(c, limits, rules) === 'free' && !(headroom(limits, c.id, now).left <= 100 - FULL_PERCENT));
+    if (rules.preferFree !== false && free.length) pool = free;
   }
   const scored = pool.map(choice => {
     const room = headroom(limits, choice.id, now), other = choice.provider !== callerProvider;
@@ -102,8 +108,9 @@ function pickReviewer({ candidates, limits, callerProvider, requested, now = Dat
   return scored[0];
 }
 
-// Every reviewer reads the brief from stdin, so it never needs file access outside the project.
-function reviewerLaunch(provider, executable, { outFile, model, platform = process.platform }) {
+// Briefs use stdin or a private prompt file, never command arguments.
+function reviewerLaunch(provider, executable, { outFile, model, platform = process.platform, workFolder, promptFile }) {
+  if (isNativeWorker(provider)) return workerLaunch(provider, executable, { model, review: true, workFolder, promptFile });
   const args = provider === 'claude'
     ? ['-p', '--output-format', 'stream-json', '--verbose', '--tools', 'Read,Grep,Glob', '--strict-mcp-config', '--no-session-persistence', ...(model ? ['--model', model] : [])]
     : provider === 'kiro'
@@ -114,6 +121,7 @@ function reviewerLaunch(provider, executable, { outFile, model, platform = proce
 }
 
 function parseReply(provider, stdout, outFile) {
+  if (isNativeWorker(provider)) return workerReply(provider, stdout);
   let text = '', usage = null;
   if (provider === 'claude') {
     const line = stdout.trim().split('\n').reverse().find(l => {
@@ -122,7 +130,7 @@ function parseReply(provider, stdout, outFile) {
     const data = line ? JSON.parse(line) : null;
     if (!data || data.is_error) throw new Error(String(data?.result || 'The reviewer returned no answer.').slice(0, 300));
     text = String(data.result || '');
-    usage = { inputTokens: data.usage?.input_tokens ?? null, outputTokens: data.usage?.output_tokens ?? null, turns: data.num_turns ?? null };
+    usage = data.usage ? { ...claudeTokens(data.usage), turns: data.num_turns ?? null } : null;
   } else if (provider === 'kiro') {
     // Kiro prints its working notes first; the answer is the last VERDICT block.
     text = stripAnsi(stdout);
@@ -147,6 +155,7 @@ function progressLines(provider, line) {
   if (provider === 'kiro') return [stripAnsi(line)];
   let event; try { event = JSON.parse(line); } catch { return []; }
   if (!event || typeof event !== 'object') return [];
+  if (isNativeWorker(provider)) return workerProgress(provider, event);
   if (provider === 'claude') {
     if (event.type === 'result') return [String(event.result || '')];
     if (event.type !== 'assistant') return [];
@@ -243,7 +252,7 @@ class Delegation extends EventEmitter {
   allowed() {
     const settings = this.getSettings() || {};
     const providers = REVIEWERS.filter(id => (settings.delegationProviders || REVIEWERS).includes(id));
-    return this.candidates().filter(c => providers.includes(c.provider));
+    return this.candidates().filter(c => providers.includes(c.provider) && c.signedIn !== false && c.installed !== false && c.available !== false);
   }
   async start(args = {}, caller) {
     if (this.getSettings()?.delegationEnabled !== true) throw new Error('Cross-agent reviews are off. The user can turn them on in Usage → Cross-agent reviews.');
@@ -255,12 +264,12 @@ class Delegation extends EventEmitter {
     if (this.started.length >= MAX_PER_HOUR) throw new Error('The hourly review limit was reached. Try again later.');
     const focus = String(args.focus || '').slice(0, MAX_FOCUS);
     const changes = await collectChanges(caller.cwd, { base: args.base || 'HEAD', files: cleanFiles(args.files) }, this.run);
-    const picked = pickReviewer({ candidates: this.allowed(), limits: this.getLimits(), callerProvider: caller.provider, requested: args.reviewer, now: this.now() });
+    const picked = pickReviewer({ candidates: this.allowed(), limits: this.getLimits(), callerProvider: caller.provider, requested: args.reviewer, now: this.now(), rules: this.getSettings().routing });
     const id = randomUUID(), folder = path.join(this.dir, id);
     fs.mkdirSync(folder, { recursive: true });
     const brief = reviewBrief({ focus, changes }), outFile = path.join(folder, 'reply.md');
     const job = { id, state: 'running', reviewer: { accountId: picked.choice.id, provider: picked.choice.provider, label: picked.choice.label }, why: picked.why,
-      callerSessionId: caller.sessionId, consoleName: caller.consoleName || '', context: caller.context, focus, files: changes.files.length + changes.untracked.length,
+      callerSessionId: caller.sessionId, consoleName: caller.consoleName || '', context: caller.context, cwd: caller.cwd, focus, files: changes.files.length + changes.untracked.length,
       startedAt: this.now(), finishedAt: null, verdict: null, text: '', error: '', usage: null, resultId: null, waiters: [], log: [], panelId: null, noFreeSlot: false };
     this.jobs.set(id, job); this.started.push(job.startedAt);
     if (this.getSettings()?.delegationPanels !== false && this.openPanel) {
@@ -288,15 +297,16 @@ class Delegation extends EventEmitter {
     const stdoutDecoder = new StringDecoder('utf8');
     this.finishers.set(job.id, patch => { finish(patch); if (child) killTree(child); });
     try {
-      const executable = this.candidates().find(c => c.id === job.reviewer.accountId)?.executable;
+      const candidate = this.candidates().find(c => c.id === job.reviewer.accountId), executable = candidate?.executable;
       if (!executable) throw new Error(`${names[provider]} is no longer installed.`);
-      const launch = reviewerLaunch(provider, executable, { outFile, model: settings.delegationModels?.[provider] });
+      const promptFile = workerPrompt(provider, folder, brief);
+      const launch = reviewerLaunch(provider, executable, { outFile, model: settings.delegationModels?.[provider] || candidate?.model, workFolder: job.cwd || job.context?.project, promptFile });
       const env = this.environment(job.reviewer.accountId, provider);
       const write = progressLog({ brief: brief + '\n' + job.focus, environment: env, append: line => { appendLog(job, line); } });
       stream = progressStream(provider, write);
-      child = this.spawnProcess(launch.executable, launch.args, { cwd: job.context?.project || undefined, env, windowsHide: true, shell: false, stdio: ['pipe', 'pipe', 'pipe'] });
+      child = this.spawnProcess(launch.executable, launch.args, { cwd: job.cwd || job.context?.project || undefined, env: { ...env, ...launch.env }, windowsHide: true, shell: false, stdio: ['pipe', 'pipe', 'pipe'] });
       child.stdin?.on('error', () => {});
-      child.stdin?.end(brief);
+      child.stdin?.end(workerInput(provider, brief));
     } catch (error) { finish({ state: 'failed', error: error.message }); return; }
     this.children.set(job.id, child);
     child.stdout?.on('data', chunk => {
@@ -310,6 +320,7 @@ class Delegation extends EventEmitter {
       if (job.state !== 'running') return;
       stdout += stdoutDecoder.end();
       try {
+        if (code !== 0) throw new Error('The reviewer did not finish successfully.');
         const reply = parseReply(provider, stdout, outFile);
         finish({ state: 'done', ...reply });
       } catch (error) {

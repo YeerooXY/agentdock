@@ -28,7 +28,7 @@ const profiles = [['pc', chromium, { viewport: { width: 1440, height: 1000 } }],
       // response: its inherited .entries function must never become a file list.
       await context.addInitScript(() => { window.dock = { call: (m, p) => window.fixtureCall(m, p), onState: fn => window.fixtureState = fn, onOutput: () => {}, onSelect: () => {}, onNotice: () => {} }; });
       const page = await context.newPage(); page.on('pageerror', e => errors.push(`${name}/usage-${enabled ? 'on' : 'off'}: ${e.stack || e.message}`));
-      await page.goto(`http://127.0.0.1:${server.address().port}`); await page.locator('[data-page=usage]').click();
+      await page.goto(`http://127.0.0.1:${server.address().port}`); await page.locator('.sidebar-bottom [data-page=settings]').click(); await page.locator('.settings-navigation [data-page=agent-settings]').click();
       const section = page.locator('.delegation-settings'); await section.waitFor(); await section.scrollIntoViewIfNeeded();
       if (await page.locator('[data-delegation-stop]').count() !== (enabled ? 1 : 0)) errors.push(`${name}: wrong Stop count`);
       if (await page.locator('.delegation-reviewers').evaluate(x => x.disabled) === enabled) errors.push(`${name}: reviewer choice ${enabled ? 'disabled' : 'enabled'}`);

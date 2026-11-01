@@ -122,8 +122,11 @@ class Turns extends EventEmitter {
     await this.codePanel?.begin(session, turn);
     this.emit('started', { owner, id: turn.id }); return turn.id;
   }); }
-  finish(owner, status = 'needs-review') { return this.serial(owner, async () => {
-    const turn = this.active.get(owner); if (!turn) return null;
+  finish(owner, status = 'needs-review', expectedTurnId, verify) { return this.serial(owner, async () => {
+    const turn = this.active.get(owner);
+    if (expectedTurnId !== undefined && (turn || this.latest.get(owner))?.id !== expectedTurnId) throw new Error('A new task started before this response finished. Complete the current turn first.');
+    verify?.();
+    if (!turn) return null;
     const context = this.context(owner), changes = [], notes = [...(turn.baseline?.notes || [])]; let endGit = turn.git || null;
     if (turn.error) notes.push(turn.error);
     if (turn.overlap) notes.push('Other consoles were active in this folder. Changes are a folder snapshot; authorship may overlap.');

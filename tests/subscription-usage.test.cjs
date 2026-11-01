@@ -119,6 +119,21 @@ test('native errors, process exits and timeouts release owned helpers', async ()
   dead.kill(); await assert.rejects(exited.request('read'), /closed/); exited.close();
 });
 
+test('Copilot keeps feature allowances separate and omits features with no entitlement', () => {
+  const at = Date.parse('2026-11-01T16:00:00Z');
+  const [result] = copilotReading({ quotaSnapshots: {
+    chat: { entitlementRequests: 200, usedRequests: 5, remainingPercentage: 97.5, hasQuota: true, resetDate: new Date(at + 200).toISOString() },
+    completions: { entitlementRequests: 2000, usedRequests: 0, remainingPercentage: 100, hasQuota: true, resetDate: '2026-12-01T00:00:00Z' },
+    premium_interactions: { entitlementRequests: 0, usedRequests: 0, remainingPercentage: 0, hasQuota: false, resetDate: '2026-10-01T00:00:00Z' }
+  } }, 'copilot:default', at);
+  assert.deepEqual(result.windows.map(w => w.key), ['chat', 'completions']);
+  assert.deepEqual(result.windows.map(w => w.usedPercent), [2.5, 0]);
+  assert.equal(new Set(result.windows.map(w => w.modelGroup)).size, 2);
+  assert.equal(result.windows[0].resetsAt, null); assert.equal(result.windows[1].resetsAt, Date.parse('2026-12-01T00:00:00Z'));
+  const [unlimited] = copilotReading({ quotaSnapshots: { chat: { isUnlimitedEntitlement: true, entitlementRequests: 0, hasQuota: false } } }, 'copilot:default', at);
+  assert.equal(unlimited.windows[0].unlimited, true); assert.equal(unlimited.windows[0].usedPercent, null);
+});
+
 test('quota parsers reject missing and invalid values without inventing zero', () => {
   assert.throws(() => claudeReading({ rate_limits_available: true, rate_limits: null }, 'a'), UsageError);
   assert.throws(() => claudeReading({ rate_limits_available: true, rate_limits: { five_hour: { utilization: -1 } } }, 'a'), UsageError);

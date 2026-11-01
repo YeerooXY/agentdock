@@ -57,6 +57,18 @@ async function resize(id, edge, dx, dy, cancel = false, snapshot) {
 (async () => {
   app = await electron.launch({ args: [root, '--smoke-test', `--data-dir=${profile}`] }); page = await app.firstWindow(); page.setDefaultTimeout(15000); page.on('pageerror', e => errors.push(e.message));
   await page.waitForSelector('.session-grid');
+  const initialBounds = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].getBounds());
+  const restoredBounds = { x: 70, y: 55, width: 1080, height: 740 };
+  await app.evaluate(({ BrowserWindow }, bounds) => BrowserWindow.getAllWindows()[0].setBounds(bounds), restoredBounds);
+  for (let round = 0; round < 2; round++) {
+    await page.keyboard.press('F11');
+    await until(async () => { const value = await call('state'); return value.mode === 'fullscreen' && !value.transitioning; });
+    await page.keyboard.press('F11');
+    await until(async () => { const value = await call('state'); return value.mode === 'dashboard' && !value.transitioning; });
+    assert.deepEqual(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].getBounds()), restoredBounds, 'F11 restores the previous size and position');
+  }
+  console.log('PASS repeated F11 preserves custom window bounds');
+  await app.evaluate(({ BrowserWindow }, bounds) => BrowserWindow.getAllWindows()[0].setBounds(bounds), initialBounds);
   assert.equal(await page.locator('#results-count').innerText(), '2');
   assert.equal(await page.locator('#results-count').evaluate(el => el.parentElement.classList.contains('notification-icon')), true);
   assert.deepEqual(await page.locator('.window-actions button').evaluateAll(els => els.map(el => el.dataset.action)), ['hud', 'minimize', 'fullscreen', 'tray']);
@@ -155,7 +167,7 @@ async function resize(id, edge, dx, dy, cancel = false, snapshot) {
   await firstPanel.locator('[data-action="toggle-console"]').click();
   await until(async () => (await call('state')).mode === 'fullscreen' && !(await call('state')).transitioning);
   await firstPanel.waitFor({ state: 'visible' });
-  await until(async () => await firstPanel.evaluate(el => { const r = el.getBoundingClientRect(), top = document.querySelector('.titlebar').getBoundingClientRect().bottom, rail = document.querySelector('#sidebar')?.getBoundingClientRect().right || 0; return Math.abs(r.left - rail) <= 1 && Math.abs(r.top - top) <= 1 && Math.abs(r.right - innerWidth) <= 1 && Math.abs(r.bottom - innerHeight) <= 1; }));
+  await until(async () => await firstPanel.evaluate(el => { const r = el.getBoundingClientRect(), top = document.querySelector('.titlebar').getBoundingClientRect().bottom; return Math.abs(r.left) <= 1 && Math.abs(r.top - top) <= 1 && Math.abs(r.right - innerWidth) <= 1 && Math.abs(r.bottom - innerHeight) <= 1; }));
   await capture('expanded-console');
   await signal(first);
   await firstPanel.locator('.xterm-screen').click();
@@ -174,8 +186,8 @@ async function resize(id, edge, dx, dy, cancel = false, snapshot) {
   await until(async () => (await call('state')).sessions.find(x => x.id === second.id).state === 'open');
   assert.equal(await page.locator('#ready-count').isVisible(), false);
   await secondPanel.locator('[data-action="toggle-console"]').click();
-  await openPage(page, 'results'); await openResultFolder(page); await page.locator('.result-console-heading h2').first().waitFor();
-  assert.deepEqual(await page.locator('.result-console-heading h2').allTextContents(), ['Robonslaught']); assert.equal(await page.locator('.result-batch').count(), 2);
+  await openPage(page, 'results'); await openResultFolder(page); await page.locator('.result-batch-heading strong').first().waitFor();
+  assert.deepEqual(await page.locator('.result-batch-heading strong').allTextContents(), ['Robonslaught', 'Robonslaught']); assert.equal(await page.locator('.result-batch').count(), 2);
   await capture('results');
   assert.equal('inbox' in (await call('state')).workbench, false);
   assert.equal((await call('state')).workbench.results.length, 8);
@@ -194,6 +206,10 @@ async function resize(id, edge, dx, dy, cancel = false, snapshot) {
   await page.reload(); await page.waitForSelector('.session-grid'); assert.equal(await page.locator('body').getAttribute('data-trim'), 'blue'); assert.equal(await page.locator('body').getAttribute('data-lighting'), 'wave');
   assert.equal((await call('state')).workbench.unreadResults, 0);
   assert.deepEqual(errors, []);
+  await call('mode', 'dashboard');
+  await app.evaluate(({ BrowserWindow }, bounds) => BrowserWindow.getAllWindows()[0].setBounds(bounds), restoredBounds);
+  await call('mode', 'hud'); await call('mode', 'dashboard');
+  assert.deepEqual(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].getBounds()), restoredBounds, 'HUD restores the previous window');
   console.log('PASS edge/corner grid resize, preview/cancel/invalid sizing, keyboard resize, sliding drop with terminal contents, red badges/acknowledgment, window controls, steady cursor, grouped Results and settings persistence');
   await call('quit'); await app.close(); app = null;
 })().catch(error => { console.error(error); process.exitCode = 1; }).finally(async () => { if (app) await app.close().catch(() => {}); assert.equal(path.dirname(fs.realpathSync(profile)), fs.realpathSync(parent)); fs.rmSync(profile, { recursive: true, force: true }); });

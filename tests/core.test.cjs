@@ -125,7 +125,7 @@ test('CLI callbacks write only state and usage metadata, including real zero per
   const payload = { type: 'agent-turn-complete', 'thread-id': 'thread', 'input-messages': ['PRIVATE_PROMPT'], 'last-assistant-message': 'PRIVATE_RESPONSE' };
   assert.equal(spawnSync(process.execPath, [helper, 'codex-notify', JSON.stringify(payload)], { env, windowsHide: true }).status, 0);
   const event = readJson(path.join(temp, 'events', `${session}.${launchId}.state.json`));
-  assert.equal(event.state, 'ready'); assert.equal(event.providerSessionId, 'thread'); assert.ok(!JSON.stringify(event).includes('PRIVATE_'));
+  assert.equal(event.state, 'attention'); assert.match(event.summary, /Completion check/); assert.equal(event.providerSessionId, 'thread'); assert.ok(!JSON.stringify(event).includes('PRIVATE_'));
   const input = { session_id: 'claude-id', rate_limits: { five_hour: { used_percentage: 0, resets_at: 1800000000 } }, context_window: { used_percentage: 20, total_input_tokens: 60, total_output_tokens: 10 }, model: { display_name: 'Test' }, transcript_path: 'PRIVATE_TRANSCRIPT_PATH' };
   assert.equal(spawnSync(process.execPath, [helper, 'statusline'], { env, input: JSON.stringify(input), windowsHide: true }).status, 0);
   const usage = readJson(path.join(temp, 'events', `${session}.${launchId}.usage.json`));

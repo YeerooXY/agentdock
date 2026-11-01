@@ -1,5 +1,5 @@
 'use strict';
-const live = items => [...items].filter(x => x.alive || x.restoreError);
+const live = items => [...items].filter(x => !x.hidden && (x.alive || x.restoreError));
 function gridSize(raw = {}) {
   const columns = raw.columns ?? 3, rows = raw.rows ?? 3;
   if (![columns, rows].every(x => Number.isInteger(x) && x >= 2 && x <= 8)) throw new Error('Use 2 to 8 rows and columns.');

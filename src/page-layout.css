@@ -48,4 +48,5 @@
 .settings-overlay .settings-content .surface:last-child,
 .settings-overlay .settings-content .settings-column:last-child>.surface:last-child { border-bottom:0 }
 .settings-overlay .settings-content .surface h2 { font-size:12px; letter-spacing:.8px; text-transform:uppercase; color:var(--muted); margin-bottom:4px }
+#content[data-view="console-settings"] .settings-content .surface h2 { font-size:14px; letter-spacing:normal; text-transform:none }
 .settings-overlay .settings-content .toggle-row:last-of-type { border-bottom:0 }

@@ -1,5 +1,5 @@
 'use strict';
-const settings = new Set(['appearance', 'console-settings', 'devices', 'api-settings', 'tools', 'instructions', 'general-settings']);
+const settings = new Set(['appearance', 'console-settings', 'agent-settings', 'devices', 'api-settings', 'tools', 'instructions', 'general-settings']);
 async function openPage(page, target) {
   if (target === 'settings') {
     await page.locator('.sidebar-bottom [data-page=settings]').click();

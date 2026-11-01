@@ -1,0 +1,123 @@
+﻿/* Navigation shares the title bar; the workspace extends to the bottom edge. */
+#dashboard { --region-sidebar-width:0px; --sidebar-width:0px }
+#dashboard .titlebar {
+  height:56px;
+  padding:5px 10px;
+  gap:12px;
+  background:#10121b;
+  border-bottom:1px solid #34394c;
+  z-index:1001;
+}
+#dashboard .window-actions button { color:#c7cee2 }
+#dashboard .window-actions button:hover { color:#fff; background:#252b3d }
+#dashboard .window-actions svg { stroke:currentColor; stroke-width:1.8 }
+#dashboard #sidebar {
+  position:relative;
+  inset:auto;
+  display:flex;
+  flex-direction:row;
+  align-items:center;
+  gap:8px;
+  width:max-content;
+  height:44px;
+  max-width:100%;
+  padding:0;
+  margin:0;
+  opacity:1;
+  visibility:visible;
+  flex:none;
+  overflow:visible;
+  border:0;
+  border-radius:0;
+  background:none;
+  box-shadow:none;
+  -webkit-app-region:no-drag;
+}
+#sidebar .brand { position:relative; padding:0; width:36px; height:44px; justify-content:center; margin:0 4px 0 0 }
+#sidebar .brand-mark,#sidebar .brand-mark .pd-mark { width:26px; height:26px; filter:none }
+#sidebar .brand-mark .icon-blue { stop-color:#d4d9ff }
+#sidebar .brand-mark .icon-pink { stop-color:#bfb1ff }
+#sidebar .brand > span:nth-child(2),#sidebar .sidebar-edge { display:none }
+#dashboard #sidebar::before,#sidebar>.page-backdrop,#sidebar>.panel-sky { display:none }
+/* Both axes must be visible: the old vertical scroller clipped hover labels
+   and created a horizontal scrollbar in this row. */
+#sidebar nav,#sidebar .sidebar-bottom {
+  display:flex;
+  flex:none;
+  flex-direction:row;
+  align-items:center;
+  gap:2px;
+  margin:0;
+  padding:0;
+  border:0;
+  overflow:visible;
+}
+#sidebar .sidebar-bottom { padding-left:8px; border-left:1px solid #4b5064 }
+#sidebar nav button,#sidebar .sidebar-bottom > button {
+  position:relative;
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  flex:none;
+  padding:0;
+  width:44px;
+  height:44px;
+  min-height:44px;
+  border-radius:8px;
+  font-size:0;
+  gap:0;
+  border:1px solid transparent;
+  color:#d8deef;
+  background:transparent;
+  box-shadow:none;
+}
+#sidebar nav button:hover,#sidebar .sidebar-bottom > button:hover { color:#fff; background:#252b3d }
+#sidebar nav button.selected,#sidebar .sidebar-bottom > button.selected {
+  color:#fff;
+  border-color:#8d9cc6;
+  box-shadow:inset 0 -2px 0 #c6d2ff;
+  background:#303a55;
+}
+#sidebar button svg.icon { width:21px; height:21px; flex:none; stroke:currentColor; stroke-width:1.9 }
+#sidebar nav .notification-icon { width:21px; height:21px }
+#sidebar nav .notification-badge { top:-8px; right:-9px }
+#sidebar nav button > #nav-count { display:block; position:absolute; bottom:1px; right:1px; margin:0; font-size:9px; line-height:12px; min-width:12px; padding:0 2px; color:#e1e8ff; background:#182238 }
+#sidebar nav button::after { display:none }
+#sidebar .rail-tooltip {
+  display:none;
+  position:absolute;
+  inset:calc(100% + 9px) auto auto 50%;
+  transform:translateX(-50%);
+  width:max-content;
+  padding:7px 10px;
+  border:1px solid #737f9e;
+  border-radius:6px;
+  background:#151a2d;
+  color:#f0f1f7;
+  font-size:12px;
+  line-height:18px;
+  z-index:1500;
+  pointer-events:none;
+}
+#sidebar .brand .rail-tooltip { left:0; transform:none }
+#sidebar button:is(:hover,:focus-visible) .rail-tooltip { display:block }
+#sidebar button:focus-visible { outline:2px solid #d4d8ff; outline-offset:2px }
+#dashboard > .workspace { width:100%; min-width:0; margin:0 }
+#consoles-page { padding-bottom:12px }
+#content { padding-bottom:24px!important }
+#consoles-page.has-expanded-console .session-grid>.session-card.console-expanded { left:0!important; bottom:0!important }
+body.console-expanded .titlebar,body.titlebar-hidden .titlebar { left:0 }
+body[data-platform=darwin] #dashboard .titlebar { padding-left:84px }
+.settings-overlay { bottom:0 }
+@media(max-width:680px) {
+  #dashboard .titlebar { height:100px; flex-wrap:wrap; align-content:center; gap:0 8px; padding:4px 8px }
+  #dashboard #sidebar { order:10; justify-content:center; width:100%; height:48px }
+  #dashboard .titlebar .window-drag-handle { align-self:auto; height:40px }
+  #dashboard .titlebar .window-actions { height:40px; align-items:center }
+  body[data-platform=darwin] #dashboard .titlebar { padding-left:8px }
+  body[data-platform=darwin] #dashboard .window-drag-handle { margin-left:76px }
+}
+@media(max-width:400px) {
+  #sidebar .brand { display:none }
+  #sidebar nav button:first-child .rail-tooltip { left:0; transform:none }
+}

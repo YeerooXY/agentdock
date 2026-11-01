@@ -12,6 +12,14 @@ const parent = path.resolve(__dirname, '..', 'test-data');
 fs.mkdirSync(parent, { recursive: true });
 const resumeArgs = args => { const index = args.indexOf('resume'); return index < 0 ? [] : args.slice(index, index + 2); };
 const key = crypto.randomBytes(32);
+test('retired Code and Preview panels are skipped during restoration', async () => {
+  const sessions = Object.create(Sessions.prototype); sessions.items = new Map();
+  for (const kind of ['code', 'web']) {
+    assert.equal(await sessions.restore({ kind, provider: kind, slot: 1 }), null);
+    sessions.items.set(kind, { kind, provider: kind, alive: true, slot: 1 });
+  }
+  assert.deepEqual(sessions.savedConsoles(), []);
+});
 const storage = {
   isEncryptionAvailable: () => true,
   encryptString(value) { const iv = crypto.randomBytes(12), cipher = crypto.createCipheriv('aes-256-gcm', key, iv); const data = Buffer.concat([cipher.update(value, 'utf8'), cipher.final()]); return Buffer.concat([iv, cipher.getAuthTag(), data]); },
@@ -23,6 +31,7 @@ function fixture(t, existingRoot, options = {}) {
   const sessions = new Sessions(root, {
     nativeCodex: () => 'C:\\Programs\\codex.exe', findProgram: name => name === 'claude' ? 'C:\\Programs\\claude.exe' : process.execPath,
     claude: options.claude,
+    agentHome: options.agentHome,
     prepareCodexSession: options.prepareCodexSession || (async () => []),
     pty: { spawn(executable, args, config) {
       const terminal = { onData(fn) { this.data = fn; }, onExit(fn) { this.exit = fn; }, kill() { this.exit({ exitCode: 0 }); }, write(data) { throw new Error('Restoration must not replay input: ' + data); } };
@@ -63,6 +72,31 @@ test('restores nine slots, folders, names and exact agent conversations without 
   assert.ok(second.calls.slice(0, 5).every(call => !call.args.includes('--model')), 'resumed provider threads restore their saved model instead of forcing an older launch choice');
   assert.ok(!JSON.stringify(second.sessions.list()).includes('PRIVATE_COMMAND'));
   assert.deepEqual(second.errors, []);
+});
+
+test('Antigravity saves exact identities and restores independent conversations in the same folder', async t => {
+  const first = fixture(t), threads = [crypto.randomUUID(), crypto.randomUUID()];
+  for (let i = 0; i < threads.length; i++) {
+    const created = await first.sessions.create({ provider: 'antigravity', slot: i + 1, cwd: first.root });
+    assert.ok(!first.calls[i].args.includes('--conversation'), 'new consoles start fresh');
+    atomicJson(path.join(first.root, 'events', `${created.id}.${created.launchId}.identity.json`), { session: created.id, launchId: created.launchId, provider: 'antigravity', providerSessionId: threads[i], at: Date.now() });
+  }
+  first.workspace.freeze(); assert.deepEqual(first.saved().map(x => x.providerSessionId), threads);
+  const second = fixture(t, first.root); await second.workspace.restore();
+  assert.deepEqual(second.calls.map(x => x.args.slice(x.args.indexOf('--conversation'))), threads.map(id => ['--conversation', id]));
+  assert.deepEqual(second.sessions.list().map(x => x.providerSessionId), threads); assert.deepEqual(second.errors, []);
+});
+
+test('only an unambiguous legacy Antigravity console recovers from its workspace cache', async t => {
+  for (const count of [1, 2]) {
+    const first = fixture(t), home = path.join(first.root, 'home'), thread = crypto.randomUUID();
+    atomicJson(path.join(home, '.gemini/antigravity-cli/cache/last_conversations.json'), { [first.root]: thread });
+    const db = path.join(home, '.gemini/antigravity-cli/conversations', thread + '.db'); fs.mkdirSync(path.dirname(db), { recursive: true }); fs.writeFileSync(db, '');
+    for (let i = 0; i < count; i++) await first.sessions.create({ provider: 'antigravity', slot: i + 1, cwd: first.root });
+    first.workspace.freeze(); const second = fixture(t, first.root, { agentHome: home }); await second.workspace.restore();
+    assert.deepEqual(second.sessions.list().map(x => x.providerSessionId), count === 1 ? [thread] : [null, null]);
+    assert.equal(second.calls.some(x => x.args.includes('--continue')), false); assert.deepEqual(second.errors, []);
+  }
 });
 
 test('ending a panel removes it from the saved workspace; a crash keeps the other panels', async t => {

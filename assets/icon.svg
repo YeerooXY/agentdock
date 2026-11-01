@@ -8,6 +8,6 @@
   <g fill="none" stroke="url(#pd-ink)" stroke-width="20">
     <path d="M70 188 V76 H104 a29 29 0 0 1 0 58 H70" stroke-linejoin="round"/>
     <circle cx="158" cy="159" r="25"/>
-    <path d="M183 72 V190"/>
+    <path d="M183 134 V190"/>
   </g>
 </svg>

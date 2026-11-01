@@ -13,7 +13,7 @@ class SetupRequests {
   }
   status() {
     const hub = this.getHub();
-    return { agents: this.getAgents(), keys: hub.vault.list(), connections: hub.config.connections, apis: hub.config.profiles, imageGeneration: hub.config.imageGeneration, pending: this.items, help: 'Prepare tool, API or image generator settings with dock/prepare_setup. Use kind key to request direct entry in Keys; never ask for the value in chat. Built-in Blender, Unity, Meshy, REA and MiroFish setup is on Tools. CLI account sign-in stays in the provider console.' };
+    return { agents: this.getAgents(), keys: hub.vault.list(), connections: hub.config.connections, integrations: hub.builtinTools(), apis: hub.config.profiles, imageGeneration: hub.config.imageGeneration, pending: this.items, help: 'Integrations lists built-in tools, including those awaiting setup. Connected does not establish provider readiness; test the connection and inspect capabilities. Prepare tool, API or image generator settings with dock/prepare_setup. Use kind key to request direct entry in Keys; never ask for the value in chat. Built-in setup is on Tools. CLI account sign-in stays in the provider console.' };
   }
   prepare({ kind, config }, context) {
     if (!config || typeof config !== 'object' || Array.isArray(config)) throw new Error('Provide the connection settings.');

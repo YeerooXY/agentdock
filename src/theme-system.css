@@ -243,7 +243,7 @@ body:not([data-lighting=static]) .console-skin::after { inset:calc(var(--trim-wi
   .text-size-buttons .text-size { width:22px }
 }
 
-/* "Pd" tile: the mark carries its own dark plate and themed edge. */
+/* "Pa" tile: the mark carries its own dark plate and themed edge. */
 .brand-mark { background:none!important; border:0!important; box-shadow:none!important; filter:drop-shadow(0 0 8px color-mix(in srgb,var(--accent-pink) 28%,transparent)); width:38px; height:38px; padding:0 }
 .brand-mark .pd-mark { width:38px; height:38px }
 .hud-brand .pd-mark { width:18px; height:18px; flex:none }

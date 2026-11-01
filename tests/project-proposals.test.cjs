@@ -10,7 +10,7 @@ function fixture(t) {
   const projects = new Projects(root), session = { id: 'console', name: 'Builder', alive: true, cwd: root };
   const sessions = { items: new Map([[session.id, session]]), assignProject(id, projectId) { this.items.get(id).projectId = projectId; } };
   const alerts = [], bridge = Object.create(Workbench.prototype);
-  Object.assign(bridge, { projects, getSessions: () => sessions, getProject: () => root, alerts: { send: value => alerts.push(value) } });
+  Object.assign(bridge, { projects, getSessions: () => sessions, getProject: () => root, completion: { isStudyConversation: () => false }, alerts: { send: value => alerts.push(value) } });
   return { root, projects, session, sessions, bridge, alerts, raw: { name: 'Game', folders: [root], goals: 'Build a game' } };
 }
 

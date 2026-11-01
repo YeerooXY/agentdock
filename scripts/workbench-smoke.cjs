@@ -39,21 +39,10 @@ async function eventually(check, message='Timed out') {const end=Date.now()+4500
   await eventually(async()=>(await call('state')).sessions.find(x=>x.id===one.id).slot===4);
   assert.ok((await call('session.buffer',one.id)).data.includes('MOVE_MARKER_917')); assert.equal((await call('state')).sessions.filter(x=>x.alive).length,2);
   console.log('PASS console drag, occupied swap, keyboard move and terminal preservation');
-  // Preview panels follow local links but never leave this PC.
-  const port=server.address().port, web=await call('web.create',{slot:5,url:`127.0.0.1:${port}/preview`});
-  const frameUrls=()=>page.frames().filter(f=>f.parentFrame()===page.mainFrame()).map(f=>f.url());
-  const webFrame=page.frameLocator(`.web-panel[data-console-id="${web.id}"] iframe`);
-  // The panel can re-render while the first state updates arrive; click until the local link opens.
-  await eventually(async()=>{await webFrame.locator('#local').click({timeout:3000}).catch(()=>{});return webFrame.locator('#other').isVisible({timeout:2000}).catch(()=>false);},'The preview did not follow a local link: '+frameUrls());
-  await page.locator(`.web-panel[data-console-id="${web.id}"] [data-web-action=reload]`).click(); await webFrame.locator('#away').waitFor();
-  await webFrame.locator('#away').click(); await new Promise(r=>setTimeout(r,1500));
-  // CSP frame-src and the main-process guard both stop it; the outside server never sees a request.
-  assert.equal(awayHits,0,'A preview frame reached a non-local server');
-  assert.ok(!frameUrls().some(url=>url.startsWith(awayUrl)),'A preview frame left the local server: '+frameUrls());
-  await assert.rejects(call('web.url',{id:web.id,url:'https://example.com'}),/local servers only/);
-  await call('web.close',web.id); assert.equal((await call('state')).codePanels.some(x=>x.id===web.id),false);
-  awayServer?.close();
-  console.log('PASS preview panels load local servers, follow local links and block other sites');
+  assert.equal(await page.locator('#launch-folder, #results-shortcut, [data-code-action=create], [data-web-action=create], #explorer-pane').count(), 0);
+  await assert.rejects(call('code.create', {}), /removed/);
+  await assert.rejects(call('web.create', {}), /removed/);
+  console.log('PASS retired panels and titlebar shortcuts are absent');
   const tools=await call('tools.catalog','dock');assert.ok(tools.some(x=>x.name==='dock/save_result'));assert.ok(tools.some(x=>x.name==='dock/meshy_concept'));
   fs.mkdirSync(path.join(profile,'events'),{recursive:true});fs.writeFileSync(path.join(profile,'events',`${one.id}.${one.launchId}.state.json`),JSON.stringify({session:one.id,launchId:one.launchId,state:'ready',at:Date.now()}));
   await eventually(async()=>(await call('state')).sessions.find(x=>x.id===one.id).state==='ready');
@@ -86,6 +75,7 @@ async function eventually(check, message='Timed out') {const end=Date.now()+4500
   const tracked = await tool('dock/start_turn');
   const saved = await tool('dock/save_result', { title: 'Completed prompt report', text: '# Completed prompt\n\nThe finished prompt opens its saved Results.', summary: 'Notification routing verified with synthetic data.', kind: 'report' });
   fs.writeFileSync(path.join(notificationOut, 'fixture.json'), JSON.stringify(await call('state')));
+  await tool('dock/finish_turn', { turnId: tracked.turnId, outcome: 'no-change', summary: 'Notification routing fixture.', nextStep: 'None', outputs: 'saved', resultIds: [saved.id] });
   const ready = await tool('dock/notify', { title: 'Finished prompt', kind: 'ready' });
   assert.equal(ready.turnId, tracked.turnId); assert.equal(ready.resultId, saved.id); assert.equal(ready.destination, 'results');
   await page.locator(`.session-card[data-console-id="${one.id}"] [data-action="toggle-console"]`).click();

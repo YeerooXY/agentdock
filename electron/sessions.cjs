@@ -8,6 +8,7 @@ const { atomicJson, readJson } = require('./storage.cjs');
 const { planLayout, planOpening, planGrid, gridSize, occupied } = require('./console-layout.cjs');
 const { providers, byId: cliAgents } = require('./cli-catalog.cjs');
 const { prepareCli } = require('./cli-launch.cjs');
+const { cachedAntigravityConversation } = require('./antigravity-session.cjs');
 const { prepareCodexSession } = require('./codex-session.cjs');
 const { copyConversation } = require('./account-history.cjs');
 const { defaultId, inside } = require('./account-profiles.cjs');
@@ -17,6 +18,7 @@ const { cleanWorktree } = require('./worktrees.cjs');
 const { previewUrl } = require('./web-preview.cjs');
 const { ordinaryConsole } = require('./worker-sessions.cjs');
 const { consoleCapabilities } = require('./worker-placement.cjs');
+const { studyContext, playtimeDirectory } = require('./study-context.cjs');
 // Code and preview panels sit in the grid but run no process.
 const isPanel = item => ['code', 'web', 'review'].includes(item?.kind);
 function envValue(env, name) { return Object.entries(env).find(([key]) => key.toLowerCase() === name.toLowerCase())?.[1]; }
@@ -65,6 +67,7 @@ class Sessions extends EventEmitter {
     this.nativeCodex = dependencies.nativeCodex || nativeCodex;
     this.codexScrollback = dependencies.codexScrollback || (() => true);
     this.hub = dependencies.hub;
+    this.studyContext = dependencies.studyContext || studyContext;
     this.projects = dependencies.projects;
     this.ssh = dependencies.ssh;
     this.claude = dependencies.claude;
@@ -131,24 +134,21 @@ class Sessions extends EventEmitter {
     item.phoneAllowed = allow; this.emit('changed'); return publicSession(item);
   }
   savedConsoles() {
-    return [...this.items.values()].filter(x => !x.taskId && (x.alive || x.restoreError) && !x.dismissed && !['login', 'setup', 'review'].includes(x.purpose)).map(x => ({
+    return [...this.items.values()].filter(x => !x.taskId && !['code', 'web'].includes(x.kind) && (x.alive || x.restoreError) && !x.dismissed && !['login', 'setup', 'review'].includes(x.purpose)).map(x => ({
       slot: x.slot, width: x.width || 1, height: x.height || 1, consoleKey: x.consoleKey || x.id, projectId: x.projectId || null, name: x.name, nameMode: x.nameMode, cwd: x.cwd, provider: x.provider, permissions: x.permissions,
       ...(x.kind === 'code' ? { kind: 'code', codeSourceKey: x.codeSourceKey } : {}),
       ...(x.kind === 'web' ? { kind: 'web', url: x.url, codeSourceKey: x.codeSourceKey } : {}),
-      command: x.command || '', model: x.launchModel || '', accountId: ['codex', 'claude'].includes(x.provider) ? x.accountId || defaultId(x.provider) : null, providerSessionId: ['codex', 'claude'].includes(x.provider) ? x.providerSessionId : null, claudeTarget: x.claudeTarget,
+      command: x.command || '', model: x.launchModel || '', accountId: ['codex', 'claude'].includes(x.provider) ? x.accountId || defaultId(x.provider) : null, providerSessionId: ['codex', 'claude', 'antigravity'].includes(x.provider) ? x.providerSessionId : null, claudeTarget: x.claudeTarget,
       ...(x.remote ? { remoteHostId: x.remote.hostId, remoteFolder: x.remote.folder } : {}),
-      ...(x.worktree ? { worktree: x.worktree } : {})
+      ...(x.worktree ? { worktree: x.worktree } : {}),
+      ...(x.playtimeDataDir ? { playtimeDataDir: x.playtimeDataDir } : {})
     })).sort((a, b) => a.slot - b.slot);
   }
-  async restore(entry) {
-    if (entry.kind === 'code' && entry.provider === 'code') {
-      try { return this.createCodePanel(entry); } catch { return null; }
-    }
-    if (entry.kind === 'web' && entry.provider === 'web') {
-      try { return this.createWebPanel(entry); } catch { return null; }
-    }
+  async restore(entry, { recoverAntigravity = false } = {}) {
+    if (['code', 'web'].includes(entry.kind) || ['code', 'web'].includes(entry.provider)) return null;
     if (entry.projectId && this.projects && !this.projects.get(entry.projectId)) entry = { ...entry, projectId: null, ...(entry.nameMode === 'project' ? { name: '', nameMode: 'folder' } : {}) };
     try {
+      if (recoverAntigravity && entry.provider === 'antigravity' && !entry.providerSessionId) entry = { ...entry, providerSessionId: cachedAntigravityConversation(entry.cwd, this.agentHome) };
       return await this.create({ ...entry, permissions: entry.permissions === 'system' ? 'default' : entry.permissions }, { resumeId: entry.providerSessionId, claudeTarget: entry.claudeTarget, accountId: entry.accountId });
     } catch (error) {
       const id = crypto.randomUUID();
@@ -208,7 +208,8 @@ class Sessions extends EventEmitter {
     const dir = path.join(sessionsRoot, id);
     try { fs.mkdirSync(dir); } catch (error) { if (error.code !== 'EEXIST') throw error; }
     ensureOwnedDirectory(sessionsRoot, dir);
-    const summary = purpose === 'agent' && this.hub ? this.hub.summary() + (this.projects?.chatSummary({ projectId: raw.projectId, name, cwd }) || '') : '';
+    const playtimeDataDir = raw.playtimeDataDir == null ? undefined : playtimeDirectory(raw.playtimeDataDir);
+    const summary = purpose === 'agent' && this.hub ? this.hub.summary() + (this.projects?.chatSummary({ projectId: raw.projectId, name, cwd }) || '') + this.studyContext({ cwd, playtimeDataDir, purpose, provider: raw.provider, projectId: raw.projectId || null }) : '';
     let discussion = '';
     if (raw.planDiscussion && !resumeId) {
       if (!['brief', 'research', 'infrastructure', 'roadmap'].includes(raw.planDiscussion)) throw new Error('Choose a planning section.');
@@ -240,7 +241,8 @@ class Sessions extends EventEmitter {
       if (resumeId && resumeModel) args.push('--model', resumeModel);
       if (this.hub && purpose === 'agent') {
         const context = JSON.stringify(summary).length < 22000 ? summary : `Before doing any work, call the paddock dock_context tool to load the shared user instructions and tool summary. The same instructions are in ${summaryPath}. Refresh them at the start of each task. Use dock_tools to discover tools and dock_call to invoke them.`;
-        const values = { developer_instructions: context, 'mcp_servers.paddock.command': node, 'mcp_servers.paddock.args': [bridgeHelper], 'mcp_servers.paddock.env_vars': ['PADDOCK_BRIDGE_URL', 'PADDOCK_BRIDGE_TOKEN'], 'mcp_servers.paddock.tool_timeout_sec': 150 };
+        const values = { developer_instructions: context, 'mcp_servers.paddock.command': node, 'mcp_servers.paddock.args': [bridgeHelper], 'mcp_servers.paddock.env_vars': ['PADDOCK_BRIDGE_URL', 'PADDOCK_BRIDGE_TOKEN'], 'mcp_servers.paddock.tool_timeout_sec': 150,
+          'mcp_servers.paddock.default_tools_approval_mode': 'approve' };
         for (const [key, value] of Object.entries(values)) args.push('-c', `${key}=${JSON.stringify(value)}`);
       }
       if (permissions === 'unrestricted') args.push('--dangerously-bypass-approvals-and-sandbox');
@@ -269,7 +271,8 @@ class Sessions extends EventEmitter {
       const agent = cliAgents.get(raw.provider);
       const program = this.cliSetup?.executable(raw.provider) || this.findProgram(agent.command);
       if (!program) throw new Error(`${agent.name} was not found. Open Settings → Set up agents to install it.`);
-      const prepared = this.hub ? prepareCli(raw.provider, { directory: dir, runtime: { ...this.runtime, node, tools: bridgeHelper }, summary, summaryPath, home: this.agentHome, model, permissions }) : { args: [...(agent.args || []), ...(model && agent.model ? [agent.model, model] : [])], env: {} };
+      const prepared = this.hub ? prepareCli(raw.provider, { directory: dir, runtime: { ...this.runtime, node, tools: bridgeHelper }, summary, summaryPath, home: this.agentHome, model, permissions, profiles: this.hub.config?.profiles || [] }) : { args: [...(agent.args || []), ...(model && agent.model ? [agent.model, model] : [])], env: {} };
+      if (raw.provider === 'antigravity' && resumeId) prepared.args.push('--conversation', resumeId);
       cliEnv = prepared.env;
       ({ executable, args } = programLaunch(program, prepared.args, { bypass: true }));
     } else if (raw.provider === 'custom') {
@@ -342,6 +345,7 @@ class Sessions extends EventEmitter {
     const consoleKey = /^[a-f0-9-]{36}$/i.test(raw.consoleKey || '') ? raw.consoleKey : id;
     const session = { id, consoleKey, projectId: raw.projectId || null, ...(cleanWorktree(raw.worktree) ? { worktree: cleanWorktree(raw.worktree) } : {}), slot, width, height, name, nameMode, cwd, provider: raw.provider, permissions, launchModel: resumeModel || model, command: raw.provider === 'custom' ? raw.command : '', claudeTarget: raw.provider === 'claude' ? claudeInstall : undefined, accountId: selectedAccountId, accountLabel: account?.label || null, accountConfigDir: account?.configDir || null, launchId, purpose, switching: false, draftSupported: !!bridge, ...(isWsl && raw.provider === 'claude' ? { draftSupportReason: 'Account switching is unavailable for Claude Code in WSL.' } : {}), editorRoots, state: 'open', alive: true, cols: 110, rows: 30, createdAt: Date.now(), updatedAt: Date.now(), terminal, buffer: '', sequence: 0, usage: null, providerSessionId: resumeId };
     if (resumeModel) { session.model = resumeModel; session.modelId = resumeModel; session.settingsAt = Date.now(); }
+    if (playtimeDataDir) session.playtimeDataDir = playtimeDataDir;
     if (trackingWarning) session.buffer = trackingWarning;
     if (!stage) this.items.set(id, session);
     else this.pendingStages.set(launchId, session);
@@ -694,11 +698,18 @@ class Sessions extends EventEmitter {
   refreshContextFile(item) {
     if (isPanel(item)) return;
     if (!this.hub || item.remote) return;
-    const file = path.join(this.root, 'sessions', item.id, 'PADDOCK.md'), temp = file + '.tmp';
+    const names = ['PADDOCK.md', ...(item.provider === 'copilot' ? ['AGENTS.md'] : [])];
+    let temp;
     try {
-      const summary = this.hub.summary() + (this.projects?.chatSummary(item) || '');
+      const summary = this.hub.summary() + (this.projects?.chatSummary(item) || '') + this.studyContext(item);
       if (this.contexts.get(item.id) === summary) return;
-      fs.writeFileSync(temp, summary, { mode: 0o600 }); fs.renameSync(temp, file); this.contexts.set(item.id, summary);
+      // Copilot discovers AGENTS.md in its custom instructions directory.
+      // Keep that launch copy current when the project or shared rules change.
+      for (const name of names) {
+        const file = path.join(this.root, 'sessions', item.id, name); temp = file + '.tmp';
+        fs.writeFileSync(temp, summary, { mode: 0o600 }); fs.renameSync(temp, file);
+      }
+      this.contexts.set(item.id, summary);
     } catch {
       try { fs.unlinkSync(temp); } catch {}
       this.emit('context-error', 'A chat instruction file could not be refreshed. Use dock_context for the current project.');
@@ -795,14 +806,14 @@ class Sessions extends EventEmitter {
           const event = readJson(file, {});
           if (event.session !== item.id || event.launchId !== item.launchId) continue;
           if (kind === 'identity') {
-            if (item.provider !== 'codex' || !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(event.providerSessionId || '')) continue;
+            if (!['codex', 'antigravity'].includes(item.provider) || (item.provider === 'antigravity' && event.provider !== 'antigravity') || !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(event.providerSessionId || '')) continue;
             this.codexIdentities.set(item.id, event.providerSessionId);
             if (item.providerSessionId !== event.providerSessionId) { item.providerSessionId = event.providerSessionId; delete item.model; delete item.modelId; delete item.effort; delete item.settingsAt; changed = true; }
             continue;
           }
           // A late completion from a previous chat must not replace the new
           // chat selected with /new, /resume or /fork in this same terminal.
-          if (item.provider === 'codex' && this.codexIdentities.has(item.id) && event.providerSessionId && event.providerSessionId !== this.codexIdentities.get(item.id)) continue;
+          if (['codex', 'antigravity'].includes(item.provider) && this.codexIdentities.has(item.id) && event.providerSessionId && event.providerSessionId !== this.codexIdentities.get(item.id)) continue;
           if (event.providerSessionId && event.providerSessionId !== item.providerSessionId) {
             item.providerSessionId = event.providerSessionId;
             delete item.model; delete item.modelId; delete item.effort; delete item.settingsAt;
@@ -812,6 +823,9 @@ class Sessions extends EventEmitter {
           if (event.model) { item.model = event.model; item.modelId = event.modelId || event.model; item.effort = event.effort || null; item.settingsAt = event.at; }
           if (event.contextPercent !== undefined) item.contextPercent = event.contextPercent;
           if (event.state && item.alive) {
+            // A quiet callback can arrive after another agent has begun work in
+            // the same console. It must not clear that task's active state.
+            if (event.studyContinuation && !this.hub?.workbench?.completion?.canContinueStudy(item.id, event.turnId || null)) { changed = true; continue; }
             item.state = event.state; item.updatedAt = event.at;
             if (['ready', 'attention'].includes(event.state)) this.emit('attention', { ...this.list().find(x => x.id === item.id), turnId: event.turnId || null, summary: typeof event.summary === 'string' ? event.summary.slice(0, 200) : '' });
           }

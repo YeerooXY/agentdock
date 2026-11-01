@@ -93,7 +93,7 @@ test('agents are told which packs are installed and where to read them', async t
   const { SharedHub } = require('../electron/shared.cjs');
   const { root, skills } = fixture(t);
   const hub = new SharedHub(root, { list: () => [] }, { skills: () => skills.snapshot().packs }); t.after(() => hub.close());
-  assert.doesNotMatch(hub.summary(), /## Skill packs/);
+  assert.doesNotMatch(hub.fullSummary(), /## Skill packs/);
   await skills.install('demo-pack');
-  assert.match(hub.summary(), /## Skill packs[\s\S]*demo-pack: Demo knowledge for tests\. \(.*demo-pack[\\/]SKILL\.md\)/);
+  assert.match(hub.fullSummary(), /## Skill packs[\s\S]*demo-pack: Demo knowledge for tests\. \(.*demo-pack[\\/]SKILL\.md\)/);
 });

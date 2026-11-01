@@ -15,11 +15,11 @@ test('routing uses fresh account headroom and respects exclusions', () => {
   const suggest = limits => suggestAssignment({ size: 'small', candidates, limits, rules: defaults, now });
   assert.equal(suggest([]).implementer.accountId, 'codex:default');
   assert.equal(suggest([reading('codex:default', 90)]).implementer.accountId, 'opencode:default');
-  assert.equal(suggest([reading('codex:default', 30), reading('opencode:default', 25)]).implementer.accountId, 'codex:default');
+  assert.equal(suggest([reading('codex:default', 30), reading('opencode:default', 25)]).implementer.accountId, 'opencode:default');
   assert.equal(suggest([reading('codex:default', 50), reading('opencode:default', 20)]).implementer.accountId, 'opencode:default');
   assert.equal(suggest([reading('codex:default', 1, 0), reading('opencode:default', 50)]).implementer.accountId, 'opencode:default');
   assert.notEqual(suggest([]).reviewer.accountId, suggest([]).implementer.accountId);
-  const rules = { ...defaults, small: [{ accountId: 'claude:default', model: 'model' }, ...defaults.small], excludedModels: [defaults.small[0].model] };
+  const rules = { ...defaults, claudeReviewsOnly: true, small: [{ accountId: 'claude:default', model: 'model' }, ...defaults.small], excludedModels: [defaults.small[0].model] };
   assert.equal(suggestAssignment({ size: 'small', candidates, rules, now }).implementer.accountId, 'opencode:default');
 });
 
@@ -29,6 +29,27 @@ test('validates routing settings', () => {
   assert.equal(validated.schemaVersion, ROUTING_SCHEMA_VERSION); assert.deepEqual(validated.levels.L1.map(item => item.family), ['openai', 'openai']);
   assert.throws(() => validateRouting({ ...defaults, small: [{ accountId: 'opencode:default', model: 'paid-model' }] }));
   assert.throws(() => validateRouting({ ...defaults, claudeReviewsOnly: 'true' }));
+});
+
+test('named Codex UUID routes survive validation and migration with Luna', () => {
+  const accountId = 'cb75b00b-2caf-4295-8256-0d28514a1531';
+  const configured = { ...defaults, small: [{ accountId, model: 'gpt-6-luna' }] };
+  assert.deepEqual(migrateRouting(configured).small, configured.small);
+  assert.deepEqual(validateRouting(configured).small, configured.small);
+  assert.throws(() => validateRouting({ ...configured, small: [{ accountId: '../account', model: 'gpt-6-luna' }] }));
+});
+
+test('discovery picks entitled Luna for named profiles and the strongest free reviewer tier', () => {
+  const accountId = 'cb75b00b-2caf-4295-8256-0d28514a1531', now = 100;
+  const local = { id: 'opencode:strata', provider: 'opencode', label: 'Local', local: true, available: true, readiness: 'ready', model: 'strata/local' };
+  const models = ['gpt-6-luna', 'gpt-5.6-terra'].map(id => ({ id, available: true, funding: 'free', observedAt: now }));
+  const candidate = { id: accountId, provider: 'codex', label: 'Free Codex', funding: 'free', models };
+  const result = suggestAssignment({ size: 'small', candidates: [candidate, local], now });
+  assert.equal(result.implementer.accountId, local.id);
+  assert.deepEqual(result.reviewer, { accountId, model: 'gpt-5.6-terra' });
+  assert.deepEqual(suggestAssignment({ size: 'small', candidates: [candidate], now }).implementer, { accountId, model: 'gpt-6-luna' });
+  const escalationOnly = { ...candidate, models: [{ id: 'gpt-6-astra', available: true, funding: 'free', observedAt: now }] };
+  assert.equal(suggestAssignment({ size: 'small', candidates: [local, escalationOnly], now }).reviewer, null);
 });
 
 test('routing migration preserves choices and reviewer policy, records unknown model families, and is idempotent', () => {
@@ -53,16 +74,39 @@ test('routing migration preserves choices and reviewer policy, records unknown m
 test('legacy Claude roles require an explicit ladder opt-in and survive later migrations', () => {
   const legacy = { ...defaults, claudeReviewsOnly: true, roles: { claude: { builder: true, reviewer: true } } };
   assert.deepEqual(migrateRouting(legacy).roles.claude, { builder: false, reviewer: true });
-  assert.deepEqual(validateRouting(defaults).roles.claude, { builder: false, reviewer: true });
+  assert.deepEqual(validateRouting(defaults).roles.claude, { builder: true, reviewer: true });
   const optedIn = { ...migrateRouting(legacy), roles: { claude: { builder: true, reviewer: true } } };
   assert.deepEqual(migrateRouting(optedIn), optedIn);
+});
+
+test('local routing is explicit, pins the local model and never assigns it a cloud fallback', () => {
+  const local = { id: 'opencode:strata', provider: 'opencode', label: 'Strata', local: true };
+  const codex = { id: 'codex:default', provider: 'codex', label: 'Codex' };
+  const assignment = { accountId: local.id, model: 'strata/local' };
+  const rules = validateRouting({ ...defaults, small: [assignment] });
+  assert.deepEqual(suggestAssignment({ size: 'small', candidates: [local], rules }).implementer, assignment);
+  const ordinary = suggestAssignment({ size: 'small', candidates: [codex, local], rules: defaults });
+  assert.equal(ordinary.implementer.accountId, codex.id); assert.equal(ordinary.reviewer, null);
+  assert.deepEqual(suggestAssignment({ size: 'small', candidates: [codex, local], rules: { ...defaults, defaultReviewer: assignment } }).reviewer, assignment);
+  assert.throws(() => validateRouting({ ...defaults, small: [{ accountId: local.id, model: 'opencode-go/test' }] }));
+  assert.throws(() => validateRouting({ ...defaults, small: [{ accountId: 'opencode:default', model: 'strata/local' }] }));
+});
+
+test('automatic bounded tasks prefer ready local implementation over measured cloud headroom', () => {
+  const local = { id: 'opencode:strata', provider: 'opencode', label: 'Strata', model: 'strata/local', local: true, available: true, readiness: 'ready' };
+  const cloud = { id: 'codex:default', provider: 'codex', label: 'Codex' };
+  const limits = [{ accountId: cloud.id, observedAt: Date.now(), windows: [{ label: 'Weekly', usedPercent: 0, minutes: 10080 }] }];
+  for (const size of ['small','medium']) assert.equal(suggestAssignment({size,candidates:[cloud,local],limits,rules:defaults}).implementer.accountId,local.id);
+  assert.equal(suggestAssignment({size:'large',candidates:[cloud,local],limits,rules:defaults}).implementer.accountId,cloud.id);
+  for (const change of [{available:false},{readiness:'unchecked'},{readiness:'offline'}]) assert.equal(suggestAssignment({size:'small',candidates:[cloud,{...local,...change}],limits,rules:defaults}).implementer.accountId,cloud.id);
+  assert.equal(suggestAssignment({size:'small',candidates:[cloud,local],limits,rules:{...defaults,discoverAccounts:false}}).implementer.accountId,cloud.id);
 });
 
 test('compares every candidate to the best headroom before applying the ten-point preference', () => {
   const candidates = ['one', 'two', 'three'].map(id => ({ id: `codex:${id}`, provider: 'codex', label: id }));
   const rules = { ...defaults, small: candidates.map(c => ({ accountId: c.id, model: 'test' })) };
   const limits = [50, 41, 32].map((usedPercent, i) => ({ accountId: candidates[i].id, observedAt: 100, windows: [{ key: '5h', minutes: 300, usedPercent }] }));
-  assert.equal(suggestAssignment({ size: 'small', candidates, limits, rules, now: 100 }).implementer.accountId, 'codex:two');
+  assert.equal(suggestAssignment({ size: 'small', candidates, limits, rules, now: 100 }).implementer.accountId, 'codex:three');
 });
 
 test('a stale or unknown shortest window cannot be replaced by a longer one', () => {
@@ -94,7 +138,7 @@ test('split suggestions spread measured accounts within ten points and preserve 
     const result = suggestAssignment({ size: 'small', candidates, rules, limits, now, assignmentCounts });
     const id = result.implementer.accountId; ids.push(id); assignmentCounts[id] = (assignmentCounts[id] || 0) + 1;
   }
-  assert.deepEqual(ids, ['codex:one', 'codex:two', 'codex:one', 'codex:two']);
+  assert.deepEqual(ids, ['codex:two', 'codex:one', 'codex:two', 'codex:one']);
   limits[0].windows[0].usedPercent = 70;
   assert.equal(suggestAssignment({ size: 'small', candidates, rules, limits, now, assignmentCounts }).implementer.accountId, 'codex:two');
 });
@@ -105,4 +149,44 @@ test('split plan reviewers prefer a different vendor to the planner', () => {
   const result = suggestAssignment({ size: 'large', candidates, rules, preferDifferentVendor: true });
   assert.equal(result.implementer.model, 'planner'); assert.equal(result.reviewer.accountId, 'kiro:default');
   assert.equal(suggestAssignment({ size: 'large', candidates: candidates.slice(0, 2), rules: { ...rules, defaultReviewer: null }, preferDifferentVendor: true }).reviewer.accountId, 'codex:two');
+});
+
+test('default discovery works with Claude alone and never invents an independent reviewer', () => {
+  const result = suggestAssignment({ size: 'medium', candidates: [{ id: 'claude:default', provider: 'claude', label: 'Claude' }] });
+  assert.deepEqual(result.implementer, { accountId: 'claude:default', model: '' }); assert.equal(result.reviewer, null);
+  assert.match(result.reasons[0], /account default model/);
+});
+
+test('Kiro and OpenCode can distribute work without a Codex account', () => {
+  const candidates = [{ id: 'kiro:default', provider: 'kiro', label: 'Kiro' }, { id: 'opencode:default', provider: 'opencode', label: 'OpenCode' }];
+  const limits = candidates.map(c => ({ accountId: c.id, observedAt: 100, windows: [{ usedPercent: 10 }] }));
+  const counts = {}, ids = [];
+  for (let i = 0; i < 4; i++) { const r = suggestAssignment({ size: 'small', candidates, limits, now: 100, assignmentCounts: counts }); ids.push(r.implementer.accountId); counts[r.implementer.accountId] = (counts[r.implementer.accountId] || 0) + 1; }
+  assert.equal(new Set(ids).size, 2);
+});
+
+test('the limiting window, role restrictions and explicit pools govern discovery', () => {
+  const candidates = [{ id: 'kiro:default', provider: 'kiro', label: 'Kiro' }, { id: 'opencode:default', provider: 'opencode', label: 'OpenCode' }, { id: 'claude:default', provider: 'claude', label: 'Claude' }];
+  const limits = [{ accountId: 'opencode:default', observedAt: 100, windows: [{ key: '5h', minutes: 300, usedPercent: 0 }, { key: 'weekly', minutes: 10080, usedPercent: 80 }] }, { accountId: 'kiro:default', observedAt: 100, windows: [{ usedPercent: 20 }] }];
+  assert.equal(suggestAssignment({ size: 'small', candidates, limits, now: 100 }).implementer.accountId, 'kiro:default');
+  assert.equal(suggestAssignment({ size: 'small', candidates: candidates.slice(2), rules: { ...defaults, claudeReviewsOnly: true } }).implementer, null);
+  assert.equal(suggestAssignment({ size: 'small', candidates: candidates.slice(0, 1), rules: { ...defaults, discoverAccounts: false } }).implementer, null);
+});
+
+test('failed quota refresh stays unknown rather than reusing a fresh-looking cached limit', () => {
+  const { accountAllowance } = require('../electron/task-routing.cjs');
+  const value = accountAllowance('opencode:default', [{ accountId: 'opencode:default', observedAt: 100, usageCheck: { status: 'sign-in' }, windows: [{ usedPercent: 0 }] }], 110);
+  assert.equal(value.status, 'unknown'); assert.equal(value.remainingPercent, null);
+});
+
+test('same-time quota snapshots retain the more restrictive reading in either order', () => {
+  const { accountAllowance } = require('../electron/task-routing.cjs');
+  const low = { accountId: 'opencode:default', observedAt: 100, windows: [{ key: 'weekly', usedPercent: 0 }] };
+  const high = { ...low, windows: [{ key: 'weekly', usedPercent: 100 }] };
+  for (const readings of [[low, high], [high, low]]) {
+    const value = accountAllowance('opencode:default', readings, 110);
+    assert.equal(value.blocked, true); assert.equal(value.remainingPercent, 0);
+  }
+  const unknown = { ...low, windows: [{ key: 'weekly', usedPercent: null }] };
+  assert.equal(accountAllowance('opencode:default', [low, unknown], 110).status, 'unknown');
 });

@@ -26,9 +26,40 @@ function strataConfig(profiles) {
 function strataModels(profiles) {
   try { strataConfig(profiles); return [{ id: STRATA_MODEL, name: 'Strata (local · 256K)' }]; } catch { return []; }
 }
-function strataTaskCandidates(executable, profiles) {
+function strataTaskCandidates(executable, profiles, readiness) {
   return executable && strataModels(profiles).length
-    ? [{ id: STRATA_ACCOUNT, provider: 'opencode', label: 'Strata (local)', executable, model: STRATA_MODEL, local: true }]
+    ? [{ id: STRATA_ACCOUNT, provider: 'opencode', label: 'Strata (local)', executable, model: STRATA_MODEL, local: true, ...(readiness || {}) }]
     : [];
 }
-module.exports = { STRATA_MODEL, STRATA_ACCOUNT, strataConfig, strataModels, strataTaskCandidates, validOpenCodeTaskModel };
+// Discovery never starts inference or downloads a model. Saved configuration
+// alone does not establish that a local worker is available.
+class StrataReadiness {
+  constructor({ getProfiles, fetcher = fetch, now = Date.now, onChange = () => {} }) {
+    Object.assign(this, { getProfiles, fetcher, now, onChange }); this.state = null; this.pending = null;
+  }
+  endpoint() { try { return strataConfig(this.getProfiles()).provider.strata.options.baseURL; } catch { return null; } }
+  snapshot() {
+    const endpoint = this.endpoint();
+    if (!endpoint || this.state?.endpoint !== endpoint || this.now() - this.state.checkedAt > 60000) return { available: false, readiness: endpoint ? 'unchecked' : 'unconfigured' };
+    const { endpoint: ignored, ...state } = this.state; return state;
+  }
+  refresh() {
+    if (this.pending) return this.pending;
+    const endpoint = this.endpoint();
+    if (!endpoint) { this.state = null; return Promise.resolve(this.snapshot()); }
+    this.pending = (async () => {
+      let loadedModel = null;
+      try {
+        const response = await this.fetcher(endpoint + '/models', { redirect: 'error', signal: AbortSignal.timeout(2500) });
+        if (response.ok) {
+          const value = await response.json(), id = value?.data?.[0]?.id;
+          if (typeof id === 'string' && id.trim() && id.length <= 200) loadedModel = id;
+        }
+      } catch {}
+      this.state = { endpoint, checkedAt: this.now(), available: !!loadedModel, readiness: loadedModel ? 'ready' : 'offline', loadedModel };
+      this.onChange(); return this.snapshot();
+    })().finally(() => { this.pending = null; });
+    return this.pending;
+  }
+}
+module.exports = { STRATA_MODEL, STRATA_ACCOUNT, strataConfig, strataModels, strataTaskCandidates, validOpenCodeTaskModel, StrataReadiness };

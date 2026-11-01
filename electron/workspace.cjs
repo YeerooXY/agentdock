@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { atomicJson, readJson } = require('./storage.cjs');
 const { cells, gridSize } = require('./console-layout.cjs');
+const { workspaceKey } = require('./antigravity-session.cjs');
 
 // Only launch details and exact conversation IDs are saved. Agent transcripts stay
 // with their CLI, and terminal input is never replayed into a restored process.
@@ -51,7 +52,12 @@ class Workspace {
       const area = entries.flatMap(item => cells(item, grid));
       if (new Set(area).size !== area.length) throw new Error('Saved consoles overlap.');
       this.sessions.setGrid(grid);
-      for (const entry of entries.sort((a, b) => a.slot - b.slot)) await this.sessions.restore(entry);
+      for (const entry of entries.sort((a, b) => a.slot - b.slot)) {
+        // Older saves had no Antigravity identity. A workspace cache can recover
+        // one console, but cannot distinguish concurrent chats in that folder.
+        const recoverAntigravity = entry.provider === 'antigravity' && entries.filter(other => other.provider === 'antigravity' && workspaceKey(other.cwd) === workspaceKey(entry.cwd)).length === 1;
+        await this.sessions.restore(entry, { recoverAntigravity });
+      }
     } catch (error) {
       // A damaged or undecryptable save must not be overwritten by an empty dock.
       this.blocked = true;

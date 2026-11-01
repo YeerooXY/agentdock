@@ -19,9 +19,9 @@ test('REA installation records completion only after a pinned successful install
   await assert.rejects(integration.prepare('rea'), /offline/); assert.equal(integration.reaReady(), false);
   fail = false; const connection = await integration.prepare('rea'); await integration.prepare('rea'); assert.equal(installs, 2);
   assert.equal(new ToolIntegrations(root, integration.runtime, { detect: () => ({}) }).reaReady(), true);
-  await hub.saveConnection(connection); assert.match(hub.summary(), /## Investigating existing software/);
+  await hub.saveConnection(connection); assert.match(hub.fullSummary(), /## Investigating existing software/);
   assert.equal((await hub.test('rea')).count, 1);
   const value = await hub.invoke('dock_call', { tool: 'rea/echo', arguments: { tuple: [1] } }); assert.deepEqual(JSON.parse(value.content[0].text), { tuple: [1] });
   await assert.rejects(hub.invoke('dock_call', { tool: 'rea/echo', arguments: { tuple: ['bad'] } }), /input schema/);
-  await hub.saveConnection({ ...connection, enabled: false }); assert.deepEqual(await hub.list('rea'), []); assert.doesNotMatch(hub.summary(), /## Investigating existing software/);
+  await hub.saveConnection({ ...connection, enabled: false }); assert.deepEqual(await hub.list('rea'), []); assert.doesNotMatch(hub.fullSummary(), /## Investigating existing software/);
 });

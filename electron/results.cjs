@@ -112,7 +112,7 @@ class Results extends EventEmitter {
   updateReport(id, report) {
     const item = this.items.find(x => x.id === id); if (!item || item.ext !== '.json') return;
     const file = this.path(id); atomicJson(file, report);
-    this.persist(this.items.map(x => x.id === id ? { ...x, size: fs.statSync(file).size } : x));
+    this.persist(this.items.map(x => x.id === id ? { ...x, size: fs.statSync(file).size, updatedAt: Date.now(), contentRevision: (x.contentRevision || 0) + 1 } : x));
   }
   updateText(id, raw) {
     const item = this.items.find(x => x.id === id);
@@ -120,7 +120,7 @@ class Results extends EventEmitter {
     const file = this.path(id), temp = file + '.tmp';
     try { fs.writeFileSync(temp, raw.text, { mode: 0o600 }); fs.renameSync(temp, file); }
     finally { try { fs.unlinkSync(temp); } catch {} }
-    const updated = { ...item, size: Buffer.byteLength(raw.text), status: raw.status, summary: short(raw.summary, 1500) };
+    const updated = { ...item, size: Buffer.byteLength(raw.text), status: raw.status, summary: short(raw.summary, 1500), updatedAt: Date.now(), contentRevision: (item.contentRevision || 0) + 1 };
     this.persist(this.items.map(x => x.id === id ? updated : x)); return updated;
   }
   async remove(ids) {

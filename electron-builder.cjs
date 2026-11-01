@@ -5,7 +5,7 @@ module.exports = {
   copyright: 'Copyright © 2026 YeerooXY',
   directories: { output: 'release', buildResources: 'assets' },
   files: [
-    'dist/**/*', 'electron/**/*.cjs', 'guides/*.md', 'skills/**/*', 'assets/icon.*', 'assets/third-party-notices.txt', 'package.json',
+    'dist/**/*', 'electron/**/*.cjs', 'electron/**/*.mjs', 'guides/*.md', 'skills/**/*', 'assets/icon.*', 'assets/third-party-notices.txt', 'package.json',
     '!node_modules/node-pty/{src,deps,third_party,scripts,typings}/**/*',
     // Ship only this system's node-pty binaries; each installer is built on its own OS.
     ...['darwin', 'linux', 'win32'].filter(os => os !== process.platform).map(os => `!node_modules/node-pty/prebuilds/${os}-*/**/*`),

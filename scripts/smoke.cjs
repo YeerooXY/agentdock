@@ -69,27 +69,20 @@ async function eventually(predicate, message) {
   assert.equal(await page.getByRole('button', { name: 'New console', exact: true }).count(), 0);
   assert.equal((await invoke('state')).settings.hudAlwaysOnTop, false);
   assert.ok(fs.statSync((await invoke('state')).settings.consoleDefaults.cwd).isDirectory());
-  const expandedGrid = await page.locator('.session-grid').boundingBox();
-  await page.locator('#sidebar-toggle').click();
-  await eventually(async () => (await invoke('state')).settings.sidebarCollapsed === true);
-  // The toggle collapses the Explorer pane; the activity rail stays.
-  await page.locator('#explorer-pane').waitFor({ state: 'hidden' });
-  assert.equal(await page.locator('#explorer-pane').isVisible(), false);
+  assert.equal(await page.locator('#explorer-pane, #explorer-toggle, #explorer-backdrop, #sidebar-toggle').count(), 0);
   assert.equal(await page.locator('#sidebar').isVisible(), true);
-  assert.ok((await page.locator('.session-grid').boundingBox()).width > expandedGrid.width);
+  await page.evaluate(async () => { await Promise.all(document.getAnimations().filter(a => a.effect?.getTiming().iterations !== Infinity).map(a => a.finished.catch(() => {}))); });
   assert.ok(await page.locator('.session-card.empty').evaluateAll(cards => cards.every(card => {
     const panel = card.getBoundingClientRect(), plus = card.querySelector('svg').getBoundingClientRect();
     return Math.abs(panel.x + panel.width / 2 - plus.x - plus.width / 2) < 2 &&
       Math.abs(panel.y + panel.height / 2 - plus.y - plus.height / 2) < 2;
   })), 'Empty panel plus icons are centered');
-  assert.equal(JSON.parse(fs.readFileSync(path.join(dataDir, 'settings.json'), 'utf8')).sidebarCollapsed, true);
   await capture({ path: path.join(artifacts, 'test-grid-collapsed.png') });
   await page.reload();
   await page.waitForSelector('.session-grid');
-  assert.equal(await page.locator('#explorer-pane').isVisible(), false);
-  await page.locator('#sidebar-toggle').click();
-  await page.locator('#explorer-pane').waitFor({ state: 'visible' });
-  checks.push('Empty panels keep the plus centered at rest; the Explorer pane toggles and remembers its state while the activity rail stays');
+  assert.equal(await page.locator('#explorer-pane, #explorer-toggle, #sidebar-toggle').count(), 0);
+  assert.equal(await page.locator('#sidebar').isVisible(), true);
+  checks.push('Empty panels keep the plus centered; navigation remains after reload and the file explorer is absent');
   await capture({ path: path.join(artifacts, 'test-overview.png') });
   const emptyName = page.locator('.session-card[data-slot="3"] .console-name');
   await emptyName.fill('Trader'); await emptyName.press('Enter');
@@ -197,13 +190,17 @@ async function eventually(predicate, message) {
   checks.push('Panel titles rename in place across grid, fullscreen and HUD without restarting terminals or changing launch defaults');
   const otherFolder = path.join(dataDir, 'Another project'); fs.mkdirSync(otherFolder);
   await app.evaluate(({ dialog }, folder) => { globalThis.originalFolderDialog = dialog.showOpenDialog; dialog.showOpenDialog = async (_window, options) => { globalThis.folderPickerStart = options.defaultPath; return { canceled: false, filePaths: [folder] }; }; }, otherFolder);
-  await page.locator('#launch-folder').click();
+  await page.locator('[data-page=settings]').click();
+  await openPage(page, 'console-settings');
+  await page.getByRole('button', { name: 'Choose startup folder', exact: true }).click();
+  assert.equal(await page.locator('#console-defaults-form input[name=cwd]').inputValue(), otherFolder);
+  await page.locator('#console-defaults-form button[type=submit]').click();
   await eventually(async () => (await invoke('state')).settings.consoleDefaults.cwd === otherFolder);
-  assert.equal(await page.locator('#launch-folder span').innerText(), 'Another project');
   assert.equal(await app.evaluate(() => globalThis.folderPickerStart), root);
   assert.equal((await invoke('state')).sessions.find(x => x.id === session.id).cwd, root);
   await app.evaluate(({ dialog }) => { dialog.showOpenDialog = globalThis.originalFolderDialog; });
-  checks.push('Quick folder picker saves the next launch folder locally and leaves existing consoles in their original folder');
+  await page.keyboard.press('Escape');
+  checks.push('Settings startup folder picker saves the next launch folder and preserves existing consoles');
   const before = await invoke('session.buffer', session.id);
   await invoke('mode', 'hud');
   await page.waitForSelector('#hud:not([hidden])');
@@ -458,7 +455,16 @@ async function eventually(predicate, message) {
   const tenth = await page.evaluate(cwd => window.dock.call('session.create', { provider: 'shell', cwd }), root);
   assert.equal(tenth.ok, true); assert.equal(tenth.value.slot, 10); assert.equal((await invoke('state')).grid.rows, 4);
   await invoke('session.end', tenth.value.id); await eventually(async () => !(await invoke('state')).sessions.find(x => x.id === tenth.value.id)?.alive); await invoke('grid.configure', { columns: 3, rows: 3 });
-  const workingHook = spawnSync(process.execPath, [path.join(root, 'electron', 'agent-event.cjs'), 'UserPromptSubmit'], { input: JSON.stringify({ session_id: 'test-thread' }), windowsHide: true, env: { ...process.env, PADDOCK_DATA_DIR: dataDir, PADDOCK_SESSION_ID: session.id, PADDOCK_LAUNCH_ID: session.launchId } });
+  const bridgeFile = path.join(dataDir, 'completion-fixture-bridge.json');
+  await invoke('session.input', { id: session.id, data: shellCommand.saveBridge(bridgeFile) + '\r' });
+  await eventually(() => { try { JSON.parse(fs.readFileSync(bridgeFile, 'utf8').replace(/^\uFEFF/, '')); return true; } catch { return false; } });
+  const grant = JSON.parse(fs.readFileSync(bridgeFile, 'utf8').replace(/^\uFEFF/, '')); fs.unlinkSync(bridgeFile);
+  const hookEnv = { ...process.env, PADDOCK_DATA_DIR: dataDir, PADDOCK_SESSION_ID: session.id, PADDOCK_LAUNCH_ID: session.launchId, PADDOCK_BRIDGE_URL: grant.url, PADDOCK_BRIDGE_TOKEN: grant.token };
+  async function completionTool(tool, args = {}) {
+    const response = await fetch(grant.url, { method: 'POST', headers: { Authorization: 'Bearer ' + grant.token, 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'dock_call', arguments: { tool, arguments: args } }) });
+    const result = await response.json(); if (result.isError) throw Error(result.content[0].text); return JSON.parse(result.content[0].text);
+  }
+  const workingHook = spawnSync(process.execPath, [path.join(root, 'electron', 'agent-event.cjs'), 'UserPromptSubmit'], { input: JSON.stringify({ session_id: 'test-thread' }), windowsHide: true, env: hookEnv });
   assert.equal(workingHook.status, 0);
   await page.waitForSelector(`.session-card.active[data-console-id="${session.id}"]`);
   const thinkingOutline = await page.locator(`.session-card[data-console-id="${session.id}"]`).evaluate(el => {
@@ -470,7 +476,9 @@ async function eventually(predicate, message) {
   assert.equal(thinkingOutline.edge, '100%', 'active frame has a stronger edge');
   await capture({ path: path.join(artifacts, 'test-thinking-grid.png') });
   // A synthetic CLI completion tests integration without sending a prompt to an agent.
-  const hook = spawnSync(process.execPath, [path.join(root, 'electron', 'agent-event.cjs'), 'codex-notify', JSON.stringify({ type: 'agent-turn-complete', 'thread-id': 'test-thread', 'last-assistant-message': 'NOT_PERSISTED' })], { windowsHide: true, env: { ...process.env, PADDOCK_DATA_DIR: dataDir, PADDOCK_SESSION_ID: session.id, PADDOCK_LAUNCH_ID: session.launchId } });
+  const { turnId } = await completionTool('dock/start_turn');
+  await completionTool('dock/finish_turn', { turnId, outcome: 'no-change', summary: 'Synthetic console status fixture.', nextStep: 'None', outputs: 'none' });
+  const hook = spawnSync(process.execPath, [path.join(root, 'electron', 'agent-event.cjs'), 'codex-notify', JSON.stringify({ type: 'agent-turn-complete', 'thread-id': 'test-thread', 'last-assistant-message': 'NOT_PERSISTED' })], { windowsHide: true, env: hookEnv });
   assert.equal(hook.status, 0);
   await eventually(async () => (await invoke('state')).sessions.find(x => x.id === session.id)?.state === 'ready', 'Completion callback did not reach the dashboard');
   await openPage(page, 'consoles');
@@ -517,8 +525,9 @@ async function eventually(predicate, message) {
   await page.waitForFunction(() => innerWidth === 720);
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
   assert.equal(await page.locator('.session-card').count(), 9);
-  const gridGeometry = await page.locator('.session-grid').evaluate(el => ({ bottom: el.getBoundingClientRect().bottom, screen: innerHeight, rows: [...el.children].map(child => child.getBoundingClientRect().height) }));
-  assert.ok(gridGeometry.bottom >= gridGeometry.screen - 24 && gridGeometry.bottom <= gridGeometry.screen - 16);
+  const gridGeometry = await page.locator('.session-grid').evaluate(el => ({ top: el.getBoundingClientRect().top, bottom: el.getBoundingClientRect().bottom, screen: innerHeight, bottomPadding: parseFloat(getComputedStyle(document.querySelector('#consoles-page')).paddingBottom), navBottom: document.querySelector('#sidebar').getBoundingClientRect().bottom, rows: [...el.children].map(child => child.getBoundingClientRect().height) }));
+  assert.ok(Math.abs(gridGeometry.bottom - (gridGeometry.screen - gridGeometry.bottomPadding)) <= 2, 'Console grid fills the space below the header');
+  assert.ok(gridGeometry.top >= gridGeometry.navBottom, 'Header navigation does not cover the console grid');
   assert.ok(Math.max(...gridGeometry.rows) - Math.min(...gridGeometry.rows) < 2);
   for (const view of ['tools', 'instructions', 'usage', 'results', 'tasks']) {
     await openPage(page, view);

@@ -38,4 +38,5 @@
  .setup-request pre { max-height:260px; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; font-size:12px; }
  .setup-request .mono { overflow-wrap:anywhere; }
  .api-presets { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin:12px 0; }
+ .settings-overlay .settings-content .surface.local-ai h2 { font-size:18px; text-transform:none; letter-spacing:normal; color:var(--text); }
  @media(max-width:650px) { .setup-request .section-label { align-items:flex-start; flex-direction:column; gap:12px; } }

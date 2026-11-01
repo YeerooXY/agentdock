@@ -9,6 +9,7 @@ const { pathToFileURL } = require('node:url');
 const { Vault, readJson, atomicJson, validateKeyId } = require('./storage.cjs');
 const { SshHosts } = require('./ssh-hosts.cjs');
 const { CodexAccount, RecentCodex, findProgram, nativeCodex, findClaude, consoleModels } = require('./adapters.cjs');
+const { strataModels, strataTaskCandidates, StrataReadiness } = require('./local-models.cjs');
 const { runtimeFiles } = require('./runtime.cjs');
 const { initialSettings } = require('./settings.cjs');
 const { validateRouting } = require('./task-routing.cjs');
@@ -45,6 +46,7 @@ const { McpCatalog, catalog: recommendedTools } = require('./mcp-catalog.cjs');
 const { known: policyLimits, budgetUnit } = require('./tool-policy.cjs');
 const { ManagedDownloads } = require('./managed-downloads.cjs');
 const { SkillPacks } = require('./skill-packs.cjs');
+const { taskGuidance } = require('./task-guidance.cjs');
 const { validateProvider, validateRequest, ledgerSummary, number, validateExplorerWidth } = require('./domain.cjs');
 const { APP_ID, taskbarIcon, developmentShortcuts } = require('./windows-identity.cjs');
 const { CodePanel } = require('./code-panel.cjs');
@@ -60,7 +62,13 @@ const { AccountProfiles, defaultId } = require('./account-profiles.cjs');
 const { DraftBridge } = require('./draft-bridge.cjs');
 const { accountIdForLimit, thresholdCandidate, automaticSwitchEligible } = require('./account-switching-policy.cjs');
 const { SubscriptionUsage, readClaudeUsage, readCopilotUsage, readKiroUsage, readKimiUsage, readOpenCodeUsage, copilotExecutable, usageEnvironment, stopUsageReaders } = require('./subscription-usage.cjs');
+const { readAntigravityUsage } = require('./antigravity-usage.cjs');
+const { readCursorUsage } = require('./cursor-usage.cjs');
+const { modelsFromReading } = require('./routing-models.cjs');
+const { readPiUsage } = require('./pi-usage.cjs');
+const { clineRoute } = require('./native-account-route.cjs');
 const { CrashReport, diagnose, redact, guardStartup } = require('./crash-report.cjs');
+const { courseFromArgs, profileFromArgs, openCourseConsole } = require('./course-launch.cjs');
 app.setName('Paddock');
 const appModelId = APP_ID;
 if (process.platform === 'win32') app.setAppUserModelId(appModelId);
@@ -79,10 +87,32 @@ let codePanel, worktrees, messageQueue, prompts, tasks;
 let ownerConsoles, capacityReservations;
 let mode = 'dashboard', quitting = false, refreshing = false, lastRefresh = 0, apiBusy = false, subscriptionUsage, usageRefresh;
 let modeTarget = null, modeTask, modeSequence = 0, transitioning = false;
+let dashboardRestore = null;
 let trayHidden = false, windowDrag = null, hiddenBounds = null;
 let limits = [], recent = [], accountError = null, capabilities = {}, storageError = null, workspaceError = null, shortcutAvailable = false;
 const crash = new CrashReport(app.getPath('userData'));
+app.on('child-process-gone', (_, details) => {
+  crash.log('WARN', `Child process gone: type=${details.type} reason=${details.reason} exitCode=${details.exitCode}`);
+});
 let safeMode = false, windowReady = false, crashing = false, openCodeAvailable = true;
+const isStudyLaunch = arg => arg.startsWith('--study-course=') || arg.startsWith('--study-subject=');
+let pendingStudyArgs = process.argv.filter(arg => isStudyLaunch(arg) || arg.startsWith('--study-data-dir='));
+async function openStudyCourse(args) {
+  if (!args.some(isStudyLaunch)) return;
+  if (!windowReady || !sessions || !settings) { pendingStudyArgs = args; return; }
+  try {
+    const semesterRoot = path.join(process.env.OneDrive || path.join(os.homedir(), 'OneDrive'), 'Dokumentumok', '2026_27_1');
+    const course = courseFromArgs(args, semesterRoot);
+    if (!course) throw new Error('The course could not be found.');
+    const item = await openCourseConsole(course, { sessions, defaults: settings.consoleDefaults,
+      permissions: settings.agentPermissions, dataDirectory: profileFromArgs(args) });
+    await setMode('dashboard');
+    window.webContents.send('dock:select', { id: item.id, textSize: 'largest' });
+  } catch (error) {
+    crash.log('ERROR', `Study course: ${error?.message || error}`);
+    if (window && !window.isDestroyed()) void dialog.showMessageBox(window, { type: 'error', title: 'Course console', message: 'Paddock could not open the course console.', detail: String(error?.message || error) });
+  }
+}
 async function startupStep(name, fn, options = {}) {
   if (crashing) throw new Error('Startup stopped.');
   const before = crash.notices.length;
@@ -92,7 +122,7 @@ async function startupStep(name, fn, options = {}) {
   return result;
 }
 function restart(safe, immediate = false) {
-  const args = process.argv.slice(1).filter(arg => arg !== '--safe-mode');
+  const args = process.argv.slice(1).filter(arg => arg !== '--safe-mode' && !isStudyLaunch(arg) && !arg.startsWith('--study-data-dir='));
   if (safe) args.push('--safe-mode');
   app.relaunch({ args }); quitting = true;
   if (immediate) app.exit(1); else app.quit();
@@ -188,6 +218,7 @@ function setMode(next) {
   if (next === 'hud' && settings?.setupComplete === false) next = 'dashboard';
   if (!window || window.isDestroyed() || quitting || !['hud', 'dashboard', 'fullscreen'].includes(next)) return Promise.resolve();
   if (modeTarget === next) return modeTask;
+  if (!modeTarget && mode === next && window.isFullScreen() === (next === 'fullscreen')) { revealWindow(); return Promise.resolve(); }
   hiddenBounds = null;
   const sequence = ++modeSequence;
   modeTarget = next;
@@ -213,10 +244,20 @@ function fullScreen(on) {
 async function moveWindow(next, sequence) {
   const current = () => sequence === modeSequence && !quitting && window && !window.isDestroyed();
   const start = window.getBounds(), display = screen.getDisplayMatching(start), area = display.workArea;
+  if (mode === 'dashboard' && next !== 'dashboard' && !window.isFullScreen()) {
+    dashboardRestore = { bounds: window.getNormalBounds(), maximized: window.isMaximized() };
+  }
   const width = Math.min(1240, area.width - 40), height = Math.min(840, area.height - 40);
+  const restore = dashboardRestore?.bounds || (mode === 'dashboard' ? start : null);
+  const restoreArea = restore ? screen.getDisplayMatching(restore).workArea : area;
+  const restored = restore && {
+    width: Math.min(restore.width, restoreArea.width), height: Math.min(restore.height, restoreArea.height),
+    x: Math.max(restoreArea.x, Math.min(restore.x, restoreArea.x + restoreArea.width - Math.min(restore.width, restoreArea.width))),
+    y: Math.max(restoreArea.y, Math.min(restore.y, restoreArea.y + restoreArea.height - Math.min(restore.height, restoreArea.height)))
+  };
   const target = next === 'hud' ? { x: area.x + area.width - 388, y: area.y + 18, width: 370, height: 440 }
     : next === 'fullscreen' ? display.bounds
-      : { x: Math.round(area.x + (area.width - width) / 2), y: Math.round(area.y + (area.height - height) / 2), width, height };
+      : restored || { x: Math.round(area.x + (area.width - width) / 2), y: Math.round(area.y + (area.height - height) / 2), width, height };
   const changed = next !== mode || Object.keys(target).some(key => start[key] !== target[key]);
   const animation = systemPreferences.getAnimationSettings();
   const animate = changed && window.isVisible() && !window.isMinimized() && animation.shouldRenderRichAnimation && !animation.prefersReducedMotion;
@@ -250,6 +291,7 @@ async function moveWindow(next, sequence) {
   }
   window.setBounds(target);
   if (next === 'fullscreen') { await fullScreen(true); if (!current()) return; }
+  if (next === 'dashboard' && dashboardRestore?.maximized) window.maximize();
   window.setMinimumSize(next === 'hud' ? 340 : 720, next === 'hud' ? 390 : 520);
   window.setResizable(next !== 'hud');
   window.setAlwaysOnTop(next === 'hud' && settings.hudAlwaysOnTop);
@@ -390,9 +432,19 @@ app.whenReady().then(() => guardStartup(async () => {
   const usageDirectory = path.join(root, 'usage-reader'); fs.mkdirSync(usageDirectory, { recursive: true });
   subscriptionUsage = new SubscriptionUsage({
     readers: {
-      codex: choice => getCodexAccount(choice.id).refresh(),
+      codex: async choice => {
+        const reader = getCodexAccount(choice.id), readings = await reader.refresh();
+        // The native account catalog is filtered by this profile, unlike global
+        // marketing/model lists. A failed discovery leaves models unknown.
+        let models = [];
+        try { models = (await reader.models()).map(model => ({ ...model, available: true, source: 'native account model/list' })); } catch {}
+        return readings.map(row => ({ ...row, models }));
+      },
+      antigravity: choice => readAntigravityUsage({ executable: cliSetup.executable('antigravity'), accountId: choice.id, cwd: usageDirectory, env: usageEnvironment() }),
       claude: choice => readClaudeUsage({ executable: cliSetup.executable('claude'), accountId: choice.id, cwd: usageDirectory, env: accounts.environment(choice.id, 'claude', { baseEnv: process.env }) }),
       copilot: choice => readCopilotUsage({ executable: copilotExecutable(cliSetup.executable('copilot')), accountId: choice.id, cwd: usageDirectory, env: usageEnvironment() }),
+      cursor: choice => readCursorUsage({ executable: cliSetup.executable('cursor'), accountId: choice.id, cwd: usageDirectory, env: usageEnvironment() }),
+      pi: choice => readPiUsage({ executable: cliSetup.executable('pi'), accountId: choice.id, cwd: usageDirectory, env: usageEnvironment() }),
       kiro: choice => readKiroUsage({ executable: cliSetup.executable('kiro'), accountId: choice.id, cwd: path.join(usageDirectory, 'kiro'), env: usageEnvironment() }),
       kimi: choice => readKimiUsage({ executable: cliSetup.executable('kimi'), accountId: choice.id, cwd: usageDirectory, env: usageEnvironment() }),
       opencode: choice => readOpenCodeUsage({ executable: cliSetup.executable('opencode'), accountId: choice.id, cwd: usageDirectory, env: usageEnvironment(), getKey: () => { const entry = vault.list().find(item => item.id.toLowerCase() === 'opencode' || item.label.toLowerCase() === 'opencode'); return entry ? vault.get(entry.id) : null; } }),
@@ -410,18 +462,50 @@ app.whenReady().then(() => guardStartup(async () => {
   vault = new Vault(path.join(root, 'vault.json'), safeStorage);
   integrations = new ToolIntegrations(root, runtime, { onChange: publish });
   mcpCatalog = new McpCatalog(root, runtime, { run: runProgram, downloads: new ManagedDownloads(root), onChange: publish });
-  workbench = new Workbench(root, runtime, require('electron'), { testMode, onChange: publish, getSessions: () => sessions, getProject: () => settings.consoleDefaults.cwd, getWindow: () => window, getHub: () => hub, getAgents: () => cliSetup.snapshot(), getTasks: () => tasks });
+  workbench = new Workbench(root, runtime, require('electron'), { testMode, onChange: publish, getSessions: () => sessions, getProject: () => settings.consoleDefaults.cwd, getWindow: () => window, getHub: () => hub, getAgents: () => cliSetup.snapshot(), getTasks: () => tasks,
+    onLocalEntry: entry => {
+      ledger = [entry, ...ledger];
+      try { atomicJson(path.join(root, 'ledger.json'), ledger); }
+      catch { storageError = 'Latest local usage is only in memory. Export it before quitting.'; }
+      publish();
+    }
+  });
   projects = new Projects(root); projects.on('changed', publish); workbench.projects = projects;
+  const usageSignIn = accountId => {
+    const status = subscriptionUsage?.snapshot().find(check => check.accountId === accountId)?.status;
+    return status === 'sign-in' ? false : status === 'current' ? true : undefined;
+  };
   const taskAccounts = {
-    getLimits: () => limits.map(item => ({ ...item, accountId: limitAccountId(item) })),
+    getAccounts: () => {
+      const workers = tasks?.candidates() || [];
+      return [...usageAccounts(), ...workers.filter(w => w.local)].map(choice => {
+        const worker = workers.find(w => w.id === choice.id), check = subscriptionUsage?.snapshot().find(s => s.accountId === choice.id);
+        return { ...choice, ...worker, signedIn: worker?.signedIn ?? usageSignIn(choice.id),
+          quotaReader: check?.status || 'unchecked', unavailableReason: worker ? undefined : 'No bounded worker adapter is connected for this CLI.' };
+      });
+    },
+    getLimits: () => limits.map(item => ({ ...item, accountId: limitAccountId(item), usageCheck: subscriptionUsage?.snapshot().find(check => check.accountId === limitAccountId(item)) })),
     candidates: () => REVIEWERS.flatMap(provider => {
-      const executable = cliSetup.executable(provider), name = provider === 'claude' ? 'Claude Code' : 'Codex';
-      // Kiro has no Paddock account profiles; its own sign-in is used.
-      if (provider === 'kiro') return executable ? [{ id: 'kiro:default', provider, label: 'Kiro', executable }] : [];
+      const executable = cliSetup.executable(provider), name = require('./provider-workers.cjs').names[provider];
+      if (provider === 'pi') {
+        if (!executable) return [];
+        const reading = limits.filter(row => limitAccountId(row) === 'pi:default').sort((a, b) => b.observedAt - a.observedAt)[0];
+        const current = subscriptionUsage?.snapshot().find(s => s.accountId === 'pi:default')?.status === 'current' && Date.now() - reading?.observedAt <= 30 * 60_000;
+        const freeRoom = current && reading?.windows?.some(w => w.modelGroup === 'openrouter:free' && w.remaining > 0);
+        const models = freeRoom ? (reading.freeAlternatives || []).map(m => ({ id: m.route, available: true, observedAt: reading.observedAt, funding: 'free', source: 'native OpenRouter sign-in, zero-price tool model and free request quota' })) : [];
+        const selected = current && reading?.modelAllowed === true && reading?.route?.provider && reading?.route?.model ? `${reading.route.provider}/${reading.route.model}` : null;
+        return [{ id: 'pi:default', provider, label: name, executable, signedIn: usageSignIn('pi:default'), available: models.length > 0 || !!selected,
+          model: models.find(m => m.id === 'openrouter/cohere/north-mini-code:free')?.id || models[0]?.id || selected,
+          models, funding: models.length ? 'free' : selected ? reading.funding : 'unknown' }];
+      }
+      // Native single-account CLIs keep their own sign-in; Paddock never copies it.
+      if (!['claude', 'codex'].includes(provider)) return executable ? [{ id: `${provider}:default`, provider, label: name, executable, signedIn: usageSignIn(`${provider}:default`),
+        ...(provider === 'cline' ? clineRoute() || {} : {}) }] : [];
       return executable ? accounts.choices(provider).filter(choice => !choice.profile || choice.loginCompletedAt)
-        .map(choice => ({ id: choice.id, provider, label: choice.profile ? `${name} · ${choice.label}` : name, executable })) : [];
+        .map(choice => ({ id: choice.id, provider, label: choice.profile ? `${name} · ${choice.label}` : name, executable, signedIn: usageSignIn(choice.id),
+          models: modelsFromReading(limits.filter(row => limitAccountId(row) === choice.id).sort((a, b) => b.observedAt - a.observedAt)[0]) })) : [];
     }),
-    environment: (id, provider) => usageEnvironment(provider === 'kiro'
+    environment: (id, provider) => usageEnvironment(!['claude', 'codex'].includes(provider)
       ? Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.toLowerCase().startsWith('paddock_')))
       : accounts.environment(id, provider, { baseEnv: process.env })),
     saveResult: async (raw, context) => workbench.results.add(raw, await resultGitContext({}, context || {}, workbench.results.root))
@@ -441,12 +525,15 @@ app.whenReady().then(() => guardStartup(async () => {
     .filter(item => item.alive && item.state === 'active' && !item.remote && !item.kind && !item.taskId)
     .map(item => ({ quotaGroupId: ownerConsoles.records.get(item.consoleKey)?.quotaGroupId || item.accountId || `${item.provider}:default`,
       local: ownerConsoles.records.get(item.consoleKey)?.local === true, owner: ownerConsoles.records.get(item.consoleKey)?.ownerTurn === true })) });
-  tasks = new TaskLoop(root, { ...taskAccounts, admission: capacityReservations, getSettings: () => settings, candidates: () => {
+  const strataReadiness = new StrataReadiness({ getProfiles: () => hub?.config.profiles || [], onChange: publish });
+  tasks = new TaskLoop(root, { ...taskAccounts, admission: capacityReservations, getSettings: () => settings, getProfiles: () => hub?.config.profiles || [], candidates: () => {
     if (testMode) return [];
     const choices = taskAccounts.candidates(), executable = cliSetup.executable('opencode');
-    if (openCodeAvailable && executable && openCodeSignedIn({ executable })) choices.push({ id: 'opencode:default', provider: 'opencode', label: 'OpenCode', executable });
+    if (openCodeAvailable && executable && openCodeSignedIn({ executable })) choices.push({ id: 'opencode:default', provider: 'opencode', label: 'OpenCode', executable, signedIn: usageSignIn('opencode:default') });
+    choices.push(...strataTaskCandidates(executable, hub?.config.profiles || [], strataReadiness.snapshot()));
     return choices;
   },
+    getInstructions: (job, phase) => { const parent = tasks?.jobs.get(job.parentId); return taskGuidance(hub?.config, job, parent, projects.brief(job.projectId || parent?.projectId, true), phase); },
     environment: (id, provider) => provider === 'opencode' ? usageEnvironment(Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.toLowerCase().startsWith('paddock_')))) : taskAccounts.environment(id, provider),
     repositories: () => {
       const folders = projects.list().flatMap(project => project.folders.map(folder => ({ path: folder.path, label: `${project.name}${folder.label ? ` / ${folder.label}` : ''}: ${folder.path}` })));
@@ -511,6 +598,10 @@ app.whenReady().then(() => guardStartup(async () => {
     if (id) saveUsage({ id }, [{ ...value, accountId: id }]);
   });
   sessions.on('attention', session => {
+    if (session.state === 'ready' && !session.taskId && !session.remote && session.purpose === 'agent' && !['shell', 'cmd'].includes(session.provider)) {
+      try { workbench.completion.check(session.id); }
+      catch { session = { ...session, state: 'attention', summary: 'Completion check missing. The agent must record its outcome with dock/finish_turn.' }; sessions.signal(session.id, 'question'); }
+    }
     workbench.alerts.send(completionNotice({ key: `${session.id}:${session.updatedAt}:${session.state}`, title: session.name + (session.state === 'ready' ? ' is ready' : ' needs you'), message: session.summary || '', kind: session.state === 'ready' ? 'ready' : 'question' }, { sessionId: session.id, consoleKey: session.consoleKey || session.id, turnId: session.turnId }, workbench.results.list()));
   });
   const seenExits = new Set();
@@ -554,15 +645,19 @@ app.whenReady().then(() => guardStartup(async () => {
   window.webContents.on('will-redirect', event => { if (!event.isMainFrame && !isLocal(event.url)) event.preventDefault(); });
   window.webContents.session.setPermissionRequestHandler((_, __, callback) => callback(false));
   window.webContents.session.setPermissionCheckHandler(() => false);
-  window.on('unresponsive', () => ownerConsoles.freeze());
+  window.on('unresponsive', () => { crash.log('WARN', 'Window unresponsive'); ownerConsoles.freeze(); });
+  window.on('responsive', () => crash.log('INFO', 'Window responsive'));
   window.webContents.on('did-start-loading', () => ownerConsoles.freeze());
-  window.webContents.on('render-process-gone', () => { ownerConsoles.freeze(); if (!quitting) window.loadFile(entryFile); });
+  window.webContents.on('render-process-gone', (_, details) => {
+    crash.log('WARN', `Renderer gone: reason=${details.reason} exitCode=${details.exitCode}`);
+    ownerConsoles.freeze(); if (!quitting) window.loadFile(entryFile);
+  });
   window.on('close', event => { if (!quitting) { event.preventDefault(); hideToTray(); } });
   window.on('focus', () => { if (!safeMode) void startupStep('Screenshot checks', () => screenshots.refresh(), { optional: true }); });
   let readyShown = false, startupComplete = false;
   const finishWindow = async () => {
     if (!readyShown || !startupComplete || crashing || windowReady) return;
-    try { await setMode(process.argv.includes('--hud') && !safeMode ? 'hud' : 'dashboard'); crash.ready(); windowReady = true; }
+    try { await setMode(process.argv.includes('--hud') && !safeMode ? 'hud' : 'dashboard'); crash.ready(); windowReady = true; const args = pendingStudyArgs; pendingStudyArgs = []; void openStudyCourse(args); }
     catch (error) { void startupCrash(error); }
   };
   window.once('ready-to-show', () => { readyShown = true; void finishWindow(); });
@@ -589,6 +684,8 @@ app.whenReady().then(() => guardStartup(async () => {
   }
   setInterval(() => { sessions.scanEvents(); }, 1000).unref();
   if (!testMode && !safeMode) {
+    void strataReadiness.refresh();
+    setInterval(() => { void strataReadiness.refresh(); }, 30000).unref();
     setInterval(() => { void startupStep('Recent chats', () => { recent = recentReader.scan(); sessions.updateUsage(recent); publish(); }, { optional: true }); }, 12000).unref();
     setInterval(() => { void startupStep('Usage checks', refreshLimits, { optional: true }); }, 120000).unref();
   }
@@ -642,7 +739,7 @@ app.whenReady().then(() => guardStartup(async () => {
           restart(false); break;
         }
         case 'tasks.candidates': return { ok: true, value: tasks.choices(payload?.implementer, payload || {}) };
-        case 'tasks.start': return { ok: true, value: await tasks.start(payload) };
+        case 'tasks.start': return { ok: true, value: await tasks.start({ ...payload, projectId: projects.forFolder(payload?.repo)?.id || null }) };
         case 'tasks.approvePlan': return { ok: true, value: await tasks.approvePlan(payload) };
         case 'tasks.resume': return { ok: true, value: await tasks.resume(payload?.id) };
         case 'tasks.stop': {
@@ -733,32 +830,8 @@ app.whenReady().then(() => guardStartup(async () => {
           const result = await dialog.showOpenDialog(window, { properties: ['openDirectory'], title: 'Choose a launch folder', defaultPath: suggested });
           return { ok: true, value: result.filePaths[0] || null };
         }
-        case 'explorer.list': return { ok: true, value: await codePanel.list(payload?.root, payload?.path) };
-        case 'code.create': {
-          const panel = codePanel.create(payload, settings.consoleDefaults.cwd);
-          publish(); return { ok: true, value: panel };
-        }
-        case 'web.create': {
-          const source = sessions.items.get(payload?.sourceId);
-          const panel = sessions.createWebPanel({ url: payload?.url || '', codeSourceKey: source && !source.kind ? source.consoleKey || source.id : null, slot: payload?.slot });
-          publish(); return { ok: true, value: panel };
-        }
-        case 'web.url': return { ok: true, value: sessions.setWebUrl(payload?.id, payload?.url) };
-        case 'web.phone': return { ok: true, value: sessions.setWebPhoneAllowed(payload?.id, payload?.allow) };
-        case 'web.open': {
-          const panel = sessions.items.get(payload);
-          if (panel?.kind !== 'web' || !isLocal(panel.url)) throw new Error('Enter a local address first.');
-          await shell.openExternal(panel.url); break;
-        }
-        case 'code.source': {
-          const panel = codePanel.panel(payload?.id), source = sessions.items.get(payload?.sourceId);
-          if (!source || source.remote || source.kind === 'code') throw new Error('Choose a local console.');
-          panel.codeSourceKey = source.consoleKey || source.id; panel.cwd = source.cwd;
-          sessions.emit('changed'); return { ok: true, value: panel };
-        }
-        case 'code.report': return { ok: true, value: await codePanel.report(payload?.id, payload?.refresh === true) };
-        case 'code.browse': return { ok: true, value: await codePanel.browse(payload?.id, payload?.path) };
-        case 'code.file': return { ok: true, value: await codePanel.file(payload?.id, payload?.path, payload?.reportId) };
+        case 'explorer.list': case 'code.create': case 'web.create':
+          throw new Error('The file explorer, Code and Preview panels have been removed.');
         case 'review.close': {
           closeReviewPanel(payload, { sessions, getSettings: () => settings, persistSettings }); break;
         }
@@ -870,7 +943,7 @@ app.whenReady().then(() => guardStartup(async () => {
           for (const item of sessions.items.values()) if (item.projectId === payload) item.projectId = null;
           sessions.emit('changed'); publish(); break;
         }
-        case 'session.models': return { ok: true, value: consoleModels(payload) };
+        case 'session.models': return { ok: true, value: payload === 'opencode' ? strataModels(hub.config.profiles) : consoleModels(payload) };
         case 'grid.configure': sessions.setGrid(payload); break;
         case 'session.layout.preview': return { ok: true, value: sessions.previewLayout({ id: payload?.id, slot: payload?.slot, width: payload?.width, height: payload?.height }) };
         case 'session.move':
@@ -992,7 +1065,7 @@ app.whenReady().then(() => guardStartup(async () => {
           if (typeof payload?.delegationEnabled === 'boolean') next.delegationEnabled = payload.delegationEnabled;
           if (typeof payload?.delegationPanels === 'boolean') next.delegationPanels = payload.delegationPanels;
           if (payload?.delegationProviders !== undefined) {
-            if (!Array.isArray(payload.delegationProviders) || payload.delegationProviders.some(id => !REVIEWERS.includes(id))) throw new Error('Choose reviewers from Claude Code, Codex and Kiro.');
+            if (!Array.isArray(payload.delegationProviders) || payload.delegationProviders.some(id => !REVIEWERS.includes(id))) throw new Error('Choose a supported reviewer.');
             next.delegationProviders = [...new Set(payload.delegationProviders)];
           }
           // Which subscriptions the Usage page lists; a display preference only.
@@ -1063,7 +1136,7 @@ app.whenReady().then(() => guardStartup(async () => {
           const apiOwner = 'api:' + require('node:crypto').randomUUID();
           turns.virtual.set(apiOwner, { id: apiOwner, consoleKey: 'api:' + profile.id, projectId: project.projectId || null, name: profile.name, cwd: project.cwd || settings.consoleDefaults.cwd, alive: true });
           projects.touch(project.projectId);
-          const apiHub = { summary: () => hub.summary() + projects.chatSummary(turns.virtual.get(apiOwner)), invoke: (name, args) => hub.invoke(name, args, apiOwner) };
+          const apiHub = { summary: () => hub.summary() + projects.chatSummary(turns.virtual.get(apiOwner)), invoke: (name, args) => hub.invoke(name, args, apiOwner), completionCheck: () => workbench.completion.check(apiOwner) };
           let result;
           try { await turns.begin(apiOwner); result = await runApi(payload, key, settings.rates[`${profile.id}:${payload.model?.trim()}`], { profile, hub: apiHub, onEntry: entry => {
             entry.projectId = project.projectId || null; entry.consoleName = project.name || profile.name; entry.turnId = turns.context(apiOwner)?.turnId || null;
@@ -1094,6 +1167,7 @@ app.whenReady().then(() => guardStartup(async () => {
           for (const item of recommendedTools) urls[item.id] = item.docs;
           for (const item of cliCatalog) urls[item.id] = item.docs;
           urls.zai = 'https://docs.z.ai/devpack/tool/opencode';
+          urls.strata = 'https://github.com/Niko1221/Strata/blob/main/docs/INSTALL.md';
           Object.assign(urls, { 'key-notion': 'https://www.notion.so/profile/integrations', 'key-stripe': 'https://dashboard.stripe.com/apikeys', 'key-github': 'https://github.com/settings/personal-access-tokens/new' });
           if (!urls[payload]) throw new Error('Unknown documentation link.'); await shell.openExternal(urls[payload]); break;
         }
@@ -1106,7 +1180,7 @@ app.whenReady().then(() => guardStartup(async () => {
   await window.loadFile(entryFile);
   startupComplete = true; await finishWindow();
 }, startupCrash)).catch(error => { void startupCrash(error); });
-app.on('second-instance', () => setMode('dashboard'));
+app.on('second-instance', (_event, args) => { if (args.some(isStudyLaunch)) void openStudyCourse(args); else void setMode('dashboard'); });
 // Clicking the Dock icon reopens a window hidden to the tray.
 app.on('activate', () => { if (window && !window.isVisible()) setMode('dashboard'); });
 let cleanupStarted = false, cleanupDone = false;

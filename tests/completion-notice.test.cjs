@@ -17,6 +17,7 @@ function fixture(t) {
   const wb = new Workbench(profile, {}, { nativeImage: {} }, { testMode: true, onChange() {}, getSessions: () => sessions, getProject: () => project });
   wb.turns = new Turns(wb.results, { getSession: id => sessions.items.get(id), enabled: false });
   return { root, profile, project, session, sessions, signals, wb,
+    complete: async () => { const turn = wb.completion.turn(session.id); const resultIds = wb.results.items.filter(x => x.groupId === turn.id && x.consoleKey === session.consoleKey).map(x => x.id); return wb.invoke('dock/finish_turn', { turnId: turn.id, outcome: 'no-change', summary: 'Notification routing fixture only.', nextStep: 'None', outputs: resultIds.length ? 'saved' : 'none', resultIds }, session.id); },
     invoke: (name, args = {}) => wb.invoke('dock/' + name, args, session.id) };
 }
 
@@ -26,7 +27,7 @@ test('ready links the completed turn to its human report despite newer code, dat
   await f.invoke('save_result', { title: 'Machine data', text: '{}', ext: '.json', kind: 'test' });
   f.wb.results.add({ title: 'Code changes', text: '{"changes":[{"file":"app.js"}]}', ext: '.json', kind: 'code' }, f.wb.turns.context(f.session.id));
   f.wb.results.add({ title: 'Other chat', text: 'Unrelated', groupId: turnId }, { project: f.project, consoleKey: 'another-chat', consoleName: f.session.name });
-  const notice = await f.invoke('notify', { title: 'Ready' });
+  await f.complete(); const notice = await f.invoke('notify', { title: 'Ready' });
   assert.equal(notice.destination, 'results'); assert.equal(notice.turnId, turnId); assert.equal(notice.resultId, report.id);
   assert.equal(f.wb.turns.active.size, 0); assert.deepEqual(f.signals, [{ id: f.session.id, kind: 'ready' }]);
 });
@@ -34,7 +35,7 @@ test('ready links the completed turn to its human report despite newer code, dat
 test('old completion links stay on their turn after another prompt starts and the console is renamed', async t => {
   const f = fixture(t), { turnId } = await f.invoke('start_turn');
   const report = await f.invoke('save_result', { title: 'First prompt', text: 'First result' });
-  const finished = await f.invoke('finish_turn'); assert.equal(finished.turnId, turnId);
+  const finished = await f.complete(); assert.equal(finished.turnId, turnId);
   assert.equal((await f.invoke('finish_turn')).turnId, turnId, 'A duplicate stop callback retains the completed identity');
   const notice = await f.invoke('notify', { title: 'First prompt ready' });
   f.session.name = 'Renamed chat'; await f.invoke('start_turn');
@@ -45,9 +46,9 @@ test('old completion links stay on their turn after another prompt starts and th
 
 test('a turn with no saved results never borrows an earlier prompt or another chat', async t => {
   const f = fixture(t); await f.invoke('start_turn');
-  await f.invoke('save_result', { title: 'Earlier result', text: 'Earlier' }); await f.invoke('finish_turn');
+  await f.invoke('save_result', { title: 'Earlier result', text: 'Earlier' }); await f.complete();
   const { turnId } = await f.invoke('start_turn');
-  const notice = await f.invoke('notify', { title: 'Nothing saved' });
+  await f.complete(); const notice = await f.invoke('notify', { title: 'Nothing saved' });
   assert.equal(notice.destination, 'results'); assert.equal(notice.turnId, turnId); assert.equal(notice.resultId, null);
   const unknown = completionNotice({ kind: 'ready' }, { sessionId: f.session.id, consoleKey: f.session.consoleKey }, f.wb.results.list());
   assert.equal(unknown.resultId, null); assert.equal(unknown.destination, 'results');
@@ -79,9 +80,19 @@ for (const mode of ['codex-notify', 'Stop']) test(`${mode} callback carries its 
   const env = { ...process.env, ...hub.grant(f.session.id, f.session.launchId), PADDOCK_DATA_DIR: f.profile, PADDOCK_SESSION_ID: f.session.id, PADDOCK_LAUNCH_ID: f.session.launchId };
   const { turnId } = await f.invoke('start_turn');
   const report = await f.invoke('save_result', { title: 'Callback report', text: 'Synthetic result' });
+  await f.complete();
   await callback(mode, { type: 'agent-turn-complete', hook_event_name: mode === 'Stop' ? 'Stop' : undefined, 'thread-id': 'fixture-chat', session_id: 'fixture-chat', 'input-messages': ['PRIVATE_PROMPT'], 'last-assistant-message': 'PRIVATE_RESPONSE' }, env);
   const event = JSON.parse(fs.readFileSync(path.join(f.profile, 'events', `${f.session.id}.${f.session.launchId}.state.json`), 'utf8'));
   assert.equal(event.state, 'ready'); assert.equal(event.turnId, turnId); assert.ok(!JSON.stringify(event).includes('PRIVATE_'));
   const notice = completionNotice({ kind: 'ready' }, { sessionId: f.session.id, consoleKey: f.session.consoleKey, turnId: event.turnId }, f.wb.results.list());
   assert.equal(notice.resultId, report.id); assert.equal(f.wb.turns.active.size, 0);
+});
+
+for (const mode of ['codex-notify', 'Stop']) test(`${mode} cannot report ready without the enforced completion check`, async t => {
+  const f = fixture(t), hub = new SharedHub(f.profile, { list: () => [] }, { workbench: f.wb });
+  await hub.start(); t.after(() => hub.close()); await f.invoke('start_turn');
+  const env = { ...process.env, ...hub.grant(f.session.id, f.session.launchId), PADDOCK_DATA_DIR: f.profile, PADDOCK_SESSION_ID: f.session.id, PADDOCK_LAUNCH_ID: f.session.launchId };
+  await callback(mode, { type: 'agent-turn-complete', hook_event_name: mode === 'Stop' ? 'Stop' : undefined }, env);
+  const event = JSON.parse(fs.readFileSync(path.join(f.profile, 'events', `${f.session.id}.${f.session.launchId}.state.json`), 'utf8'));
+  assert.equal(event.state, 'attention'); assert.match(event.summary, /Completion check/); assert.equal(f.wb.turns.active.size, 1);
 });

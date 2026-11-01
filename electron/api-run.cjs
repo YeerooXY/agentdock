@@ -41,7 +41,13 @@ async function runApi(raw, key, rates, { profile, hub, fetcher = fetch, onEntry 
     const text = protocol === 'responses' ? (data.output_text || (data.output || []).flatMap(x => x.content || []).filter(x => x.type === 'output_text').map(x => x.text).join('\n')) : protocol === 'anthropic' ? (data.content || []).filter(x => x.type === 'text').map(x => x.text).join('\n') : message?.content;
     if (typeof text === 'string' && text) lastText = text;
     const calls = protocol === 'responses' ? (data.output || []).filter(x => x.type === 'function_call').map(x => ({ id: x.call_id, name: x.name, arguments: x.arguments })) : protocol === 'anthropic' ? (data.content || []).filter(x => x.type === 'tool_use').map(x => ({ id: x.id, name: x.name, arguments: x.input })) : (message?.tool_calls || []).map(x => ({ id: x.id, name: x.function?.name, arguments: x.function?.arguments }));
-    if (!hub || !calls.length || entry.status !== 'completed') return finish(entry, { text: lastText || 'No text returned.' });
+    if (!hub || !calls.length || entry.status !== 'completed') {
+      if (hub?.completionCheck && entry.status === 'completed') {
+        try { hub.completionCheck(); }
+        catch (error) { return finish({ ...entry, status: 'incomplete' }, { error: error.message, text: lastText || 'Completion check required.' }); }
+      }
+      return finish(entry, { text: lastText || 'No text returned.' });
+    }
     if (round === 7 || calls.length > 24) return finish({ ...entry, status: 'incomplete' }, { error: 'Tool limit reached. Continue with a new request.' });
     entries.push(entry); await onEntry(entry);
     if (protocol === 'responses') input.push(...data.output);

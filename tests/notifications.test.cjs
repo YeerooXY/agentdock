@@ -2,7 +2,33 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
-const { DockNotifications } = require('../electron/notifications.cjs');
+const { DockNotifications, isForeground } = require('../electron/notifications.cjs');
+
+test('focused visible Paddock suppresses native notices and tray fallbacks', () => {
+  const counts = { constructed: 0, balloons: 0 };
+  class Notice extends EventEmitter { static isSupported() { return true; } constructor() { super(); counts.constructed++; } show() {} }
+  const window = { isDestroyed: () => false, isFocused: () => true, isVisible: () => true, isMinimized: () => false };
+  const center = new DockNotifications({ Notification: Notice, getWindow: () => window, getTray: () => ({ displayBalloon() { counts.balloons++; } }) });
+  for (const kind of ['ready', 'question', 'error']) center.show({ title: 'Fixture', kind });
+  center.Notification = { isSupported: () => false };
+  center.show({ title: 'Fixture', kind: 'ready' });
+  assert.deepEqual(counts, { constructed: 0, balloons: 0 });
+  assert.equal(center.live.size, 0);
+  assert.equal(isForeground(window), true);
+  for (const change of [{ isFocused: () => false }, { isVisible: () => false }, { isMinimized: () => true }, { isDestroyed: () => true }]) {
+    assert.equal(isForeground({ ...window, ...change }), false);
+  }
+});
+
+test('background notifications remain available and delayed fallback checks current focus', () => {
+  let focused = false, balloons = 0;
+  class Notice extends EventEmitter { static isSupported() { return true; } show() {} }
+  const center = new DockNotifications({ Notification: Notice, getWindow: () => ({ isDestroyed: () => false, isFocused: () => focused }), getTray: () => ({ displayBalloon() { balloons++; } }) });
+  center.show({ title: 'Fixture', kind: 'ready' });
+  const notice = [...center.live][0]; assert.ok(notice);
+  focused = true; notice.emit('failed');
+  assert.equal(balloons, 0, 'returning to Paddock suppresses the delayed native fallback');
+});
 
 test('a retained toast click restores Paddock before opening its console', async () => {
   class Notice extends EventEmitter { static isSupported() { return true; } show() {} close() { this.emit('close'); } }

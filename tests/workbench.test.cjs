@@ -32,6 +32,23 @@ test('gallery copies project artifacts, rejects private/outside files, and delet
   assert.throws(()=>loaded.path('../../vault.json'));
 });
 
+test('saved report revisions expose same-length updates without changing the original save date', t => {
+  const { results, root } = fixture(t);
+  const item = results.add({ text: 'Before', status: 'needs-review' });
+  const changed = results.updateText(item.id, { text: 'After!', status: 'needs-review' });
+  assert.equal(changed.size, item.size);
+  assert.equal(changed.at, item.at);
+  assert.ok(changed.updatedAt >= item.at);
+  assert.equal(changed.contentRevision, 1);
+  results.updateText(item.id, { text: 'Latest', status: 'passed' });
+  const loaded = new Results(root);
+  assert.equal(loaded.list()[0].contentRevision, 2);
+  assert.equal(loaded.preview(item.id).text, 'Latest');
+  const data = results.add({ text: '{"a":1}', ext: '.json' });
+  results.updateReport(data.id, { a: 2 });
+  assert.equal(results.list().find(x => x.id === data.id).contentRevision, 1);
+});
+
 test('deletion reports failure if the saved files are still on disk', async t => {
   const { results } = fixture(t); const item = results.add({ text: 'Keep me until deletion succeeds' });
   results.trash = async () => {};
@@ -124,6 +141,27 @@ test('website reviews reject local files, credentials and active schemes',()=>{
   for(const url of ['file:///C:/secrets','javascript:alert(1)','https://user:secret@example.com']) assert.throws(()=>pageUrl(url));
 });
 
+test('local assistance is discoverable, receives caller context and validates bridge input without task bookkeeping', async t => {
+  const { root, project } = fixture(t), calls = [];
+  const sessions = { items: new Map([['live', { id: 'live', consoleKey: 'console', projectId: 'project', alive: true, cwd: project }]]) };
+  const workbench = new Workbench(root, {}, { nativeImage: {} }, { testMode: true, onChange() {}, getSessions: () => sessions, getProject: () => project });
+  const tool = workbench.tools().find(item => item.name === 'dock/local_assist');
+  assert.ok(tool);
+  const args = { requestId: 'copy', purpose: 'critique', prompt: 'Check the supplied copy.' };
+  await assert.rejects(workbench.invoke(tool.name, args, 'live'), /disabled/);
+  workbench.localAssist = { run: async (request, context) => { calls.push({ request, context }); return { status: 'completed', text: 'Fixture' }; } };
+  const hub = new SharedHub(root, { list: () => [] }, { workbench }); await hub.start(); t.after(() => hub.close());
+  const grant = hub.grant('live');
+  const invoke = async value => (await fetch(grant.PADDOCK_BRIDGE_URL, { method: 'POST', headers: { Authorization: 'Bearer ' + grant.PADDOCK_BRIDGE_TOKEN }, body: JSON.stringify({ name: 'dock_call', arguments: { tool: tool.name, arguments: value } }) })).json();
+  assert.equal((await invoke(args)).isError, undefined);
+  assert.deepEqual(calls[0].request, args); assert.equal(calls[0].context.projectId, 'project'); assert.equal(calls[0].context.consoleKey, 'console');
+  assert.equal(workbench.results.list().length, 0);
+  for (const invalid of [{ ...args, maxOutput: 9000 }, { ...args, purpose: 'shell' }, { ...args, owner: 'other' }]) assert.equal((await invoke(invalid)).isError, true);
+  assert.equal(calls.length, 1);
+  sessions.items.get('live').alive = false;
+  await assert.rejects(workbench.invoke(tool.name, args, 'live'), /no longer open/);
+});
+
 test('dock/start_task forwards task arguments, defaults to the caller folder and validates bridge input without launching agents', async t => {
   const { root, project } = fixture(t), calls = [];
   const callerFolder = path.join(project, 'caller'); fs.mkdirSync(callerFolder);
@@ -151,6 +189,33 @@ test('dock/start_task forwards task arguments, defaults to the caller folder and
   sessions.items.get('live').alive = false;
   await assert.rejects(workbench.invoke(tool.name, args, 'live'), /no longer open/);
 });
+test('agents discover Strata, start an implementation and read its status over the bridge', async t => {
+  const { root, project } = fixture(t), calls = [];
+  const sessions = { items: new Map([['live', { id: 'live', alive: true, cwd: project }]]) };
+  const implementer = { accountId: 'opencode:strata', model: 'strata/local' };
+  const tasks = {
+    choices: () => ({ implementers: [{ id: implementer.accountId, provider: 'opencode', label: 'Strata (local)', model: implementer.model, local: true }] }),
+    start: async args => { calls.push(args); return { id: 'local-task' }; },
+    status: async (id, repo) => { calls.push({ id, repo }); return { id, state: 'passed', diffStat: 'app.js | 2 +-' }; }
+  };
+  const workbench = new Workbench(root, {}, { nativeImage: {} }, { testMode: true, onChange() {}, getSessions: () => sessions, getProject: () => project, getTasks: () => tasks });
+  const hub = new SharedHub(root, { list: () => [] }, { workbench }); await hub.start(); t.after(() => hub.close());
+  const grant = hub.grant('live');
+  const invoke = async (tool, args = {}) => (await fetch(grant.PADDOCK_BRIDGE_URL, { method: 'POST', headers: { Authorization: 'Bearer ' + grant.PADDOCK_BRIDGE_TOKEN }, body: JSON.stringify({ name: 'dock_call', arguments: { tool, arguments: args } }) })).json();
+  const choices = await invoke('dock/task_candidates');
+  assert.equal(JSON.parse(choices.content[0].text).implementers[0].id, implementer.accountId);
+  const start = await invoke('dock/start_task', { title: 'Fix app', criteria: 'Return 2.', implementer, reviewer: null });
+  assert.equal(JSON.parse(start.content[0].text).id, 'local-task');
+  assert.equal(calls[0].repo, project); assert.deepEqual(calls[0].implementer, implementer);
+  const status = await invoke('dock/task_status', { id: 'local-task' });
+  assert.equal(JSON.parse(status.content[0].text).state, 'passed'); assert.deepEqual(calls[1], { id: 'local-task', repo: project });
+  assert.equal((await invoke('dock/task_status', { id: 'local-task', sessionId: 'other' })).isError, true);
+  assert.equal((await invoke('dock/task_candidates', { size: 'invalid' })).isError, true);
+  assert.equal(calls.length, 2);
+  sessions.items.get('live').alive = false;
+  assert.equal((await invoke('dock/task_status', { id: 'local-task' })).isError, true);
+});
+
 test('Dock bridge validates native tool schemas and scopes file access to the calling console', async t => {
   const {root,project}=fixture(t); const outside=path.join(root,'private.txt'); fs.writeFileSync(outside,'DO_NOT_COPY');
   const file=path.join(project,'verification.txt'); fs.writeFileSync(file,'A real test report');

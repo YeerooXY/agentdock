@@ -64,17 +64,17 @@ test('renaming a private file does not expose its Git history in a code panel', 
   const report = await f.service.report(f.panel.id);
   assert.equal(report.changes.some(x => x.file === 'public.json'), false);
 });
-test('code panels share grid layout, restore encrypted placement, and close without ending an agent', async t => {
+test('legacy code panels are excluded from restoration and close without ending an agent', async t => {
   const f = fixture(t); f.sessions.layout({ id: f.panel.id, slot: 3, width: 1, height: 2 });
   assert.equal(f.sessions.list().length, 1); assert.equal(f.sessions.codePanels()[0].slot, 3);
   assert.throws(() => f.sessions.write(f.panel.id, 'execute'), /read-only/);
   const crypto = { isEncryptionAvailable: () => true, encryptString: x => Buffer.from(x), decryptString: x => x.toString() };
-  // Only this no-process panel is persisted by the fixture.
+  // The retired panel must not return after a restart.
   f.sessions.items.delete(f.source.id);
   const ws = new Workspace(f.root, f.sessions, crypto); ws.save(); ws.freeze();
   const restored = new Sessions(f.root, { pty: { spawn() { throw new Error('restore spawned a CLI'); } } });
   const restore = new Workspace(f.root, restored, crypto); await restore.restore(); restore.freeze();
-  assert.equal(restored.codePanels()[0].codeSourceKey, 'source-key'); assert.equal(restored.codePanels()[0].height, 2);
+  assert.deepEqual(restored.codePanels(), []);
   f.sessions.items.set(f.source.id, f.source); f.sessions.end(f.panel.id);
   assert.equal(f.source.alive, true); assert.equal(f.sessions.codePanels().length, 0);
   await restored.stop();

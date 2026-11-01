@@ -85,7 +85,7 @@ test('agents read which tools they have, which are allowed and at what limits', 
   await hub.saveConnection({ id: 'meshy', name: 'Meshy AI', type: 'stdio', command: 'node', args: [], policy: { maxModel: 'meshy-6', dailyBudget: 50 } });
   await hub.saveConnection({ id: 'stripe', name: 'Stripe', catalog: 'stripe', type: 'stdio', command: 'node', args: [], policy: { access: 'ask' } });
   await hub.saveConnection({ id: 'old', name: 'Old', type: 'stdio', command: 'node', args: [], enabled: false });
-  const text = hub.summary();
+  const text = hub.fullSummary();
   assert.match(text, /## Tool permissions/);
   assert.match(text, /- meshy: allowed · max model meshy-6 \(requests without ai_model use it\) · budget 50 credits a day/);
   assert.match(text, /- stripe: ask first: the user confirms each call/);

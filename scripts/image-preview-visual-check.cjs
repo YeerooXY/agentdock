@@ -72,12 +72,11 @@ let browser; const reports = [];
     assert.equal(await page.locator('.result-side-panel .wb-dialog').count(), 0);
     assert.match(await page.locator('.wb-dialog').textContent(), /Mocked image response/); assert.equal(await page.locator('.wb-dialog').evaluate(x => x.scrollTop), 0); await capture('returned-image', '.wb-dialog');
     await page.keyboard.press('Escape'); await page.locator('.wb-dialog').waitFor({ state: 'hidden' });
-    await nav('usage'); const usage = page.locator('.image-usage'); await usage.waitFor(); await usage.evaluate(x => x.scrollIntoView({ block: 'start' }));
-    assert.match(await usage.textContent(), /Unavailable/); assert.equal(await usage.locator('tbody td').nth(4).textContent(), '0'); await capture('image-usage', '.image-usage');
-    await usage.locator('[data-wb=concept-delete]').click(); await page.waitForFunction(async () => (await window.dock.call('state')).value.workbench.concepts.length === 0);
+    await nav('usage'); assert.equal(await page.locator('.image-usage,.message-usage').count(), 0); await capture('usage', '.usage-subscriptions');
+    await page.evaluate(id => window.dock.call('workbench.concept.delete', id), state.workbench.concepts[0].id); await page.waitForFunction(async () => (await window.dock.call('state')).value.workbench.concepts.length === 0);
     assert.equal(state.workbench.conceptUsage.length, 1); assert.ok(state.workbench.results.some(x => x.id === 'mock-image'));
     assert.deepEqual(errors, []);
-    reports.push({ profile: name, engine: browser.version(), emulated: name !== 'pc', captures, checks: ['generator choices and field states', 'keyboard preview toggle', 'save and invalid endpoint recovery', 'Meshy sign-in in Tools', 'agent-returned fixture image in Results', 'removed review/Inbox navigation', 'unknown versus zero usage', 'selected axe checks', 'no horizontal overflow', 'no page errors'], paidRequests: 0 });
+    reports.push({ profile: name, engine: browser.version(), emulated: name !== 'pc', captures, checks: ['generator choices and field states', 'keyboard preview toggle', 'save and invalid endpoint recovery', 'Meshy sign-in in Tools', 'agent-returned fixture image in Results', 'removed review/Inbox navigation', 'Usage omits project turns and image generation; stored usage is retained', 'selected axe checks', 'no horizontal overflow', 'no page errors'], paidRequests: 0 });
     await browser.close(); browser = null; console.log('PASS ' + name + ' screen preview settings, routing and Results');
   }
   fs.writeFileSync(path.join(out, 'visual-checks.json'), JSON.stringify(reports, null, 2));
