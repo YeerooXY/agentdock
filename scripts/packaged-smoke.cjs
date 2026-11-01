@@ -23,7 +23,7 @@ const executablePath = suppliedApp ? path.resolve(suppliedApp) : path.join(insta
 const resources = mac ? path.join(path.dirname(path.dirname(executablePath)), 'Resources') : path.join(install, 'resources');
 const systemRoot = process.env.SystemRoot || 'C:\\Windows';
 // Exclude developer runtimes and npm from PATH, as on a computer without Node.
-const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !['path', 'userprofile', 'home', 'appdata', 'localappdata', 'electron_run_as_node', 'node_options'].includes(key.toLowerCase())));
+const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !['path', 'userprofile', 'home', 'appdata', 'localappdata', 'electron_run_as_node', 'node_options'].includes(key.toLowerCase()) && (!/^paddock_/i.test(key) || /^paddock_test_/i.test(key))));
 Object.assign(env, windows ? { PATH: `${systemRoot}\\System32;${systemRoot}\\System32\\WindowsPowerShell\\v1.0`, USERPROFILE: work, APPDATA: path.join(work, 'Roaming'), LOCALAPPDATA: path.join(work, 'Local') }
   : { PATH: '/usr/bin:/bin', HOME: work, SHELL: '/bin/bash' });
 let app, client, server;
@@ -88,7 +88,9 @@ async function eventually(predicate) {
     env: { ...env, PADDOCK_DATA_DIR: dataDir, PADDOCK_SESSION_ID: hookSession, PADDOCK_LAUNCH_ID: hookLaunchId }, windowsHide: true, timeout: 15000
   });
   const hook = JSON.parse(fs.readFileSync(path.join(dataDir, 'events', `${hookSession}.${hookLaunchId}.state.json`), 'utf8'));
-  assert.equal(hook.state, 'ready'); assert.equal(hook.providerSessionId, 'bundled-hook-check');
+  assert.equal(hook.state, 'attention', 'A callback without the completion bridge cannot report ready');
+  assert.match(hook.summary, /Completion check missing/);
+  assert.equal(hook.providerSessionId, 'bundled-hook-check');
 
   const token = crypto.randomUUID();
   server = http.createServer((request, response) => {
