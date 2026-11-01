@@ -2,6 +2,8 @@
 
 Local Windows desktop app. Keep user-facing copy short, direct and factual. Preserve any applicable parent writing instructions.
 
+- Keyboard focus, 2 November 2026: preserve focus after toggles, edits and rerenders. When the focused control is removed, focus its logical successor. Verify repeated actions with Tab, Shift+Tab, Enter and Space; focus falling to the page body fails the check.
+
 - Website workflow preference, 1 November 2026: keep development status in the handoff; do not call the website a demo or add development-status banners. Preserve accurate action limitations. Creative concepts must change composition and content treatment, not only colors. Prefer bounded local assistance and deterministic checks; avoid duplicate manager/reviewer loops. Measure accepted output, total usage and owner preference before claiming savings or quality gains.
 
 - Provider routing preference, 1 November 2026: before delegating, discover installed and signed-in accounts, check the freshness of available allowance readings, and distinguish local inference, free allocations, included subscription usage and metered API spending. Consider Kiro, OpenCode and Claude alongside Codex. Skip exhausted accounts; keep unknown quota explicit. For an authorized provider comparison, try a bounded useful output on eligible free or already included routes before committing the larger task. Listing a model does not establish plan entitlement. Do not buy credits or silently switch to a paid fallback. Use an explicit provider/model route and count setup, failed attempts, cached input and coordinating-agent usage in the result. Reuse current readings rather than repeating provider discovery for every subtask.

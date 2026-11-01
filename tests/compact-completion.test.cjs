@@ -25,6 +25,7 @@ test('compact context omits history and expands scoped details without starting 
   const f = fixture(t); f.projects.decide(f.project.id, { action: 'add', text: 'Use the supplied reference' });
   const brief = await f.context(); const id = f.wb.turns.active.get('owner').id;
   assert.ok(brief.length < 5500, brief.length); assert.doesNotMatch(brief, /Historic work/); assert.match(brief, /finish_turn/);
+  assert.match(brief, /Preserve keyboard focus/); assert.match(brief, /Focus must not fall to body/);
   const detail = await f.context({ detail: 'project' }); assert.match(detail, /Use the supplied reference/); assert.doesNotMatch(detail, /Historic work/);
   assert.equal(f.wb.turns.active.get('owner').id, id);
   let cursor = 0, history = '';

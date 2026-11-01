@@ -20,7 +20,7 @@ Review all 20 items for every page. Shared policies may live on dedicated pages 
 12. **No unsupported claims:** Check evidence for performance, results, comparisons and guarantees. Remove or qualify claims that cannot be supported.
 13. **Accessible alt text:** Describe meaningful images in context. Use empty alt text for decoration; provide accessible names for image controls and appropriate alternatives for charts and media.
 14. **Color contrast:** Measure text and interface contrast, including hover, focus, error and disabled states as applicable. Target WCAG 2.2 AA; do not rely on color alone to communicate meaning.
-15. **Keyboard navigation:** Test the full task with a keyboard: order, focus visibility, menus, dialogs, escape and returning focus. Avoid traps and inaccessible hover-only controls.
+15. **Keyboard navigation:** Test the full task with Tab, Shift+Tab, Enter and Space. Preserve focus after toggles, edits and rerenders; when a focused item is removed, move to the next logical control. Check the active element after each action, including repeated actions and dialog close. Focus must not fall to the page body. Avoid traps and inaccessible hover-only controls.
 16. **Business details:** Check required identity, contact and registration information for the business and jurisdiction. Ask for missing facts instead of inventing them.
 17. **Children's data:** Determine whether children are an intended audience and which age and parental-consent rules apply. Implement an appropriate flow only where needed; never assume one universal age threshold.
 18. **Email unsubscribe:** If sending marketing email, provide and test a working unsubscribe mechanism. Distinguish marketing from necessary service messages and honor the relevant rules.

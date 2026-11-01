@@ -10,6 +10,8 @@ Check long content, text resizing to 200%, reflow at 320 CSS pixels, portrait/la
 
 Test keyboard order, visible/unobscured focus, menu escape and focus restoration, dialogs, validation, loading, failure and retry. Include hover/pointer differences and reduced motion. Check network requests, console errors, links, overflow and actual contrast. A zero-violation axe scan does not establish accessibility conformance.
 
+Preserve keyboard focus after toggles, edits and rerenders. Update the existing control or restore focus to its replacement. If a focused item is removed, focus the next logical control, previous item or list's add control. Close dialogs back to the opener when it remains available. Test repeated actions with Tab, Shift+Tab, Enter and Space; assert the intended active element after each update. Focus falling to the page body is a failed check, even when the action and persistence work.
+
 ## Performance
 
 As reviewed 23 October 2026, good Core Web Vitals thresholds are LCP <= 2.5 seconds, INP <= 200 milliseconds and CLS <= 0.1 at the 75th percentile, assessed separately for mobile and desktop. Recheck definitions before reporting. Lab scores and localhost timings are not field performance; Lighthouse navigation TBT is not field INP.
