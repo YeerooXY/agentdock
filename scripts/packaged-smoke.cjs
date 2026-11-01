@@ -105,8 +105,8 @@ async function eventually(predicate) {
   assert.equal((await client.callTool({ name: 'dock_context', arguments: {} })).content[0].text, 'PACKAGED_CONTEXT_OK');
   await client.close(); client = null;
 
-  // Website tasks receive the guide in the compact startup instructions.
-  assert.match((await invoke('state')).shared.summary, /website_guide/);
+  // Enabling the website guide adds it to this fresh profile's startup instructions.
+  assert.doesNotMatch((await invoke('state')).shared.summary, /website_guide/);
   await invoke('shared.guides', ['web-design']);
   assert.match((await invoke('state')).shared.summary, /website_guide/);
   await invoke('vault.save', { provider: 'meshy', label: 'Meshy test', key: 'TEST_ONLY_NO_REQUESTS' });

@@ -4,11 +4,11 @@
 
 | Device | Download |
 | --- | --- |
-| Windows 10/11 — Intel or AMD 64-bit | **[Windows installer](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.29/Paddock-0.6.0-preview.29-Setup-x64.exe)** |
+| Windows 10/11 — Intel or AMD 64-bit | **[Windows installer](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.30/Paddock-0.6.0-preview.30-Setup-x64.exe)** |
 | Android — most phones (ARM64) | **[Android APK](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.27/Agent-Dock-0.6.0-preview.27-Android-arm64.apk)** |
 | Android — older 32-bit phones (ARMv7) | [Android ARMv7 APK](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.27/Agent-Dock-0.6.0-preview.27-Android-armv7.apk) |
 
-Current previews: **Android 0.6.0-preview.27**, **Windows 0.6.0-preview.29**. Reading, copying, saved drafts and adjustable text size work with older PC hosts. Project/folder selection, current Codex model choices, image attachments and SSH hosts require Windows preview 15. Older hosts retain basic terminal controls. [Android release notes](https://github.com/YeerooXY/agentdock/releases/tag/v0.6.0-preview.27) · [Windows release notes](https://github.com/YeerooXY/agentdock/releases/tag/v0.6.0-preview.29) · [All releases](https://github.com/YeerooXY/agentdock/releases) · [Previous stable desktop-only release](https://github.com/YeerooXY/agentdock/releases/tag/v0.5.0).
+Current previews: **Android 0.6.0-preview.27**, **Windows 0.6.0-preview.30**. Reading, copying, saved drafts and adjustable text size work with older PC hosts. Project/folder selection, current Codex model choices, image attachments and SSH hosts require Windows preview 15. Older hosts retain basic terminal controls. [Android release notes](https://github.com/YeerooXY/agentdock/releases/tag/v0.6.0-preview.27) · [Windows release notes](https://github.com/YeerooXY/agentdock/releases/tag/v0.6.0-preview.30) · [All releases](https://github.com/YeerooXY/agentdock/releases) · [Previous stable desktop-only release](https://github.com/YeerooXY/agentdock/releases/tag/v0.5.0).
 
 A desktop app for Windows, Linux and macOS: agent consoles, projects, shared tools and usage tracking. Linux and macOS installers come from the next release; until then, run Paddock from source on those systems.
 
@@ -47,9 +47,9 @@ This release is unsigned, so Windows may show an unknown-publisher or SmartScree
 
 ## Workspace
 
-Projects, Tasks, Results and Usage are available from the navigation strip. Agent account and routing settings are under **Settings ? Agents**. Click a file path in a console to preview supported files. The desktop file explorer, Code panels and embedded website Preview panels were removed in preview 28.
+Projects, Tasks, Results and Usage are available from the navigation strip. Agent account and routing settings are under **Settings ? Agents**. Click a file path in a console to preview supported files. The desktop file explorer, Code panels and embedded website Preview panels were removed in preview 30.
 
-[Preview 29 changes and limitations](docs/release-preview29.md).
+[Preview 30 changes and limitations](docs/release-preview30.md).
 
 ## Android preview
 

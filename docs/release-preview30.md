@@ -1,4 +1,4 @@
-# Paddock 0.6.0-preview.29
+# Paddock 0.6.0-preview.30
 
 Windows desktop update. Android preview 27 remains available; this release does not require a new phone installation or pairing.
 
