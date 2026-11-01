@@ -58,8 +58,14 @@ async function resize(id, edge, dx, dy, cancel = false, snapshot) {
   app = await electron.launch({ args: [root, '--smoke-test', `--data-dir=${profile}`] }); page = await app.firstWindow(); page.setDefaultTimeout(15000); page.on('pageerror', e => errors.push(e.message));
   await page.waitForSelector('.session-grid');
   const initialBounds = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].getBounds());
-  const restoredBounds = { x: 70, y: 55, width: 1080, height: 740 };
-  await app.evaluate(({ BrowserWindow }, bounds) => BrowserWindow.getAllWindows()[0].setBounds(bounds), restoredBounds);
+  const restoredBounds = await app.evaluate(({ BrowserWindow, screen }) => {
+    const win = BrowserWindow.getAllWindows()[0], area = screen.getDisplayMatching(win.getBounds()).workArea;
+    // Hosted macOS displays can be smaller than the requested desktop fixture.
+    // Keep a custom rectangle within the work area so restoration need not clamp it.
+    const width = Math.min(1080, area.width - 40), height = Math.min(740, area.height - 40);
+    win.setBounds({ x: area.x + 20, y: area.y + 20, width, height });
+    return win.getBounds();
+  });
   for (let round = 0; round < 2; round++) {
     await page.keyboard.press('F11');
     await until(async () => { const value = await call('state'); return value.mode === 'fullscreen' && !value.transitioning; });
