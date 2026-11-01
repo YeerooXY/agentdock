@@ -71,7 +71,7 @@ async function checkToolsAndWindow({ app, page, invoke, eventually, capture, dat
   const hudBounds = await bounds();
   await page.locator('#hud [data-action=tray]').click();
   await eventually(async () => (await invoke('state')).trayHidden);
-  assert.equal(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isVisible()), false);
+  await eventually(async () => !await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isVisible()), 'Tray hides the native window');
   assert.equal(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isMinimized()), false);
   await invoke('show'); assert.deepEqual(await bounds(), hudBounds);
   await invoke('mode', 'fullscreen');
