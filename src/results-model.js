@@ -1,16 +1,19 @@
+import { projectKey } from './project-identity.js';
+export { projectKey };
+
 // Project identity is independent of a reusable console slot or its current name.
-export const projectKey = item => item.projectId || item.project || 'unassigned';
-export const resultGroupKey = item => JSON.stringify([projectKey(item), item.consoleKey || item.sessionId || item.source || 'Dock', item.groupId || item.id]);
+// electron/results.cjs groupKey mirrors this key for the phone's unread count.
+export const resultGroupKey = (item, projects = []) => JSON.stringify([projectKey(item, projects), item.consoleKey || item.sessionId || item.source || 'Dock', item.groupId || item.id]);
 export function projectLabel(item, projects = []) {
-  const project = item.projectId && projects.find(p => p.id === item.projectId);
+  const key = projectKey(item, projects), project = projects.find(p => p.id === key);
   return project?.name || (item.project || '').split(/[\\/]/).filter(Boolean).pop() || 'Unassigned';
 }
 export function resultFolders(items, projects = []) {
   const folders = new Map();
   for (const item of items) {
-    const key = projectKey(item);
+    const key = projectKey(item, projects);
     if (!folders.has(key)) {
-      const project = projects.find(p => item.projectId ? p.id === item.projectId : p.folders?.some(folder => folder.path === item.project));
+      const project = projects.find(p => p.id === key);
       folders.set(key, { key, name: item.projectId || item.project ? projectLabel(item, projects) : 'Other', project, count: 0, unviewed: 0, at: 0 });
     }
     const folder = folders.get(key);
@@ -20,10 +23,10 @@ export function resultFolders(items, projects = []) {
   }
   return [...folders.values()].sort((a, b) => Number(!!b.unviewed) - Number(!!a.unviewed) || b.at - a.at || a.name.localeCompare(b.name));
 }
-export function resultGroups(items) {
+export function resultGroups(items, projects = []) {
   const groups = new Map();
   for (const item of items) {
-    const key = resultGroupKey(item);
+    const key = resultGroupKey(item, projects);
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(item);
   }
@@ -31,7 +34,7 @@ export function resultGroups(items) {
 }
 
 // Display names and launch folders are not chat identities.
-export const resultChatKey = item => item.consoleKey || item.sessionId || JSON.stringify(['legacy', projectKey(item), item.source || 'Dock']);
+export const resultChatKey = (item, projects = []) => item.consoleKey || item.sessionId || JSON.stringify(['legacy', projectKey(item, projects), item.source || 'Dock']);
 export function resultTurnTitle(items) {
   return items.find(x => x.kind !== 'code' && !x.image && x.ext !== '.json')?.title || 'Completed prompt';
 }
@@ -40,7 +43,7 @@ export const resultRevision = item => item?.gitEnd || item?.git || null;
 export function revisionLabel(git) {
   if (!git?.branch && !git?.commit) return 'Revision unavailable';
   const head = git.branch || (git.detached ? 'Detached HEAD' : 'Branch unavailable');
-  return `${head} · ${git.commit ? git.commit.slice(0, 8) : git.unborn ? 'No commits yet' : 'Commit unavailable'}${git.dirty === true ? ' · Uncommitted changes' : ''}`;
+  return `${head}${git.commit ? ` at ${git.commit.slice(0, 8)}` : git.unborn ? ', no commits yet' : ', commit unavailable'}${git.dirty === true ? ', with uncommitted changes' : ''}`;
 }
 export function turnRevisions(items) {
   const revisions = new Map();

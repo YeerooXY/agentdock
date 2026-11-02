@@ -15,16 +15,18 @@ export function workbenchUI({ call, getState, getPage, renderPage, escape: e, to
   const button = (action, label, id = '', cls = 'subtle', disabled = false) => `<button ${disabled ? 'disabled' : ''} class="${cls}" data-wb="${action}" data-id="${e(id)}">${label}</button>`;
   const consoleKey = x => x.consoleKey || x.sessionId || x.source || 'Dock';
   const consoleName = x => x.consoleName || getState().sessions.find(s => s.id === x.sessionId)?.name || (x.sessionId ? 'Earlier console' : x.source === 'Agent' ? 'API' : x.source || 'Dock');
-  const groupKey = resultGroupKey;
+  const projectList = () => getState().projects || [];
+  const groupKey = x => resultGroupKey(x, projectList());
+  const projectOf = x => projectKey(x, projectList());
   const projectName = x => x.projectId || x.project ? projectLabel(x, getState().projects || []) : 'Other';
   const folders = () => resultFolders(data().results, getState().projects || []);
   const showingFolders = () => !project && !filter.trim();
-  const revision = (git, showRepository = false) => `<span class="result-branch" title="${e(git ? [git.repository, git.branch || (git.detached ? 'Detached HEAD' : 'Branch unavailable'), git.commit || (git.unborn ? 'No commits yet' : 'Commit unavailable'), git.dirty === true ? 'Includes uncommitted changes relative to this commit.' : git.dirty === false ? 'Working tree clean when recorded.' : 'Working-tree state was not recorded.'].filter(Boolean).join('\n') : 'This result has no saved Git revision.')}" aria-label="${e('Git revision: ' + revisionLabel(git))}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M2 12h5m10 0h5"/><circle cx="12" cy="12" r="5"/></svg><span>${showRepository && git?.repository ? e(git.repository.split(/[\\/]/).pop()) + ' · ' : ''}${e(revisionLabel(git))}</span></span>`;
+  const revision = (git, showRepository = false) => `<span class="result-branch" title="${e(git ? [git.repository, git.branch || (git.detached ? 'Detached HEAD' : 'Branch unavailable'), git.commit || (git.unborn ? 'No commits yet' : 'Commit unavailable'), git.dirty === true ? 'Includes uncommitted changes relative to this commit.' : git.dirty === false ? 'Working tree clean when recorded.' : 'Working-tree state was not recorded.'].filter(Boolean).join('\n') : 'This result has no saved Git revision.')}" aria-label="${e('Git revision: ' + revisionLabel(git))}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M2 12h5m10 0h5"/><circle cx="12" cy="12" r="5"/></svg><span>${showRepository && git?.repository ? e(git.repository.split(/[\\/]/).pop()) + ': ' : ''}${e(revisionLabel(git))}</span></span>`;
   const batch = id => { const item = data().results.find(x => x.id === id); return item ? data().results.filter(x => groupKey(x) === groupKey(item)) : []; };
-  const filtered = () => data().results.filter(x => (!kind || x.kind === kind) && (!project || projectKey(x) === project) && (!consoleFilter || consoleKey(x) === consoleFilter) && (!filter || (x.title + ' ' + x.summary + ' ' + consoleName(x) + ' ' + projectName(x)).toLowerCase().includes(filter.toLowerCase())));
+  const filtered = () => data().results.filter(x => (!kind || x.kind === kind) && (!project || projectOf(x) === project) && (!consoleFilter || consoleKey(x) === consoleFilter) && (!filter || (x.title + ' ' + x.summary + ' ' + consoleName(x) + ' ' + projectName(x)).toLowerCase().includes(filter.toLowerCase())));
   const shell = (title, text, content, actions = '') => `<div class="page-heading"><div><h1>${title}</h1><p>${text}</p></div><div class="result-heading-actions">${actions}</div></div>${content}`;
   const empty = text => `<div class="wb-empty">${text}</div>`;
-  const resultPages = () => !project && filter.trim() ? [...filtered()].sort((a,b) => b.at - a.at).map(x => [x]) : resultGroups(filtered());
+  const resultPages = () => !project && filter.trim() ? [...filtered()].sort((a,b) => b.at - a.at).map(x => [x]) : resultGroups(filtered(), projectList());
   const visible = () => resultPages().slice(resultPage * 12, (resultPage + 1) * 12).flat();
   const pagination = () => button('previous-results','Previous','','subtle',resultPage === 0) + `<span class="result-page-number">${resultPage + 1} / ${Math.max(1, Math.ceil(resultPages().length / 12))}</span>` + button('next-results','Next','','subtle',(resultPage + 1) * 12 >= resultPages().length);
   const bulkActions = () => `${button('select-all','Select visible')}${selected.size ? button('delete-selected',`Delete selected (${selected.size})`,'','subtle danger') : ''}${button('seen-all','Mark all viewed')}`;
@@ -32,7 +34,7 @@ export function workbenchUI({ call, getState, getPage, renderPage, escape: e, to
   const resultsList = () => {
     const consoles = new Map();
     for (const item of visible()) {
-      const key = resultChatKey(item);
+      const key = resultChatKey(item, projectList());
       if (!consoles.has(key)) consoles.set(key, new Map());
       const groups = consoles.get(key), group = groupKey(item);
       if (!groups.has(group)) groups.set(group, []);
@@ -57,10 +59,10 @@ export function workbenchUI({ call, getState, getPage, renderPage, escape: e, to
     return resultsList();
   }
   function gallery() {
-    const consoles = new Map(data().results.filter(x => !project || projectKey(x) === project).map(x => [consoleKey(x), consoleName(x)]));
+    const consoles = new Map(data().results.filter(x => !project || projectOf(x) === project).map(x => [consoleKey(x), consoleName(x)]));
     const hasResults = !showingFolders() && filtered().length > 0, multiplePages = !showingFolders() && resultPages().length > 12;
     const title = project ? `${button('back-results','Results','','subtle')}<span aria-hidden="true"> &rsaquo; </span><span class="result-folder-name">${e(folders().find(x => x.key === project)?.name || folderName)}</span>` : 'Results';
-    return shell(title, '', `<div class="result-controls"><div class="wb-toolbar result-filters"><input id="result-search" type="search" aria-label="Search results" placeholder="Search results" value="${e(filter)}"><select id="result-console" aria-label="Console" ${showingFolders() ? 'hidden' : ''}><option value="">All consoles</option>${[...consoles].map(([key,name]) => `<option value="${e(key)}" ${key === consoleFilter ? 'selected' : ''}>${e(name)}</option>`).join('')}</select><select id="result-kind" aria-label="Result type" ${showingFolders() ? 'hidden' : ''}><option value="">All types</option>${['code','screenshot','test','report','review','concept','asset'].map(x => `<option value="${x}" ${x === kind ? 'selected' : ''}>${x}</option>`).join('')}</select></div><div class="wb-toolbar small result-bulk-actions" ${hasResults ? '' : 'hidden'}>${hasResults ? bulkActions() : ''}</div></div><div class="results-workspace"><div class="results-list"><div class="results-grid">${resultContent()}</div><div class="wb-toolbar result-pagination" ${multiplePages ? '' : 'hidden'}>${multiplePages ? pagination() : ''}</div></div><aside class="result-side-panel" aria-label="Result details" hidden></aside></div>`, button('folder','Open folder','','secondary') + button('import','Add files','','primary'));
+    return shell(title, '', `<div class="result-controls"><div class="wb-toolbar result-filters"><input id="result-search" type="search" aria-label="Search results" placeholder="Search results" value="${e(filter)}"><select id="result-console" aria-label="Console" ${showingFolders() ? 'hidden' : ''}><option value="">All consoles</option>${[...consoles].map(([key,name]) => `<option value="${e(key)}" ${key === consoleFilter ? 'selected' : ''}>${e(name)}</option>`).join('')}</select><select id="result-kind" aria-label="Result type" ${showingFolders() ? 'hidden' : ''}><option value="">All types</option>${['code','screenshot','test','report','review','concept','asset'].map(x => `<option value="${x}" ${x === kind ? 'selected' : ''}>${x}</option>`).join('')}</select></div><div class="wb-toolbar small result-bulk-actions" ${hasResults ? '' : 'hidden'}>${hasResults ? bulkActions() : ''}</div></div><div class="results-workspace"><div class="results-list"><div class="results-grid">${resultContent()}</div><div class="wb-toolbar result-pagination" ${multiplePages ? '' : 'hidden'}>${multiplePages ? pagination() : ''}</div></div><aside class="result-side-panel" aria-label="Result details" hidden></aside></div>`, button('folder','Open folder','','secondary') + button('import','Import files','','primary'));
   }
   const dialog = document.createElement('dialog'); dialog.className = 'wb-dialog'; dialog.setAttribute('aria-label','Result details'); document.body.append(dialog);
   let pendingPreviewMoves = 0, previewOpener = null, previewOpenerKey = null;
@@ -206,7 +208,7 @@ export function workbenchUI({ call, getState, getPage, renderPage, escape: e, to
     const focused = oldGrid?.contains(active) ? { action: active.dataset.wb, id: active.dataset.id, selection: active.dataset.resultSelect, className: active.className } : null;
     const name = document.querySelector('.result-folder-name'); if (name) name.textContent = folders().find(x => x.key === project)?.name || folderName;
     for (const [id, values, selectedValue, label] of [
-      ['result-console', new Map(data().results.filter(x => !project || projectKey(x) === project).map(x => [consoleKey(x), consoleName(x)])), consoleFilter, 'All consoles']
+      ['result-console', new Map(data().results.filter(x => !project || projectOf(x) === project).map(x => [consoleKey(x), consoleName(x)])), consoleFilter, 'All consoles']
     ]) {
       const select = document.getElementById(id);
       if (select && select !== document.activeElement) {
@@ -345,8 +347,8 @@ export function workbenchUI({ call, getState, getPage, renderPage, escape: e, to
     const textOnly = !result && !item.resultId && !item.reviewId && getState().sessions.some(x => x.id === item.sessionId && x.alive);
     if (resultDestination && textOnly) { await selectSession(item.sessionId); toast('This prompt saved no files. Its reply is in this console.'); }
     else if (resultDestination) {
-      filter = ''; kind = ''; project = result ? projectKey(result) : ''; folderName = result ? projectName(result) : ''; consoleFilter = '';
-      resultPage = result ? Math.max(0, Math.floor(resultGroups(filtered()).findIndex(group => group.some(x => x.id === result.id)) / 12)) : 0;
+      filter = ''; kind = ''; project = result ? projectOf(result) : ''; folderName = result ? projectName(result) : ''; consoleFilter = '';
+      resultPage = result ? Math.max(0, Math.floor(resultGroups(filtered(), projectList()).findIndex(group => group.some(x => x.id === result.id)) / 12)) : 0;
       navigate('results');
       if (result) await preview(result.id);
       else toast(item.resultId || item.reviewId ? 'These results are no longer available.' : 'No results were saved for this prompt.');

@@ -43,11 +43,6 @@
 #content:is([data-view=usage],[data-view=agent-settings]) .account-profile-row>div>span{display:grid;gap:3px}
 #content:is([data-view=usage],[data-view=agent-settings]) .account-profile-row small{color:var(--usage-muted)}
 #content:is([data-view=usage],[data-view=agent-settings]) .account-profile-row>span{flex-wrap:wrap;justify-content:flex-end}
-#content:is([data-view=usage],[data-view=agent-settings]) .account-switch-threshold{display:flex;align-items:center;gap:18px;flex-wrap:wrap;padding-top:4px}
-#content:is([data-view=usage],[data-view=agent-settings]) .account-switch-threshold label{display:flex;align-items:center;gap:8px;color:var(--usage-soft);font-size:14px}
-#content:is([data-view=usage],[data-view=agent-settings]) .account-switch-threshold input[type=number]{width:76px;padding:7px;border:1px solid #30364b;border-radius:5px;background:#080a10;color:#e1e5f1;font:inherit}
-#content:is([data-view=usage],[data-view=agent-settings]) .account-switch-threshold input[type=checkbox]{accent-color:#9cbfff;width:16px;height:16px}
-#content:is([data-view=usage],[data-view=agent-settings]) .account-switch-threshold .field-hint{flex-basis:100%;margin:0}
 @media(max-width:700px){
   #content:is([data-view=usage],[data-view=agent-settings]) .account-profile-form{grid-template-columns:1fr}
   #content:is([data-view=usage],[data-view=agent-settings]) .account-profile-row{align-items:flex-start;flex-direction:column}

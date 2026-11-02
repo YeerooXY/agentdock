@@ -147,7 +147,9 @@ Future<void> consoleAction(WidgetTester tester, String action) async {
 }
 
 Future<void> useGrid(WidgetTester tester) async {
-  await consoleAction(tester, 'Text & display');
+  await consoleAction(tester, 'View options');
+  await tester.tap(find.text('Text & display'));
+  await tester.pumpAndSettle();
   await tester.tap(find.text('Grid'));
   await tester.pumpAndSettle();
   // Dismiss only the display sheet.
@@ -257,8 +259,7 @@ void main() {
       {'id': 'one', 'data': 'hello'},
     ]);
 
-    final readingPoint =
-        tester.getTopLeft(find.byType(TerminalView)) + const Offset(150, 150);
+    final readingPoint = tester.getCenter(find.byType(TerminalView));
     await tester.dragFrom(readingPoint, const Offset(0, 100));
     await tester.pumpAndSettle();
     expect(tester.testTextInput.isVisible, isFalse);
@@ -681,7 +682,7 @@ void main() {
       await tester.enterText(find.byType(TextField).last, draft);
       await tester.pump(const Duration(milliseconds: 250));
       await drafts.flush();
-      expect(find.text('Usage reached 91%.'), findsOneWidget);
+      expect(find.text('Usage reached 91%.'), findsNothing);
 
       await tester.tap(find.byTooltip('More options'));
       await tester.pumpAndSettle();
@@ -808,7 +809,7 @@ void main() {
 
   for (final width in [320.0, 393.0, 800.0]) {
     testWidgets(
-      'account offer and menu wrap long labels at ${width.toInt()}px',
+      'manual account menu wraps long labels without a usage banner at ${width.toInt()}px',
       (tester) async {
         tester.view.physicalSize = Size(width, 1000);
         tester.view.devicePixelRatio = 1;
@@ -840,7 +841,7 @@ void main() {
         ];
         await tester.pumpWidget(DockApp(client: c));
         await tester.pumpAndSettle();
-        expect(find.text('Usage reached 91%.'), findsOneWidget);
+        expect(find.text('Usage reached 91%.'), findsNothing);
         expect(tester.takeException(), isNull);
         await tester.tap(find.byTooltip('More options'));
         await tester.pumpAndSettle();

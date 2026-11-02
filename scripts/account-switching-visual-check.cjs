@@ -34,7 +34,6 @@ function fixtureState() {
     provider: 'codex', accountId: alpha, accountLabel: 'Alpha', launchId,
     switchTargets: [{ id: beta, label: 'Backup subscription profile', ready: true }],
     draftSupported: true, state: 'ready', alive: true, permissions: 'default', launchModel: 'gpt-5.2-codex',
-    switchOffer: { key: 'fixture-alpha-usage', targetAccountId: beta, targetLabel: 'Backup subscription profile', usedPercent: 92, minutes: 300, resetsAt: Date.now() + 3600000 },
     cols: 100, rows: 30, sequence: 0, buffer: '', providerSessionId: '44444444-4444-4444-8444-444444444444'
   }];
   state.accounts = [
@@ -82,7 +81,6 @@ let browser;
         if (method === 'session.switch') {
           if (payload.id !== fixtureConsoleId || payload.launchId !== data.sessions[0].launchId || payload.targetAccountId !== fixtureTargetId) return { ok: false, error: 'The console changed.' };
           Object.assign(data.sessions[0], { accountId: fixtureTargetId, accountLabel: 'Backup subscription profile', launchId: '55555555-5555-4555-8555-555555555555' });
-          delete data.sessions[0].switchOffer;
           window.__sendFixtureSnapshot();
           return { ok: true, value: data.sessions[0] };
         }
@@ -138,7 +136,6 @@ let browser;
     assert.equal(await menu.locator(':popover-open').count(), 0); // The menu itself is the popover element.
     assert.equal(await menu.evaluate(node => node.matches(':popover-open')), true, `${name}: account menu opens`);
     assert.equal(await page.evaluate(() => document.activeElement?.getAttribute('data-target-account-id')), beta, `${name}: menu receives focus`);
-    assert.match(await page.locator('.account-switch-offer').innerText(), /92%/);
     const menuNode = await menu.elementHandle();
     await page.evaluate(() => window.__sendFixtureSnapshot());
     await page.waitForTimeout(40);

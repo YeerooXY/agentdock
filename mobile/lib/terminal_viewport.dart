@@ -46,9 +46,30 @@ class _TerminalViewportState extends State<TerminalViewport> {
   })?
   _layout;
   int _layoutRevision = 0;
+
+  void _screenChanged() {
+    if (mounted) setState(() {});
+  }
+
+  /// Rows that hold text or the cursor, when the whole screen has no history.
+  /// Blank rows under the prompt would otherwise fill the phone's console.
+  int? _usedRows() {
+    final buffer = widget.terminal.buffer;
+    if (buffer.scrollBack > 0) return null;
+    var last = buffer.absoluteCursorY;
+    for (var y = buffer.height - 1; y > last; y--) {
+      if (buffer.lines[y].getText().trim().isNotEmpty) {
+        last = y;
+        break;
+      }
+    }
+    return last + 1;
+  }
+
   @override
   void initState() {
     super.initState();
+    widget.terminal.addListener(_screenChanged);
     _scroll.addListener(() {
       if (_scroll.hasClients) {
         widget.positions?.remember(
@@ -64,12 +85,15 @@ class _TerminalViewportState extends State<TerminalViewport> {
   void didUpdateWidget(TerminalViewport oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.terminal != widget.terminal) {
+      oldWidget.terminal.removeListener(_screenChanged);
+      widget.terminal.addListener(_screenChanged);
       _view = GlobalKey<TerminalViewState>();
     }
   }
 
   @override
   void dispose() {
+    widget.terminal.removeListener(_screenChanged);
     _scroll.dispose();
     super.dispose();
   }
@@ -158,29 +182,40 @@ class _TerminalViewportState extends State<TerminalViewport> {
                     constraints.maxWidth,
                     cols * _cellWidth(scaler) + _padding.horizontal + 1,
                   );
-            _keepPlace(width, constraints.maxHeight, scaler);
-            return SingleChildScrollView(
-              key: const ValueKey('terminal-horizontal-scroll'),
-              scrollDirection: Axis.horizontal,
-              physics: widget.fitWidth
-                  ? const NeverScrollableScrollPhysics()
-                  : null,
-              child: SizedBox(
-                width: width,
-                height: constraints.maxHeight,
-                child: TerminalView(
-                  widget.terminal,
-                  key: _view,
-                  scrollController: _scroll,
-                  autoResize: false,
-                  readOnly: widget.readOnly,
-                  focusNode: widget.focusNode,
-                  deleteDetection: true,
-                  textStyle: _style,
-                  textScaler: scaler,
-                  padding: _padding,
-                  theme: widget.theme,
-                  backgroundOpacity: 0,
+            final rows = _usedRows();
+            final cell = scaler.scale(_style.fontSize) * _style.height;
+            final fitted = rows == null
+                ? constraints.maxHeight
+                : min(
+                    constraints.maxHeight,
+                    rows * cell + _padding.vertical + 2,
+                  );
+            _keepPlace(width, fitted, scaler);
+            return Align(
+              alignment: Alignment.bottomCenter,
+              child: SingleChildScrollView(
+                key: const ValueKey('terminal-horizontal-scroll'),
+                scrollDirection: Axis.horizontal,
+                physics: widget.fitWidth
+                    ? const NeverScrollableScrollPhysics()
+                    : null,
+                child: SizedBox(
+                  width: width,
+                  height: fitted,
+                  child: TerminalView(
+                    widget.terminal,
+                    key: _view,
+                    scrollController: _scroll,
+                    autoResize: false,
+                    readOnly: widget.readOnly,
+                    focusNode: widget.focusNode,
+                    deleteDetection: true,
+                    textStyle: _style,
+                    textScaler: scaler,
+                    padding: _padding,
+                    theme: widget.theme,
+                    backgroundOpacity: 0,
+                  ),
                 ),
               ),
             );

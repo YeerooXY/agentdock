@@ -60,8 +60,8 @@ const filePreview = require('./file-preview.cjs');
 const { userDataPath } = require('./user-data.cjs');
 const { AccountProfiles, defaultId } = require('./account-profiles.cjs');
 const { DraftBridge } = require('./draft-bridge.cjs');
-const { accountIdForLimit, thresholdCandidate, automaticSwitchEligible } = require('./account-switching-policy.cjs');
-const { SubscriptionUsage, readClaudeUsage, readCopilotUsage, readKiroUsage, readKimiUsage, readOpenCodeUsage, copilotExecutable, usageEnvironment, stopUsageReaders } = require('./subscription-usage.cjs');
+const { accountIdForLimit } = require('./account-switching-policy.cjs');
+const { SubscriptionUsage, readClaudeUsage, readClaudeModels, readCopilotUsage, readKiroUsage, readKimiUsage, readOpenCodeUsage, copilotExecutable, usageEnvironment, stopUsageReaders } = require('./subscription-usage.cjs');
 const { readAntigravityUsage } = require('./antigravity-usage.cjs');
 const { readCursorUsage } = require('./cursor-usage.cjs');
 const { modelsFromReading } = require('./routing-models.cjs');
@@ -154,14 +154,14 @@ function unexpected(error) {
 }
 process.on('uncaughtException', unexpected);
 process.on('unhandledRejection', unexpected);
-const codexAccounts = new Map(), dismissedThresholdOffers = new Set(), automaticSwitchAttempts = new Set();
+const codexAccounts = new Map();
 const recentReader = new RecentCodex();
 const entryFile = path.join(__dirname, '..', 'dist', 'index.html');
 const entryUrl = pathToFileURL(entryFile).href;
 const projectsFolder = path.join(os.homedir(), 'Projects');
 const defaultFolder = fs.existsSync(projectsFolder) && fs.statSync(projectsFolder).isDirectory() ? projectsFolder : os.homedir();
 function snapshot() {
-  return { platform: process.platform, mode, transitioning, trayHidden, sessions: sessions?.list() || [], codePanels: sessions?.codePanels() || [], queues: messageQueue?.snapshot() || {}, prompts: prompts?.list() || [], codeRevision: codePanel?.revision || 0, limits, accounts: ['codex', 'claude'].flatMap(provider => accounts?.choices(provider) || []), recent, accountError, refreshing, lastRefresh, agents: (cliSetup?.snapshot() || []).map(agent => agent.id === 'opencode' && !openCodeAvailable ? { ...agent, installed: false } : agent), agentSetupBusy: !!cliSetup?.running, skills: skillPacks?.snapshot() || { packs: [], busy: false },
+  return { platform: process.platform, mode, transitioning, trayHidden, sessions: sessions?.list() || [], codePanels: sessions?.codePanels() || [], queues: messageQueue?.snapshot() || {}, prompts: prompts?.list() || [], codeRevision: codePanel?.revision || 0, limits, accounts: accounts?.allChoices() || [], accountProviders: accounts?.providers() || [], recent, accountError, refreshing, lastRefresh, agents: (cliSetup?.snapshot() || []).map(agent => agent.id === 'opencode' && !openCodeAvailable ? { ...agent, installed: false } : agent), agentSetupBusy: !!cliSetup?.running, skills: skillPacks?.snapshot() || { packs: [], busy: false },
     usageAccounts: usageAccounts(), usageChecks: subscriptionUsage?.snapshot() || [], delegations: workbench?.delegation?.snapshot() || [], tasks: tasks?.snapshot() || [],
     sshHosts: ssh?.list() || [], capabilities, projects: projects?.list() || [], projectProposals: projects?.proposals || [], messages: [...(messageUsage?.items || []), ...apiMessages(ledger || [])].sort((a,b) => b.at - a.at).slice(0, 200), mobile: mobile?.snapshot(), workbench: workbench?.snapshot(), vault: { available: vault?.available() || false, entries: vault?.list() || [] },
     ledger: ledger || [], summary: ledgerSummary(ledger || []), shared: hub?.snapshot(), updates: updates?.snapshot(), grid: sessions?.grid || settings?.grid, settings, storageError, workspaceError, shortcutAvailable, safeMode, startupNotices: crash.notices,
@@ -298,10 +298,8 @@ async function moveWindow(next, sequence) {
   revealWindow();
 }
 function usageAccounts() {
-  const choices = ['codex', 'claude'].flatMap(provider => accounts?.choices(provider) || []);
-  for (const agent of cliSetup?.snapshot() || []) {
-    if (!['codex', 'claude'].includes(agent.id) && agent.installed) choices.push({ id: `${agent.id}:default`, provider: agent.id, label: agent.name });
-  }
+  const installed = new Set((cliSetup?.snapshot() || []).filter(agent => agent.installed).map(agent => agent.id));
+  const choices = (accounts?.allChoices() || []).filter(choice => choice.profile || installed.has(choice.provider) || limits.some(value => limitAccountId(value) === choice.id));
   for (const value of limits) {
     if (value.provider === 'opencode' && !safeMode && !(cliSetup?.snapshot() || []).some(agent => agent.id === 'opencode' && agent.installed)) continue;
     const id = limitAccountId(value);
@@ -318,7 +316,7 @@ function usageAccounts() {
 function saveUsage(account, values) {
   limits = [...limits.filter(item => limitAccountId(item) !== account.id), ...values];
   try { atomicJson(path.join(root, 'limits.json'), limits); } catch (error) { storageError = error.message; }
-  refreshSwitchOffers(); publish(); mobile?.scheduleState();
+  publish(); mobile?.scheduleState();
 }
 function refreshLimits() {
   if (testMode || safeMode || !subscriptionUsage) return Promise.resolve();
@@ -327,7 +325,6 @@ function refreshLimits() {
   usageRefresh = subscriptionUsage.refresh(usageAccounts()).then(checks => {
     accountError = checks.find(check => check.accountId === defaultId('codex'))?.message || null;
     if (checks.some(check => check.status === 'current')) lastRefresh = Date.now();
-    refreshSwitchOffers();
   }).finally(() => { refreshing = false; usageRefresh = null; publish(); mobile?.scheduleState(); });
   return usageRefresh;
 }
@@ -339,7 +336,7 @@ function usageSnapshot() {
   return {
     limits: limits.filter(item => item.provider !== 'opencode' || choices.some(choice => choice.id === limitAccountId(item))).map(item => ({ ...item, accountLabel: choices.find(choice => choice.id === limitAccountId(item))?.label || item.name, usageCheck: checks.find(check => check.accountId === limitAccountId(item)), visible: !hidden.has(limitAccountId(item)) })),
     accounts: choices.map(choice => ({ ...choice, usageCheck: checks.find(check => check.accountId === choice.id), visible: visible(choice.id, !!(choice.hasUsage || choice.inUse)) })),
-    usageChecks: checks, refreshing, threshold: settings.accountSwitchThreshold, autoSwitch: settings.autoSwitchAccounts, summary: ledgerSummary(ledger || []),
+    usageChecks: checks, refreshing, summary: ledgerSummary(ledger || []),
   };
 }
 function getCodexAccount(id = defaultId('codex')) {
@@ -350,44 +347,13 @@ function getCodexAccount(id = defaultId('codex')) {
   const reader = new CodexAccount(values => {
     limits = [...limits.filter(item => (item.accountId || (item.provider === 'codex' ? defaultId('codex') : item.accountId)) !== id), ...values];
     try { atomicJson(path.join(root, 'limits.json'), limits); } catch (error) { storageError = error.message; }
-    refreshSwitchOffers(); publish();
+    publish();
   }, { env, accountId: id, sqliteHome: profile.profile ? path.join(profile.configDir, 'sqlite') : null });
   codexAccounts.set(id, reader);
   if (id === defaultId('codex')) account = reader;
   return reader;
 }
 const limitAccountId = accountIdForLimit;
-function refreshSwitchOffers() {
-  if (safeMode || !sessions || !accounts || !settings) return;
-  const threshold = settings.accountSwitchThreshold ?? 90, now = Date.now();
-  let changed = false;
-  for (const item of sessions.items.values()) {
-    if (item.purpose !== 'agent' || !['codex', 'claude'].includes(item.provider) || item.dismissed) continue;
-    const accountId = item.accountId || defaultId(item.provider);
-    const candidate = thresholdCandidate(limits, accountId, item.provider, threshold, now);
-    const target = candidate && item.draftSupported ? (accounts.choices(item.provider) || []).find(choice => choice.id !== accountId && (!choice.profile || !!choice.loginCompletedAt)) : null;
-    if (!candidate || !target) {
-      if (item.switchOffer) { delete item.switchOffer; changed = true; }
-      continue;
-    }
-    const key = `${accountId}:${item.consoleKey}:${item.providerSessionId}:${candidate.minutes}:${candidate.resetsAt}:${threshold}`;
-    if (dismissedThresholdOffers.has(key)) {
-      if (item.switchOffer) { delete item.switchOffer; changed = true; }
-      continue;
-    }
-    const nextOffer = target ? { key, targetAccountId: target.id, targetLabel: target.label, usedPercent: candidate.usedPercent, minutes: candidate.minutes, resetsAt: candidate.resetsAt } : null;
-    if (JSON.stringify(item.switchOffer || null) !== JSON.stringify(nextOffer)) { if (nextOffer) item.switchOffer = nextOffer; else delete item.switchOffer; changed = true; }
-    if (!target) continue;
-    const automaticKey = `${accountId}:${item.consoleKey}:${item.providerSessionId}:${candidate.minutes}:${candidate.resetsAt}`;
-    if (automaticSwitchAttempts.has(automaticKey)) continue;
-    if (!automaticSwitchEligible({ limits, sourceAccountId: accountId, targetAccountId: target.id, provider: item.provider, candidate, threshold, now, enabled: settings.autoSwitchAccounts, state: item.state, busy: item.switching || sessions.isBusy(item.id), draftSupported: item.draftSupported })) continue;
-    automaticSwitchAttempts.add(automaticKey);
-    sessions.switchAccount({ id: item.id, launchId: item.launchId, targetAccountId: target.id }).catch(error => {
-      workbench?.alerts.send({ key: `account-switch-failed:${automaticKey}`, title: 'Account switch failed', message: error?.message || 'The current console is still running.', sessionId: item.id, kind: 'error' });
-    });
-  }
-  if (changed) { publish(); mobile?.scheduleState(); }
-}
 async function quit() {
   const active = sessions.list().filter(x => x.alive).length;
   if (active && !testMode) {
@@ -444,7 +410,7 @@ app.whenReady().then(() => guardStartup(async () => {
       claude: choice => readClaudeUsage({ executable: cliSetup.executable('claude'), accountId: choice.id, cwd: usageDirectory, env: accounts.environment(choice.id, 'claude', { baseEnv: process.env }) }),
       copilot: choice => readCopilotUsage({ executable: copilotExecutable(cliSetup.executable('copilot')), accountId: choice.id, cwd: usageDirectory, env: usageEnvironment() }),
       cursor: choice => readCursorUsage({ executable: cliSetup.executable('cursor'), accountId: choice.id, cwd: usageDirectory, env: usageEnvironment() }),
-      pi: choice => readPiUsage({ executable: cliSetup.executable('pi'), accountId: choice.id, cwd: usageDirectory, env: usageEnvironment() }),
+      pi: choice => readPiUsage({ executable: cliSetup.executable('pi'), accountId: choice.id, cwd: usageDirectory, env: usageEnvironment(accounts.environment(choice.id, 'pi', { baseEnv: process.env })), settingsPath: accounts.getAccount(choice.id, 'pi').configDir ? path.join(accounts.getAccount(choice.id, 'pi').configDir, 'settings.json') : undefined }),
       kiro: choice => readKiroUsage({ executable: cliSetup.executable('kiro'), accountId: choice.id, cwd: path.join(usageDirectory, 'kiro'), env: usageEnvironment() }),
       kimi: choice => readKimiUsage({ executable: cliSetup.executable('kimi'), accountId: choice.id, cwd: usageDirectory, env: usageEnvironment() }),
       opencode: choice => readOpenCodeUsage({ executable: cliSetup.executable('opencode'), accountId: choice.id, cwd: usageDirectory, env: usageEnvironment(), getKey: () => { const entry = vault.list().find(item => item.id.toLowerCase() === 'opencode' || item.label.toLowerCase() === 'opencode'); return entry ? vault.get(entry.id) : null; } }),
@@ -489,25 +455,23 @@ app.whenReady().then(() => guardStartup(async () => {
       const executable = cliSetup.executable(provider), name = require('./provider-workers.cjs').names[provider];
       if (provider === 'pi') {
         if (!executable) return [];
-        const reading = limits.filter(row => limitAccountId(row) === 'pi:default').sort((a, b) => b.observedAt - a.observedAt)[0];
-        const current = subscriptionUsage?.snapshot().find(s => s.accountId === 'pi:default')?.status === 'current' && Date.now() - reading?.observedAt <= 30 * 60_000;
-        const freeRoom = current && reading?.windows?.some(w => w.modelGroup === 'openrouter:free' && w.remaining > 0);
-        const models = freeRoom ? (reading.freeAlternatives || []).map(m => ({ id: m.route, available: true, observedAt: reading.observedAt, funding: 'free', source: 'native OpenRouter sign-in, zero-price tool model and free request quota' })) : [];
-        const selected = current && reading?.modelAllowed === true && reading?.route?.provider && reading?.route?.model ? `${reading.route.provider}/${reading.route.model}` : null;
-        return [{ id: 'pi:default', provider, label: name, executable, signedIn: usageSignIn('pi:default'), available: models.length > 0 || !!selected,
-          model: models.find(m => m.id === 'openrouter/cohere/north-mini-code:free')?.id || models[0]?.id || selected,
-          models, funding: models.length ? 'free' : selected ? reading.funding : 'unknown' }];
+        return accounts.choices(provider).filter(choice => !choice.profile || choice.loginCompletedAt).map(choice => {
+          const reading = limits.filter(row => limitAccountId(row) === choice.id).sort((a, b) => b.observedAt - a.observedAt)[0];
+          const current = subscriptionUsage?.snapshot().find(s => s.accountId === choice.id)?.status === 'current' && Date.now() - reading?.observedAt <= 30 * 60_000;
+          const freeRoom = current && reading?.windows?.some(w => w.modelGroup === 'openrouter:free' && w.remaining > 0);
+          const models = freeRoom ? (reading.freeAlternatives || []).map(m => ({ id: m.route, available: true, observedAt: reading.observedAt, funding: 'free', source: 'native OpenRouter sign-in, zero-price tool model and free request quota' })) : [];
+          const selected = current && reading?.modelAllowed === true && reading?.route?.provider && reading?.route?.model ? reading.route.provider + '/' + reading.route.model : null;
+          return { id: choice.id, provider, label: choice.profile ? name + ' (' + choice.label + ')' : name, executable, signedIn: usageSignIn(choice.id), available: models.length > 0 || !!selected,
+            model: models.find(m => m.id === 'openrouter/cohere/north-mini-code:free')?.id || models[0]?.id || selected,
+            models, funding: models.length ? 'free' : selected ? reading.funding : 'unknown' };
+        });
       }
-      // Native single-account CLIs keep their own sign-in; Paddock never copies it.
-      if (!['claude', 'codex'].includes(provider)) return executable ? [{ id: `${provider}:default`, provider, label: name, executable, signedIn: usageSignIn(`${provider}:default`),
-        ...(provider === 'cline' ? clineRoute() || {} : {}) }] : [];
-      return executable ? accounts.choices(provider).filter(choice => !choice.profile || choice.loginCompletedAt)
-        .map(choice => ({ id: choice.id, provider, label: choice.profile ? `${name} · ${choice.label}` : name, executable, signedIn: usageSignIn(choice.id),
-          models: modelsFromReading(limits.filter(row => limitAccountId(row) === choice.id).sort((a, b) => b.observedAt - a.observedAt)[0]) })) : [];
+      return executable ? accounts.choices(provider).filter(choice => !choice.profile || accounts.provider(provider)?.namedProfiles && choice.loginCompletedAt)
+        .map(choice => ({ id: choice.id, provider, label: choice.profile ? `${name} (${choice.label})` : name, executable, signedIn: usageSignIn(choice.id),
+          models: modelsFromReading(limits.filter(row => limitAccountId(row) === choice.id).sort((a, b) => b.observedAt - a.observedAt)[0]),
+          ...(provider === 'cline' && !choice.profile ? clineRoute() || {} : {}) })) : [];
     }),
-    environment: (id, provider) => usageEnvironment(!['claude', 'codex'].includes(provider)
-      ? Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.toLowerCase().startsWith('paddock_')))
-      : accounts.environment(id, provider, { baseEnv: process.env })),
+    environment: (id, provider) => usageEnvironment(accounts.environment(id, provider, { baseEnv: process.env })),
     saveResult: async (raw, context) => workbench.results.add(raw, await resultGitContext({}, context || {}, workbench.results.root))
   };
   workbench.delegation = new Delegation(root, { ...taskAccounts, testMode, getSettings: () => settings,
@@ -534,7 +498,7 @@ app.whenReady().then(() => guardStartup(async () => {
     return choices;
   },
     getInstructions: (job, phase) => { const parent = tasks?.jobs.get(job.parentId); return taskGuidance(hub?.config, job, parent, projects.brief(job.projectId || parent?.projectId, true), phase); },
-    environment: (id, provider) => provider === 'opencode' ? usageEnvironment(Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.toLowerCase().startsWith('paddock_')))) : taskAccounts.environment(id, provider),
+    environment: (id, provider) => id === 'opencode:strata' ? usageEnvironment(Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.toLowerCase().startsWith('paddock_')))) : taskAccounts.environment(id, provider),
     repositories: () => {
       const folders = projects.list().flatMap(project => project.folders.map(folder => ({ path: folder.path, label: `${project.name}${folder.label ? ` / ${folder.label}` : ''}: ${folder.path}` })));
       for (const session of sessions?.items.values() || []) if (session.alive && !session.remote && !session.kind && session.cwd) folders.push({ path: session.cwd, label: `${session.name}: ${session.cwd}` });
@@ -551,7 +515,14 @@ app.whenReady().then(() => guardStartup(async () => {
     return !!item?.alive && !item.switching && item.launchId === owner.launchId;
   } }); await startupStep('Shared tools', () => hub.start(), { optional: true });
   ssh = new SshHosts(root);
+  const modelChoices = async (provider, accountId = defaultId(provider)) => {
+    if (provider === 'codex') return getCodexAccount(accountId).models();
+    if (provider === 'claude') return readClaudeModels({ executable: cliSetup.executable('claude'), cwd: usageDirectory,
+      env: accounts.environment(accountId, 'claude', { baseEnv: process.env }) });
+    return [];
+  };
   sessions = new Sessions(root, { ssh, hub, claude, runtime, cliSetup, projects, accounts, draftBridge, grid: settings.grid, codexScrollback: () => settings.codexScrollback !== false,
+    getModels: modelChoices,
     isBusy: id => !!turns?.active.has(id), getThreadModel: (accountId, threadId) => getCodexAccount(accountId).threadModel(threadId), onLayout: ({ grid, plan }) => {
     const slotNames = { ...settings.slotNames };
     for (const item of plan) delete slotNames[sessions.items.get(item.id)?.slot];
@@ -579,7 +550,7 @@ app.whenReady().then(() => guardStartup(async () => {
   messageQueue = new MessageQueue(sessions);
   messageQueue.on('changed', publish); prompts.on('changed', publish);
   messageQueue.on('error', ({ id, message }) => workbench.alerts.send({ key: 'queue:' + id + ':' + Date.now(), title: (sessions.items.get(id)?.name || 'Console') + ': queued message not sent', message, sessionId: id, kind: 'error' }));
-  mobile = new MobileCompanion(root, safeStorage, { codePanel, sessions, concepts: workbench.concepts, redactImageText: value => hub.redact(value), results: workbench.results, alerts: workbench.alerts, queue: messageQueue, prompts, getUsage: usageSnapshot, getUsageTurns: () => [...(messageUsage?.items || []), ...apiMessages(ledger || [])], refreshUsage: refreshLimits, getDefaults: () => ({ ...settings.consoleDefaults, permissions: settings.agentPermissions }), worktrees, endMobileSession: (id, choice, valid) => endMobileSession(id, choice, valid, { sessions, getSettings: () => settings, persistSettings, worktrees }), getModels: () => getCodexAccount(defaultId('codex')).models(), toolsStatus: true, getSettings: () => { const shared = hub.snapshot(), keys = vault.list(); return { shared, keys, integrations: integrations.snapshot(shared.connections, keys), setupRequests: workbench.snapshot().setupRequests, redact: value => hub.redact(value) }; }, getKey: id => vault.get(id), networkScript: app.isPackaged ? path.join(process.resourcesPath, 'mobile-network.ps1') : path.join(__dirname, 'mobile-network.ps1'), program: process.execPath, testMode });
+  mobile = new MobileCompanion(root, safeStorage, { codePanel, sessions, concepts: workbench.concepts, redactImageText: value => hub.redact(value), results: workbench.results, alerts: workbench.alerts, queue: messageQueue, prompts, getUsage: usageSnapshot, getUsageTurns: () => [...(messageUsage?.items || []), ...apiMessages(ledger || [])], refreshUsage: refreshLimits, getDefaults: () => ({ ...settings.consoleDefaults, permissions: settings.agentPermissions }), worktrees, endMobileSession: (id, choice, valid) => endMobileSession(id, choice, valid, { sessions, getSettings: () => settings, persistSettings, worktrees }), getModels: modelChoices, toolsStatus: true, getSettings: () => { const shared = hub.snapshot(), keys = vault.list(); return { shared, keys, integrations: integrations.snapshot(shared.connections, keys), setupRequests: workbench.snapshot().setupRequests, redact: value => hub.redact(value) }; }, getKey: id => vault.get(id), networkScript: app.isPackaged ? path.join(process.resourcesPath, 'mobile-network.ps1') : path.join(__dirname, 'mobile-network.ps1'), program: process.execPath, testMode });
   mobile.on('changed', publish);
   mobile.on('pairing-requested', () => { if (settings.notifications && !testMode) notifications?.show({ title: 'Approve a phone?', message: 'Compare the codes on your PC and phone before allowing access.', destination: 'phone-pairing' }); });
   if (!testMode) void startupStep('Phone connection', () => mobile.start(), { optional: true }).catch(() => {});
@@ -590,7 +561,6 @@ app.whenReady().then(() => guardStartup(async () => {
   limits = Array.isArray(savedLimits) ? savedLimits.map(item => item?.provider === 'codex' && !item.accountId ? { ...item, accountId: defaultId('codex') } : item) : [];
   await startupStep('Codex sign-in check', () => getCodexAccount(defaultId('codex')), { optional: true });
   sessions.on('changed', publish);
-  sessions.on('changed', refreshSwitchOffers);
   sessions.on('changed', () => { for (const item of sessions.items.values()) if (!item.alive && turns.active.has(item.id)) turns.finish(item.id).catch(() => {}); });
   sessions.on('output', data => { if (window && !window.isDestroyed()) window.webContents.send('dock:output', data); });
   sessions.on('limits', value => {
@@ -689,7 +659,6 @@ app.whenReady().then(() => guardStartup(async () => {
     setInterval(() => { void startupStep('Recent chats', () => { recent = recentReader.scan(); sessions.updateUsage(recent); publish(); }, { optional: true }); }, 12000).unref();
     setInterval(() => { void startupStep('Usage checks', refreshLimits, { optional: true }); }, 120000).unref();
   }
-  if (!safeMode) setInterval(refreshSwitchOffers, 60000).unref();
   ipcMain.on('dock:owner-activity', (event, payload) => {
     if (event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame || event.senderFrame.url !== entryUrl) return;
     try {
@@ -980,11 +949,6 @@ app.whenReady().then(() => guardStartup(async () => {
           Menu.buildFromTemplate([{ label: 'Copy', enabled: !!payload, click: () => clipboard.writeText(payload) }]).popup({ window }); break;
         }
         case 'session.switch': return { ok: true, value: await sessions.switchAccount(payload) };
-        case 'session.switch-dismiss': {
-          const session = sessions.items.get(payload?.id);
-          if (!session || session.launchId !== payload?.launchId || session.switchOffer?.key !== payload?.offerKey) throw new Error('This account switch offer has changed.');
-          dismissedThresholdOffers.add(payload.offerKey); delete session.switchOffer; publish(); break;
-        }
         case 'screenshot.path': return { ok: true, value: screenshots.pathFor(sessions.items.get(payload?.id)) };
         case 'screenshot.clipboard': return { ok: true, value: await screenshots.paste(sessions.items.get(payload?.id)) };
         case 'file.preview': {
@@ -1056,12 +1020,6 @@ app.whenReady().then(() => guardStartup(async () => {
           }
           if (typeof payload?.codexScrollback === 'boolean') next.codexScrollback = payload.codexScrollback;
           if (typeof payload?.autoSaveResults === 'boolean') next.autoSaveResults = payload.autoSaveResults;
-          if (payload?.accountSwitchThreshold !== undefined) {
-            const threshold = Number(payload.accountSwitchThreshold);
-            if (!Number.isInteger(threshold) || threshold < 50 || threshold > 100) throw new Error('Choose a switch threshold from 50% to 100%.');
-            next.accountSwitchThreshold = threshold;
-          }
-          if (typeof payload?.autoSwitchAccounts === 'boolean') next.autoSwitchAccounts = payload.autoSwitchAccounts;
           if (typeof payload?.delegationEnabled === 'boolean') next.delegationEnabled = payload.delegationEnabled;
           if (typeof payload?.delegationPanels === 'boolean') next.delegationPanels = payload.delegationPanels;
           if (payload?.delegationProviders !== undefined) {
@@ -1112,7 +1070,7 @@ app.whenReady().then(() => guardStartup(async () => {
             next.agentPermissions = payload.agentPermissions;
           }
           workspace.setEnabled(next.restoreConsoles);
-          persistSettings(next); turns.setEnabled(settings.autoSaveResults === true); refreshSwitchOffers(); if (mode === 'hud') window.setAlwaysOnTop(settings.hudAlwaysOnTop); publish(); break;
+          persistSettings(next); turns.setEnabled(settings.autoSaveResults === true); if (mode === 'hud') window.setAlwaysOnTop(settings.hudAlwaysOnTop); publish(); break;
         }
         case 'rates.save': {
           if (!hub.config.profiles.some(x => x.id === payload?.provider)) throw new Error('Choose an API connection.');

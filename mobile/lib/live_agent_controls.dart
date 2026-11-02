@@ -1,15 +1,10 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
-import 'package:xterm/xterm.dart';
 
 import 'agent_identity.dart';
-import 'agent_menu.dart';
 import 'agent_selection.dart';
 import 'dock_client.dart';
 import 'dock_style.dart';
 
-/// The terminal receives commands only after an explicit Apply.
 class LiveAgentControls extends StatefulWidget {
   final DockClient client;
   final String action;
@@ -26,16 +21,16 @@ class _LiveAgentControlsState extends State<LiveAgentControls> {
   DockClient get c => widget.client;
   late final pc = c.activePC, id = c.selected, generation = c.generation;
   late final String initialProvider;
-  late final dynamic chat;
+  late final dynamic chat, launch, account, consoleKey;
   late final AgentSelection initial;
-  Terminal? terminal;
+  final modelFocus = FocusNode(), effortFocus = FocusNode();
   List<Map<String, dynamic>> models = [];
   String? model, effort;
   String error = '';
-  bool loading = true, busy = false, attempted = false;
+  bool loading = true, busy = false, supported = false;
   Map get session => c.sessions.where((s) => s['id'] == id).firstOrNull ?? {};
-  String get provider => '${session['provider']}'.toLowerCase();
-  bool get current =>
+  String get provider => (session['provider'] ?? '').toString().toLowerCase();
+  bool get sameChat =>
       mounted &&
       c.connected &&
       c.foreground &&
@@ -43,66 +38,53 @@ class _LiveAgentControlsState extends State<LiveAgentControls> {
       c.selected == id &&
       c.generation == generation &&
       provider == initialProvider &&
-      session['providerSessionId'] == chat;
-  AgentMenu? get menu =>
-      terminal == null ? null : AgentMenu.parse(activeTerminalText(terminal!));
-  bool get working =>
-      !(['open', 'ready', 'idle'].contains(session['state']) ||
-          (['active', 'attention'].contains(session['state']) &&
-              !agentWorking(activeTerminalText(terminal!))));
-
-  /// Why a command cannot be typed now. The PC marks a console working on any
-  /// Enter (a trust prompt, an empty line, an earlier /model) until a turn
-  /// ends, so the screen decides as well as the reported state. Typed prompt
-  /// text is not a block: Apply stashes it and types it back afterwards.
-  AgentBlock? get blocked {
-    if (terminal == null || working) return AgentBlock.working;
-    if (menu != null) return AgentBlock.menuOpen;
-    if (hasEmptyAgentPrompt(terminal!, provider)) return null;
-    final draft = agentPromptDraft(terminal!, provider);
-    if (draft.text == null) return AgentBlock.noPrompt;
-    return draft.multiline ? AgentBlock.multilineInput : null;
-  }
-
+      session['providerSessionId'] == chat &&
+      session['accountId'] == account &&
+      session['consoleKey'] == consoleKey;
+  bool get current => sameChat && session['launchId'] == launch;
+  bool get idle =>
+      ['open', 'ready', 'idle'].contains(session['state']) &&
+      session['switching'] != true &&
+      session['taskId'] == null &&
+      session['remote'] == null;
   Map<String, dynamic>? get chosen =>
       models.where((x) => x['id'] == model).firstOrNull;
   List<String> get efforts =>
       (chosen?['efforts'] as List? ?? []).whereType<String>().toList();
   bool get unchanged =>
-      model == initial.model && (effort == initial.effort || efforts.isEmpty);
+      (model == initial.model || chosen?['resolvedModel'] == initial.model) &&
+      effort == initial.effort;
+  Map<String, dynamic> get identity => {
+    'id': id,
+    'launchId': launch,
+    'accountId': account,
+    'consoleKey': consoleKey,
+  };
 
   @override
   void initState() {
     super.initState();
     initialProvider = provider;
     chat = session['providerSessionId'];
+    launch = session['launchId'];
+    account = session['accountId'];
+    consoleKey = session['consoleKey'];
     initial = c.agentSelection(id);
     model = initial.model;
     effort = initial.effort;
     c.addListener(changed);
-    listenToTerminal();
     load();
   }
 
-  void listenToTerminal() {
-    final next = c.screens[id]?.terminal;
-    if (next == terminal) return;
-    terminal?.removeListener(changed);
-    terminal = next;
-    terminal?.addListener(changed);
-  }
-
   void changed() {
-    if (mounted) {
-      listenToTerminal();
-      setState(() {});
-    }
+    if (mounted) setState(() {});
   }
 
   @override
   void dispose() {
     c.removeListener(changed);
-    terminal?.removeListener(changed);
+    modelFocus.dispose();
+    effortFocus.dispose();
     super.dispose();
   }
 
@@ -112,8 +94,12 @@ class _LiveAgentControlsState extends State<LiveAgentControls> {
       error = '';
     });
     try {
-      final result = await c.request('console.models', {'provider': provider});
+      final result = await c.request('console.models', {
+        'provider': provider,
+        ...identity,
+      });
       if (!current) return;
+      supported = result is Map && result['settingsSupported'] == true;
       final values = (result is Map ? result['models'] as List? : null) ?? [];
       models = values
           .whereType<Map>()
@@ -121,19 +107,19 @@ class _LiveAgentControlsState extends State<LiveAgentControls> {
           .toList();
       if (models.isEmpty) {
         throw StateError(
-          'Model choices are unavailable. Retry or use the terminal.',
+          'Model choices are unavailable. Retry loading choices.',
         );
       }
-      if (model != null && chosen == null) {
-        models.insert(0, {
-          'id': model,
-          'name': modelLabel(model!),
-          'efforts': provider == 'claude'
-              ? models.first['efforts'] ?? <String>[]
-              : <String>[],
-        });
+      if (chosen == null) {
+        final matching = models
+            .where((x) => x['resolvedModel'] == model)
+            .firstOrNull;
+        model = matching?['id'] as String?;
       }
       if (effort != null && !efforts.contains(effort)) effort = null;
+      if (!supported) {
+        error = 'Update Paddock on your PC to apply model settings.';
+      }
     } catch (e) {
       if (mounted) error = e.toString().replaceFirst('Bad state: ', '');
     } finally {
@@ -141,238 +127,42 @@ class _LiveAgentControlsState extends State<LiveAgentControls> {
     }
   }
 
-  Future<void> waitFor(bool Function() ready) async {
-    final done = Completer<void>();
-    Timer? poll, deadline;
-    void check() {
-      if (done.isCompleted) return;
-      try {
-        if (!current) {
-          throw StateError('Connection or chat changed. Reopen the chooser.');
-        }
-        if (ready()) done.complete();
-      } catch (e, stack) {
-        done.completeError(e, stack);
-      }
-    }
-
-    check();
-    if (!done.isCompleted) {
-      poll = Timer.periodic(const Duration(milliseconds: 50), (_) => check());
-      deadline = Timer(const Duration(seconds: 6), () {
-        if (!done.isCompleted) {
-          done.completeError(
-            StateError(
-              'Could not confirm the change. Check the terminal before trying again.',
-            ),
-          );
-        }
-      });
-    }
-    try {
-      await done.future;
-    } finally {
-      poll?.cancel();
-      deadline?.cancel();
-    }
-  }
-
-  int optionIndex(AgentMenu live, String value, {String? name}) =>
-      menuOptionIndex(live, value, name: name);
-
-  /// [open] presses Enter to open a submenu even where s means session only.
-  Future<void> choose(AgentMenu expected, int index, {bool open = false}) async {
-    if (index < 0) {
-      throw StateError(
-        'The agent does not offer this choice. Refresh the chooser.',
-      );
-    }
-    AgentMenu checked() {
-      final now = menu;
-      if (!current || now == null || now.signature != expected.signature) {
-        throw StateError('The agent menu changed. Check the terminal.');
-      }
-      return now;
-    }
-
-    var now = checked();
-    while (now.selected != index) {
-      final next = now.selected + (index > now.selected ? 1 : -1);
-      await c.input(index > now.selected ? '\x1b[B' : '\x1b[A', id: id);
-      await waitFor(() => menu != null && checked().selected == next);
-      now = checked();
-    }
-    final before = activeTerminalText(terminal!);
-    checked();
-    await c.input(now.sessionOnly && !open ? 's' : '\r', id: id);
-    await waitFor(() => activeTerminalText(terminal!) != before);
-  }
-
-  /// Backs out of a menu this Apply opened so a failure never leaves the PC
-  /// stuck on it. Only Escape is sent, and only while it is still this console.
-  Future<void> closeMenus() async {
-    for (var i = 0; i < 4 && current && menu != null; i++) {
-      final before = activeTerminalText(terminal!);
-      try {
-        await c.input('', id: id);
-        await waitFor(() => activeTerminalText(terminal!) != before);
-      } catch (_) {
-        return;
-      }
-    }
-  }
-
-  /// Types stashed prompt text back, only into a still-empty prompt.
-  Future<void> restoreDraft(String text) async {
-    try {
-      await waitFor(
-        () => menu == null && hasEmptyAgentPrompt(terminal!, provider),
-      );
-      final paste = terminal!.bracketedPasteMode;
-      await c.input(paste ? '[200~$text[201~' : text, id: id);
-    } catch (_) {
-      if (mounted) {
-        setState(
-          () => error =
-              'Could not restore your prompt text: $text',
-        );
-      }
-    }
-  }
-
   Future<void> apply() async {
-    if (!current || busy || loading) return;
+    if (!current || busy || loading || !supported) return;
     if (unchanged) {
       Navigator.pop(context);
       return;
     }
-    final block = blocked;
-    if (block != null) {
-      setState(() => error = agentBlockMessage(block));
-      return;
-    }
-    final latest = c.agentSelection(id);
-    if (latest.model != initial.model || latest.effort != initial.effort) {
+    if (!idle) {
       setState(
-        () => error = 'The active settings changed. Reopen the chooser.',
+        () => error = 'Wait until this chat is idle before applying settings.',
       );
       return;
     }
     setState(() {
       busy = true;
-      attempted = true;
       error = '';
     });
-    String? stashed;
-    var opened = false;
     try {
-      final before = activeTerminalText(terminal!);
-      if (!hasEmptyAgentPrompt(terminal!, provider)) {
-        // Ctrl+E then Ctrl+U clears one row wherever the cursor sits, in both
-        // CLIs. The text is typed back when the change ends.
-        stashed = agentPromptDraft(terminal!, provider).text;
-        await c.input('', id: id);
-        await waitFor(() => hasEmptyAgentPrompt(terminal!, provider));
-      }
-      if (provider == 'claude' && model != initial.model) {
-        // Same as typing it: /model <id> takes effect without a menu.
-        final names = {
-          modelLabel(model!).toLowerCase(),
-          (chosen?['name'] as String? ?? '').toLowerCase(),
-        }..remove('');
-        await c.submit('/model $model', command: true, canContinue: () => current);
-        await waitFor(() {
-          final text = activeTerminalText(terminal!).toLowerCase();
-          if (menu != null) return false;
-          final at = text.lastIndexOf('set model to');
-          return at >= 0 && names.any((n) => text.substring(at).contains(n));
-        });
-        await waitFor(
-          () => menu == null && hasEmptyAgentPrompt(terminal!, provider),
-        );
-      } else if (provider == 'codex') {
-        opened = true;
-        await c.submit('/model', command: true, canContinue: () => current);
-        await waitFor(() => menu != null);
-        final live = menu!;
-        await choose(
-          live,
-          optionIndex(live, model!, name: chosen?['name'] as String?),
-        );
-      }
-      if (provider == 'codex' && efforts.isNotEmpty) {
-        await waitFor(
-          () =>
-              menu != null &&
-              RegExp(
-                r'reasoning|effort',
-                caseSensitive: false,
-              ).hasMatch(menu!.title) &&
-              !menu!.title.toLowerCase().contains('model and effort'),
-        );
-        var live = menu!;
-        var index = optionIndex(live, effort!);
-        // Codex lists Max and Ultra under "More reasoning…".
-        final more = live.options.indexWhere(
-          (text) => text.toLowerCase().contains('more reasoning'),
-        );
-        if (index < 0 && more >= 0) {
-          final parent = live.signature;
-          await choose(live, more, open: true);
-          await waitFor(() => menu != null && menu!.signature != parent);
-          live = menu!;
-          index = optionIndex(live, effort!);
-        }
-        await choose(live, index);
-      } else if (provider == 'claude' &&
-          effort != null &&
-          effort != initial.effort) {
-        await waitFor(
-          () => menu == null && hasEmptyAgentPrompt(terminal!, provider),
-        );
-        opened = false;
-        await c.submit(
-          '/effort $effort',
-          command: true,
-          canContinue: () => current,
-        );
-      }
-      await waitFor(() {
-        final text = activeTerminalText(terminal!);
-        if (text == before || menu != null) return false;
-        final confirmation = selectionConfirmation(text),
-            reported = AgentSelection.fromSession(session);
-        final modelConfirmed =
-            confirmation?.model?.toLowerCase() == model?.toLowerCase() ||
-            (reported.at > initial.at && reported.model == model) ||
-            provider == 'claude';
-        final effortConfirmed =
-            effort == null ||
-            confirmation?.effort == effort ||
-            (reported.at > initial.at && reported.effort == effort) ||
-            (provider == 'claude' &&
-                (effort == initial.effort || claudeShowsEffort(text, effort!)));
-        return modelConfirmed && effortConfirmed;
+      final result = await c.request('console.settings', {
+        ...identity,
+        'model': model,
+        'effort': effort,
+        'confirmConversationReload': true,
       });
-      if (current) {
-        c.rememberAgentSelection(
-          id,
-          AgentSelection(
-            model: model,
-            effort: effort,
-            at: DateTime.now().millisecondsSinceEpoch,
-          ),
+      if (!sameChat) return;
+      if (result is! Map ||
+          result['launchId'] == null ||
+          result['requestedSettings'] is! Map) {
+        throw StateError(
+          'The PC did not confirm the resumed chat. Check the console before trying again.',
         );
-        if (stashed != null) await restoreDraft(stashed);
-        stashed = null;
-        if (mounted && error.isEmpty) Navigator.pop(context);
       }
+      if (mounted) Navigator.pop(context);
     } catch (e) {
       if (mounted) {
         setState(() => error = e.toString().replaceFirst('Bad state: ', ''));
       }
-      if (opened && current) await closeMenus();
-      if (stashed != null && current) await restoreDraft(stashed);
     } finally {
       if (mounted) setState(() => busy = false);
     }
@@ -410,6 +200,7 @@ class _LiveAgentControlsState extends State<LiveAgentControls> {
               const SizedBox(height: 16),
               DropdownButtonFormField<String>(
                 initialValue: model,
+                focusNode: modelFocus,
                 isExpanded: true,
                 decoration: const InputDecoration(
                   labelText: 'Model',
@@ -426,7 +217,7 @@ class _LiveAgentControlsState extends State<LiveAgentControls> {
                       ),
                     )
                     .toList(),
-                onChanged: busy || attempted || !current
+                onChanged: busy || !current
                     ? null
                     : (value) => setState(() {
                         model = value;
@@ -438,7 +229,8 @@ class _LiveAgentControlsState extends State<LiveAgentControls> {
               const SizedBox(height: 16),
               DropdownButtonFormField<String>(
                 key: ValueKey('$model:$effort'),
-                initialValue: effort,
+                initialValue: effort ?? '',
+                focusNode: effortFocus,
                 isExpanded: true,
                 autofocus: widget.action == 'Effort',
                 decoration: InputDecoration(
@@ -449,28 +241,38 @@ class _LiveAgentControlsState extends State<LiveAgentControls> {
                       ? 'Not reported for this model'
                       : 'Choose effort',
                 ),
-                items: efforts
-                    .map(
-                      (x) => DropdownMenuItem(
-                        value: x,
-                        child: Text(effortLabel(x)),
-                      ),
-                    )
-                    .toList(),
-                onChanged: busy || attempted || !current || efforts.isEmpty
+                items: [
+                  const DropdownMenuItem(
+                    value: '',
+                    child: Text('Agent default'),
+                  ),
+                  ...efforts.map(
+                    (x) =>
+                        DropdownMenuItem(value: x, child: Text(effortLabel(x))),
+                  ),
+                ],
+                onChanged: busy || !current || efforts.isEmpty
                     ? null
-                    : (value) => setState(() => effort = value),
+                    : (value) =>
+                          setState(() => effort = value == '' ? null : value),
               ),
-              if (provider == 'claude')
+              const Padding(
+                padding: EdgeInsets.only(top: 12),
+                child: Text(
+                  'Applying settings resumes this chat and reloads its saved conversation. The next message may process earlier messages again and use extra tokens.',
+                  style: TextStyle(color: muted),
+                ),
+              ),
+              if (!idle && !busy)
                 const Padding(
                   padding: EdgeInsets.only(top: 12),
                   child: Text(
-                    'Available effort levels depend on the model.',
+                    'Wait until this chat is idle before applying settings.',
                     style: TextStyle(color: muted),
                   ),
                 ),
             ],
-            if (error.isNotEmpty || !current)
+            if (error.isNotEmpty || !current && !busy)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 16),
                 child: Text(
@@ -500,10 +302,11 @@ class _LiveAgentControlsState extends State<LiveAgentControls> {
                     onPressed:
                         !loading &&
                             !busy &&
-                            !attempted &&
+                            supported &&
+                            idle &&
                             current &&
                             model != null &&
-                            (efforts.isEmpty || effort != null)
+                            chosen != null
                         ? apply
                         : null,
                     child: Text(

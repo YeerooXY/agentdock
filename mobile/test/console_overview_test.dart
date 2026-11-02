@@ -199,12 +199,12 @@ void main() {
     await tester.tap(find.byTooltip('More options'));
     await tester.pumpAndSettle();
     for (final label in [
-      'Close console', 'Copy text', 'Type directly in terminal', 'Rename',
+      'Close console', 'View options', 'Copy text', 'Type directly in terminal', 'Rename',
       'Project', 'Code', 'Switch to Other account', 'Set up Other account',
     ]) {
       expect(find.text(label), findsNothing);
     }
-    expect(find.text('Reconnect'), findsOneWidget);
+    expect(find.text('App & connection'), findsOneWidget);
     expect(client.calls.where((call) => call.startsWith('console.')), isEmpty);
     expect(client.inputs, isEmpty);
   });

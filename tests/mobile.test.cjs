@@ -938,3 +938,36 @@ test('the phone server retries until the Tailscale address appears after startup
   up = false; await m.start(); await m.stop();
   assert.equal(m.retryTimer, null);
 });
+
+
+test('mobile idle settings and model choices stay pinned to the selected launch and account', async t => {
+  const f = await fixture(t), paired = await f.pair(), c = client(f, paired.data.token);
+  await once(c.ws, 'open'); t.after(() => c.ws.terminate());
+  const source = f.sessions.items.get('console-1'); Object.assign(source, { provider: 'claude', launchId: 'launch-a', consoleKey: 'console-a', accountId: 'claude:named' });
+  await c.call('subscribe', { id: source.id });
+  const reads = [], switches = [];
+  f.m.getModels = async (provider, accountId) => { reads.push({ provider, accountId }); return [{ id: 'opus', efforts: ['low'] }]; };
+  f.sessions.switchSettings = async payload => { switches.push(payload); return { launchId: 'replacement', requestedSettings: { model: payload.model } }; };
+  const pin = { id: source.id, launchId: source.launchId, consoleKey: source.consoleKey, accountId: source.accountId };
+  const choices = await c.call('console.models', { ...pin, provider: 'claude' });
+  assert.equal(choices.settingsSupported, true); assert.deepEqual(reads, [{ provider: 'claude', accountId: 'claude:named' }]);
+  await assert.rejects(c.call('console.models', { ...pin, provider: 'claude', accountId: 'claude:default' }), /changed/);
+  await assert.rejects(c.call('console.settings', { ...pin, launchId: 'stale', model: 'opus' }), /changed/);
+  await c.call('console.settings', { ...pin, model: 'opus', effort: 'low', confirmConversationReload: true });
+  assert.deepEqual(switches, [{ id: source.id, launchId: 'launch-a', model: 'opus', effort: 'low', confirmConversationReload: true }]);
+  assert.deepEqual(f.sessions.writes, []);
+});
+
+test('heartbeat pings phones and terminates a socket after about two minutes of missed pongs', () => {
+  const companion = Object.create(MobileCompanion.prototype);
+  const socket = () => { const ws = new EventEmitter(); ws.pings = 0; ws.terminated = false; ws.ping = () => { ws.pings++; }; ws.terminate = () => { ws.terminated = true; }; return ws; };
+  const live = { ws: socket(), missedPongs: 0 }, silent = { ws: socket(), missedPongs: 0 };
+  companion.clients = new Set([live, silent]);
+  for (let tick = 0; tick < 8; tick++) { companion.heartbeat(); live.missedPongs = 0; }
+  assert.equal(silent.ws.terminated, false, 'a backgrounded phone gets about two minutes before it is dropped');
+  companion.heartbeat(); live.missedPongs = 0;
+  assert.equal(live.ws.terminated, false, 'a phone that answers stays connected');
+  assert.equal(live.ws.pings, 9);
+  assert.equal(silent.ws.pings, 8, 'eight pings go unanswered');
+  assert.equal(silent.ws.terminated, true, 'the next tick drops the half-open socket');
+});

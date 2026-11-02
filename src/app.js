@@ -47,9 +47,10 @@ import './navigation-rail.css';
 import './page-layout.css';
 import './workspace-glass.css';
 import './usage-glass.css';
+import { escapeHtml } from './html-escape.js';
 
 const $ = selector => document.querySelector(selector);
-const escape = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
+const escape = escapeHtml;
 const icons = {
   file: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6M8 13h8M8 17h6"/>',
   grid: '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
@@ -223,7 +224,7 @@ function consoleChoices() {
   const installed = provider => ['shell', 'custom'].includes(provider) || !!state.agents?.find(x => x.id === provider)?.installed || !!state.capabilities?.[provider];
   const rows = [];
   for (const provider of consoleProviders().filter(installed)) {
-    const accounts = ['codex', 'claude'].includes(provider) ? (state.accounts || []).filter(a => a.provider === provider && (!a.profile || a.loginCompletedAt)) : [];
+    const accounts = (state.accounts || []).filter(a => a.provider === provider && !a.unavailableReason && (!a.profile || a.loginCompletedAt));
     if (accounts.length > 1) for (const a of accounts) rows.push({ provider, accountId: a.id, label: `${providerName(provider)} · ${a.label}` });
     else rows.push({ provider, accountId: accounts[0]?.id || '', label: providerName(provider) });
   }
@@ -312,11 +313,6 @@ function accountSwitchMenu(session, hostKey) {
   const unavailable = session.draftSupportReason || 'The CLI composer could not be verified for switching.';
   return `<div class="console-account-control"><button class="console-account-toggle" type="button" data-account-menu-toggle aria-haspopup="menu" aria-expanded="false" aria-controls="${menuId}" title="Account: ${escape(label)}">${escape(label)}</button><div id="${menuId}" class="account-menu-items" popover="auto" role="menu" aria-label="Switch account">${targets.map(target => `<button role="menuitem" data-action="account-switch" data-id="${session.id}" data-launch-id="${escape(session.launchId || '')}" data-target-account-id="${escape(target.id)}" ${available ? '' : 'disabled'}>${escape(`Switch to ${target.label}`)}</button><button role="menuitem" data-action="account-setup" data-id="${session.id}" data-launch-id="${escape(session.launchId || '')}" data-target-account-id="${escape(target.id)}">${escape(`Set up ${target.label}`)}</button>`).join('')}${available ? '' : `<small>${escape(unavailable)}</small>`}</div></div>`;
 }
-function switchOfferHtml(session) {
-  const offer = session.switchOffer;
-  if (!offer || session.switching) return '';
-  return `<div class="account-switch-offer" role="status"><span>Usage reached ${number(offer.usedPercent)}% in the ${escape(windowLabel(offer.minutes))} window.</span><button class="subtle" data-action="account-switch" data-id="${session.id}" data-launch-id="${escape(session.launchId || '')}" data-target-account-id="${escape(offer.targetAccountId)}">Switch to ${escape(offer.targetLabel)}</button><button class="icon-button" data-action="account-switch-dismiss" data-id="${session.id}" data-launch-id="${escape(session.launchId || '')}" data-offer-key="${escape(offer.key)}" aria-label="Dismiss account switch offer" title="Dismiss">${icon('close')}</button></div>`;
-}
 function replaceSwitchControl(host, selector, html, after) {
   const current = host.querySelector(selector), template = document.createElement('template');
   template.innerHTML = html; const next = template.content.firstElementChild;
@@ -334,7 +330,6 @@ function replaceSwitchControl(host, selector, html, after) {
 }
 function syncConsoleSwitchUi(host, session) {
   replaceSwitchControl(host, '.console-account-control,.console-account-label', accountSwitchMenu(session, 'panel'), host.querySelector('.panel-status'));
-  if (host.querySelector('.console-panel-header')) replaceSwitchControl(host, '.account-switch-offer', switchOfferHtml(session), host.querySelector('.console-panel-header'));
 }
 function slotNameInput(slot, session) {
   const name = session?.name || state.settings.slotNames?.[slot] || '';
@@ -354,7 +349,7 @@ function sessionCard(slot) {
   if (session.kind === 'review') return reviewPanels.card(session);
   const expanded = expandedId === session.id;
   const endLabel = session.taskId ? 'Stop worker' : session.restoreError ? 'Remove saved console' : 'End this console';
-  return `<article class="session-card ${escape(session.state)}${expanded ? ' console-expanded' : ''}" data-console-id="${session.id}" data-slot="${slot}"><header class="console-panel-header"><button class="console-grip" draggable="true" data-console-drag="${session.id}" aria-label="Move console ${slot}" title="Drag to move or swap. Focus here and press Alt + 1–9 to move.">${readyIcon(session)}</button><span class="slot" title="${escape(providerName(session.provider) + ' · ' + session.cwd)}">${String(slot).padStart(2, '0')}</span>${slotNameInput(slot, session)}${session.worktree ? `<span class="worktree-badge" role="img" aria-label="${escape(`Git worktree branch ${session.worktree.branch}`)}" title="${escape(`Git worktree on ${session.worktree.branch}\n${session.worktree.path}`)}"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="4" cy="3.5" r="1.6"/><circle cx="4" cy="12.5" r="1.6"/><circle cx="12" cy="5.5" r="1.6"/><path d="M4 5.1v5.8M12 7.1c0 2.6-3 3-6.6 4.4"/></svg><span class="worktree-name">${escape(session.worktree.branch.replace(/^paddock\//, ''))}</span></span>` : ''}<span class="panel-status">${badge(session.state)}</span>${accountSwitchMenu(session, 'panel')}${projectChats.button(session)}${textSizeButtons(session.id, `console ${slot}`)}${appearance.button(slot)}<button class="icon-button console-expand" data-action="toggle-console" data-id="${session.id}" aria-label="${expanded ? 'Restore console ' + slot + ' to the grid (Ctrl+Shift+Enter)' : 'Expand console ' + slot}" aria-keyshortcuts="${expanded ? 'Control+Shift+Enter' : ''}" title="${expanded ? 'Restore console · Ctrl+Shift+Enter' : 'Expand console'}">${icon(expanded ? 'grid' : 'expand')}</button><button class="icon-button console-close" data-action="end-session" data-id="${session.id}" aria-label="${endLabel} ${slot}" title="${endLabel}">${icon('power')}</button></header>${switchOfferHtml(session)}<div class="console-panel-body" data-terminal-mount="${session.id}"></div>${messageQueue?.button(session) || ''}${resizeHandles(slot)}</article>`;
+  return `<article class="session-card ${escape(session.state)}${expanded ? ' console-expanded' : ''}" data-console-id="${session.id}" data-slot="${slot}"><header class="console-panel-header"><button class="console-grip" draggable="true" data-console-drag="${session.id}" aria-label="Move console ${slot}" title="Drag to move or swap. Focus here and press Alt + 1–9 to move.">${readyIcon(session)}</button><span class="slot" title="${escape(providerName(session.provider) + ' · ' + session.cwd)}">${String(slot).padStart(2, '0')}</span>${slotNameInput(slot, session)}${session.worktree ? `<span class="worktree-badge" role="img" aria-label="${escape(`Git worktree branch ${session.worktree.branch}`)}" title="${escape(`Git worktree on ${session.worktree.branch}\n${session.worktree.path}`)}"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="4" cy="3.5" r="1.6"/><circle cx="4" cy="12.5" r="1.6"/><circle cx="12" cy="5.5" r="1.6"/><path d="M4 5.1v5.8M12 7.1c0 2.6-3 3-6.6 4.4"/></svg><span class="worktree-name">${escape(session.worktree.branch.replace(/^paddock\//, ''))}</span></span>` : ''}<span class="panel-status">${badge(session.state)}</span>${accountSwitchMenu(session, 'panel')}${projectChats.button(session)}${textSizeButtons(session.id, `console ${slot}`)}${appearance.button(slot)}<button class="icon-button console-expand" data-action="toggle-console" data-id="${session.id}" aria-label="${expanded ? 'Restore console ' + slot + ' to the grid (Ctrl+Shift+Enter)' : 'Expand console ' + slot}" aria-keyshortcuts="${expanded ? 'Control+Shift+Enter' : ''}" title="${expanded ? 'Restore console · Ctrl+Shift+Enter' : 'Expand console'}">${icon(expanded ? 'grid' : 'expand')}</button><button class="icon-button console-close" data-action="end-session" data-id="${session.id}" aria-label="${endLabel} ${slot}" title="${endLabel}">${icon('power')}</button></header><div class="console-panel-body" data-terminal-mount="${session.id}"></div>${messageQueue?.button(session) || ''}${resizeHandles(slot)}</article>`;
 }
 function coveredSlots() {
   return new Map(allPanels().filter(isOpenConsole).flatMap(x => Array.from({ length: x.height || 1 }, (_, y) => Array.from({ length: x.width || 1 }, (_, dx) => [x.slot + y * gridSize().columns + dx, x])).flat()));
@@ -506,9 +501,16 @@ function routingSection() {
 function ledgerTable() {
   return state.ledger.length ? `<div class="table-scroll"><table><thead><tr><th>Time</th><th>Provider / model</th><th>Input</th><th>Output</th><th>Status</th></tr></thead><tbody>${state.ledger.slice(0, 100).map(row => `<tr><td>${new Date(row.at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</td><td><strong class="ledger-provider">${accountMark(row.provider)}${escape(providerName(row.provider))}</strong><small>${escape(row.model)}</small></td><td class="mono">${number(row.usage?.input)}</td><td class="mono">${number(row.usage?.output)}</td><td><span class="ledger-status ${row.status}">${escape(row.status)}</span></td></tr>`).join('')}</tbody></table></div>` : `<div class="empty-ledger"><span class="empty-illustration">${icon('chart')}</span><h3>No API requests yet</h3><p>Requests made through Paddock appear here.</p></div>`;
 }
+function profileProviders() { return state.accountProviders || []; }
+function profileProvider(provider) { return profileProviders().find(item => item.id === provider); }
+function accountProviderSupport() {
+  const supported = profileProviders().filter(provider => provider.namedProfiles).map(provider => escape(provider.name)).join(', ');
+  const remaining = profileProviders().filter(provider => !provider.namedProfiles).map(provider => escape(provider.name)).join(', ');
+  return `<details class="account-provider-support"><summary>Provider support</summary><p>Extra accounts: ${supported || 'Unavailable'}.</p>${remaining ? `<p>${remaining}: separate sign-ins are not available yet. You can use the existing account for each agent.</p>` : ''}<p>Usage reporting and switching an existing conversation depend on the provider.</p></details>`;
+}
 function accountSettingsSection() {
-  const profileCards = (state.accounts || []).filter(account => account.profile).map(account => `<article class="account-profile-row"><div>${accountMark(account.provider)}<span><strong>${escape(account.label)}</strong><small>${providerName(account.provider)} · ${account.loginCompletedAt ? 'Signed in' : 'Sign-in needed'}</small></span></div><span><button class="subtle" data-action="account-login" data-id="${escape(account.id)}">${account.loginCompletedAt ? 'Sign in again' : 'Sign in'}</button><button class="subtle" data-action="account-rename" data-id="${escape(account.id)}" data-label="${escape(account.label)}">Rename</button><button class="subtle danger" data-action="account-remove" data-id="${escape(account.id)}" aria-label="Remove ${escape(account.label)}">Remove</button></span></article>`).join('');
-  return `<section class="surface account-switch-panel"><div class="section-label"><h2>Accounts</h2></div><form id="account-profile-form" class="account-profile-form"><label>Provider<select name="provider" ${accountProfileCreated ? 'disabled' : ''}><option value="codex" ${accountProfileDraft.provider === 'codex' ? 'selected' : ''}>Codex</option><option value="claude" ${accountProfileDraft.provider === 'claude' ? 'selected' : ''}>Claude Code</option></select></label><label>Account name<input name="label" required maxlength="64" autocomplete="off" value="${escape(accountProfileDraft.label)}" ${accountProfileCreated ? 'disabled' : ''}></label><button class="secondary" type="submit" ${accountProfileBusy ? 'disabled' : ''}>${accountProfileCreated ? 'Retry sign-in' : 'Add account'}</button>${accountProfileCreated ? '<p class="field-hint">This account is saved. Retry sign-in to open its console.</p>' : ''}<p class="form-error" role="alert">${escape(accountProfileDraft.error)}</p></form><div class="account-profile-list">${profileCards || '<p class="section-note">No additional accounts.</p>'}</div><div class="account-switch-threshold"><label>Offer a switch at <input type="number" min="50" max="100" data-setting="accountSwitchThreshold" value="${state.settings.accountSwitchThreshold ?? 90}">%</label><label><input type="checkbox" data-setting="autoSwitchAccounts" ${state.settings.autoSwitchAccounts ? 'checked' : ''}>Switch automatically while idle</label><p class="field-hint">Automatic switching is off by default. It needs fresh usage for both accounts and an idle console.</p></div><p class="section-note">Use subscriptions within provider terms. Switching accounts must respect each provider’s rate limits and restrictions.</p></section>`;
+  const profileCards = (state.accounts || []).filter(account => account.profile).map(account => `<article class="account-profile-row"><div>${accountMark(account.provider)}<span><strong>${escape(account.label)}</strong><small>${providerName(account.provider)} ${account.loginCompletedAt ? 'Signed in' : 'Sign-in needed'}</small></span></div><span><button class="subtle" data-action="account-login" data-id="${escape(account.id)}" ${profileProvider(account.provider)?.namedProfiles ? '' : 'disabled'}>${account.loginCompletedAt ? 'Sign in again' : 'Sign in'}</button><button class="subtle" data-action="account-rename" data-id="${escape(account.id)}" data-label="${escape(account.label)}">Rename</button><button class="subtle danger" data-action="account-remove" data-id="${escape(account.id)}" aria-label="Remove ${escape(account.label)}">Remove</button></span></article>`).join('');
+  return `<section class="surface account-switch-panel"><div class="section-label"><h2>Accounts</h2></div><form id="account-profile-form" class="account-profile-form"><label>Provider<select name="provider" ${accountProfileCreated ? 'disabled' : ''}>${profileProviders().map(provider => `<option value="${escape(provider.id)}" ${accountProfileDraft.provider === provider.id ? 'selected' : ''} ${provider.namedProfiles ? '' : 'disabled'}>${escape(provider.name)}${provider.namedProfiles ? '' : ' (separate accounts unavailable)'}</option>`).join('')}</select></label><label>Account name<input name="label" required maxlength="64" autocomplete="off" value="${escape(accountProfileDraft.label)}" ${accountProfileCreated ? 'disabled' : ''}></label><button class="secondary" type="submit" ${accountProfileBusy || !profileProvider(accountProfileDraft.provider)?.namedProfiles ? 'disabled' : ''}>${accountProfileCreated ? 'Retry sign-in' : 'Add account'}</button>${profileProvider(accountProfileDraft.provider)?.loginInstruction ? `<p class="field-hint">${escape(profileProvider(accountProfileDraft.provider).loginInstruction)}</p>` : ''}${accountProfileCreated ? '<p class="field-hint">This account is saved. Retry sign-in to open its console.</p>' : ''}<p class="form-error" role="alert">${escape(accountProfileDraft.error)}</p></form>${accountProviderSupport()}<div class="account-profile-list">${profileCards || '<p class="section-note">No additional accounts.</p>'}</div><p class="section-note">Use subscriptions within provider terms. Switching accounts must respect each provider’s rate limits and restrictions.</p></section>`;
 }
 function renderUsageAnalytics() {
   const data = usageAnalytics(state.ledger || [], usagePeriod), values = data.points.map(point => point[usageMetric]);
@@ -534,7 +536,7 @@ function renderUsage() {
   const accountCards = [...groups.entries()].map(([provider, accounts]) => { const account = accounts.find(item => item.id === usageAccountSelection.get(provider)) || accounts[0]; return quotaCard(provider, account.id, account.label, true, true, accounts); }).join('') || '<p class="section-note usage-empty">No subscriptions yet. Add one to see its limits.</p>';
   const addable = listed.filter(account => !visible.includes(account));
   const addGroup = (title, items, restoring = false) => items.length ? `<p>${title}</p><div class="usage-add-list">${items.map(account => `<button type="button" class="secondary" data-usage-show="${escape(account.id)}" ${restoring ? 'data-usage-hidden-item' : ''}>${accountMark(account.provider)}<span>${restoring ? 'Show ' : ''}${escape(account.label)}</span></button>`).join('')}</div>` : '';
-  const addPanel = usageAddOpen ? `<div class="usage-add" id="usage-add-panel" role="group" aria-label="Add a subscription">${addGroup('Hidden accounts', addable.filter(account => hidden.has(account.id)), true)}${addGroup('Installed agents', addable.filter(account => !hidden.has(account.id)))}<p>Another account</p><div class="usage-add-list"><button type="button" class="secondary" data-usage-new-account="codex">${accountMark('codex')}<span>Codex account</span></button><button type="button" class="secondary" data-usage-new-account="claude">${accountMark('claude')}<span>Claude Code account</span></button></div></div>` : '';
+  const addPanel = usageAddOpen ? `<div class="usage-add" id="usage-add-panel" role="group" aria-label="Add a subscription">${addGroup('Hidden accounts', addable.filter(account => hidden.has(account.id)), true)}${addGroup('Installed agents', addable.filter(account => !hidden.has(account.id)))}<p>Another account</p><div class="usage-add-list">${profileProviders().filter(provider => provider.namedProfiles).map(provider => `<button type="button" class="secondary" data-usage-new-account="${escape(provider.id)}">${accountMark(provider.id)}<span>${escape(provider.name)} account</span></button>`).join('')}</div></div>` : '';
   return pageHeading('', 'Usage', 'Account-wide limits, checked every two minutes.', `<div class="usage-heading-actions"><button class="secondary" data-action="refresh" ${state.refreshing ? 'disabled aria-busy="true"' : ''}>${icon('refresh')}${state.refreshing ? 'Checking accounts…' : 'Refresh'}</button>${hidden.size ? `<button type="button" class="secondary" data-action="usage-hidden" aria-expanded="${usageAddOpen}" aria-controls="usage-add-panel">Hidden accounts (${hidden.size})</button>` : ''}<button type="button" class="primary" data-action="usage-add" aria-expanded="${usageAddOpen}" aria-controls="usage-add-panel">${icon('plus')}Add subscription</button></div>`) +
     `<section class="surface account-switch-settings usage-subscriptions">${addPanel}<div class="usage-grid">${accountCards}</div></section>${renderUsageAnalytics()}`;
 }
@@ -639,8 +641,24 @@ function renderGridSettings() {
 function renderKeyboardSettings() {
   return `<section class="surface"><h2>Keyboard</h2><div class="shortcut-row"><span>New console</span><kbd>Ctrl Shift N</kbd></div><p class="field-hint">Right-click + to choose a name, agent or folder.</p><label class="toggle-row"><span><strong>Vim controls</strong><small>Use h/j/k/l to move around Paddock.</small></span><input type="checkbox" data-setting="vimControls" ${state.settings.vimControls ? 'checked' : ''}></label><p class="field-hint">Ctrl+Shift+Space returns control to Paddock. Press i to type in a console.</p><button class="subtle" data-action="vim-help">View shortcuts</button></section>`;
 }
+// A native dropdown closes when its element is replaced. Hold page rebuilds
+// while one is open and render once it closes.
+let openSelect = null, renderHeld = false;
+document.addEventListener('pointerdown', event => {
+  const next = event.target instanceof HTMLSelectElement && event.target.closest('#content') ? event.target : null;
+  if (openSelect && next !== openSelect && renderHeld) { renderHeld = false; queueMicrotask(renderPage); }
+  openSelect = next;
+}, true);
+for (const type of ['change', 'blur', 'keydown']) {
+  document.addEventListener(type, event => {
+    if (event.target !== openSelect || (type === 'keydown' && !['Escape', 'Enter', 'Tab'].includes(event.key))) return;
+    openSelect = null;
+    if (renderHeld) { renderHeld = false; queueMicrotask(renderPage); }
+  }, true);
+}
 function renderPage() {
   if (!state) return;
+  if (openSelect?.isConnected) { renderHeld = true; return; }
   const routingForm = page === 'agent-settings' ? document.querySelector('#routing-form') : null;
   const routingFields = routingForm ? [...routingForm.elements].filter(node => node.name).map(node => ({ name: node.name, value: node.value, checked: node.checked })) : [];
   const routingFocus = routingForm?.contains(document.activeElement) ? document.activeElement.name : null;
@@ -1658,8 +1676,6 @@ document.addEventListener('click', async event => {
         if (setup?.cwd) toast(`Setup console opened in ${setup.cwd}.`);
         break;
       }
-      case 'account-switch-dismiss':
-        await call('session.switch-dismiss', { id: button.dataset.id, launchId: button.dataset.launchId, offerKey: button.dataset.offerKey }); break;
       case 'account-login': await call('accounts.login', { id: button.dataset.id }); toast('Sign-in console opened.'); break;
       case 'account-remove': {
         try { if (await call('accounts.remove', button.dataset.id)) toast('Account removed.'); }
@@ -1728,7 +1744,7 @@ document.addEventListener('input', event => {
 });
 document.addEventListener('change', event => {
   const input = event.target;
-  if (input.form?.id === 'account-profile-form' && input.name === 'provider') { accountProfileDraft.provider = input.value; accountProfileDraft.error = ''; }
+  if (input.form?.id === 'account-profile-form' && input.name === 'provider') { accountProfileDraft.provider = input.value; accountProfileDraft.error = ''; renderPage(); }
 });
 document.addEventListener('submit', async event => {
   if (['project-form', 'console-project-form', 'image-generation-form'].includes(event.target.id)) return;
@@ -1801,7 +1817,17 @@ document.addEventListener('submit', async event => {
     if (form.id === 'account-rename-form') form.querySelector('.form-error').textContent = error.message;
     if ($(target)) $(target).textContent = error.message; else toast(error.message, true);
   } finally {
-    if (form.id === 'account-profile-form') { accountProfileBusy = false; if (page === 'agent-settings') renderPage(); }
+    if (form.id === 'account-profile-form') {
+      const restoreAccountFocus = document.activeElement === document.body || form.contains(document.activeElement);
+      accountProfileBusy = false;
+      if (page === 'agent-settings') {
+        renderPage();
+        if (restoreAccountFocus && document.activeElement === document.body) {
+          const nextForm = $('#account-profile-form');
+          nextForm?.elements[accountProfileCreated ? 2 : 'provider']?.focus({ preventScroll: true });
+        }
+      }
+    }
     if (form.id === 'account-rename-form') { accountRenameBusy = false; if (submit?.isConnected) submit.disabled = false; }
     if (submit?.isConnected) submit.disabled = false;
   }

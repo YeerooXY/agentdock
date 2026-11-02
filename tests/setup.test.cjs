@@ -26,6 +26,9 @@ test('fresh installs choose an available console; existing and unfinished setups
   assert.equal(initialSettings({ ...existing, autoSaveResults: false }, folder, {}).autoSaveResults, false);
   assert.equal(initialSettings({ ...existing, keepAwakeWhileWorking: false }, folder, {}).keepAwakeWhileWorking, false);
   assert.equal(initialSettings({ ...existing, setupComplete: false }, folder, {}).setupComplete, false);
+  const switching = JSON.parse(JSON.stringify(initialSettings({ ...existing, accountSwitchThreshold: 75, autoSwitchAccounts: true }, folder, {})));
+  assert.equal('accountSwitchThreshold' in switching, false, 'removed switch threshold is not saved again');
+  assert.equal('autoSwitchAccounts' in switching, false, 'removed automatic switching is not saved again');
 });
 
 test('requested-output policy migrates old capture defaults once and retains later opt-ins', () => {

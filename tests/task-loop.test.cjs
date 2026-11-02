@@ -435,6 +435,21 @@ test('one task per repository and two total, including concurrent starts', async
   await assert.rejects(f.start({ repo: thirdRepo }), /Two tasks/);
 });
 
+test('plan-ready tasks hold no running slot or repository lock', async t => {
+  const f = fixture(t);
+  f.loop.jobs.set('plan-a', { id: 'plan-a', state: 'plan-ready', repoKey: 'repo-a' });
+  f.loop.jobs.set('plan-b', { id: 'plan-b', state: 'plan-ready', repoKey: 'repo-b' });
+  assert.doesNotThrow(() => f.loop.checkCapacity('repo-a'), 'a plan-ready task does not lock its repository');
+  f.loop.jobs.set('run-c', { id: 'run-c', state: 'implementing', repoKey: 'repo-c' });
+  assert.doesNotThrow(() => f.loop.checkCapacity('repo-d'), 'two plan-ready tasks and one running task leave a slot');
+  assert.throws(() => f.loop.checkCapacity('repo-c'), /already running for this repository/);
+  f.loop.jobs.set('run-e', { id: 'run-e', state: 'checking', repoKey: 'repo-e' });
+  assert.throws(() => f.loop.checkCapacity('repo-f'), /Two tasks/);
+  assert.doesNotThrow(() => f.loop.ensureAvailable({ id: 'run-e', repoKey: 'repo-e' }), 'a task does not block itself');
+  for (const id of ['plan-a', 'plan-b', 'run-c', 'run-e']) f.loop.jobs.delete(id);
+  assert.equal(f.loop.reserved.size, 0);
+});
+
 test('worktrees and branches are created only on request and are kept after stop', async t => {
   const f = fixture(t, [{ type: 'implement', edit }]);
   const current = await f.done(await f.start({ reviewer: null, checks: '' }));

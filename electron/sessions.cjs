@@ -10,7 +10,8 @@ const { providers, byId: cliAgents } = require('./cli-catalog.cjs');
 const { prepareCli } = require('./cli-launch.cjs');
 const { cachedAntigravityConversation } = require('./antigravity-session.cjs');
 const { prepareCodexSession } = require('./codex-session.cjs');
-const { copyConversation } = require('./account-history.cjs');
+const { copyConversation, findConversation } = require('./account-history.cjs');
+const { resolveSelection } = require('./model-selection.cjs');
 const { defaultId, inside } = require('./account-profiles.cjs');
 const { hasClaudeEditorContext, validateDraftText } = require('./draft-policy.cjs');
 const { psQuote, shQuote, quote, shellLaunch, programLaunch, customLaunch, realRoot } = require('./platform.cjs');
@@ -78,6 +79,7 @@ class Sessions extends EventEmitter {
     this.accounts = dependencies.accounts;
     this.draftBridge = dependencies.draftBridge;
     this.getThreadModel = dependencies.getThreadModel || (async () => null);
+    this.getModels = dependencies.getModels || (async () => []);
     this.isBusy = dependencies.isBusy || (() => false);
     this.draftQuietMs = dependencies.draftQuietMs ?? 900;
     this.switchOperations = new Map(); this.pendingStages = new Map(); this.loginAccounts = new Map(); this.setupAccounts = new Map();
@@ -138,7 +140,7 @@ class Sessions extends EventEmitter {
       slot: x.slot, width: x.width || 1, height: x.height || 1, consoleKey: x.consoleKey || x.id, projectId: x.projectId || null, name: x.name, nameMode: x.nameMode, cwd: x.cwd, provider: x.provider, permissions: x.permissions,
       ...(x.kind === 'code' ? { kind: 'code', codeSourceKey: x.codeSourceKey } : {}),
       ...(x.kind === 'web' ? { kind: 'web', url: x.url, codeSourceKey: x.codeSourceKey } : {}),
-      command: x.command || '', model: x.launchModel || '', accountId: ['codex', 'claude'].includes(x.provider) ? x.accountId || defaultId(x.provider) : null, providerSessionId: ['codex', 'claude', 'antigravity'].includes(x.provider) ? x.providerSessionId : null, claudeTarget: x.claudeTarget,
+      command: x.command || '', model: x.launchModel || '', effort: x.launchEffort ?? null, accountId: cliAgents.has(x.provider) ? x.accountId || defaultId(x.provider) : null, providerSessionId: ['codex', 'claude', 'antigravity'].includes(x.provider) ? x.providerSessionId : null, claudeTarget: x.claudeTarget,
       ...(x.remote ? { remoteHostId: x.remote.hostId, remoteFolder: x.remote.folder } : {}),
       ...(x.worktree ? { worktree: x.worktree } : {}),
       ...(x.playtimeDataDir ? { playtimeDataDir: x.playtimeDataDir } : {})
@@ -177,7 +179,8 @@ class Sessions extends EventEmitter {
     const { plan, grid } = planGrid(this.layoutItems(), this.grid, raw);
     this.commitLayout(plan, grid); this.emit('changed');
   }
-  async createOne(raw, { resumeId = null, resumePath = null, claudeTarget = null, accountId = null, sessionId = null, launchId = null, stage = false, resumeModel = null, purpose = 'agent', login = false, cancelCheck = null } = {}) {
+  async createOne(raw, { resumeId = null, resumePath = null, claudeTarget = null, accountId = null, sessionId = null, launchId = null, stage = false, resumeModel = null, resumeEffort = null, purpose = 'agent', login = false, cancelCheck = null } = {}) {
+    resumeEffort ??= raw?.effort ?? null;
     if (this.stopping) throw new Error('Paddock is closing.');
     if (raw?.remoteHostId) return this.createRemote(raw);
     raw = this.projects?.launch(raw) || raw;
@@ -192,6 +195,7 @@ class Sessions extends EventEmitter {
     if (!['default', 'unrestricted'].includes(selectedPermissions)) throw new Error('Choose a supported agent permission mode.');
     const permissions = ['codex', 'claude'].includes(raw.provider) || cliAgents.get(raw.provider)?.unrestricted ? selectedPermissions : 'system';
     const model = ['codex', 'claude'].includes(raw.provider) || cliAgents.get(raw.provider)?.model ? String(raw.model ?? '').trim() : '';
+    if (resumeEffort !== null && !/^(none|minimal|low|medium|high|xhigh|max|ultra)$/.test(resumeEffort)) throw new Error('Choose a supported effort level.');
     if (model && !/^[a-zA-Z0-9][a-zA-Z0-9._:/\[\]@+-]{0,199}$/.test(model)) throw new Error('Enter a model name or alias, up to 200 characters.');
     const cwd = String(raw.cwd || '');
     if (!path.isAbsolute(cwd) || !fs.existsSync(cwd) || !fs.statSync(cwd).isDirectory()) throw new Error('Choose an existing project folder.');
@@ -200,7 +204,7 @@ class Sessions extends EventEmitter {
     const id = sessionId || crypto.randomUUID();
     launchId ||= crypto.randomUUID();
     if (!stage && this.items.has(id)) throw new Error('This console is already open.');
-    const selectedAccountId = ['codex', 'claude'].includes(raw.provider) ? accountId || defaultId(raw.provider) : null;
+    const selectedAccountId = cliAgents.has(raw.provider) ? accountId || defaultId(raw.provider) : null;
     const account = selectedAccountId && this.accounts ? this.accounts.getAccount(selectedAccountId, raw.provider) : null;
     const sessionsRoot = path.join(this.root, 'sessions');
     try { fs.mkdirSync(sessionsRoot); } catch (error) { if (error.code !== 'EEXIST') throw error; }
@@ -239,6 +243,7 @@ class Sessions extends EventEmitter {
       if (account?.profile) args.push('-c', `sqlite_home=${JSON.stringify(path.join(account.configDir, 'sqlite'))}`);
       if (!resumeId && model) args.push('--model', model);
       if (resumeId && resumeModel) args.push('--model', resumeModel);
+      if (resumeEffort !== null) args.push('-c', `model_reasoning_effort=${JSON.stringify(resumeEffort)}`);
       if (this.hub && purpose === 'agent') {
         const context = JSON.stringify(summary).length < 22000 ? summary : `Before doing any work, call the paddock dock_context tool to load the shared user instructions and tool summary. The same instructions are in ${summaryPath}. Refresh them at the start of each task. Use dock_tools to discover tools and dock_call to invoke them.`;
         const values = { developer_instructions: context, 'mcp_servers.paddock.command': node, 'mcp_servers.paddock.args': [bridgeHelper], 'mcp_servers.paddock.env_vars': ['PADDOCK_BRIDGE_URL', 'PADDOCK_BRIDGE_TOKEN'], 'mcp_servers.paddock.tool_timeout_sec': 150,
@@ -261,6 +266,7 @@ class Sessions extends EventEmitter {
       }
       if (!resumeId && model) claudeArgs.push('--model', model);
       if (resumeId && resumeModel) claudeArgs.push('--model', resumeModel);
+      if (resumeEffort !== null) claudeArgs.push('--effort', resumeEffort);
       if (resumeId) claudeArgs.push('--resume', resumePath || resumeId);
       if (this.hub && purpose === 'agent') claudeArgs.push('--append-system-prompt-file', isWsl ? wslPath(summaryPath) : summaryPath, '--mcp-config', isWsl ? wslPath(mcpConfig) : mcpConfig);
       if (permissions === 'unrestricted') claudeArgs.push('--dangerously-skip-permissions');
@@ -271,7 +277,7 @@ class Sessions extends EventEmitter {
       const agent = cliAgents.get(raw.provider);
       const program = this.cliSetup?.executable(raw.provider) || this.findProgram(agent.command);
       if (!program) throw new Error(`${agent.name} was not found. Open Settings → Set up agents to install it.`);
-      const prepared = this.hub ? prepareCli(raw.provider, { directory: dir, runtime: { ...this.runtime, node, tools: bridgeHelper }, summary, summaryPath, home: this.agentHome, model, permissions, profiles: this.hub.config?.profiles || [] }) : { args: [...(agent.args || []), ...(model && agent.model ? [agent.model, model] : [])], env: {} };
+      const prepared = this.hub ? prepareCli(raw.provider, { directory: dir, runtime: { ...this.runtime, node, tools: bridgeHelper }, summary, summaryPath, home: this.agentHome, configDir: account?.profile ? account.configDir : null, model, permissions, profiles: this.hub.config?.profiles || [] }) : { args: [...(agent.args || []), ...(model && agent.model ? [agent.model, model] : [])], env: {} };
       if (raw.provider === 'antigravity' && resumeId) prepared.args.push('--conversation', resumeId);
       cliEnv = prepared.env;
       ({ executable, args } = programLaunch(program, prepared.args, { bypass: true }));
@@ -344,6 +350,7 @@ class Sessions extends EventEmitter {
     if (!stage) for (const [oldId, old] of this.items) if (old.slot === slot && !old.alive) this.items.delete(oldId);
     const consoleKey = /^[a-f0-9-]{36}$/i.test(raw.consoleKey || '') ? raw.consoleKey : id;
     const session = { id, consoleKey, projectId: raw.projectId || null, ...(cleanWorktree(raw.worktree) ? { worktree: cleanWorktree(raw.worktree) } : {}), slot, width, height, name, nameMode, cwd, provider: raw.provider, permissions, launchModel: resumeModel || model, command: raw.provider === 'custom' ? raw.command : '', claudeTarget: raw.provider === 'claude' ? claudeInstall : undefined, accountId: selectedAccountId, accountLabel: account?.label || null, accountConfigDir: account?.configDir || null, launchId, purpose, switching: false, draftSupported: !!bridge, ...(isWsl && raw.provider === 'claude' ? { draftSupportReason: 'Account switching is unavailable for Claude Code in WSL.' } : {}), editorRoots, state: 'open', alive: true, cols: 110, rows: 30, createdAt: Date.now(), updatedAt: Date.now(), terminal, buffer: '', sequence: 0, usage: null, providerSessionId: resumeId };
+    session.launchEffort = resumeEffort;
     if (resumeModel) { session.model = resumeModel; session.modelId = resumeModel; session.settingsAt = Date.now(); }
     if (playtimeDataDir) session.playtimeDataDir = playtimeDataDir;
     if (trackingWarning) session.buffer = trackingWarning;
@@ -381,28 +388,46 @@ class Sessions extends EventEmitter {
     if (!path.isAbsolute(cwd) || !fs.existsSync(cwd) || !fs.statSync(cwd).isDirectory()) cwd = this.root;
     const opening = planOpening([...this.layoutItems(), ...this.starting.values()], { cwd, provider: saved.provider }, this.grid);
     if (this.starting.size) throw new Error('Wait for the console to open before starting sign-in.');
-    const id = crypto.randomUUID(), launchId = crypto.randomUUID(), executable = saved.provider === 'codex' ? this.nativeCodex() : (this.claude?.path || this.findProgram('claude'));
-    if (!executable) throw new Error(`${saved.provider === 'codex' ? 'Codex' : 'Claude Code'} was not found. Install it, then restart Paddock.`);
+    const adapter = this.accounts.provider(saved.provider);
+    if (!adapter?.namedProfiles || !adapter.login) throw new Error('Sign-in for a separate account is unavailable for this provider.');
+    const id = crypto.randomUUID(), launchId = crypto.randomUUID(), executable = saved.provider === 'codex' ? this.nativeCodex() : saved.provider === 'claude' ? (this.claude?.path || this.findProgram('claude')) : (this.cliSetup?.executable(saved.provider) || this.findProgram(cliAgents.get(saved.provider)?.command));
+    if (!executable) throw new Error(`${adapter.name} was not found. Install it, then restart Paddock.`);
     const account = this.accounts.getAccount(accountId, saved.provider), env = this.accounts.environment(accountId, saved.provider, { baseEnv: terminalEnvironment(), login: true });
     Object.assign(env, { PADDOCK_ACCOUNT_ID: accountId });
-    let command = executable, args = saved.provider === 'codex' ? ['login'] : ['auth', 'login'];
+    let command = executable, args = [...adapter.login.args];
     const install = saved.provider === 'claude' ? (this.claude || { kind: 'native', path: executable }) : null;
     if (install?.kind === 'wsl') {
       const config = envValue(env, 'CLAUDE_CONFIG_DIR');
       if (config && path.isAbsolute(config)) env.CLAUDE_CONFIG_DIR = wslPath(config);
       env.WSLENV = [...new Set([...(env.WSLENV || '').split(':').filter(Boolean), 'CLAUDE_CONFIG_DIR/p', 'PADDOCK_ACCOUNT_ID'])].join(':');
       command = 'wsl.exe'; args = ['-d', install.distro, '--cd', cwd, '--exec', executable, ...args];
-    }
+    } else if (!['codex', 'claude'].includes(saved.provider)) ({ executable: command, args } = programLaunch(command, args, { bypass: true }));
     const terminal = this.pty.spawn(command, args, { name: 'xterm-256color', cols: 110, rows: 30, cwd, env, useConpty: true });
     this.commitLayout(opening.plan, opening.grid);
     for (const [oldId, old] of this.items) if (old.slot === opening.slot && !old.alive) this.items.delete(oldId);
-    const session = { id, launchId, consoleKey: id, slot: opening.slot, width: opening.width, height: opening.height, name: `Sign in · ${saved.label}`, nameMode: 'custom', cwd, provider: saved.provider, accountId, accountLabel: saved.label, purpose: 'login', switching: false, state: 'open', alive: true, cols: 110, rows: 30, createdAt: Date.now(), updatedAt: Date.now(), terminal, buffer: '', sequence: 0, usage: null };
+    const session = { id, launchId, consoleKey: id, slot: opening.slot, width: opening.width, height: opening.height, name: `Sign in (${saved.label})`, nameMode: 'custom', cwd, provider: saved.provider, accountId, accountLabel: saved.label, purpose: 'login', switching: false, state: 'open', alive: true, cols: 110, rows: 30, createdAt: Date.now(), updatedAt: Date.now(), terminal, buffer: '', sequence: 0, usage: null };
     this.items.set(id, session); this.loginAccounts.set(accountId, session);
     terminal.onData(data => { session.buffer = (session.buffer + data).slice(-250000); session.lastOutputAt = Date.now(); this.emit('output', { id, launchId, data, sequence: ++session.sequence }); });
     terminal.onExit(({ exitCode }) => {
       session.alive = false; session.state = 'ended'; session.exitCode = exitCode; session.updatedAt = Date.now();
       if (this.loginAccounts.get(accountId) === session) this.loginAccounts.delete(accountId);
-      if (exitCode === 0 && !session.dismissed) this.accounts.markLoginCompleted(accountId, true);
+      if (exitCode === 0 && !session.dismissed) {
+        const evidence = adapter.login.credentialFiles;
+        const completed = !evidence?.length || evidence.some(file => {
+          try {
+            const credentialPath = path.join(account.configDir, file);
+            const stat = fs.statSync(credentialPath);
+            if (!stat.isFile() || !stat.size || stat.size > 2_000_000) return false;
+            if (!adapter.login.credentialFields?.length) return true;
+            const credentials = JSON.parse(fs.readFileSync(credentialPath, 'utf8'));
+            return credentials && !Array.isArray(credentials) && typeof credentials === 'object'
+              && Object.values(credentials).some(entry => entry && typeof entry === 'object'
+                && adapter.login.credentialFields.some(key => typeof entry[key] === 'string' && entry[key].trim()));
+          } catch { return false; }
+        });
+        this.accounts.markLoginCompleted(accountId, completed);
+        if (!completed) session.loginError = 'Sign-in was not confirmed. Reopen this account and complete the provider sign-in.';
+      }
       this.emit('changed');
     });
     this.emit('changed');
@@ -528,15 +553,22 @@ class Sessions extends EventEmitter {
     session.buffer = originalBuffer;
     session.providerSessionId = expectedId;
   }
-  async switchAccount({ id, launchId, targetAccountId } = {}) {
+  async switchSettings({ id, launchId, model, effort, confirmConversationReload } = {}) {
+    if (confirmConversationReload !== true) throw new Error('Confirm reloading the saved conversation before applying these settings.');
+    const source = this.items.get(id);
+    if (source?.remote || source?.taskId || !['codex', 'claude'].includes(source?.provider)) throw new Error('Model switching is unavailable for this console.');
+    return this.switchAccount({ id, launchId, targetAccountId: source.accountId }, { model, effort });
+  }
+  async switchAccount({ id, launchId, targetAccountId } = {}, settingsSelection = null) {
     ordinaryConsole(this.items.get(id));
     const source = this.items.get(id);
     if (!source?.alive || source.dismissed || source.purpose !== 'agent' || source.launchId !== launchId) throw new Error('This console has changed. Select it again before switching.');
     if (!['codex', 'claude'].includes(source.provider) || !this.accounts) throw new Error('Account switching is unavailable for this console.');
     if (this.switchOperations.has(id)) throw new Error('An account switch is already in progress.');
+    if (settingsSelection && !['open', 'ready', 'idle'].includes(source.state)) throw new Error('Wait until this chat is idle before applying settings.');
     if (source.switching || ['active', 'attention'].includes(source.state) || this.isBusy(id)) throw new Error('Finish the current task before switching accounts.');
     const target = this.accounts.getAccount(targetAccountId, source.provider);
-    if (target.id === source.accountId) throw new Error('Choose a different account for this console.');
+    if (!settingsSelection && target.id === source.accountId) throw new Error('Choose a different account for this console.');
     if (target.profile && !target.loginCompletedAt) throw new Error(`Sign in to ${target.label} before switching to it.`);
     const operation = (async () => {
       let staged = null, stageLaunchId = null, committed = false;
@@ -544,6 +576,8 @@ class Sessions extends EventEmitter {
       try {
         await this.hub?.waitForLaunchCalls?.(id, launchId);
         if (this.items.get(id) !== source || !source.alive || source.dismissed || !source.switching || this.isBusy(id) || ['active', 'attention'].includes(source.state)) throw new Error('Finish the current task before switching accounts. The original console is still running.');
+        const selection = settingsSelection ? resolveSelection(await this.getModels(source.provider, source.accountId), settingsSelection, source) : null;
+        if (this.items.get(id) !== source || !source.alive || source.dismissed || source.launchId !== launchId) throw new Error('This console changed. Reopen the model choices.');
         const draft = await this.captureNativeDraft(source);
         if (source.provider === 'claude' && hasClaudeEditorContext(draft)) {
           throw new Error('Turn off “Show last response in external editor” in Claude Code before switching. The current console and draft are still running.');
@@ -552,27 +586,34 @@ class Sessions extends EventEmitter {
         if (currentSource !== source || !source.alive || source.dismissed || !source.switching || source.launchId !== launchId || this.isBusy(id) || ['active', 'attention'].includes(source.state)) throw new Error('The console changed while Paddock was checking it. The original console is still running.');
         const liveTarget = this.accounts.getAccount(target.id, source.provider);
         if (liveTarget.id !== target.id || liveTarget.provider !== source.provider || (liveTarget.profile && !liveTarget.loginCompletedAt)) throw new Error('The selected account changed or needs sign-in. The original console is still running.');
-        const history = await copyConversation({
+        const history = selection ? await findConversation(source.accountConfigDir, source.provider, source.providerSessionId) : await copyConversation({
           sourceConfig: source.accountConfigDir, targetConfig: liveTarget.configDir, provider: source.provider, sessionId: source.providerSessionId,
           isTargetInUse: () => [...this.items.values()].some(item => item !== source && item.alive && item.provider === source.provider && item.accountId === target.id && item.providerSessionId === source.providerSessionId)
         });
         if (this.items.get(id) !== source || !source.alive || source.dismissed || !source.switching || source.launchId !== launchId) throw new Error('The original console was closed while Paddock checked its conversation.');
-        const resumeModel = source.provider === 'codex'
+        const resumeModel = selection ? selection.model : source.provider === 'codex'
           ? await this.getThreadModel(target.id, source.providerSessionId)
           : (source.modelId || source.model || null);
         if (!resumeModel) throw new Error(`${source.provider === 'codex' ? 'Codex' : 'Claude Code'} has not confirmed the current conversation model. Keep the current console open.`);
         if (this.items.get(id) !== source || !source.alive || source.dismissed || !source.switching || source.launchId !== launchId) throw new Error('The original console was closed while Paddock checked its model.');
-        const resumePath = source.provider === 'claude' ? path.join(liveTarget.configDir, 'projects', history.path) : null;
-        const raw = { provider: source.provider, cwd: source.cwd, name: source.name, nameMode: source.nameMode, projectId: source.projectId, slot: source.slot, width: source.width, height: source.height, consoleKey: source.consoleKey, permissions: source.permissions, model: source.launchModel };
+        const resumePath = source.provider === 'claude' ? path.join(liveTarget.configDir, 'projects', selection ? history.relative : history.path) : null;
+        const raw = { provider: source.provider, cwd: source.cwd, name: source.name, nameMode: source.nameMode, projectId: source.projectId, slot: source.slot, width: source.width, height: source.height, consoleKey: source.consoleKey, permissions: source.permissions, model: source.launchModel,
+          ...(selection ? {} : { effort: source.launchEffort ?? null }), worktree: source.worktree };
         stageLaunchId = crypto.randomUUID();
         staged = await this.createOne(raw, {
-          resumeId: source.providerSessionId, resumePath, accountId: target.id, sessionId: source.id, launchId: stageLaunchId, stage: true, resumeModel,
+          resumeId: source.providerSessionId, resumePath, accountId: target.id, sessionId: source.id, launchId: stageLaunchId, stage: true, resumeModel, resumeEffort: selection?.effort ?? null,
           cancelCheck: () => this.items.get(id) !== source || !source.alive || source.dismissed || !source.switching || source.launchId !== launchId
         });
         const stageSession = this.pendingStages.get(stageLaunchId);
         if (!stageSession) throw new Error('The selected account console could not be started. Keep the original console open.');
         await this.waitForOutputIdle(stageSession);
         await this.awaitResumeIdentity(stageSession, source.providerSessionId);
+        if (selection) {
+          // Launch flags are a request, not proof of the model used for inference.
+          delete stageSession.model; delete stageSession.modelId; delete stageSession.effort; delete stageSession.settingsAt;
+          stageSession.requestedSettings = { ...selection, at: Date.now(), status: 'awaiting-provider' };
+          stageSession.launchEffort = selection.effort;
+        }
         const targetDraft = await this.captureNativeDraft(stageSession);
         if (source.provider === 'claude' && hasClaudeEditorContext(targetDraft)) {
           throw new Error('Turn off “Show last response in external editor” in Claude Code before switching. Keep the original console open.');

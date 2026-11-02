@@ -50,6 +50,7 @@ class DockClient extends ChangeNotifier {
         sessions.where((s) => s['id'] == id).firstOrNull ?? <String, dynamic>{};
     final reported = AgentSelection.fromSession(session),
         key = _selectionKey(id);
+    if (session['requestedSettings'] is Map) return reported;
     final terminal = screens[id]?.terminal;
     final observed = terminal == null
         ? null
@@ -993,7 +994,7 @@ class DockClient extends ChangeNotifier {
     sent += utf8.encode(data).length;
     socket!.add(data);
     try {
-      return await completer.future.timeout(const Duration(seconds: 20));
+      return await completer.future.timeout(Duration(seconds: method == 'console.settings' ? 120 : 20));
     } finally {
       pending.remove(id);
     }

@@ -1,24 +1,37 @@
+import { projectResolver } from './project-identity.js';
+
 const runningStates = new Set(['planning', 'reviewing-plan', 'building', 'implementing', 'checking', 'reviewing']);
 const attentionStates = new Set(['needs-you', 'plan-ready', 'interrupted', 'failed']);
-const normalized = value => { const path = String(value || '').replaceAll('\\', '/').replace(/\/+$/, ''); return /^[a-z]:\//i.test(path) || path.startsWith('//') ? path.toLowerCase() : path; };
+// electron/task-loop.cjs records this error when Paddock closes during a task.
+const closedByApp = item => item.state === 'interrupted' && /^Paddock closed before this task finished/.test(item.error || '');
+const taskTime = item => item.startedAt || item.finishedAt || 0;
+
+// A task needs attention while it still matters: closing Paddock is not a task
+// problem, and a newer task in the same project replaces an older outcome.
+// A plan waiting for approval always counts.
+function needsAttention(item, newest) {
+  if (!attentionStates.has(item.state) || closedByApp(item)) return false;
+  return item.state === 'plan-ready' || taskTime(item) >= newest;
+}
+
+export const attentionLabel = count => `${count} ${count === 1 ? 'needs' : 'need'} attention`;
 
 // Folder matching uses the most specific registered project; explicit bindings win.
 export function projectActivity(state) {
   const projects = state.projects || [];
-  const owners = projects.flatMap(project => (project.folders || []).map(folder => ({ id: project.id, path: normalized(folder.path) }))).filter(x => x.path).sort((a,b) => b.path.length - a.path.length);
-  const owner = item => item.projectId ? projects.find(p => p.id === item.projectId)?.id : owners.find(folder => {
-    const value = normalized(item.repo || item.project || item.cwd);
-    return value === folder.path || value.startsWith(folder.path + '/');
-  })?.id;
+  const owner = projectResolver(projects);
   const activity = new Map(projects.map(p => [p.id, { running: 0, attention: 0, consoles: 0, lastActiveAt: p.lastActiveAt || 0, latestResult: null }]));
   for (const item of state.sessions || []) {
     const current = activity.get(owner(item));
     if (current && item.alive && !item.kind && !item.taskId) current.consoles++;
   }
-  for (const item of state.tasks || []) {
-    const current = activity.get(owner(item)); if (!current) continue;
+  const tasks = (state.tasks || []).map(item => [item, owner(item)]).filter(([, id]) => activity.has(id));
+  const newest = new Map();
+  for (const [item, id] of tasks) newest.set(id, Math.max(newest.get(id) || 0, taskTime(item)));
+  for (const [item, id] of tasks) {
+    const current = activity.get(id);
     if (runningStates.has(item.state)) current.running++;
-    if (attentionStates.has(item.state)) current.attention++;
+    if (needsAttention(item, newest.get(id))) current.attention++;
     current.lastActiveAt = Math.max(current.lastActiveAt, item.updatedAt || item.finishedAt || item.startedAt || 0);
   }
   for (const item of state.workbench?.results || []) {

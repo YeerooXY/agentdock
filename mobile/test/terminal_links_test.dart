@@ -136,7 +136,8 @@ void main() {
     await tester.pumpWidget(DockApp(client: c));
     await enterChat(tester);
     await tester.enterText(find.byType(TextField), 'Unsent work');
-    await consoleAction(tester, 'Console links');
+    await consoleAction(tester, 'View options');
+    await tester.tap(find.text('Console links'));
     await tester.pumpAndSettle();
     expect(find.byType(TerminalLinksSheet), findsOneWidget);
     expect(find.text('claude.com'), findsOneWidget);

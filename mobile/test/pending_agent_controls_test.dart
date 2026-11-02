@@ -1,15 +1,51 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:agent_dock_mobile/live_agent_controls.dart';
-import 'package:agent_dock_mobile/agent_selection.dart';
 
 import 'widget_test.dart' show FakeDock;
-import 'agent_menu_test.dart' show menuText, paint;
 
-Future<void> open(WidgetTester tester, FakeDock c) async {
-  c.state['sessions'][0]['model'] = 'test-model-a';
-  c.state['sessions'][0]['effort'] = 'low';
-  paint(c, '› ');
+class SettingsDock extends FakeDock {
+  bool settingsSupported = true;
+  List<Map<String, dynamic>>? choices;
+  @override
+  Future<dynamic> request(
+    String method, [
+    Map<String, dynamic> payload = const {},
+  ]) async {
+    final value = await super.request(method, payload);
+    if (method == 'console.models') {
+      return {
+        ...(value as Map),
+        'settingsSupported': settingsSupported,
+        if (choices != null) 'models': choices,
+      };
+    }
+    if (method == 'console.settings') {
+      return {
+        'launchId': 'replacement',
+        'requestedSettings': {
+          'model': payload['model'],
+          'effort': payload['effort'],
+          'status': 'awaiting-provider',
+        },
+      };
+    }
+    return value;
+  }
+}
+
+Future<void> open(WidgetTester tester, SettingsDock c) async {
+  c.state['sessions'][0].addAll({
+    'model': 'test-model-a',
+    'effort': 'low',
+    'launchId': 'launch-a',
+    'accountId': 'account-a',
+    'consoleKey': 'console-a',
+    'providerSessionId': 'chat-a',
+  });
   await tester.pumpWidget(
     MaterialApp(
       home: Scaffold(
@@ -30,60 +66,22 @@ Future<void> open(WidgetTester tester, FakeDock c) async {
   await tester.pumpAndSettle();
 }
 
-Future<void> effort(WidgetTester tester) async {
+Future<void> effort(WidgetTester tester, [String label = 'High']) async {
   await tester.tap(find.byType(DropdownButtonFormField<String>).last);
   await tester.pumpAndSettle();
-  await tester.tap(find.text('High').last);
+  await tester.tap(find.text(label).last);
   await tester.pumpAndSettle();
-}
-
-void simulate(FakeDock c, {bool interrupt = false, bool confirm = true}) {
-  var phase = 0, selected = 0, model = 'test-model-a';
-  c.onInput = (input) async {
-    final data = input['data'];
-    if (data == '/model') return;
-    if (phase == 0 && data == '\r') {
-      phase = 1;
-      paint(c, menuText());
-      return;
-    }
-    if (data == '\x1b[B') {
-      selected = 1;
-      paint(c, menuText(selected: selected, effort: phase == 2));
-      if (interrupt) {
-        c.generation++;
-        c.notifyListeners();
-      }
-      return;
-    }
-    if (data == '\r' && phase == 1) {
-      model = selected == 0 ? 'test-model-a' : 'test-model-b';
-      phase = 2;
-      selected = 0;
-      paint(c, menuText(effort: true));
-      return;
-    }
-    if (data == '\r' && phase == 2) {
-      paint(
-        c,
-        confirm
-            ? 'Model changed to $model with high reasoning\r\n› '
-            : 'Setting failed\r\n› ',
-      );
-    }
-  };
 }
 
 void main() {
   for (final exit in ['Cancel', 'Close chooser', 'barrier', 'back']) {
-    testWidgets('pending effort and $exit leave the console untouched', (
+    testWidgets('pending choices and $exit leave the console untouched', (
       tester,
     ) async {
-      final c = FakeDock();
+      final c = SettingsDock();
       addTearDown(c.dispose);
       await open(tester, c);
       await effort(tester);
-      expect(c.inputs, isEmpty);
       if (exit == 'Close chooser') {
         await tester.tap(find.byTooltip(exit));
       } else if (exit == 'barrier') {
@@ -95,257 +93,218 @@ void main() {
       }
       await tester.pumpAndSettle();
       expect(c.inputs, isEmpty);
+      expect(c.calls.where((x) => x == 'console.settings'), isEmpty);
       expect(c.agentSelection('one').effort, 'low');
     });
   }
-  testWidgets('unchanged choices close with zero input', (tester) async {
-    final c = FakeDock();
+  testWidgets('unchanged choices close without applying', (tester) async {
+    final c = SettingsDock();
     addTearDown(c.dispose);
     await open(tester, c);
     await tester.tap(find.text('Done'));
     await tester.pumpAndSettle();
+    expect(c.calls.where((x) => x == 'console.settings'), isEmpty);
     expect(c.inputs, isEmpty);
   });
-  testWidgets('effort-only Apply keeps the model and waits for confirmation', (
-    tester,
-  ) async {
-    final c = FakeDock();
-    addTearDown(c.dispose);
-    simulate(c);
-    await open(tester, c);
-    await effort(tester);
-    expect(c.inputs, isEmpty);
-    await tester.tap(find.text('Apply'));
-    await tester.pump(const Duration(milliseconds: 500));
-    await tester.pumpAndSettle();
-    expect(c.inputs.map((x) => x['data']), [
-      '/model',
-      '\r',
-      '\r',
-      '\x1b[B',
-      '\r',
-    ]);
-    expect(c.agentSelection('one').model, 'test-model-a');
-    expect(c.agentSelection('one').effort, 'high');
-    expect(find.byType(LiveAgentControls), findsNothing);
-  });
-  testWidgets('model and effort are staged together before Apply', (
-    tester,
-  ) async {
-    final c = FakeDock();
-    addTearDown(c.dispose);
-    simulate(c);
-    await open(tester, c);
-    await tester.tap(find.byType(DropdownButtonFormField<String>).first);
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Test Model B').last);
-    await tester.pumpAndSettle();
-    await effort(tester);
-    expect(c.inputs, isEmpty);
-    await tester.tap(find.text('Apply'));
-    await tester.pump(const Duration(milliseconds: 500));
-    await tester.pumpAndSettle();
-    expect(c.agentSelection('one').model, 'test-model-b');
-    expect(c.agentSelection('one').effort, 'high');
-    expect(c.inputs.map((x) => x['data']), [
-      '/model',
-      '\r',
-      '\x1b[B',
-      '\r',
-      '\x1b[B',
-      '\r',
-    ]);
-  });
-  testWidgets('a console left marked working by an Enter applies when idle on screen', (
-    tester,
-  ) async {
-    final c = FakeDock();
-    addTearDown(c.dispose);
-    simulate(c);
-    c.state['sessions'][0]['state'] = 'active';
-    await open(tester, c);
-    await effort(tester);
-    await tester.tap(find.text('Apply'));
-    await tester.pump(const Duration(milliseconds: 500));
-    await tester.pumpAndSettle();
-    expect(c.inputs.first['data'], '/model');
-    expect(c.agentSelection('one').effort, 'high');
-  });
-  testWidgets('a running turn still blocks Apply', (tester) async {
-    final c = FakeDock();
-    addTearDown(c.dispose);
-    c.state['sessions'][0]['state'] = 'active';
-    await open(tester, c);
-    await effort(tester);
-    paint(c, '• Working (5s • esc to interrupt)\r\n› ');
-    await tester.tap(find.text('Apply'));
-    await tester.pumpAndSettle();
-    expect(c.inputs, isEmpty);
-    expect(
-      find.text('The agent is still working. Try again when it stops.'),
-      findsOneWidget,
-    );
-  });
-  testWidgets('typed prompt text is cleared for the change and typed back', (
-    tester,
-  ) async {
-    final c = FakeDock();
-    addTearDown(c.dispose);
-    simulate(c);
-    final inner = c.onInput!;
-    c.onInput = (input) async {
-      if (input['data'] == '\x05\x15') return paint(c, '› ');
-      await inner(input);
-    };
-    await open(tester, c);
-    await effort(tester);
-    paint(c, '› Unsent draft');
-    await tester.tap(find.text('Apply'));
-    await tester.pump(const Duration(milliseconds: 500));
-    await tester.pumpAndSettle();
-    expect(c.inputs.map((x) => x['data']), [
-      '\x05\x15',
-      '/model',
-      '\r',
-      '\r',
-      '\x1b[B',
-      '\r',
-      'Unsent draft',
-    ]);
-    expect(c.agentSelection('one').effort, 'high');
-  });
-  testWidgets('Claude types /model and /effort, keeping a draft', (
-    tester,
-  ) async {
-    final c = FakeDock();
-    addTearDown(c.dispose);
-    c.state['sessions'][0]['provider'] = 'Claude';
-    var typed = '';
-    c.onInput = (input) async {
-      final data = input['data'] as String;
-      if (data == '\x05\x15') return paint(c, '❯ ');
-      if (data.startsWith('/')) {
-        typed = data;
-        return;
-      }
-      if (data == '\r' && typed.startsWith('/model')) {
-        paint(c, '❯ $typed\r\n  ⎿  Set model to Test Model B and saved\r\n❯ ');
-      } else if (data == '\r' && typed.startsWith('/effort')) {
-        paint(c, '❯ $typed\r\n  ⎿  Set effort level to high (saved)\r\n❯ ');
-      }
-    };
-    await open(tester, c);
-    await tester.tap(find.byType(DropdownButtonFormField<String>).first);
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Test Model B').last);
-    await tester.pumpAndSettle();
-    await effort(tester);
-    paint(c, '❯ Unsent draft');
-    await tester.tap(find.text('Apply'));
-    await tester.pump(const Duration(milliseconds: 500));
-    await tester.pumpAndSettle();
-    expect(c.inputs.map((x) => x['data']), [
-      '\x05\x15',
-      '/model test-model-b',
-      '\r',
-      '/effort high',
-      '\r',
-      'Unsent draft',
-    ]);
-    expect(c.agentSelection('one').model, 'test-model-b');
-    expect(c.agentSelection('one').effort, 'high');
-  });
-  testWidgets('a multi-line prompt draft is left alone', (tester) async {
-    final c = FakeDock();
-    addTearDown(c.dispose);
-    await open(tester, c);
-    await effort(tester);
-    paint(c, '› first line\r\n  second line');
-    await tester.tap(find.text('Apply'));
-    await tester.pumpAndSettle();
-    expect(c.inputs, isEmpty);
-    expect(
-      find.text('The prompt holds a multi-line draft. Send or delete it, then apply.'),
-      findsOneWidget,
-    );
-  });
-  testWidgets('a model the menu does not list closes the menu again', (
-    tester,
-  ) async {
-    final c = FakeDock();
-    addTearDown(c.dispose);
-    c.onInput = (input) async {
-      final data = input['data'];
-      if (data == '\r') {
-        paint(
-          c,
-          'Select Model and Effort\r\n\r\n› 1. Other One\r\n  2. Other Two\r\n\r\nenter select · esc back',
+  for (final provider in ['Codex', 'Claude']) {
+    testWidgets(
+      '$provider sends a pinned idle settings RPC without terminal input',
+      (tester) async {
+        final c = SettingsDock();
+        addTearDown(c.dispose);
+        c.state['sessions'][0]['provider'] = provider;
+        await open(tester, c);
+        expect(
+          find.textContaining('reloads its saved conversation'),
+          findsOneWidget,
         );
-      } else if (data == '\x1b') {
-        paint(c, '› ');
+        await effort(tester);
+        await tester.tap(find.text('Apply'));
+        await tester.pumpAndSettle();
+        final at = c.calls.indexOf('console.settings');
+        expect(at, greaterThanOrEqualTo(0));
+        expect(c.payloads[at], {
+          'id': 'one',
+          'launchId': 'launch-a',
+          'accountId': 'account-a',
+          'consoleKey': 'console-a',
+          'model': 'test-model-a',
+          'effort': 'high',
+          'confirmConversationReload': true,
+        });
+        expect(c.inputs, isEmpty);
+        expect(find.byType(LiveAgentControls), findsNothing);
+        expect(
+          c.agentSelection('one').effort,
+          'low',
+          reason: 'Launch flags do not establish effective inference settings',
+        );
+      },
+    );
+  }
+  testWidgets('busy state blocks Apply despite idle-looking output', (
+    tester,
+  ) async {
+    final c = SettingsDock();
+    addTearDown(c.dispose);
+    c.state['sessions'][0]['state'] = 'active';
+    await open(tester, c);
+    await effort(tester);
+    expect(
+      tester
+          .widget<FilledButton>(find.widgetWithText(FilledButton, 'Apply'))
+          .onPressed,
+      isNull,
+    );
+    expect(
+      find.text('Wait until this chat is idle before applying settings.'),
+      findsOneWidget,
+    );
+    expect(c.inputs, isEmpty);
+  });
+  testWidgets('failed resume preserves pending choices and permits recovery', (
+    tester,
+  ) async {
+    final c = SettingsDock();
+    addTearDown(c.dispose);
+    c.onRequest = (method, _) async {
+      if (method == 'console.settings') {
+        throw StateError('Original chat is still open.');
       }
     };
     await open(tester, c);
-    await tester.tap(find.byType(DropdownButtonFormField<String>).first);
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Test Model B').last);
-    await tester.pumpAndSettle();
     await effort(tester);
     await tester.tap(find.text('Apply'));
-    await tester.pump(const Duration(milliseconds: 500));
     await tester.pumpAndSettle();
-    expect(c.inputs.map((x) => x['data']), ['/model', '\r', '\x1b']);
-    expect(
-      find.text('The agent does not offer this choice. Refresh the chooser.'),
-      findsOneWidget,
-    );
-  });
-  testWidgets('reconnect during Apply stops before another key', (
-    tester,
-  ) async {
-    final c = FakeDock();
-    addTearDown(c.dispose);
-    simulate(c, interrupt: true);
-    await open(tester, c);
-    await effort(tester);
-    await tester.tap(find.text('Apply'));
-    await tester.pump(const Duration(milliseconds: 500));
-    await tester.pumpAndSettle();
-    expect(c.inputs.map((x) => x['data']), ['/model', '\r', '\r', '\x1b[B']);
-    expect(c.agentSelection('one').effort, 'low');
-  });
-  testWidgets('unconfirmed changes keep pending fields and show recovery', (
-    tester,
-  ) async {
-    final c = FakeDock();
-    addTearDown(c.dispose);
-    simulate(c, confirm: false);
-    await open(tester, c);
-    await effort(tester);
-    await tester.tap(find.text('Apply'));
-    await tester.pump(const Duration(milliseconds: 500));
-    await tester.pump(const Duration(seconds: 7));
-    await tester.pumpAndSettle();
-    expect(
-      find.text(
-        'Could not confirm the change. Check the terminal before trying again.',
-      ),
-      findsOneWidget,
-    );
+    expect(find.text('Original chat is still open.'), findsOneWidget);
     expect(find.text('High'), findsOneWidget);
+    expect(c.inputs, isEmpty);
     expect(c.agentSelection('one').effort, 'low');
+    expect(
+      tester
+          .widget<FilledButton>(find.widgetWithText(FilledButton, 'Apply'))
+          .onPressed,
+      isNotNull,
+    );
   });
-  test('selection confirmations require actual model values', () {
-    expect(selectionConfirmation('Select Model and Effort'), isNull);
+  testWidgets('changed launch invalidates chooser', (tester) async {
+    final c = SettingsDock();
+    addTearDown(c.dispose);
+    await open(tester, c);
+    await effort(tester);
+    c.state['sessions'][0]['launchId'] = 'another';
+    c.notifyListeners();
+    await tester.pumpAndSettle();
     expect(
-      selectionConfirmation('Model changed to gpt-6.1-sol with max reasoning')
-          ?.effort,
-      'max',
+      find.text('Connection or chat changed. Reopen the chooser.'),
+      findsOneWidget,
     );
     expect(
-      selectionConfirmation('Model changed to test-model-a with high reasoning')
-          ?.model,
-      'test-model-a',
+      tester
+          .widget<FilledButton>(find.widgetWithText(FilledButton, 'Apply'))
+          .onPressed,
+      isNull,
     );
+    expect(c.inputs, isEmpty);
+  });
+  testWidgets('older PC support never falls back to terminal automation', (
+    tester,
+  ) async {
+    final c = SettingsDock()..settingsSupported = false;
+    addTearDown(c.dispose);
+    await open(tester, c);
+    await effort(tester);
+    expect(
+      find.text('Update Paddock on your PC to apply model settings.'),
+      findsOneWidget,
+    );
+    expect(
+      tester
+          .widget<FilledButton>(find.widgetWithText(FilledButton, 'Apply'))
+          .onPressed,
+      isNull,
+    );
+    expect(c.inputs, isEmpty);
+  });
+  testWidgets(
+    'unavailable current models are not inserted into offered choices',
+    (tester) async {
+      final c = SettingsDock()
+        ..choices = [
+          {'id': 'test-model-b', 'name': 'Test Model B', 'efforts': <String>[]},
+        ];
+      addTearDown(c.dispose);
+      await open(tester, c);
+      await tester.tap(find.byType(DropdownButtonFormField<String>).first);
+      await tester.pumpAndSettle();
+      expect(find.text('Test Model A'), findsNothing);
+      expect(find.text('Test Model B'), findsWidgets);
+      expect(c.inputs, isEmpty);
+    },
+  );
+  testWidgets('agent default effort is sent as null', (tester) async {
+    final c = SettingsDock();
+    addTearDown(c.dispose);
+    await open(tester, c);
+    await effort(tester, 'Agent default');
+    await tester.tap(find.text('Apply'));
+    await tester.pumpAndSettle();
+    expect(c.payloads[c.calls.indexOf('console.settings')]['effort'], isNull);
+    expect(c.inputs, isEmpty);
+  });
+  testWidgets('in-flight Apply cannot submit twice', (tester) async {
+    final c = SettingsDock();
+    addTearDown(c.dispose);
+    final gate = Completer<void>();
+    c.onRequest = (method, _) async {
+      if (method == 'console.settings') await gate.future;
+    };
+    await open(tester, c);
+    await effort(tester);
+    await tester.tap(find.text('Apply'));
+    await tester.pump();
+    expect(
+      tester
+          .widget<FilledButton>(find.widgetWithText(FilledButton, 'Applying…'))
+          .onPressed,
+      isNull,
+    );
+    expect(c.calls.where((x) => x == 'console.settings').length, 1);
+    gate.complete();
+    await tester.pumpAndSettle();
+    expect(c.inputs, isEmpty);
+  });
+  testWidgets('keyboard focus survives effort update and Tab traversal', (
+    tester,
+  ) async {
+    final c = SettingsDock();
+    addTearDown(c.dispose);
+    await open(tester, c);
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    await effort(tester);
+    expect(
+      FocusManager.instance.primaryFocus,
+      isNot(FocusManager.instance.rootScope),
+    );
+    await tester.sendKeyEvent(LogicalKeyboardKey.space);
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await tester.pump();
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.pump();
+    expect(
+      FocusManager.instance.primaryFocus,
+      isNot(FocusManager.instance.rootScope),
+    );
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(c.inputs, isEmpty);
   });
 }

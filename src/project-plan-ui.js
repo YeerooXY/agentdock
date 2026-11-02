@@ -47,7 +47,7 @@ export function projectPlanUI({ call, getState, escape: e, icon, toast, renderPa
       <nav class="plan-steps" aria-labelledby="plan-steps-label">${planSections.map(([id, title], i) => { const [tone, label] = statusOf(p, id); return `<button type="button" data-plan-step="${id}" ${id === section ? 'aria-current="step"' : ''}><span class="plan-num ${tone}">${tone === 'ok' ? '✓' : i + 1}</span><b>${title}</b><span class="plan-badge ${tone}">${label}</span></button>`; }).join('')}</nav>
       <p class="plan-label" id="plan-refs-label">References <span>· agents can read these</span></p>
       <div class="plan-board" data-plan-drop aria-labelledby="plan-refs-label">${refs.map(ref).join('')}
-        <div class="plan-ref-add"><button type="button" class="secondary" data-plan-ref-file>${icon('plus')}Add files</button>${shot ? `<button type="button" class="secondary" data-plan-ref-shot>${icon('plus')}Latest screenshot</button>` : ''}</div>
+        <div class="plan-ref-add"><button type="button" class="secondary" data-plan-ref-file>${icon('plus')}Add reference files</button>${shot ? `<button type="button" class="secondary" data-plan-ref-shot>${icon('plus')}Latest screenshot</button>` : ''}</div>
         <form class="plan-link-form" data-plan-link-form><label class="sr-only" for="plan-link">Web link</label><input id="plan-link" name="link" type="url" placeholder="https://… link" maxlength="2048"><button type="submit" class="secondary">Add link</button></form>
         <p class="plan-drop-hint">Or drop screenshots and files here.</p>
       </div>

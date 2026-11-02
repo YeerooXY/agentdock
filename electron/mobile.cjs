@@ -13,7 +13,6 @@ const { isPrivate, isPublic, isTailscale, connectionOptions } = require('./mobil
 const { MobileNetwork } = require('./mobile-network.cjs');
 const { consoleChoices, mobileLaunch, consoleFiles, worktreeRoot } = require('./mobile-console.cjs');
 const { prepareWorktree } = require('./worktrees.cjs');
-const { consoleModels } = require('./adapters.cjs');
 const { MobileAttachments } = require('./mobile-attachments.cjs');
 const { settingsSummary } = require('./mobile-settings.cjs');
 const mobileProjects = require('./mobile-projects.cjs');
@@ -38,17 +37,21 @@ function deviceName(value) {
 }
 function mobileSession(item, sessions) {
   const { id, slot, name, provider, alive, state, cols, rows, consoleKey, projectId, remote, updatedAt,
-    providerSessionId, model, modelId, effort, settingsAt, launchId, accountId, accountLabel, switchTargets,
-    switching, purpose, draftSupported, switchOffer, worktree, taskId, sliceId, steeringState, steeringSupported } = item;
+    providerSessionId, model, modelId, effort, settingsAt, requestedSettings, launchId, accountId, accountLabel, switchTargets,
+    switching, purpose, draftSupported, worktree, taskId, sliceId, steeringState, steeringSupported } = item;
   return { id, slot, name, provider, alive, state, cols, rows, consoleKey, projectId, remote, updatedAt, providerSessionId,
     model: modelId || model || null, modelName: model || null, effort: effort || null, settingsAt: settingsAt || null,
+    requestedSettings: requestedSettings || null,
     launchId: launchId || null, accountId: accountId || null, accountLabel: accountLabel || null,
     switchTargets: switchTargets || [], switching: !!switching, purpose: purpose || 'agent', taskId: taskId || null,
     sliceId: sliceId || null, steeringState: steeringState || null, steeringSupported: steeringSupported === true,
     consoleCapabilities: consoleCapabilities(item, sessions.ownerConsoles, !!sessions.workerBridge),
-    draftSupported: draftSupported === true, switchOffer: switchOffer || null,
+    draftSupported: draftSupported === true,
     ...(worktree && typeof worktree.branch === 'string' && typeof worktree.path === 'string' ? { worktree: { branch: worktree.branch, path: worktree.path } } : {}) };
 }
+const HEARTBEAT_MS = 15000;
+// A phone app in the background can pause for a while; allow about two minutes.
+const MAX_MISSED_PONGS = 8;
 const WORKER_CONSOLE_READS = new Set(['console.files']);
 const WORKER_ACTIONS = new Set(['worker.submit', 'worker.stop']);
 const GLOBAL_CONSOLE_ACTIONS = new Set(['console.create', 'console.agents', 'console.worktree.root']);
@@ -172,7 +175,8 @@ class MobileCompanion extends EventEmitter {
     server.on('error', () => { this.error = 'The mobile connection stopped.'; this.emit('changed'); });
     this.server = server; this.wss = wss; this.error = '';
     for (const s of this.sessions.items.values()) this.ensureStream(s.id);
-    this.timer = setInterval(() => this.flush(), 100); this.timer.unref(); this.emit('changed');
+    this.timer = setInterval(() => this.flush(), 100); this.timer.unref();
+    this.heartbeatTimer = setInterval(() => this.heartbeat(), HEARTBEAT_MS); this.heartbeatTimer.unref?.(); this.emit('changed');
     await this.network.start({ ...this.config });
   }
   acceptsPeer(req) {
@@ -276,7 +280,7 @@ class MobileCompanion extends EventEmitter {
     const localUrl = `https://${this.config.host}:${this.config.port}`;
     const connection = { url: localUrl };
     connection.name = this.name;
-    return { connection, previews: (this.sessions.codePanels?.() || []).filter(p => p.kind === 'web').map(({ id, name, url, state, phoneAllowed }) => ({ id, name, url, state, phoneAllowed: phoneAllowed === true })), projects: (typeof this.sessions.projects?.list === 'function' ? this.sessions.projects.list() || [] : []).filter(x => x.status !== 'archived').map(({ id, name, color }) => ({ id, name, ...(color ? { color } : {}) })), imageJobs: this.concepts ? imageJobs(this.concepts, this.redactImageText) : [], imageJobsRunning: !!this.concepts?.items.some(x => ['submitting', 'waiting', 'downloading'].includes(x.state)), capabilities: [...(this.concepts ? ['image.jobs'] : []), ...(this.toolsStatus ? ['tools.status'] : []), ...(typeof this.getUsageTurns === 'function' ? ['usage.turns'] : []), ...(mobileProjects.available(this.sessions.projects) ? ['projects.read'] : []), 'code.read', 'results.thumbnails', 'results.actions', 'console.agents', ...(this.worktrees && this.endMobileSession ? ['console.worktree'] : []), 'console.files', 'console.close', 'console.projects', 'console.models', 'console.ssh', 'console.manage', 'console.switch', 'console.setup', 'alerts.direct', 'console.attachments', ...(this.queue ? ['console.queue'] : []), ...(this.prompts ? ['prompts', 'prompts.edit'] : []), ...(this.sessions.workerBridge ? ['worker.submit', 'worker.stop'] : [])], capacity: (this.sessions.grid?.columns || 3) * (this.sessions.grid?.rows || 3), sessions: this.sessions.list().filter(x => !x.dismissed).map(item => mobileSession(item, this.sessions)), queues: this.queue?.snapshot() || {}, prompts: this.prompts?.list() || [], alerts: this.liveAlerts, unreadResults: this.results.unreadGroups(), resultVersion: digest(this.results.list().map(x => x.id + ':' + x.seenAt + ':' + x.changeCount).join(',')).slice(0, 16) };
+    return { connection, previews: (this.sessions.codePanels?.() || []).filter(p => p.kind === 'web').map(({ id, name, url, state, phoneAllowed }) => ({ id, name, url, state, phoneAllowed: phoneAllowed === true })), projects: (typeof this.sessions.projects?.list === 'function' ? this.sessions.projects.list() || [] : []).filter(x => x.status !== 'archived').map(({ id, name, color }) => ({ id, name, ...(color ? { color } : {}) })), imageJobs: this.concepts ? imageJobs(this.concepts, this.redactImageText) : [], imageJobsRunning: !!this.concepts?.items.some(x => ['submitting', 'waiting', 'downloading'].includes(x.state)), capabilities: [...(this.concepts ? ['image.jobs'] : []), ...(this.toolsStatus ? ['tools.status'] : []), ...(typeof this.getUsageTurns === 'function' ? ['usage.turns'] : []), ...(mobileProjects.available(this.sessions.projects) ? ['projects.read'] : []), 'code.read', 'results.thumbnails', 'results.actions', 'console.agents', ...(this.worktrees && this.endMobileSession ? ['console.worktree'] : []), 'console.files', 'console.close', 'console.projects', 'console.models', ...(typeof this.sessions.switchSettings === 'function' ? ['console.settings'] : []), 'console.ssh', 'console.manage', 'console.switch', 'console.setup', 'alerts.direct', 'console.attachments', ...(this.queue ? ['console.queue'] : []), ...(this.prompts ? ['prompts', 'prompts.edit'] : []), ...(this.sessions.workerBridge ? ['worker.submit', 'worker.stop'] : [])], capacity: (this.sessions.grid?.columns || 3) * (this.sessions.grid?.rows || 3), sessions: this.sessions.list().filter(x => !x.dismissed).map(item => mobileSession(item, this.sessions)), queues: this.queue?.snapshot() || {}, prompts: this.prompts?.list() || [], alerts: this.liveAlerts, unreadResults: this.results.unreadGroups(), resultVersion: digest(this.results.list().map(x => x.id + ':' + x.seenAt + ':' + x.changeCount).join(',')).slice(0, 16) };
   }
   scheduleState() {
     if (!this.server || this.stateTimer) return;
@@ -289,10 +293,20 @@ class MobileCompanion extends EventEmitter {
     const packet = compressed && compressed.length < buffer.length ? compressed : text;
     this.counters.sent += Buffer.byteLength(packet); client.ws.send(packet); return true;
   }
+  // Half-open sockets never close on their own; drop a phone after about two
+  // minutes of missed pongs, which leaves room for a backgrounded phone app.
+  heartbeat() {
+    for (const client of this.clients) {
+      if (client.missedPongs >= MAX_MISSED_PONGS) { client.ws.terminate(); continue; }
+      client.missedPongs = (client.missedPongs || 0) + 1;
+      try { client.ws.ping(); } catch {}
+    }
+  }
   attach(ws, device) {
     if (isPublic(ws._socket?.remoteAddress?.replace('::ffff:', '') || '')) { device.lastInternetAt = Date.now(); this.persist(); }
     for (const old of this.clients) if (old.device.id === device.id) old.ws.close(1000, 'Opened on another connection');
-    const client = { ws, device, selected: '', sequence: -1, epoch: 0, saver: true, requests: 0, period: Date.now(), inflight: false, seen: new Set() };
+    const client = { ws, device, selected: '', sequence: -1, epoch: 0, saver: true, requests: 0, period: Date.now(), inflight: false, seen: new Set(), missedPongs: 0 };
+    ws.on('pong', () => { client.missedPongs = 0; });
     this.clients.add(client); this.send(client, { type: 'state', state: this.publicState() }); this.emit('changed');
     ws.on('message', async (raw, binary) => {
       this.counters.received += raw.length;
@@ -400,6 +414,11 @@ class MobileCompanion extends EventEmitter {
         if (client.selected !== payload.id || this.sessions.items.get(payload.id) !== session || session.dismissed || (session.launchId || null) !== (payload.launchId || null) || client.ws.readyState !== WebSocket.OPEN || !this.clients.has(client) || !this.private.devices.includes(client.device)) throw new Error('Console changed.');
         return { dirty: status?.dirty ?? null, ahead: status?.ahead ?? null };
       }
+      case 'console.settings': {
+        const session = this.sessions.items.get(payload.id);
+        if (client.selected !== payload.id || !session?.alive || session.launchId !== payload.launchId || session.consoleKey !== payload.consoleKey || session.accountId !== payload.accountId) throw new Error('This console changed. Reopen the model choices.');
+        return this.sessions.switchSettings({ id: payload.id, launchId: payload.launchId, model: payload.model, effort: payload.effort, confirmConversationReload: payload.confirmConversationReload });
+      }
       case 'console.switch': {
         const session = this.sessions.items.get(payload.id);
         if (client.selected !== payload.id || !session?.alive || session.launchId !== payload.launchId || session.consoleKey !== payload.consoleKey || session.accountId !== payload.accountId) throw new Error('This console changed. Open its account menu again.');
@@ -431,14 +450,15 @@ class MobileCompanion extends EventEmitter {
       case 'console.agents': return consoleChoices(this.sessions, this.getDefaults());
       case 'console.models': {
         if (!['codex', 'claude'].includes(payload.provider)) return { models: [], livePicker: false };
-        if (payload.provider === 'claude') return { models: consoleModels('claude').map(x => ({ ...x, efforts: ['low', 'medium', 'high', 'xhigh', 'max'] })), livePicker: false };
-        if (!this.getModels) return { models: consoleModels('codex'), livePicker: false };
-        let models;
-        try { models = await this.getModels(payload.provider); } catch { models = consoleModels(payload.provider); }
+        const session = payload.id ? this.sessions.items.get(payload.id) : null;
+        if (payload.id && (client.selected !== payload.id || !session?.alive || session.provider !== payload.provider || session.launchId !== payload.launchId || session.accountId !== payload.accountId || session.consoleKey !== payload.consoleKey)) throw new Error('This console changed. Reopen the model choices.');
+        if (!this.getModels) return { models: [], livePicker: false };
+        const models = await this.getModels(payload.provider, session?.accountId);
         if (client.ws.readyState !== WebSocket.OPEN || !this.clients.has(client) || !this.private.devices.includes(client.device)) throw new Error('Connection changed.');
+        if (session && (client.selected !== payload.id || this.sessions.items.get(payload.id) !== session || session.launchId !== payload.launchId || !session.alive)) throw new Error('This console changed. Reopen the model choices.');
         this.sessions.mobileModels ||= new Map();
         this.sessions.mobileModels.set(payload.provider, new Set(models.map(x => x.id)));
-        return { models, livePicker: true };
+        return { models, livePicker: true, settingsSupported: typeof this.sessions.switchSettings === 'function', reloadsConversation: true };
       }
       case 'settings.summary': {
         if (!this.getSettings) throw new Error('PC settings are unavailable. Update Paddock on your PC.');
@@ -534,7 +554,7 @@ class MobileCompanion extends EventEmitter {
   revoke(id) { this.private.devices = this.private.devices.filter(x => x.id !== id); for (const client of this.clients) if (client.device.id === id) client.ws.close(1008, 'Phone removed'); this.persist(); }
   async stop() {
     this.stopped = true; clearTimeout(this.retryTimer); this.retryTimer = null;
-    clearInterval(this.timer); clearTimeout(this.stateTimer); this.stateTimer = null; this.cancelPairing();
+    clearInterval(this.timer); clearInterval(this.heartbeatTimer); this.heartbeatTimer = null; clearTimeout(this.stateTimer); this.stateTimer = null; this.cancelPairing();
     for (const client of this.clients) client.ws.terminate(); this.clients.clear(); this.wss?.close();
     for (const stream of this.streams.values()) stream.dispose(); this.streams.clear();
     const server = this.server; this.server = null; server?.closeAllConnections(); if (server) await new Promise(resolve => server.close(resolve));

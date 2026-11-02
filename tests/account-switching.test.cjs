@@ -13,7 +13,6 @@ const { copyConversation, findConversation } = require('../electron/account-hist
 const { DraftBridge } = require('../electron/draft-bridge.cjs');
 const { Sessions } = require('../electron/sessions.cjs');
 const { CodexAccount } = require('../electron/adapters.cjs');
-const { automaticSwitchEligible, thresholdCandidate } = require('../electron/account-switching-policy.cjs');
 const { runtimeFiles } = require('../electron/runtime.cjs');
 const { editorArgs, resolveWindowsShim, runEditor } = require('../electron/draft-editor.cjs');
 const { TerminalStream } = require('../electron/mobile-stream.cjs');
@@ -26,7 +25,7 @@ const accountEnvNames = ['CODEX_HOME', 'CODEX_SQLITE_HOME', 'OPENAI_API_KEY', 'C
 function saveEnvironment() { return Object.fromEntries(accountEnvNames.map(name => [name, process.env[name]])); }
 function restoreEnvironment(saved) { for (const [name, value] of Object.entries(saved)) value === undefined ? delete process.env[name] : process.env[name] = value; }
 
-async function fixture(t, { model = 'gpt-5.2-codex', failResumeTarget = false, failTrustTarget = false, holdStageReady = false, deferStageSetup = false, bridgeTimeout = 4000, onEditorExit = null } = {}) {
+async function fixture(t, { model = 'gpt-5.2-codex', failResumeTarget = false, failSameResume = false, failTrustTarget = false, holdStageReady = false, deferStageSetup = false, bridgeTimeout = 4000, onEditorExit = null } = {}) {
   const root = tempRoot('paddock-account-switch-'), workspace = path.join(root, 'project');
   fs.mkdirSync(workspace);
   const accounts = new AccountProfiles(root, { env: process.env, home: path.join(root, 'home') });
@@ -102,6 +101,9 @@ async function fixture(t, { model = 'gpt-5.2-codex', failResumeTarget = false, f
       return [];
     }, draftQuietMs: 2,
     getThreadModel: async () => model,
+    getModels: async provider => provider === 'claude'
+      ? [{ id: 'opus', resolvedModel: 'claude-opus-test', efforts: ['low', 'high'] }]
+      : [{ id: 'test-model', efforts: ['low', 'high'] }],
     isBusy: () => false,
     pty: { spawn(executable, args, options) {
       if (args.includes('login')) {
@@ -124,6 +126,7 @@ async function fixture(t, { model = 'gpt-5.2-codex', failResumeTarget = false, f
         }
       }
       const env = { ...options.env };
+      if (failSameResume && args.includes('resume')) env.FAKE_CLI_FAIL_RESUME = '1';
       if (failResumeTarget && env.PADDOCK_ACCOUNT_ID !== first.id && args.includes('resume')) env.FAKE_CLI_FAIL_RESUME = '1';
       const child = spawnSync(process.execPath, [fakeCli, ...args], { env, encoding: 'utf8', windowsHide: true });
       if (child.error) throw child.error;
@@ -557,27 +560,6 @@ test('history transfer handles large transcripts, strict-prefix return, conflict
   await assert.rejects(findConversation(dependent, 'codex', id), /depends on another rollout/);
 });
 
-test('threshold offers stay per account and automatic switching needs explicit opt-in and every fresh window', () => {
-  const now = Date.now(), window = (minutes, usedPercent, reset = now + 60_000) => ({ minutes, usedPercent, resetsAt: reset });
-  const limits = [
-    { id: 'codex:a', accountId: 'codex:a', provider: 'codex', observedAt: now, windows: [window(300, 92), window(10080, 10)] },
-    { id: 'codex:b', accountId: 'codex:b', provider: 'codex', observedAt: now, windows: [window(300, 15), window(10080, 30)] }
-  ];
-  const candidate = thresholdCandidate(limits, 'codex:a', 'codex', 90, now);
-  assert.equal(candidate.usedPercent, 92);
-  assert.equal(thresholdCandidate(limits, 'codex:b', 'codex', 90, now), null, 'percentages from other accounts are not combined');
-  const eligible = { limits, sourceAccountId: 'codex:a', targetAccountId: 'codex:b', provider: 'codex', candidate, threshold: 90, now, state: 'ready', busy: false, draftSupported: true };
-  assert.equal(automaticSwitchEligible({ ...eligible, enabled: false }), false, 'automatic switching starts off');
-  assert.equal(automaticSwitchEligible({ ...eligible, enabled: true }), true);
-  assert.equal(automaticSwitchEligible({ ...eligible, enabled: true, busy: true }), false);
-  assert.equal(automaticSwitchEligible({ ...eligible, enabled: true, state: 'active' }), false);
-  assert.equal(automaticSwitchEligible({ ...eligible, enabled: true, draftSupported: false }), false);
-  assert.equal(automaticSwitchEligible({ ...eligible, enabled: true, limits: [...limits, { ...limits[1], id: 'codex:b:other', windows: [window(300, 15), window(10080, 99)] }] }), false, 'another exhausted target window blocks automatic switching');
-  assert.equal(automaticSwitchEligible({ ...eligible, enabled: true, limits: limits.map(item => item.accountId === 'codex:b' ? { ...item, windows: [window(300, 15), window(10080, 30, now - 1)] } : item) }), false, 'a target window whose reset has passed is not fresh available quota');
-  assert.equal(automaticSwitchEligible({ ...eligible, enabled: true, limits: limits.map(item => item.accountId === 'codex:b' ? { ...item, observedAt: now - 6 * 60_000 } : item) }), false, 'stale target usage stays unknown');
-  assert.equal(thresholdCandidate(limits.map(item => item.accountId === 'codex:a' ? { ...item, windows: [window(300, 92, now - 1)] } : item), 'codex:a', 'codex', 90, now), null);
-});
-
 test('draft bridge rejects stale operations after timeout and the editor parser preserves quoted shims', async t => {
   const bridge = new DraftBridge({ timeout: 2000 }); await bridge.start();
   t.after(() => bridge.close());
@@ -661,4 +643,62 @@ test('packaged runtime resolves the external draft helper without installation',
   assert.equal(fs.existsSync(files.draftEditor), true);
   assert.equal(fs.existsSync(path.join(runtime, 'draft-policy.cjs')), true);
   t.after(() => fs.rmSync(root, { recursive: true, force: true, maxRetries: 3 }));
+});
+
+
+test('idle model and effort resume the same account and preserve the exact draft without model-menu input', async t => {
+  const f = await fixture(t), source = await f.sessions.create({ provider: 'codex', cwd: f.workspace }, { accountId: f.first.id });
+  await new Promise(resolve => setTimeout(resolve, 5)); f.sessions.scanEvents();
+  const original = f.sessions.items.get(source.id); original.state = 'ready'; original.terminal.draft = 'Unsent Unicode caf?\nsecond line';
+  const result = await f.sessions.switchSettings({ id: source.id, launchId: source.launchId, model: 'test-model', effort: 'high', confirmConversationReload: true });
+  const replacement = f.sessions.items.get(source.id);
+  assert.equal(result.accountId, source.accountId);
+  assert.equal(result.providerSessionId, threadId);
+  assert.equal(replacement.terminal.draft, 'Unsent Unicode caf?\nsecond line');
+  assert.equal(original.terminal.killed, true);
+  assert.deepEqual(result.requestedSettings.model, 'test-model');
+  assert.equal(result.requestedSettings.effort, 'high');
+  const record = JSON.parse(fs.readFileSync(path.join(f.root, 'records', result.launchId + '.json')));
+  assert.ok(record.args.includes('test-model'));
+  assert.equal(result.model, undefined, 'launch args do not prove effective inference settings');
+  assert.equal(f.sessions.savedConsoles().find(x => x.consoleKey === source.consoleKey).effort, 'high');
+  assert.ok(f.terminals.every(x => x.writes.every(input => !input.includes('/model') && !input.includes('/effort'))));
+});
+
+test('idle settings reject missing consent, busy/stale sessions and unavailable model choices before replacement', async t => {
+  const f = await fixture(t), source = await f.sessions.create({ provider: 'codex', cwd: f.workspace }, { accountId: f.first.id });
+  await new Promise(resolve => setTimeout(resolve, 5)); f.sessions.scanEvents();
+  const original = f.sessions.items.get(source.id), request = { id: source.id, launchId: source.launchId, model: 'test-model', effort: 'high', confirmConversationReload: true };
+  await assert.rejects(f.sessions.switchSettings({ ...request, confirmConversationReload: false }), /Confirm reloading/);
+  original.state = 'active'; await assert.rejects(f.sessions.switchSettings(request), /idle/);
+  original.state = 'error'; await assert.rejects(f.sessions.switchSettings(request), /idle/);
+  original.state = 'ready'; await assert.rejects(f.sessions.switchSettings({ ...request, launchId: 'stale' }), /changed/);
+  await assert.rejects(f.sessions.switchSettings({ ...request, model: 'unavailable' }), /not offered/);
+  await assert.rejects(f.sessions.switchSettings({ ...request, effort: 'ultra' }), /effort level/);
+  assert.equal(f.sessions.items.get(source.id), original);
+  assert.equal(original.terminal.killed, false);
+  assert.equal(original.switching, false);
+  assert.equal(f.terminals.length, 1);
+});
+
+
+test('a failed same-account model resume keeps the original console and draft', async t => {
+  const f = await fixture(t, { failSameResume: true }), source = await f.sessions.create({ provider: 'codex', cwd: f.workspace }, { accountId: f.first.id });
+  await new Promise(resolve => setTimeout(resolve, 5)); f.sessions.scanEvents();
+  const original = f.sessions.items.get(source.id); original.state = 'ready'; original.terminal.draft = 'Keep this draft';
+  await assert.rejects(f.sessions.switchSettings({ id: source.id, launchId: source.launchId, model: 'test-model', effort: 'high', confirmConversationReload: true }), /ended before|reopened|closed|stable prompt/);
+  assert.equal(f.sessions.items.get(source.id), original); assert.equal(original.terminal.killed, false);
+  assert.equal(original.terminal.draft, 'Keep this draft'); assert.equal(original.switching, false);
+  assert.equal(f.sessions.pendingStages.size, 0);
+});
+
+test('Claude idle settings resume the original transcript in the same profile', async t => {
+  const f = await fixture(t); writeClaudeHistory(f.firstClaude.configDir, threadId);
+  const source = await f.sessions.create({ provider: 'claude', cwd: f.workspace, model: 'sonnet' }, { accountId: f.firstClaude.id, claudeTarget: { kind: 'native', path: process.execPath } });
+  await new Promise(resolve => setTimeout(resolve, 5)); f.sessions.scanEvents();
+  const original = f.sessions.items.get(source.id); original.state = 'ready'; original.terminal.draft = 'Claude draft';
+  const result = await f.sessions.switchSettings({ id: source.id, launchId: source.launchId, model: 'opus', effort: 'high', confirmConversationReload: true });
+  assert.equal(result.accountId, f.firstClaude.id); assert.equal(result.providerSessionId, threadId);
+  assert.equal(result.requestedSettings.model, 'opus'); assert.equal(result.requestedSettings.effort, 'high');
+  assert.equal(f.sessions.items.get(source.id).terminal.draft, 'Claude draft'); assert.equal(original.terminal.killed, true);
 });

@@ -9,7 +9,7 @@ function initialSettings(saved, folder, capabilities) {
   const defaults = {
     hudAlwaysOnTop: false, notifications: true, restoreConsoles: true, confirmConsoleEnd: true, keepAwakeWhileWorking: true, autoSaveResults: false, suggestProjects: true, delegationPanels: true,
     agentPermissions: 'default', codexScrollback: true, sidebarCollapsed: false, vimControls: false, trimStyle: 'classic', trimWidth: 1, lighting: 'static', lightingSpeed: 'normal', starDensity: 2, ambientMotion: true, launchEffect: true, cursorBlink: false,
-    slotNames: {}, slotTrims: {}, rates: {}, accountSwitchThreshold: 90, autoSwitchAccounts: false, grid: { columns: 3, rows: 3 },
+    slotNames: {}, slotTrims: {}, rates: {}, grid: { columns: 3, rows: 3 },
     consoleDefaults: { provider: capabilities.codex ? 'codex' : capabilities.claude ? 'claude' : 'shell', cwd: folder, name: '', command: '' }
   };
   return {
@@ -23,14 +23,14 @@ function initialSettings(saved, folder, capabilities) {
     // Existing installations keep their settings and do not get a welcome screen.
     setupComplete: typeof saved.setupComplete === 'boolean' ? saved.setupComplete : Object.keys(saved).length > 0,
     consoleDefaults: { ...defaults.consoleDefaults, ...saved.consoleDefaults },
-    accountSwitchThreshold: Number.isInteger(saved.accountSwitchThreshold) && saved.accountSwitchThreshold >= 50 && saved.accountSwitchThreshold <= 100 ? saved.accountSwitchThreshold : 90,
-    autoSwitchAccounts: saved.autoSwitchAccounts === true,
     // Stars became a five-step scale; a switched-off sky stays off.
     starDensity: Number.isInteger(saved.starDensity) ? saved.starDensity : saved.panelStars === false ? 0 : 2,
     // One theme now colors the whole window. A saved RGB accent becomes the
     // RGB theme when the consoles still used the default theme.
     trimStyle: saved.accentStyle === 'rgb' && (!saved.trimStyle || saved.trimStyle === 'classic') ? 'gamer' : saved.trimStyle || 'classic',
-    accentStyle: undefined, panelStars: undefined
+    accentStyle: undefined, panelStars: undefined,
+    // Automatic account switching was removed; drop its saved keys.
+    accountSwitchThreshold: undefined, autoSwitchAccounts: undefined
   };
 }
 module.exports = { initialSettings };
