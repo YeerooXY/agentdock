@@ -111,7 +111,7 @@ class TaskLoop extends EventEmitter {
     this.admission = admission;
     this.getAccounts = getAccounts;
     this.dir = path.join(root, 'tasks'); this.jobs = new Map(); this.children = new Map(); this.cancellers = new Map(); this.pending = new Map(); this.refreshing = new Map(); this.refreshedAt = new Map(); this.reserved = new Set(); this.records = new Map();
-    this.fileCache = new Map(); this.cancelling = new Set(); this.cancellations = new Map();
+    this.generations = new Map(); this.storageErrors = new Map(); this.verifyTimer = null; this.fileCache = new Map(); this.cancelling = new Set(); this.cancellations = new Map();
     this.split = new SplitTasks(this); this.providerSlots = 0; this.providerQueue = []; this.unconfirmed = new Map();
     fs.mkdirSync(this.dir, { recursive: true });
     for (const file of fs.readdirSync(this.dir).filter(file => /^[\w-]+\.json$/.test(file))) {
@@ -169,8 +169,36 @@ class TaskLoop extends EventEmitter {
     return { accounts: inventory, implementers: accounts.map(publicChoice), reviewers: reviewers.map(publicChoice), allReviewers: accounts.map(publicChoice), suggestion, suggestionRole: 'reviewer', why, repos: this.repositories(), estimate, assignment,
       policy: { implementation: 'ready-local-first', overflow: 'eligible-free-then-included-by-remaining-allowance', model: 'smallest-sufficient-discovered-tier', review: 'strongest-eligible-discovered-tier', unknownQuota: 'explicit', metered: 'explicit-assignment-only', retry: 'none', guidelines: 'dock_context; dock/website_guide for websites' } };
   }
-  persist(job) { atomicJson(path.join(this.dir, `${job.id}.json`), job); }
-  changed(job) { this.persist(job.parentId ? this.jobs.get(job.parentId) : job); this.emit('changed'); }
+  // Single persistence path: resolve the owning parent, write atomically, then
+  // emit once with the saved view. A failed write emits 'storage-error' only.
+  persist(job) {
+    const owner = job?.parentId ? this.jobs.get(job.parentId) : job;
+    if (!owner?.id) { this.storageFailed(job?.id, new Error('The parent task is missing.')); return false; }
+    this.generations.set(owner.id, (this.generations.get(owner.id) || 0) + 1);
+    try { atomicJson(path.join(this.dir, `${owner.id}.json`), owner); }
+    catch (error) { this.storageFailed(owner.id, error); return false; }
+    if (this.storageErrors.delete(owner.id)) this.emit('storage-error', { id: owner.id, error: '' });
+    this.emit('changed', { id: owner.id, view: this.listenerCount('changed') ? this.view(owner) : null });
+    return true;
+  }
+  changed(job) { return this.persist(job); }
+  storageFailed(id, error) {
+    const message = `Task state could not be saved: ${redactText(error?.message || 'storage error')}`;
+    this.storageErrors.set(id, message); this.emit('storage-error', { id, error: message });
+  }
+  generation(id) { return this.generations.get(id) || 0; }
+  // Verification is scheduled explicitly: startup, repository changes and a bounded timer.
+  startVerification(intervalMs = 30_000) {
+    this.stopVerification();
+    this.verifyTimer = setInterval(() => this.refresh().catch(() => {}), Math.max(1000, intervalMs)); this.verifyTimer.unref?.();
+    return this.refresh().catch(() => {});
+  }
+  stopVerification() { clearInterval(this.verifyTimer); this.verifyTimer = null; }
+  verifyRepository(repo) {
+    const key = repo ? folderKey(repo) : null;
+    for (const job of this.jobs.values()) if (!key || folderKey(job.repo) === key) this.refreshedAt.delete(job.id);
+    return this.refresh().catch(() => {});
+  }
   assignment(raw, role) {
     const account = this.candidates().find(choice => TASK_PROVIDERS.includes(choice.provider) && choice.id === raw?.accountId && choice.installed !== false && choice.signedIn !== false && choice.available !== false);
     if (!account) throw new Error(`Choose an available ${role} account. Strata requires a saved local API; cloud agents require sign-in.`);
@@ -209,7 +237,6 @@ class TaskLoop extends EventEmitter {
     return structuredClone({ ...job, subtasks: job.subtasks?.map(({ baselineUntrackedState, baselineUntracked, processPid, processRecordedAt, ...sub }) => ({ ...sub, log: [] })), log: RUNNING.has(job.state) ? tail([...(job.log || []), ...(job.subtasks || []).flatMap(sub => (sub.log || []).slice(-10).map(line => `${sub.subtaskId}: ${line}`))].join('\n'), 8000).split('\n') : [] });
   }
   snapshot() {
-    this.refresh().catch(() => {});
     const jobs = [...this.jobs.values()].sort((a, b) => b.startedAt - a.startedAt);
     const active = job => RUNNING.has(job.state) || job.state === 'plan-ready' || this.cancelling.has(job.id);
     return [...jobs.filter(active), ...jobs.filter(job => !active(job)).slice(0, MAX_HISTORY)]
@@ -745,7 +772,7 @@ class TaskLoop extends EventEmitter {
     this.interruptSteps(job, 'needs-you'); this.cancelProviderQueue(job);
   }
   interruptAll() {
-    this.closing = true;
+    this.closing = true; this.stopVerification();
     for (const job of this.jobs.values()) if (RUNNING.has(job.state) || this.cancelling.has(job.id) || this.children.has(job.id) || (job.subtasks || []).some(sub => this.children.has(sub.id))) {
       job.rebuildReport = true;
       this.settle(job, 'interrupted', 'Paddock closed before this task finished.');
@@ -765,6 +792,7 @@ class TaskLoop extends EventEmitter {
     if (this.refreshing.has(id)) return this.refreshing.get(id);
     const job = this.jobs.get(id);
     if (!this.refreshable(job)) return;
+    const generation = this.generation(id);
     this.refreshedAt.set(id, this.now());
     const pending = (async () => {
       const expired = this.now() - (job.finishedAt || job.startedAt) > VERIFICATION_AGE;
@@ -776,7 +804,7 @@ class TaskLoop extends EventEmitter {
         if (!permanentRepositoryError(failure)) return false;
         error = repositoryError(failure);
       }
-      if (!this.refreshable(job)) return;
+      if (!this.refreshable(job) || this.generation(id) !== generation) return;
       if (error) {
         job.verificationExpired = true; job.state = 'needs-you'; job.error = error;
         for (const round of job.rounds) for (const step of [round.check, round.review]) if (step?.fingerprint && step.state !== 'not-set') step.state = 'stale';
