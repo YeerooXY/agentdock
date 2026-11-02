@@ -1,0 +1,426 @@
+{
+ "catalog": [
+  {
+   "id": "codex",
+   "name": "Codex",
+   "command": "codex",
+   "script": "https://chatgpt.com/codex/install.ps1",
+   "shScript": "https://chatgpt.com/codex/install.sh",
+   "docs": "https://learn.chatgpt.com/docs/codex/cli",
+   "auth": "Sign in with ChatGPT in your console.",
+   "native": true
+  },
+  {
+   "id": "claude",
+   "name": "Claude Code",
+   "command": "claude",
+   "script": "https://claude.ai/install.ps1",
+   "shScript": "https://claude.ai/install.sh",
+   "docs": "https://code.claude.com/docs/en/setup",
+   "auth": "Sign in with your Claude account in your console.",
+   "native": true
+  },
+  {
+   "id": "antigravity",
+   "name": "Google Antigravity",
+   "command": "agy",
+   "script": "https://antigravity.google/cli/install.ps1",
+   "shScript": "https://antigravity.google/cli/install.sh",
+   "installArgs": [
+    "--skip-path"
+   ],
+   "docs": "https://antigravity.google/docs/cli/install/",
+   "auth": "Sign in with Google when the CLI opens.",
+   "mcp": ".gemini/config/mcp_config.json",
+   "windowsBuild": 22000,
+   "unrestricted": [
+    "--dangerously-skip-permissions"
+   ]
+  },
+  {
+   "id": "copilot",
+   "name": "GitHub Copilot",
+   "command": "copilot",
+   "npm": "@github/copilot",
+   "docs": "https://docs.github.com/en/copilot/get-started/cli-quickstart",
+   "auth": "Use /login with your GitHub account.",
+   "model": "--model",
+   "unrestricted": [
+    "--allow-all"
+   ],
+   "native": true
+  },
+  {
+   "id": "opencode",
+   "name": "OpenCode",
+   "command": "opencode",
+   "npm": "opencode-ai",
+   "docs": "https://opencode.ai/docs/",
+   "auth": "Use /connect to choose your provider, including Z.AI.",
+   "model": "--model",
+   "native": true,
+   "unrestricted": [
+    "--auto"
+   ]
+  },
+  {
+   "id": "cursor",
+   "name": "Cursor",
+   "command": "agent",
+   "aliases": [
+    "cursor-agent"
+   ],
+   "script": "https://cursor.com/install?win32=true",
+   "shScript": "https://cursor.com/install",
+   "docs": "https://cursor.com/docs/cli/installation",
+   "auth": "Sign in with Cursor when the CLI opens.",
+   "model": "--model",
+   "mcp": ".cursor/mcp.json",
+   "unrestricted": [
+    "--force"
+   ]
+  },
+  {
+   "id": "grok",
+   "name": "Grok Build",
+   "command": "grok",
+   "script": "https://x.ai/cli/install.ps1",
+   "shScript": "https://x.ai/cli/install.sh",
+   "docs": "https://docs.x.ai/build/overview",
+   "auth": "Sign in with your xAI account when prompted.",
+   "model": "--model",
+   "unrestricted": [
+    "--always-approve"
+   ],
+   "mcp": ".grok/config.toml"
+  },
+  {
+   "id": "kiro",
+   "name": "Kiro",
+   "command": "kiro-cli",
+   "script": "https://cli.kiro.dev/install.ps1",
+   "shScript": "https://cli.kiro.dev/install",
+   "docs": "https://kiro.dev/docs/cli/setup/",
+   "auth": "Run kiro-cli login, or sign in when the chat opens.",
+   "args": [
+    "chat"
+   ],
+   "model": "--model",
+   "mcp": ".kiro/settings/mcp.json",
+   "windowsBuild": 22000,
+   "unrestricted": [
+    "--trust-tools=fs_read,fs_write"
+   ]
+  },
+  {
+   "id": "qwen",
+   "name": "Qwen Code",
+   "command": "qwen",
+   "npm": "@qwen-code/qwen-code",
+   "docs": "https://qwenlm.github.io/qwen-code-docs/en/users/quickstart/",
+   "auth": "Run /auth to choose QwenCloud, ModelStudio, a provider or a custom endpoint. Qwen OAuth ended April 15, 2026.",
+   "model": "--model",
+   "native": true,
+   "unrestricted": [
+    "--approval-mode",
+    "yolo"
+   ]
+  },
+  {
+   "id": "kimi",
+   "name": "Kimi Code",
+   "command": "kimi",
+   "script": "https://code.kimi.com/kimi-code/install.ps1",
+   "shScript": "https://code.kimi.com/kimi-code/install.sh",
+   "docs": "https://github.com/MoonshotAI/kimi-code/blob/main/docs/en/guides/getting-started.md",
+   "auth": "Run /login to connect your account. For global accounts, use kimi login --region global.",
+   "model": "--model",
+   "native": true,
+   "unrestricted": [
+    "--yolo"
+   ]
+  },
+  {
+   "id": "cline",
+   "name": "Cline",
+   "command": "cline",
+   "npm": "cline",
+   "docs": "https://docs.cline.bot/usage/cli-overview",
+   "auth": "Run cline auth to choose the Cline provider, ClinePass or your provider key.",
+   "model": "--model",
+   "mcp": ".cline/data/settings/cline_mcp_settings.json",
+   "unrestricted": [
+    "--auto-approve",
+    "true"
+   ]
+  },
+  {
+   "id": "droid",
+   "name": "Factory Droid",
+   "command": "droid",
+   "npm": "droid",
+   "docs": "https://docs.factory.com/droid-cli/quickstart",
+   "auth": "Sign in with Factory when prompted.",
+   "model": "--model",
+   "mcp": ".factory/mcp.json",
+   "unrestricted": [
+    "--auto",
+    "high"
+   ]
+  },
+  {
+   "id": "pi",
+   "name": "Pi",
+   "command": "pi",
+   "npm": "@earendil-works/pi-coding-agent",
+   "ignoreScripts": true,
+   "docs": "https://pi.dev/docs/latest/quickstart",
+   "auth": "Run /login to choose a provider, subscription, API key or local model.",
+   "model": "--model",
+   "mcp": ".pi/agent/mcp.json"
+  },
+  {
+   "id": "gemini",
+   "name": "Gemini CLI",
+   "command": "gemini",
+   "npm": "@google/gemini-cli",
+   "docs": "https://geminicli.com/docs/get-started/installation/",
+   "auth": "Choose a Google sign-in or another supported Google authentication method when prompted.",
+   "model": "--model",
+   "native": true,
+   "windowsBuild": 26100,
+   "unrestricted": [
+    "--approval-mode",
+    "yolo"
+   ]
+  }
+ ],
+ "providers": [
+  "codex",
+  "claude",
+  "antigravity",
+  "copilot",
+  "opencode",
+  "cursor",
+  "grok",
+  "kiro",
+  "qwen",
+  "kimi",
+  "cline",
+  "droid",
+  "pi",
+  "gemini",
+  "shell",
+  "custom"
+ ],
+ "capabilities": [
+  {
+   "id": "codex",
+   "name": "Codex",
+   "namedProfiles": true,
+   "isolation": {
+    "env": "CODEX_HOME",
+    "defaultSubdir": ".codex"
+   },
+   "login": {
+    "args": [
+     "login"
+    ],
+    "instruction": ""
+   },
+   "usage": true,
+   "models": true,
+   "resume": true,
+   "reason": ""
+  },
+  {
+   "id": "claude",
+   "name": "Claude Code",
+   "namedProfiles": true,
+   "isolation": {
+    "env": "CLAUDE_CONFIG_DIR",
+    "defaultSubdir": ".claude"
+   },
+   "login": {
+    "args": [
+     "auth",
+     "login"
+    ],
+    "instruction": ""
+   },
+   "usage": true,
+   "models": true,
+   "resume": true,
+   "reason": ""
+  },
+  {
+   "id": "antigravity",
+   "name": "Google Antigravity",
+   "namedProfiles": false,
+   "isolation": null,
+   "login": null,
+   "usage": true,
+   "models": false,
+   "resume": false,
+   "reason": "Separate sign-in storage has not been verified for this provider."
+  },
+  {
+   "id": "copilot",
+   "name": "GitHub Copilot",
+   "namedProfiles": false,
+   "isolation": null,
+   "login": null,
+   "usage": true,
+   "models": false,
+   "resume": false,
+   "reason": "Separate sign-in storage has not been verified for this provider."
+  },
+  {
+   "id": "opencode",
+   "name": "OpenCode",
+   "namedProfiles": false,
+   "isolation": null,
+   "login": null,
+   "usage": true,
+   "models": false,
+   "resume": false,
+   "reason": "Separate sign-in storage has not been verified for this provider."
+  },
+  {
+   "id": "cursor",
+   "name": "Cursor",
+   "namedProfiles": false,
+   "isolation": null,
+   "login": null,
+   "usage": true,
+   "models": false,
+   "resume": false,
+   "reason": "Separate sign-in storage has not been verified for this provider."
+  },
+  {
+   "id": "grok",
+   "name": "Grok Build",
+   "namedProfiles": false,
+   "isolation": null,
+   "login": null,
+   "usage": false,
+   "models": false,
+   "resume": false,
+   "reason": "Separate sign-in storage has not been verified for this provider."
+  },
+  {
+   "id": "kiro",
+   "name": "Kiro",
+   "namedProfiles": false,
+   "isolation": null,
+   "login": null,
+   "usage": true,
+   "models": false,
+   "resume": false,
+   "reason": "Separate sign-in storage has not been verified for this provider."
+  },
+  {
+   "id": "qwen",
+   "name": "Qwen Code",
+   "namedProfiles": false,
+   "isolation": null,
+   "login": null,
+   "usage": false,
+   "models": false,
+   "resume": false,
+   "reason": "Separate sign-in storage has not been verified for this provider."
+  },
+  {
+   "id": "kimi",
+   "name": "Kimi Code",
+   "namedProfiles": false,
+   "isolation": null,
+   "login": null,
+   "usage": true,
+   "models": false,
+   "resume": false,
+   "reason": "Separate sign-in storage has not been verified for this provider."
+  },
+  {
+   "id": "cline",
+   "name": "Cline",
+   "namedProfiles": false,
+   "isolation": null,
+   "login": null,
+   "usage": false,
+   "models": false,
+   "resume": false,
+   "reason": "Separate sign-in storage has not been verified for this provider."
+  },
+  {
+   "id": "droid",
+   "name": "Factory Droid",
+   "namedProfiles": false,
+   "isolation": null,
+   "login": null,
+   "usage": false,
+   "models": false,
+   "resume": false,
+   "reason": "Separate sign-in storage has not been verified for this provider."
+  },
+  {
+   "id": "pi",
+   "name": "Pi",
+   "namedProfiles": true,
+   "isolation": {
+    "env": "PI_CODING_AGENT_DIR",
+    "defaultSubdir": ".pi/agent",
+    "clearEnv": [
+     "PI_CODING_AGENT_SESSION_DIR"
+    ]
+   },
+   "login": {
+    "args": [],
+    "instruction": "Use /login to sign in to this account, then exit the sign-in console.",
+    "credentialFiles": [
+     "auth.json"
+    ],
+    "credentialFields": [
+     "key",
+     "access",
+     "refresh"
+    ]
+   },
+   "usage": true,
+   "models": false,
+   "resume": false,
+   "reason": ""
+  },
+  {
+   "id": "gemini",
+   "name": "Gemini CLI",
+   "namedProfiles": true,
+   "isolation": {
+    "env": "GEMINI_CLI_HOME",
+    "defaultSubdir": ".gemini",
+    "homeScoped": true,
+    "envOverrides": {
+     "GEMINI_FORCE_FILE_STORAGE": "true",
+     "GEMINI_FORCE_ENCRYPTED_FILE_STORAGE": "true"
+    },
+    "clearEnv": [
+     "GEMINI_CLI_CUSTOM_OAUTH_CREDS",
+     "GOOGLE_GENAI_USE_VERTEXAI",
+     "GOOGLE_GENAI_USE_GCA"
+    ]
+   },
+   "login": {
+    "args": [],
+    "instruction": "Use /auth to sign in to this account, then exit the sign-in console.",
+    "credentialFiles": [
+     "gemini-credentials.json",
+     "oauth_creds.json"
+    ]
+   },
+   "usage": false,
+   "models": false,
+   "resume": false,
+   "reason": ""
+  }
+ ]
+}

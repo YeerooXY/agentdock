@@ -65,7 +65,7 @@ test('failed refresh retains reading time and reports safe errors per provider',
   const accounts = [{ id: 'claude:default', provider: 'claude' }, { id: 'copilot:default', provider: 'copilot' }, { id: 'gemini:default', provider: 'gemini' }];
   await usage.refresh(accounts); fail = true; now += 20000; await usage.refresh(accounts);
   const states = usage.snapshot();
-  assert.equal(states[0].observedAt, 100); assert.equal(states[0].checkedAt, now); assert.equal(states[0].status, 'unavailable');
+  assert.equal(states[0].observedAt, 100); assert.equal(states[0].checkedAt, now); assert.equal(states[0].status, 'stale'); assert.equal(states[0].failure, 'unavailable'); assert.equal(states[0].staleReason, 'check-failed');
   assert.equal(states[1].status, 'sign-in'); assert.equal(states[2].status, 'unsupported');
   assert.equal(saved.length, 1); assert.doesNotMatch(JSON.stringify(states), /SECRET_TOKEN|user@example/);
 });
