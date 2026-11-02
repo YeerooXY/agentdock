@@ -4,6 +4,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { programLaunch } = require('./platform.cjs');
 const { openCodeAllowanceCredential } = require('./opencode-allowance.cjs');
+const { usageSource, sourceForAccount } = require('./providers/index.cjs');
+const { normalizeReading, checkView } = require('./usage-reading.cjs');
 const ownedReaders = new Set();
 
 const percent = value => typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 100 ? value : null;
@@ -315,7 +317,22 @@ class SubscriptionUsage {
     Object.assign(this, { readers, now, onReading, onChange, cooldownMs });
     this.states = new Map(); this.pending = new Map();
   }
-  snapshot() { return [...this.states.values()].map(value => ({ ...value })); }
+  // Staleness is decided here, once, at snapshot time. Consumers display it.
+  snapshot() { const at = this.now(); return [...this.states.values()].map(value => checkView(value, at)); }
+  // Prime accounts from readings saved before this run. They show as stale until
+  // the first check, with their age, instead of vanishing or posing as current.
+  seed(readings = []) {
+    const groups = new Map();
+    for (const reading of readings) {
+      const id = reading?.accountId ?? reading?.id;
+      if (!id || !reading.provider || !Number.isFinite(reading.observedAt) || this.states.has(id)) continue;
+      const normalized = normalizeReading({ ...reading, accountId: id }, { id, provider: reading.provider, label: reading.accountLabel });
+      if (normalized) groups.set(id, [...(groups.get(id) || []), normalized]);
+    }
+    for (const [id, values] of groups) {
+      this.states.set(id, { accountId: id, provider: values[0].provider, checkedAt: 0, observedAt: Math.max(...values.map(value => value.observedAt)), status: 'stale', message: 'Not checked since Paddock started.', lastReadings: values });
+    }
+  }
   async refresh(accounts) {
     const queue = accounts.filter((account, index) => accounts.findIndex(other => other.id === account.id) === index);
     // Bound native helper concurrency on large account lists.
@@ -332,23 +349,29 @@ class SubscriptionUsage {
   }
   async read(account) {
     const before = this.states.get(account.id), reader = Object.hasOwn(this.readers, account.provider) ? this.readers[account.provider] : null;
-    const base = { accountId: account.id, provider: account.provider, checkedAt: this.now(), observedAt: before?.observedAt || null };
-    if (!reader) {
-      this.states.set(account.id, { ...base, status: 'unsupported', message: usageHelp(account.provider) }); this.onChange(); return;
-    }
+    const base = { accountId: account.id, provider: account.provider, checkedAt: this.now(), observedAt: before?.observedAt || null, lastReadings: before?.lastReadings || [] };
+    const source = sourceForAccount(account), put = fields => { this.states.set(account.id, { ...base, ...fields }); this.onChange(); };
+    // Providers with no quota or no verified isolation never reach a reader, and
+    // never carry numbers that could belong to another account.
+    const none = { observedAt: null, lastReadings: [] };
+    if (source?.state === 'no-quota') return put({ ...none, status: 'no-quota', message: 'Local model. It has no account quota.' });
+    if (source?.reader && !source.isolated && account.id !== `${account.provider}:default`)
+      return put({ ...none, status: 'not-isolated', message: 'Separate sign-in storage is not verified for this CLI. Only its default account is checked.' });
+    if (!reader) return put({ status: 'unsupported', reason: source?.state === 'no-source' ? 'no-source' : 'no-reader', message: usageHelp(account.provider) });
     this.states.set(account.id, { ...base, status: 'refreshing', message: '' }); this.onChange();
     try {
       const result = await reader(account);
       const values = Array.isArray(result) ? result : result.values;
       if (!Array.isArray(result)) {
         base.localSpending = result.localSpending;
-        if (result.missing) { this.onReading(account, []); this.states.set(account.id, { ...base, observedAt: null, status: 'sign-in', message: 'Connect OpenCode Go in OpenCode or add its key in Settings to read allowance.' }); this.onChange(); return; }
+        if (result.missing) { this.onReading(account, []); this.states.set(account.id, { ...base, ...none, status: 'sign-in', message: 'Connect OpenCode Go in OpenCode or add its key in Settings to read allowance.' }); this.onChange(); return; }
         if (result.error) throw result.error;
       }
-      if (!Array.isArray(values) || !values.length || values.some(value => value.accountId !== account.id || value.provider !== account.provider || !Number.isFinite(value.observedAt)))
-        throw new UsageError('unavailable', 'The provider returned no account usage.');
-      this.onReading(account, values);
-      this.states.set(account.id, { ...base, status: 'current', checkedAt: this.now(), observedAt: Math.max(...values.map(value => value.observedAt)), message: '' });
+      // A reading that names another account or provider is rejected, not relabelled.
+      const readings = Array.isArray(values) ? values.map(value => normalizeReading(value, account)) : [];
+      if (!readings.length || readings.includes(null)) throw new UsageError('unavailable', 'The provider returned no account usage.');
+      this.onReading(account, readings);
+      this.states.set(account.id, { ...base, status: 'current', checkedAt: this.now(), observedAt: Math.max(...readings.map(value => value.observedAt)), message: '', lastReadings: readings });
     } catch (error) {
       const safe = error instanceof UsageError ? error : responseError(error?.message);
       this.states.set(account.id, { ...base, status: safe.code, checkedAt: this.now(), message: safe.message });
@@ -357,8 +380,12 @@ class SubscriptionUsage {
   }
 }
 function usageHelp(provider) {
-  const native = { antigravity: '/usage in Antigravity', gemini: '/stats model in Gemini CLI', cursor: 'the Cursor usage dashboard', grok: 'the xAI subscription dashboard', droid: '/limits in Droid', kimi: '/usage in Kimi Code' }[provider];
-  return native ? `This CLI has no connected background quota reader. Check ${native}.` : 'This CLI uses its selected provider’s allowance. Its account quota is not available through this CLI.';
+  const source = usageSource(provider);
+  // A CLI with a reader is read in the background; a native command is not the answer.
+  if (source?.reader) return 'This CLI’s limits are read in the background. Refresh to check them.';
+  if (source?.state === 'no-quota') return 'Local model. It has no account quota.';
+  if (source?.state === 'no-source') return source.nativeHint ? `No quota source. Check ${source.nativeHint}.` : 'No quota source. This CLI uses its selected provider’s allowance.';
+  return source?.nativeHint ? `This CLI has no connected background quota reader. Check ${source.nativeHint}.` : 'This CLI uses its selected provider’s allowance. Its account quota is not available through this CLI.';
 }
 function stopUsageReaders() { for (const child of ownedReaders) { try { child.kill(); } catch {} } ownedReaders.clear(); }
 function trackUsageReader(child) { ownedReaders.add(child); return () => ownedReaders.delete(child); }
