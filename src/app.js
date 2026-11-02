@@ -48,6 +48,8 @@ import './page-layout.css';
 import './workspace-glass.css';
 import './usage-glass.css';
 import { escapeHtml } from './html-escape.js';
+import { patchChildren } from './core/dom.js';
+import { createStateClient } from './state-client.js';
 
 const $ = selector => document.querySelector(selector);
 const escape = escapeHtml;
@@ -91,8 +93,7 @@ const number = value => Number.isFinite(value) ? Intl.NumberFormat('en', { notat
 const labels = { open: 'Open', active: 'Thinking', ready: 'Ready', attention: 'Needs attention', error: 'Error', ended: 'Ended', recent: 'Recent', interrupted: 'Interrupted' };
 let state, page = 'consoles', selectedId = null, expandedId = null, expansionRequest = 0, expansionModeIntent = null, stateReceiveVersion = 0, renderedExpansion = null, renderedConsoleVisibility = false, toastTimer;
 let usageAddOpen = false, usagePeriod = 30, usageMetric = 'requests';
-const usageAccountSelection = new Map();
-let accountProfileDraft = { provider: 'codex', label: '', error: '' }, accountProfileFocus = null, accountProfileBusy = false, accountProfileCreated = null, accountProfileResetOnRender = false;
+let accountProfileDraft = { provider: 'codex', label: '', error: '' }, accountProfileBusy = false, accountProfileCreated = null;
 let accountRenameOpener = null, accountRenameBusy = false;
 const terminals = new Map();
 const pendingConsoleOpenings = new Set();
@@ -273,32 +274,49 @@ document.querySelectorAll('.sidebar button').forEach(button => {
 function pageHeading(eyebrow, title, description, action = '') {
   return `<div class="page-heading"><div><div class="eyebrow">${eyebrow}</div><h1>${title}</h1><p>${description}</p></div>${action}</div>`;
 }
-function quotaCard(provider, accountId, accountLabel, detailed = false, hideable = false, accounts = []) {
-  const values = state.limits.filter(x => x.provider === provider && (x.accountId || (provider === 'codex' ? 'codex:default' : provider === 'claude' && x.id === 'claude:account' ? 'claude:default' : x.id)) === accountId);
-  const display = providerName(provider), check = state.usageChecks?.find(item => item.accountId === accountId);
-  const card = entry => {
-    const windows = Array.isArray(entry?.windows) ? entry.windows : [];
-    const stale = entry && (check?.stale === true || !Number.isFinite(entry.observedAt) || entry.observedAt > Date.now() || Date.now() - entry.observedAt > 5 * 60000 || windows.some(w => w.resetsAt && w.resetsAt <= Date.now()) || (check && !['current', 'refreshing'].includes(check.status)));
-    const status = check?.status === 'refreshing' ? 'Checking' : entry ? stale ? 'Cached' : 'Current' : ({ 'sign-in': 'Sign in', 'missing-key': 'Add key', 'not-installed': 'Not installed', unsupported: check?.reason === 'no-source' ? 'No quota source' : 'Unavailable', limited: 'Try later', timeout: 'Timed out', unavailable: 'Unavailable', stale: 'Cached', 'not-isolated': 'Not read for this account yet', 'no-quota': 'Local, no quota' })[check?.status] || 'Not checked';
-    const message = check?.message || (provider === 'opencode' ? 'Add an OpenCode key in Settings to check account limits.' : '') || (provider === 'codex' && state.accountError) || 'Refresh to check account usage.';
-    const { primary, exhausted } = quotaState(provider, windows), remaining = remainingPercent(primary?.usedPercent);
-    const ringLabel = primary?.unlimited ? 'Unlimited' : remaining === null ? 'Unknown' : `${number(remaining)}%`;
-    const ring = `<div class="quota-ring ${remaining === null || primary?.unlimited ? 'unknown' : ''}" style="--remaining:${remaining ?? 0}%" aria-hidden="true"><div><strong>${escape(ringLabel)}</strong>${remaining !== null && !primary?.unlimited ? '<span>left</span>' : ''}<small>${escape(primary ? primary.label || windowLabel(primary.minutes) : 'No reading')}</small></div></div>`;
-    return `<article class="quota-card ${detailed ? 'large' : ''} ${stale ? 'quota-stale' : ''} ${exhausted ? 'quota-exhausted' : ''}" data-usage-provider="${escape(provider)}" data-usage-account-id="${escape(accountId)}" aria-label="${escape(display)}${exhausted ? ' allowance exhausted' : ''}" style="--provider-accent:${accountIdentity(provider).color}">
-      <div class="quota-identity"><div class="quota-heading">${accountMark(provider)}<div><strong>${escape(display)}</strong>${status === 'Current' ? '' : `<span class="connection" role="status">${status}</span>`}</div></div><div class="quota-account-choice">${accounts.length > 1 ? `<select data-usage-account="${escape(provider)}" aria-label="${escape(display)} account">${accounts.map(account => `<option value="${escape(account.id)}" ${account.id === accountId ? 'selected' : ''}>${escape(account.label)}</option>`).join('')}</select>` : accountLabel && accountLabel !== display && !/^Default\s/i.test(accountLabel) ? `<span>${escape(accountLabel)}</span>` : ''}${entry?.plan ? `<span class="plan">${escape(entry.plan)}</span>` : ''}</div></div>
-      <div class="quota-readings">${ring}<div class="quota-windows">${windows.length ? windows.map(w => {
-        const left = remainingPercent(w.usedPercent), known = left !== null;
-        const label = w.unlimited ? 'Unlimited' : known ? `${number(left)}% left` : 'Unknown', name = w.label || windowLabel(w.minutes);
-        return `<div class="quota-window ${left === 0 && !w.unlimited ? 'quota-window-empty' : ''}"><div><span>${escape(name)}</span><strong>${escape(label)}</strong></div>${w.unlimited ? '' : `<div class="meter ${known ? left <= 10 ? 'warning' : '' : 'unknown'}" role="progressbar" aria-label="${escape(display)} ${escape(name)} remaining" ${known ? `aria-valuenow="${left}"` : ''} aria-valuetext="${escape(label)}" aria-valuemin="0" aria-valuemax="100"><span style="width:${left ?? 0}%"></span></div>`}<span class="reset">${Number.isFinite(w.used) && Number.isFinite(w.total) ? escape(`${w.used} of ${w.total} ${w.unit || 'credits'} used`) + ' · ' : ''}${w.resetLabel ? escape(w.resetLabel) : w.unlimited && !w.resetsAt ? '' : resetTime(w.resetsAt)}</span></div>`;
-      }).join('') : `<div class="quota-unavailable"><p>${escape(message)}</p></div>`}
-      ${entry && ['codex', 'claude'].includes(provider) && !windows.some(w => w.minutes === 300) ? '<div class="missing-window">5-hour limit not reported</div>' : ''}
-      ${entry && ['codex', 'claude'].includes(provider) && !windows.some(w => w.minutes === 10080) ? '<div class="missing-window">Weekly limit not reported</div>' : ''}</div></div>
-      <div class="quota-row-actions"><button class="secondary" type="button" data-page="agent-settings" aria-label="Manage ${escape(display)} accounts" title="Manage accounts">${icon('settings')}</button>${hideable ? `<button class="subtle usage-hide" data-usage-hide="${escape(accountId)}" aria-label="Hide ${escape(accountLabel)} from Usage">Hide</button>` : ''}</div>
-      ${stale || (windows.length && check?.message) ? `<div class="quota-foot">${stale ? `<span>Cached ${age(entry.observedAt)}</span>` : ''}${windows.length && check?.message ? `<span role="status">${escape(check.message)}</span>` : ''}</div>` : ''}
-      ${provider === 'opencode' ? `<p class="section-note quota-local-usage">Used on this PC (last 7 days): ${check?.localSpending?.week ? `$${check.localSpending.week.cost.toFixed(2)} · ${number(check.localSpending.week.input)} input, ${number(check.localSpending.week.output)} output, ${number(check.localSpending.week.cacheRead)} cache read tokens` : 'Unavailable'}</p>` : ''}
-    </article>`;
-  };
-  return values.length ? values.map(card).join('') : card(null);
+// One Usage row per account. Status, staleness and readings come from the
+// server's usageChecks[]; nothing here decides whether a reading is fresh.
+const USAGE_STATUS = {
+  refreshing: 'Checking', stale: 'Stale', 'sign-in': 'Sign in needed', 'missing-key': 'Add key', 'not-installed': 'Not installed',
+  unsupported: 'Unsupported', limited: 'Try later', timeout: 'Timed out', unavailable: 'Unavailable',
+  'not-isolated': 'Not isolated', 'no-quota': 'No quota'
+};
+const STALE_WHY = { 'check-failed': 'The last check failed.', 'no-observation': 'No reading time.', 'reset-passed': 'A reset time has passed.', old: 'Older than five minutes.' };
+function usageStatusLabel(check) {
+  if (!check) return 'Not checked';
+  if (check.status === 'current') return '';
+  if (check.status === 'unsupported' && check.reason === 'no-source') return 'No quota source';
+  return USAGE_STATUS[check.status] || 'Not checked';
+}
+function readAge(at) {
+  const minutes = Math.max(0, Math.floor((Date.now() - at) / 60000));
+  return minutes < 1 ? 'just now' : minutes < 60 ? `${minutes} min ago` : minutes < 1440 ? `${Math.floor(minutes / 60)} h ago` : `${Math.floor(minutes / 1440)} d ago`;
+}
+function usageWindowRow(w, display) {
+  const left = w.unlimited ? null : remainingPercent(w.usedPercent), known = left !== null;
+  const label = w.unlimited ? 'Unlimited' : known ? `${number(left)}% left` : 'Unknown', name = w.label || windowLabel(w.minutes);
+  const detail = [Number.isFinite(w.used) && Number.isFinite(w.total) ? `${w.used} of ${w.total} ${w.unit || 'credits'} used` : '', w.resetLabel || (w.unlimited && !w.resetsAt ? '' : resetTime(w.resetsAt))].filter(Boolean).join(', ');
+  return `<div class="usage-window ${known && left === 0 ? 'usage-window-empty' : ''}"><div class="usage-window-head"><span>${escape(name)}</span><strong>${escape(label)}</strong></div>${w.unlimited ? '' : `<div class="meter ${known ? left <= 10 ? 'warning' : '' : 'unknown'}" role="progressbar" aria-label="${escape(display)} ${escape(name)} remaining" ${known ? `aria-valuenow="${left}"` : ''} aria-valuetext="${escape(label)}" aria-valuemin="0" aria-valuemax="100"><span style="width:${left ?? 0}%"></span></div>`}<span class="reset">${escape(detail)}</span></div>`;
+}
+function usageRow(account, check, fallback) {
+  const provider = account.provider, display = providerName(provider);
+  const readings = Array.isArray(check?.lastReadings) && check.lastReadings.length ? check.lastReadings : fallback;
+  const windows = readings.flatMap(reading => Array.isArray(reading.windows) ? reading.windows : []);
+  windows.sort((a, b) => (remainingPercent(a.usedPercent) ?? 101) - (remainingPercent(b.usedPercent) ?? 101));
+  const plan = readings.find(reading => reading.plan)?.plan;
+  const stale = check?.stale === true, status = usageStatusLabel(check);
+  const message = check?.message || (provider === 'opencode' ? 'Add an OpenCode key in Settings to check account limits.' : 'Refresh to check account usage.');
+  const shown = windows.slice(0, 3), more = windows.slice(3);
+  const observedAt = check?.observedAt || readings[0]?.observedAt;
+  const reason = stale ? [STALE_WHY[check.staleReason], check.failure ? `${USAGE_STATUS[check.failure] || check.failure}.` : ''].filter(Boolean).join(' ') : '';
+  const name = account.label && account.label !== display && !/^Default\s/i.test(account.label) ? account.label : display;
+  return `<article class="usage-row ${stale ? 'usage-row-stale' : ''}" data-usage-provider="${escape(provider)}" data-usage-account-id="${escape(account.id)}" aria-label="${escape(name)}" style="--provider-accent:${accountIdentity(provider).color}">
+    <div class="usage-row-id">${accountMark(provider)}<div><strong>${escape(name)}</strong>${plan ? `<span class="plan">${escape(plan)}</span>` : ''}</div>${status ? `<span class="usage-status" data-status="${escape(check?.status || 'unchecked')}" role="status">${escape(status)}</span>` : ''}</div>
+    <div class="usage-row-windows">${shown.length ? shown.map(w => usageWindowRow(w, display)).join('') : `<p class="usage-row-note">${escape(message)}</p>`}${more.length ? `<details class="usage-more" data-key="more-${escape(account.id)}"><summary>More limits (${more.length})</summary>${more.map(w => usageWindowRow(w, display)).join('')}</details>` : ''}</div>
+    <div class="usage-row-foot">${stale && observedAt ? `<span class="usage-age">Last read ${escape(readAge(observedAt))}${reason ? '. ' + escape(reason) : ''}</span>` : ''}${windows.length && check?.message && !stale ? `<span role="status">${escape(check.message)}</span>` : ''}
+      <span class="usage-row-actions"><button class="secondary" type="button" data-action="refresh" data-usage-refresh="${escape(account.id)}" aria-label="Refresh ${escape(name)}" ${check?.status === 'refreshing' ? 'disabled aria-busy="true"' : ''}>${icon('refresh')}Refresh</button><button class="subtle usage-hide" type="button" data-usage-hide="${escape(account.id)}" aria-label="Hide ${escape(name)} from Usage">Hide</button></span></div>
+    ${provider === 'opencode' ? `<p class="section-note quota-local-usage">Used on this PC (last 7 days): ${check?.localSpending?.week ? `$${check.localSpending.week.cost.toFixed(2)}, ${number(check.localSpending.week.input)} input, ${number(check.localSpending.week.output)} output, ${number(check.localSpending.week.cacheRead)} cache read tokens` : 'Unavailable'}</p>` : ''}
+  </article>`;
 }
 
 function accountSwitchMenu(session, hostKey) {
@@ -533,12 +551,13 @@ function renderUsage() {
   for (const id of new Set([...hidden, ...shown])) if (![...subscriptions, ...limitOnly].some(account => account.id === id)) { const provider = id.split(':')[0]; subscriptions.push({ id, provider, label: providerName(provider) }); }
   const listed = [...subscriptions, ...limitOnly], visible = listed.filter(account => !hidden.has(account.id) && (account.hasUsage || account.inUse || shown.has(account.id)));
   const groups = new Map(); for (const account of visible) { if (!groups.has(account.provider)) groups.set(account.provider, []); groups.get(account.provider).push(account); }
-  const accountCards = [...groups.entries()].map(([provider, accounts]) => { const account = accounts.find(item => item.id === usageAccountSelection.get(provider)) || accounts[0]; return quotaCard(provider, account.id, account.label, true, true, accounts); }).join('') || '<p class="section-note usage-empty">No subscriptions yet. Add one to see its limits.</p>';
+  const legacyReadings = id => state.limits.filter(x => (x.accountId || (x.provider === 'codex' ? 'codex:default' : x.provider === 'claude' && x.id === 'claude:account' ? 'claude:default' : x.id)) === id);
+  const accountCards = [...groups.entries()].map(([provider, accounts]) => `<section class="usage-provider" data-key="usage-provider-${escape(provider)}" aria-labelledby="usage-provider-${escape(provider)}"><h2 id="usage-provider-${escape(provider)}" class="usage-provider-head">${accountMark(provider)}<span>${escape(providerName(provider))}</span><small>${accounts.length === 1 ? '1 account' : `${accounts.length} accounts`}</small></h2><div class="usage-rows">${accounts.map(account => usageRow(account, state.usageChecks?.find(item => item.accountId === account.id), legacyReadings(account.id))).join('')}</div></section>`).join('') || `<p class="section-note usage-empty">${hidden.size ? 'Every account is hidden. Use Hidden accounts to show one.' : 'No accounts to show. Add a subscription to see its limits.'}</p>`;
   const addable = listed.filter(account => !visible.includes(account));
   const addGroup = (title, items, restoring = false) => items.length ? `<p>${title}</p><div class="usage-add-list">${items.map(account => `<button type="button" class="secondary" data-usage-show="${escape(account.id)}" ${restoring ? 'data-usage-hidden-item' : ''}>${accountMark(account.provider)}<span>${restoring ? 'Show ' : ''}${escape(account.label)}</span></button>`).join('')}</div>` : '';
   const addPanel = usageAddOpen ? `<div class="usage-add" id="usage-add-panel" role="group" aria-label="Add a subscription">${addGroup('Hidden accounts', addable.filter(account => hidden.has(account.id)), true)}${addGroup('Installed agents', addable.filter(account => !hidden.has(account.id)))}<p>Another account</p><div class="usage-add-list">${profileProviders().filter(provider => provider.namedProfiles).map(provider => `<button type="button" class="secondary" data-usage-new-account="${escape(provider.id)}">${accountMark(provider.id)}<span>${escape(provider.name)} account</span></button>`).join('')}</div></div>` : '';
   return pageHeading('', 'Usage', 'Account-wide limits, checked every two minutes.', `<div class="usage-heading-actions"><button class="secondary" data-action="refresh" ${state.refreshing ? 'disabled aria-busy="true"' : ''}>${icon('refresh')}${state.refreshing ? 'Checking accounts…' : 'Refresh'}</button>${hidden.size ? `<button type="button" class="secondary" data-action="usage-hidden" aria-expanded="${usageAddOpen}" aria-controls="usage-add-panel">Hidden accounts (${hidden.size})</button>` : ''}<button type="button" class="primary" data-action="usage-add" aria-expanded="${usageAddOpen}" aria-controls="usage-add-panel">${icon('plus')}Add subscription</button></div>`) +
-    `<section class="surface account-switch-settings usage-subscriptions">${addPanel}<div class="usage-grid">${accountCards}</div></section>${renderUsageAnalytics()}`;
+    `<section class="surface account-switch-settings usage-subscriptions">${addPanel}<div class="usage-groups">${accountCards}</div></section>${renderUsageAnalytics()}`;
 }
 
 function renderTools() { return sharedViews(state, { escape, icon, pageHeading }).tools(); }
@@ -659,30 +678,10 @@ for (const type of ['change', 'blur', 'keydown']) {
 function renderPage() {
   if (!state) return;
   if (openSelect?.isConnected) { renderHeld = true; return; }
-  const routingForm = page === 'agent-settings' ? document.querySelector('#routing-form') : null;
-  const routingFields = routingForm ? [...routingForm.elements].filter(node => node.name).map(node => ({ name: node.name, value: node.value, checked: node.checked })) : [];
-  const routingFocus = routingForm?.contains(document.activeElement) ? document.activeElement.name : null;
-  const usageFocus = page === 'usage' && document.activeElement?.closest('#content') ? { account: document.activeElement.dataset.usageAccount, period: document.activeElement.hasAttribute('data-usage-period'), metric: document.activeElement.dataset.usageMetric } : null;
-  const ledgerOpen = page === 'usage' && document.querySelector('.usage-ledger-details')?.open;
   queueMicrotask(() => vim?.refresh());
   applySidebar();
   projectChats?.sync();
   if ($('#workspace-error')) $('#workspace-error').textContent = state.workspaceError || '';
-  const previousProfileForm = $('#account-profile-form');
-  if (previousProfileForm) {
-    if (accountProfileResetOnRender) accountProfileResetOnRender = false;
-    else {
-      accountProfileDraft = {
-        provider: previousProfileForm.elements.provider.value,
-        label: previousProfileForm.elements.label.value,
-        error: previousProfileForm.querySelector('.form-error').textContent
-      };
-      const active = document.activeElement;
-      accountProfileFocus = previousProfileForm.contains(active)
-        ? { name: active.name || (active.type === 'submit' ? '__submit' : ''), start: active.selectionStart, end: active.selectionEnd }
-        : null;
-    }
-  }
   const consoleView = ['consoles', 'overview'].includes(page);
   if (page === 'vault') page = 'tools';
   const settingsView = isSettingsPage(page), settingsOpening = settingsView && !isSettingsPage(renderedView);
@@ -712,19 +711,10 @@ function renderPage() {
   const renderer = { projects: () => projects.render(), tasks: () => taskLoops.render(), results: () => workbench.render('results'), usage: renderUsage, tools: renderTools, instructions: renderInstructions, settings: renderSettingsCategory }[page] || renderSettingsCategory;
   const content = $('#content');
   const backgroundLayer = content.querySelector(':scope > .page-background-layer');
-  content.innerHTML = (state.storageError ? `<div class="error-banner" role="alert">${escape(state.storageError)}</div>` : '') + (isSettingsPage(page) ? renderSettingsCategory() : renderer());
-  if (page === 'agent-settings') {
-    const form = $('#account-profile-form');
-    if (form) {
-      form.elements.provider.value = accountProfileDraft.provider;
-      form.elements.label.value = accountProfileDraft.label;
-      form.querySelector('.form-error').textContent = accountProfileDraft.error;
-      form.elements[accountProfileFocus?.name === '__submit' ? 2 : accountProfileFocus?.name]?.focus({ preventScroll: true });
-      const label = form.elements.label;
-      if (accountProfileFocus?.name === 'label' && Number.isInteger(accountProfileFocus.start)) label.setSelectionRange(accountProfileFocus.start, accountProfileFocus.end);
-    }
-    accountProfileFocus = null;
-  }
+  const markup = (state.storageError ? `<div class="error-banner" role="alert">${escape(state.storageError)}</div>` : '') + (isSettingsPage(page) ? renderSettingsCategory() : renderer());
+  // The same view is patched in place; a different view is replaced outright.
+  if (changed || !content.firstElementChild || content.dataset.patched !== page) { content.innerHTML = markup; content.dataset.patched = page; }
+  else patchChildren(content, markup);
   // #content owns one sky for its lifetime. Keep its canvas node so mountSky's
   // seeded particles, shooting-star schedule and elapsed phase survive redraws.
   if (backgroundLayer) content.prepend(backgroundLayer);
@@ -740,19 +730,7 @@ function renderPage() {
   lightingChanged();
   if (settingsSwitch && !windowMoving && !reducedMotion.matches) { viewAnimation?.cancel(); viewAnimation = $('.settings-content')?.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 120, easing: 'ease-out' }); }
   if (page === 'tools') { $('.settings-content .page-heading').insertAdjacentHTML('afterend', imageGenerator.render()); imageGenerator.mount(); }
-
   if (page === 'console-settings') launchDefaultsFields();
-  if (page === 'agent-settings') {
-    const form = document.querySelector('#routing-form');
-    for (const field of routingFields) { const node = form?.elements[field.name]; if (node) { node.value = field.value; if (node.type === 'checkbox') node.checked = field.checked; } }
-    if (routingFocus) form?.elements[routingFocus]?.focus({ preventScroll: true });
-  }
-  if (page === 'usage') {
-    if (ledgerOpen) document.querySelector('.usage-ledger-details').open = true;
-    const selector = usageFocus?.account ? `[data-usage-account="${CSS.escape(usageFocus.account)}"]` : usageFocus?.period ? '[data-usage-period]' : usageFocus?.metric ? `[data-usage-metric="${usageFocus.metric}"]` : null;
-    if (selector) document.querySelector(selector)?.focus({ preventScroll: true });
-  }
-
 }
 function hudHtml() {
   const ready = state.sessions.filter(isReady).length;
@@ -793,6 +771,7 @@ function updatePreview() {
     if ($('#hud-preview')) $('#hud-preview').textContent = terminalPreview(selected);
   }, 200);
 }
+const store = createStateClient();
 const dismissedStartupNotices = new Set();
 let startupNoticeMarkup = '';
 function renderStartupNotices() {
@@ -831,6 +810,7 @@ function receive(next) {
     syncExpandedConsole();
   }
   if (selectedId && ![...next.sessions, ...(next.codePanels || [])].some(session => session.id === selectedId && isOpenConsole(session))) selectedId = null;
+  const changedSlices = store.setLegacy(next);
   state = next;
   renderStartupNotices();
   document.body.style.setProperty('--grid-columns', gridSize().columns); document.body.style.setProperty('--grid-rows', gridSize().rows);
@@ -905,7 +885,7 @@ function receive(next) {
     if (section && section.dataset.items !== next) { const template = document.createElement('template'); template.innerHTML = setupRequests(state, escape); template.content.firstElementChild.dataset.items = next; section.replaceWith(template.content.firstElementChild); }
   }
   if (hud && !launchGesture?.active && !$('#console-chooser').open && !document.body.classList.contains('window-dragging')) $('#hud').innerHTML = hudHtml();
-  else if (['overview', 'consoles', 'usage', 'agent-settings'].includes(page)) renderPage();
+  else if (['overview', 'consoles', 'usage', 'agent-settings'].includes(page) && (changedSlices.length || !['usage', 'agent-settings'].includes(page))) renderPage();
   for (const [id, effect] of sessionEffects) {
     const panel = state.mode === 'hud'
       ? [...document.querySelectorAll('.hud-console[data-session]')].find(item => item.dataset.session === id)
@@ -1556,7 +1536,6 @@ document.addEventListener('keydown', event => {
   event.preventDefault(); items[index].focus({ preventScroll: true });
 }, true);
 document.addEventListener('change', event => {
-  if (event.target.dataset.usageAccount) { const provider = event.target.dataset.usageAccount; usageAccountSelection.set(provider, event.target.value); renderPage(); document.querySelector(`[data-usage-account="${CSS.escape(provider)}"]`)?.focus({ preventScroll: true }); }
   if (event.target.matches('[data-usage-period]')) { usagePeriod = Number(event.target.value); renderPage(); document.querySelector('[data-usage-period]')?.focus({ preventScroll: true }); }
 });
 document.addEventListener('click', async event => {
@@ -1777,8 +1756,8 @@ document.addEventListener('submit', async event => {
       }
       await call('accounts.login', { id: accountProfileCreated.id });
       accountProfileCreated = null;
-      accountProfileDraft = { provider: 'codex', label: '', error: '' }; accountProfileFocus = null;
-      accountProfileResetOnRender = page === 'agent-settings' && !!$('#account-profile-form');
+      accountProfileDraft = { provider: 'codex', label: '', error: '' };
+      if (form.isConnected) { form.elements.provider.value = 'codex'; form.elements.label.value = ''; }
       toast('Account added. Sign in from the new console.');
     } else if (form.id === 'account-rename-form') {
       await call('accounts.rename', { id: form.dataset.id, label: data.label });
