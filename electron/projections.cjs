@@ -50,17 +50,22 @@ function phoneProject(project) {
   return { id: project.id, name: project.name || '', color: project.color || null, status: project.status || 'active',
     progress: project.progress ? pick(project.progress, ['done', 'total']) : null, lastActiveAt: project.lastActiveAt ?? project.createdAt ?? null };
 }
-const windowFields = ['key', 'label', 'minutes', 'usedPercent', 'remaining', 'resetsAt', 'resetLabel', 'modelGroup', 'unit'];
+const windowFields = ['key', 'label', 'scope', 'modelGroup', 'minutes', 'usedPercent', 'unlimited', 'used', 'total', 'unit', 'remaining', 'resetsAt', 'resetLabel'];
+const checkFields = ['status', 'checkedAt', 'observedAt', 'message', 'stale', 'staleReason', 'failure', 'reason'];
+// One row per account. Status and staleness come from the server's UsageCheck
+// (electron/usage-reading.cjs); the phone never computes freshness. A null
+// usedPercent is unknown and must never be shown as 0%.
 function phoneUsageAccounts(usage) {
   const accounts = Array.isArray(usage?.usageAccounts) ? usage.usageAccounts : [], checks = Array.isArray(usage?.usageChecks) ? usage.usageChecks : [];
   const limits = Array.isArray(usage?.limits) ? usage.limits : [];
   return toCollection(accounts.map(account => {
     const check = checks.find(item => item.accountId === account.id);
-    const rows = limits.filter(row => (row.accountId || `${row.provider}:default`) === account.id);
+    const readings = Array.isArray(check?.lastReadings) && check.lastReadings.length ? check.lastReadings
+      : limits.filter(row => (row.accountId || `${row.provider}:default`) === account.id);
     return {
       id: account.id, provider: account.provider || '', label: account.label || '', hasUsage: !!account.hasUsage, inUse: !!account.inUse,
-      check: check ? { status: check.status || 'unchecked', observedAt: check.observedAt ?? null, message: text(check.message) || '' } : null,
-      windows: rows.flatMap(row => (row.windows || []).map(window => ({ ...pick(window, windowFields), observedAt: row.observedAt ?? null }))),
+      check: check ? { status: 'unchecked', stale: false, staleReason: null, message: '', observedAt: null, ...pick(check, checkFields) } : null,
+      windows: readings.flatMap(row => (row.windows || []).map(window => ({ usedPercent: null, resetsAt: null, ...pick(window, windowFields), observedAt: row.observedAt ?? null }))),
     };
   }));
 }

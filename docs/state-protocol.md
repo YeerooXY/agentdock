@@ -45,7 +45,7 @@ The desktop sees every slice. The phone sees its own allowlisted slices with the
 | `prompts` | collection | `{id, name, text, projectId, createdAt, updatedAt}` |
 | `projects` | collection | `fixtures/state/dto/phone-project.json` (archived projects omitted) |
 | `tasks` | collection | `fixtures/state/dto/phone-task.json` |
-| `usage` | collection | `fixtures/state/dto/phone-usage-account.json`, one row per account |
+| `usage` | collection | `fixtures/state/dto/phone-usage-account.json`, one row per account; `check` carries the server's status and staleness (`electron/usage-reading.cjs`), a null `usedPercent` is unknown |
 | `results` | value | `{unread, count}` |
 
 A change the phone cannot see never advances a phone revision. Validators take the view: `validateServerMessage(message, 'phone')`.

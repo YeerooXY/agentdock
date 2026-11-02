@@ -146,9 +146,13 @@ const taskIn = { id: 't1', parentId: null, projectId: 'p1', title: 'Fix tests', 
   reviewer: null, error: '', resultId: null, unresolved: ['a'], criteria: 'long private criteria', finalDiff: 'diff --git', log: ['line'] };
 const projectIn = { id: 'p1', name: 'Paddock', color: '#47c', status: 'active', progress: { done: 1, total: 4 }, lastActiveAt: 1762000000000, createdAt: 1761000000000,
   folders: [{ path: 'C:/Users/me/Projects/agent-dock' }], instructions: 'private' };
+const reading = { accountId: 'claude:default', provider: 'claude', accountLabel: null, plan: 'Max', source: 'claude /usage', method: 'cli', observedAt: 1762000000000, precision: 'exact',
+  windows: [{ key: 'five-hour', label: '5 hours', scope: 'account', modelGroup: null, minutes: 300, usedPercent: 42, unlimited: false, resetsAt: 1762003600000, resetLabel: null, raw: { cookie: 'x' } },
+    { key: 'weekly-opus', label: 'Opus weekly', scope: 'model-group', modelGroup: 'opus', minutes: 10080, usedPercent: null, unlimited: false, resetsAt: null, resetLabel: null }] };
 const usageIn = { usageAccounts: [{ id: 'claude:default', provider: 'claude', label: 'Claude', hasUsage: true, inUse: true }],
-  usageChecks: [{ accountId: 'claude:default', status: 'current', observedAt: 1762000000000, message: '' }],
-  limits: [{ provider: 'claude', accountId: 'claude:default', observedAt: 1762000000000, windows: [{ key: 'five-hour', label: '5 hours', minutes: 300, usedPercent: 42, resetsAt: 1762003600000, raw: { cookie: 'x' } }] }] };
+  usageChecks: [{ accountId: 'claude:default', provider: 'claude', status: 'stale', checkedAt: 1762000300000, observedAt: 1762000000000, message: 'Sign in again.',
+    stale: true, staleReason: 'check-failed', failure: 'sign-in', lastReading: reading, lastReadings: [reading] }],
+  limits: [] };
 write('dto/phone-session.json', { input: sessionIn, output: phoneSession(sessionIn) });
 write('dto/phone-task.json', { input: taskIn, output: phoneTask(taskIn) });
 write('dto/phone-project.json', { input: projectIn, output: phoneProject(projectIn) });
