@@ -25,6 +25,7 @@ import 'code_page.dart';
 import 'agent_dialog_panel.dart';
 import 'live_agent_controls.dart';
 import 'agent_selection.dart';
+import 'build_counts.dart';
 import 'terminal_keys.dart';
 import 'message_queue_sheet.dart';
 import 'console_surface.dart';
@@ -46,8 +47,9 @@ class DockApp extends StatelessWidget {
   static final _themes = <String, ThemeData>{};
   @override
   Widget build(BuildContext context) => ListenableBuilder(
-    listenable: client,
+    listenable: client.appearanceSignal,
     builder: (context, _) {
+      BuildCounts.hit('app.theme');
       DockAccent.theme = client.appearance.theme;
       return _app(_themes.putIfAbsent(client.appearance.themeId, _theme));
     },
@@ -107,7 +109,7 @@ class DockApp extends StatelessWidget {
     debugShowCheckedModeBanner: false,
     theme: theme,
     builder: (context, child) => AnimatedBuilder(
-      animation: client,
+      animation: client.appearanceSignal,
       builder: (context, _) {
         final systemScale = MediaQuery.textScalerOf(context).scale(1);
         // Keep Android accessibility scaling, while allowing a small app-level
@@ -121,9 +123,11 @@ class DockApp extends StatelessWidget {
       },
     ),
     home: AnimatedBuilder(
-      animation: client,
-      builder: (_, _) =>
-          DockHome(key: ValueKey(client.activePC), client: client),
+      animation: client.connectionSignal,
+      builder: (_, _) {
+        BuildCounts.hit('app.home');
+        return DockHome(key: ValueKey(client.activePC), client: client);
+      },
     ),
   );
 }
@@ -777,6 +781,7 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
   Widget build(BuildContext context) => AnimatedBuilder(
     animation: c,
     builder: (context, _) {
+      BuildCounts.hit('shell');
       if (c.pairing == null) return PairPage(client: c);
       if (c.offerAlerts && c.connected) {
         c.offerAlerts = false;
@@ -1765,18 +1770,22 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
 
   Widget terminalContents(Map<String, dynamic> session, ConsoleScreen? view) {
     final provider = (session['provider'] as String).toLowerCase();
-    final selection = c.agentSelection(session['id'] as String);
+    final opening = c.claimConsoleOpening(session['id'] as String);
     return Column(
       children: [
         Expanded(
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8),
-            child: ConsoleSurface(
+            child: ListenableBuilder(
+              listenable: c.terminalSignal(session['id'] as String),
+              builder: (context, _) {
+                BuildCounts.hit('terminal');
+                return ConsoleSurface(
               appearance: c.appearance,
               openingKey: '${c.activePC}:${session['id']}',
               connected: c.connected,
               connectionGeneration: c.generation,
-              playOpening: c.claimConsoleOpening(session['id'] as String),
+              playOpening: opening,
               sessionState: session['state'] as String?,
               stateEffectSequence: c.consoleStateEffectSequence(
                 session['id'] as String,
@@ -1811,6 +1820,8 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
                         theme: c.appearance.theme.terminal,
                       ),
                     ),
+                );
+              },
             ),
           ),
         ),
@@ -1833,7 +1844,13 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
             child: Row(
               children: [
                 Expanded(
-                  child: Wrap(
+                  child: ListenableBuilder(
+                    listenable: c.terminalSignal(session['id'] as String),
+                    builder: (context, _) {
+                      final selection = c.agentSelection(
+                        session['id'] as String,
+                      );
+                      return Wrap(
                     children: [
                       TextButton.icon(
                         onPressed: c.connected && !sending
@@ -1863,6 +1880,8 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
                           ),
                         ),
                     ],
+                  );
+                    },
                   ),
                 ),
                 if ((c.state['capabilities'] as List? ?? []).contains(

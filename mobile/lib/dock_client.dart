@@ -37,7 +37,72 @@ class _FrameBytes implements Sink<List<int>> {
   void close() {}
 }
 
+/// A notifier that anyone can fire; used for the narrow DockClient channels.
+class DockSignal extends ChangeNotifier {
+  int count = 0;
+  void fire() {
+    count++;
+    notifyListeners();
+  }
+}
+
 class DockClient extends ChangeNotifier {
+  /// Fires when the paired PC, link state, status text or generation changes.
+  final connectionSignal = DockSignal();
+
+  /// Fires when theme, lighting or text scale changes.
+  final appearanceSignal = DockSignal();
+
+  /// Fires when the selected console changes.
+  final selectionSignal = DockSignal();
+  final Map<String, DockSignal> _terminalSignals = {};
+  Object? _connectionSeen, _appearanceSeen;
+  String? _selectionSeen;
+
+  /// Notifier for one terminal, keyed by PC, session and launch. Output fires
+  /// only this signal, not the client.
+  DockSignal terminalSignal(String id) =>
+      _terminalSignals.putIfAbsent(terminalKey(id), DockSignal.new);
+
+  String terminalKey(String id) {
+    final session = sessions.where((s) => s['id'] == id).firstOrNull;
+    return '$activePC:$id:${session?['launchId'] ?? ''}';
+  }
+
+  Object get _connectionStamp =>
+      Object.hash(activePC, connected, connecting, status, generation);
+  Object get _appearanceStamp => Object.hash(
+    appearance.themeId,
+    appearance.starLevel,
+    appearance.lighting,
+    appearance.lightingSpeed,
+    appearance.ambientMotion,
+    appearance.openingAnimations,
+    appearance.textures,
+    textScale,
+  );
+
+  /// Every general change goes through here. The narrow signals fire only when
+  /// their own values changed.
+  @override
+  void notifyListeners() {
+    super.notifyListeners();
+    if (_disposed) return;
+    final connection = _connectionStamp, look = _appearanceStamp;
+    if (_connectionSeen != connection) {
+      _connectionSeen = connection;
+      connectionSignal.fire();
+    }
+    if (_appearanceSeen != look) {
+      _appearanceSeen = look;
+      appearanceSignal.fire();
+    }
+    if (_selectionSeen != selected) {
+      _selectionSeen = selected;
+      selectionSignal.fire();
+    }
+  }
+
   final Map<String, AgentSelection> _agentSelections = {};
   final Map<String, String> _selectionConfirmations = {};
   String _selectionKey(String id) {
@@ -774,6 +839,7 @@ class DockClient extends ChangeNotifier {
   }
 
   void handleMessage(dynamic raw) {
+    var terminalStructural = false;
     try {
       received += raw is String
           ? utf8.encode(raw).length
@@ -910,6 +976,7 @@ class DockClient extends ChangeNotifier {
         if (!sessions.any((s) => s['id'] == id)) return;
         // xterm.dart does not implement RIS (ESC c). A checkpoint needs a
         // fresh parser and buffers, including modes and partial escape input.
+        terminalStructural = data['reset'] == true || !screens.containsKey(id);
         final view = data['reset'] == true
             ? (screens[id] = makeScreen(id))
             : screens.putIfAbsent(id, () => makeScreen(id));
@@ -959,7 +1026,12 @@ class DockClient extends ChangeNotifier {
           view.receiving = false;
         }
       }
-      notifyListeners();
+      if (data['type'] == 'terminal') {
+        terminalSignal(data['id'] as String).fire();
+        if (terminalStructural) notifyListeners();
+      } else {
+        notifyListeners();
+      }
     } catch (_) {
       status = 'The PC sent an unreadable update. Reconnecting…';
       socket?.close();
@@ -1315,6 +1387,12 @@ class DockClient extends ChangeNotifier {
     transport?.close(force: true);
     drafts.removeListener(notifyListeners);
     drafts.dispose();
+    connectionSignal.dispose();
+    appearanceSignal.dispose();
+    selectionSignal.dispose();
+    for (final signal in _terminalSignals.values) {
+      signal.dispose();
+    }
     super.dispose();
   }
 }
