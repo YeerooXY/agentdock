@@ -68,6 +68,9 @@ const { modelsFromReading } = require('./routing-models.cjs');
 const { readPiUsage } = require('./pi-usage.cjs');
 const { clineRoute } = require('./native-account-route.cjs');
 const { CrashReport, diagnose, redact, guardStartup } = require('./crash-report.cjs');
+const { SLICES } = require('./state-protocol.cjs');
+const { StateStore, jsonEqual } = require('./state-store.cjs');
+const { desktopProjection, phoneProjection, slicesFromLegacy, legacySnapshot, ephemeralFromLegacy } = require('./projections.cjs');
 const { courseFromArgs, profileFromArgs, openCourseConsole } = require('./course-launch.cjs');
 app.setName('Paddock');
 const appModelId = APP_ID;
@@ -160,7 +163,41 @@ const entryFile = path.join(__dirname, '..', 'dist', 'index.html');
 const entryUrl = pathToFileURL(entryFile).href;
 const projectsFolder = path.join(os.homedir(), 'Projects');
 const defaultFolder = fs.existsSync(projectsFolder) && fs.statSync(projectsFolder).isDirectory() ? projectsFolder : os.homedir();
+// State store (protocol 2). Until each service writes its own slice, main reads
+// the services and writes every slice through that slice's single writer handle;
+// the desktop snapshot is then rebuilt from the store. See docs/state-protocol.md.
+const stateStore = new StateStore({ policy: testMode ? 'throw' : 'strip',
+  onSecret: (slice, paths) => crash.log('WARN', `State slice ${slice} dropped private fields: ${paths.slice(0, 5).join(', ')}`) });
+const stateWriters = Object.fromEntries(Object.entries(SLICES).filter(([slice]) => slice !== 'alerts').map(([slice, { writer }]) => [slice, stateStore.claim(slice, writer)]));
+const desktopState = desktopProjection(stateStore), phoneState = phoneProjection(stateStore);
+const stateFailures = new Set();
+function stateFailure(slice, error) {
+  const message = `State slice ${slice}: ${error?.message || error}`;
+  if (testMode) throw new Error(message);
+  if (!stateFailures.has(message)) { stateFailures.add(message); crash.log('ERROR', message); }
+}
+function syncState() {
+  const raw = serviceSnapshot();
+  const values = slicesFromLegacy(raw, stateFailure);
+  stateStore.transaction(() => {
+    for (const [slice, value] of Object.entries(values)) {
+      try { stateWriters[slice].set(value); } catch (error) { stateFailure(slice, error); }
+    }
+  });
+  stateStore.commit();
+  return raw;
+}
 function snapshot() {
+  const raw = syncState();
+  const built = legacySnapshot(desktopState.state(), ephemeralFromLegacy(raw));
+  // Parity check for the legacy adapter: tests fail if the store changes what the renderer sees.
+  if (testMode && !jsonEqual(built, raw)) {
+    const fields = Object.keys(raw).filter(key => !jsonEqual(built[key], raw[key]));
+    throw new Error(`Legacy snapshot differs from the services: ${fields.join(', ')}`);
+  }
+  return built;
+}
+function serviceSnapshot() {
   return { platform: process.platform, mode, transitioning, trayHidden, sessions: sessions?.list() || [], codePanels: sessions?.codePanels() || [], queues: messageQueue?.snapshot() || {}, prompts: prompts?.list() || [], codeRevision: codePanel?.revision || 0, limits, accounts: accounts?.allChoices() || [], accountProviders: accounts?.providers() || [], recent, accountError, refreshing, lastRefresh, agents: (cliSetup?.snapshot() || []).map(agent => agent.id === 'opencode' && !openCodeAvailable ? { ...agent, installed: false } : agent), agentSetupBusy: !!cliSetup?.running, skills: skillPacks?.snapshot() || { packs: [], busy: false },
     usageAccounts: usageAccounts(), usageChecks: subscriptionUsage?.snapshot() || [], delegations: workbench?.delegation?.snapshot() || [], tasks: tasks?.snapshot() || [],
     sshHosts: ssh?.list() || [], capabilities, projects: projects?.list() || [], projectProposals: projects?.proposals || [], messages: [...(messageUsage?.items || []), ...apiMessages(ledger || [])].sort((a,b) => b.at - a.at).slice(0, 200), mobile: mobile?.snapshot(), workbench: workbench?.snapshot(), vault: { available: vault?.available() || false, entries: vault?.list() || [] },
