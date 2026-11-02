@@ -69,6 +69,7 @@ const { CrashReport, diagnose, redact, guardStartup } = require('./crash-report.
 const { SLICES, toCollection } = require('./state-protocol.cjs');
 const { StateStore, jsonEqual } = require('./state-store.cjs');
 const { desktopProjection, phoneProjection, slicesFromLegacy, legacySnapshot, ephemeralFromLegacy } = require('./projections.cjs');
+const { ProjectionHistory, StateConnection } = require('./state-sync.cjs');
 const { courseFromArgs, profileFromArgs, openCourseConsole } = require('./course-launch.cjs');
 app.setName('Paddock');
 const appModelId = APP_ID;
@@ -168,6 +169,19 @@ const stateStore = new StateStore({ policy: testMode ? 'throw' : 'strip',
   onSecret: (slice, paths) => crash.log('WARN', `State slice ${slice} dropped private fields: ${paths.slice(0, 5).join(', ')}`) });
 const stateWriters = Object.fromEntries(Object.entries(SLICES).filter(([slice]) => slice !== 'alerts').map(([slice, { writer }]) => [slice, stateStore.claim(slice, writer)]));
 const desktopState = desktopProjection(stateStore), phoneState = phoneProjection(stateStore);
+// Protocol 2 transports (A4), opt-in: the stateSyncV2 setting, --state-v2 or
+// PADDOCK_STATE_V2=1. Off, the renderer gets dock:state and phones use /v1/events.
+const desktopHistory = new ProjectionHistory(desktopState), phoneHistory = new ProjectionHistory(phoneState);
+const stateV2Flag = process.argv.includes('--state-v2') || process.env.PADDOCK_STATE_V2 === '1';
+const stateV2Enabled = () => stateV2Flag || settings?.stateSyncV2 === true;
+let desktopV2 = null;
+const taskVerifiedAt = new Map();
+function verifyTasks(repo = null) {
+  const key = repo || '*', now = Date.now();
+  if (!tasks || now - (taskVerifiedAt.get(key) || 0) < 30000) return;
+  taskVerifiedAt.set(key, now); void tasks.verifyRepository(repo);
+}
+function endDesktopV2() { desktopV2?.dispose(); desktopV2 = null; }
 const stateFailures = new Set();
 function stateFailure(slice, error) {
   const message = `State slice ${slice}: ${error?.message || error}`;
@@ -212,7 +226,13 @@ async function confirmToolCall({ connection, tool, args }) {
   const { response } = await dialog.showMessageBox(window, { type: 'question', buttons: ['Allow once', 'Deny'], defaultId: 1, cancelId: 1, noLink: true, title: 'Allow tool call?', message: `An agent wants to use ${connection}: ${tool}`, detail: preview.length > 1500 ? preview.slice(0, 1500) + '…' : preview });
   return response === 0;
 }
-function publish() { if (window && !window.isDestroyed()) window.webContents.send('dock:state', snapshot()); }
+// A v2 renderer receives store changes instead of full snapshots; v2 phones
+// read the same store, so it is fed even before the window exists.
+function publish() {
+  if (desktopV2 && !desktopV2.closed) { syncState(); return; }
+  if (window && !window.isDestroyed()) window.webContents.send('dock:state', snapshot());
+  else if ([...(mobile?.clients || [])].some(client => client.v2)) syncState();
+}
 function updatePower() { workPower?.update({ enabled: settings?.keepAwakeWhileWorking === true, sessions: sessions?.list() || [], apiBusy }); }
 function persistSettings(next) { atomicJson(path.join(root, 'settings.json'), next); settings = next; updatePower(); }
 function revealWindow() {
@@ -550,6 +570,15 @@ app.whenReady().then(() => guardStartup(async () => {
   });
   // Snapshots no longer refresh; verification runs on its own timer.
   tasks.startVerification();
+  // Re-verify tasks when a project's folders change and on window focus,
+  // at most every 30 s per repository.
+  let projectFolders = new Set(projects.list().flatMap(project => project.folders.map(folder => folder.path)));
+  projects.on('changed', () => {
+    const next = new Set(projects.list().flatMap(project => project.folders.map(folder => folder.path)));
+    for (const folder of next) if (!projectFolders.has(folder)) verifyTasks(folder);
+    for (const folder of projectFolders) if (!next.has(folder)) verifyTasks(folder);
+    projectFolders = next;
+  });
   projects.on('tracking-error', message => { storageError = message; publish(); });
   hub = new SharedHub(root, vault, { integrations, workbench, skills: () => skillPacks.snapshot().packs, confirm: confirmToolCall, isLaunchCurrent: owner => {
     const item = sessions?.items.get(owner?.sessionId);
@@ -591,7 +620,7 @@ app.whenReady().then(() => guardStartup(async () => {
   messageQueue = new MessageQueue(sessions);
   messageQueue.on('changed', publish); prompts.on('changed', publish);
   messageQueue.on('error', ({ id, message }) => workbench.alerts.send({ key: 'queue:' + id + ':' + Date.now(), title: (sessions.items.get(id)?.name || 'Console') + ': queued message not sent', message, sessionId: id, kind: 'error' }));
-  mobile = new MobileCompanion(root, safeStorage, { codePanel, sessions, concepts: workbench.concepts, redactImageText: value => hub.redact(value), results: workbench.results, alerts: workbench.alerts, queue: messageQueue, prompts, getUsage: usageSnapshot, getUsageTurns: () => [...(messageUsage?.items || []), ...apiMessages(ledger || [])], refreshUsage: refreshLimits, getDefaults: () => ({ ...settings.consoleDefaults, permissions: settings.agentPermissions }), worktrees, endMobileSession: (id, choice, valid) => endMobileSession(id, choice, valid, { sessions, getSettings: () => settings, persistSettings, worktrees }), getModels: modelChoices, toolsStatus: true, getSettings: () => { const shared = hub.snapshot(), keys = vault.list(); return { shared, keys, integrations: integrations.snapshot(shared.connections, keys), setupRequests: workbench.snapshot().setupRequests, redact: value => hub.redact(value) }; }, getKey: id => vault.get(id), networkScript: app.isPackaged ? path.join(process.resourcesPath, 'mobile-network.ps1') : path.join(__dirname, 'mobile-network.ps1'), program: process.execPath, testMode });
+  mobile = new MobileCompanion(root, safeStorage, { codePanel, sessions, concepts: workbench.concepts, redactImageText: value => hub.redact(value), results: workbench.results, alerts: workbench.alerts, queue: messageQueue, prompts, getUsage: usageSnapshot, getUsageTurns: () => [...(messageUsage?.items || []), ...apiMessages(ledger || [])], refreshUsage: refreshLimits, getDefaults: () => ({ ...settings.consoleDefaults, permissions: settings.agentPermissions }), worktrees, endMobileSession: (id, choice, valid) => endMobileSession(id, choice, valid, { sessions, getSettings: () => settings, persistSettings, worktrees }), getModels: modelChoices, toolsStatus: true, getSettings: () => { const shared = hub.snapshot(), keys = vault.list(); return { shared, keys, integrations: integrations.snapshot(shared.connections, keys), setupRequests: workbench.snapshot().setupRequests, redact: value => hub.redact(value) }; }, stateSync: { history: phoneHistory, enabled: stateV2Enabled }, getKey: id => vault.get(id), networkScript: app.isPackaged ? path.join(process.resourcesPath, 'mobile-network.ps1') : path.join(__dirname, 'mobile-network.ps1'), program: process.execPath, testMode });
   mobile.on('changed', publish);
   mobile.on('pairing-requested', () => { if (settings.notifications && !testMode) notifications?.show({ title: 'Approve a phone?', message: 'Compare the codes on your PC and phone before allowing access.', destination: 'phone-pairing' }); });
   if (!testMode) void startupStep('Phone connection', () => mobile.start(), { optional: true }).catch(() => {});
@@ -658,12 +687,14 @@ app.whenReady().then(() => guardStartup(async () => {
   window.webContents.session.setPermissionCheckHandler(() => false);
   window.on('unresponsive', () => { crash.log('WARN', 'Window unresponsive'); ownerConsoles.freeze(); });
   window.on('responsive', () => crash.log('INFO', 'Window responsive'));
-  window.webContents.on('did-start-loading', () => ownerConsoles.freeze());
+  window.webContents.on('did-start-loading', () => { ownerConsoles.freeze(); endDesktopV2(); });
   window.webContents.on('render-process-gone', (_, details) => {
+    endDesktopV2();
     crash.log('WARN', `Renderer gone: reason=${details.reason} exitCode=${details.exitCode}`);
     ownerConsoles.freeze(); if (!quitting) window.loadFile(entryFile);
   });
   window.on('close', event => { if (!quitting) { event.preventDefault(); hideToTray(); } });
+  window.on('focus', () => verifyTasks());
   window.on('focus', () => { if (!safeMode) void startupStep('Screenshot checks', () => screenshots.refresh(), { optional: true }); });
   let readyShown = false, startupComplete = false;
   const finishWindow = async () => {
@@ -712,6 +743,23 @@ app.whenReady().then(() => guardStartup(async () => {
       }
     } catch { /* Ignore activity for a console replaced during renderer delivery. */ }
   });
+  // Protocol 2 over IPC: the renderer sends hello/subscribe/ack/resync/pong and
+  // receives welcome/changes/error on dock:v2. No compression or chunking.
+  ipcMain.handle('dock:v2', (event, message) => {
+    if (event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame || event.senderFrame.url !== entryUrl) throw new Error('Untrusted client.');
+    if (!stateV2Enabled()) throw new Error('State protocol 2 is off.');
+    if (!desktopV2 || desktopV2.closed) {
+      const connection = new StateConnection({ history: desktopHistory, view: 'desktop', transport: 'ipc',
+        write: value => { if (window && !window.isDestroyed()) window.webContents.send('dock:v2', value); },
+        authorized: () => !!window && !window.isDestroyed() && stateV2Enabled(),
+        close: () => { if (desktopV2 === connection) desktopV2 = null; } });
+      desktopV2 = connection;
+    }
+    // Commit current service state first so the welcome batch is fresh.
+    if (message?.type === 'hello') syncState();
+    desktopV2.receive(message);
+    return true;
+  });
   ipcMain.handle('dock:call', async (event, method, payload) => {
     if (event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame || event.senderFrame.url !== entryUrl) throw new Error('Untrusted client.');
     try {
@@ -741,6 +789,10 @@ app.whenReady().then(() => guardStartup(async () => {
       if (typeof method === 'string' && method.startsWith('workbench.')) return { ok: true, value: await workbench.call(method.slice(10), payload) };
       switch (method) {
         case 'state': return { ok: true, value: snapshot() };
+        case 'state.protocol': return { ok: true, value: { protocol: 2, v2: stateV2Enabled(), flag: stateV2Flag } };
+        // Display codes stay out of the store; a v2 client reads them here.
+        // The phone pairing comparison code comes from mobile.status.
+        case 'meshy.auth': { const auth = workbench.concepts.auth || { state: 'unchecked' }; return { ok: true, value: { ...auth } }; }
         case 'restart.normal': {
           if (sessions.list().some(item => item.alive) && !testMode) {
             const { response } = await dialog.showMessageBox(window, { type: 'question', message: 'End open consoles and restart normally?', detail: 'Consoles opened in safe mode are not saved.', buttons: ['Keep running', 'Restart normally'], defaultId: 0, cancelId: 0 });
@@ -750,6 +802,8 @@ app.whenReady().then(() => guardStartup(async () => {
         }
         case 'tasks.candidates': return { ok: true, value: tasks.choices(payload?.implementer, payload || {}) };
         case 'tasks.start': return { ok: true, value: await tasks.start({ ...payload, projectId: projects.forFolder(payload?.repo)?.id || null }) };
+        case 'tasks.acknowledge': return { ok: true, value: tasks.acknowledge(payload?.id) };
+        case 'tasks.dismiss': return { ok: true, value: tasks.dismiss(payload?.id) };
         case 'tasks.approvePlan': return { ok: true, value: await tasks.approvePlan(payload) };
         case 'tasks.resume': return { ok: true, value: await tasks.resume(payload?.id) };
         case 'tasks.stop': {
@@ -1074,6 +1128,7 @@ app.whenReady().then(() => guardStartup(async () => {
             next[key] = [...new Set(ids)];
           }
           if (typeof payload?.suggestProjects === 'boolean') next.suggestProjects = payload.suggestProjects;
+          if (typeof payload?.stateSyncV2 === 'boolean') next.stateSyncV2 = payload.stateSyncV2;
           if (payload?.explorerWidth !== undefined) {
             next.explorerWidth = validateExplorerWidth(payload.explorerWidth);
           }
@@ -1111,7 +1166,10 @@ app.whenReady().then(() => guardStartup(async () => {
             next.agentPermissions = payload.agentPermissions;
           }
           workspace.setEnabled(next.restoreConsoles);
-          persistSettings(next); turns.setEnabled(settings.autoSaveResults === true); if (mode === 'hud') window.setAlwaysOnTop(settings.hudAlwaysOnTop); publish(); break;
+          const v2Was = stateV2Enabled();
+          persistSettings(next);
+          // Turning protocol 2 off returns the renderer to dock:state and phones to v1.
+          if (v2Was && !stateV2Enabled()) { endDesktopV2(); for (const client of mobile.clients) if (client.v2) client.ws.close(1012, 'Reconnect'); } turns.setEnabled(settings.autoSaveResults === true); if (mode === 'hud') window.setAlwaysOnTop(settings.hudAlwaysOnTop); publish(); break;
         }
         case 'rates.save': {
           if (!hub.config.profiles.some(x => x.id === payload?.provider)) throw new Error('Choose an API connection.');

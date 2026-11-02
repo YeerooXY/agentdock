@@ -100,7 +100,7 @@ class Workbench {
         const tasks = this.getTasks?.();
         if (!tasks) throw new Error('Tasks are unavailable.');
         if (owner) await this.turns?.begin(owner);
-        const job = await tasks.start({ ...args, repo: args.repo ?? session?.cwd ?? context.project ?? this.getProject(), ...(session?.projectId ? { projectId: session.projectId } : {}) });
+        const job = await tasks.start({ ...args, repo: args.repo ?? session?.cwd ?? context.project ?? this.getProject(), ...(session?.projectId ? { projectId: session.projectId } : {}), originConsoleId: session?.id || null });
         const turn = this.turns?.active.get(owner);
         if (turn) { (turn.taskIds ||= []).push(job.id); this.completion.invalidate(owner); }
         return { id: job.id };

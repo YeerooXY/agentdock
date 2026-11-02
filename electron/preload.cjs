@@ -9,6 +9,28 @@ ipcRenderer.on('dock:state', (_, state) => {
   ownerSessions = new Map([...(state.sessions || []), ...(state.codePanels || [])].map(item => [item.id, item]));
   for (const id of activity.keys()) if (!ownerSessions.has(id)) activity.delete(id);
 });
+// Protocol 2: the renderer gets store changes instead of dock:state. Track the
+// sessions and panels slices here so owner activity keeps its identities.
+const v2 = { epoch: null, sessions: new Map(), panels: new Map() };
+ipcRenderer.on('dock:v2', (_, message) => {
+  if (message?.type === 'welcome') {
+    if (message.epoch !== v2.epoch) { v2.epoch = message.epoch; v2.sessions.clear(); v2.panels.clear(); }
+    return;
+  }
+  if (message?.type !== 'changes' || message.epoch !== v2.epoch) return;
+  let touched = false;
+  for (const change of message.changes || []) {
+    const map = v2[change.slice];
+    if (!(map instanceof Map)) continue;
+    touched = true;
+    if (change.kind === 'reset') { map.clear(); for (const id of change.value?.order || []) map.set(id, change.value.byId[id]); continue; }
+    for (const id of change.remove || []) map.delete(id);
+    for (const [id, item] of Object.entries(change.upsert || {})) map.set(id, item);
+  }
+  if (!touched) return;
+  ownerSessions = new Map([...v2.sessions, ...v2.panels]);
+  for (const id of activity.keys()) if (!ownerSessions.has(id)) activity.delete(id);
+});
 function ownerIdentity(id) {
   const item = ownerSessions.get(id);
   return item && { id, consoleKey: item.consoleKey, launchId: item.launchId || item.id };
@@ -63,5 +85,12 @@ contextBridge.exposeInMainWorld('dock', {
   onState: callback => { const handler = (_, value) => callback(value); ipcRenderer.on('dock:state', handler); return () => ipcRenderer.removeListener('dock:state', handler); },
   onOutput: callback => { const handler = (_, value) => callback(value); ipcRenderer.on('dock:output', handler); return () => ipcRenderer.removeListener('dock:output', handler); },
   onSelect: callback => { const handler = (_, value) => callback(value); ipcRenderer.on('dock:select', handler); return () => ipcRenderer.removeListener('dock:select', handler); },
+  // Protocol 2 (opt-in; see docs/state-protocol.md). send() takes hello,
+  // subscribe, ack, resync or pong; onMessage() receives welcome, changes,
+  // ping and error. While a v2 subscription is open, dock:state stops.
+  state: {
+    send: message => ipcRenderer.invoke('dock:v2', message),
+    onMessage: callback => { const handler = (_, value) => callback(value); ipcRenderer.on('dock:v2', handler); return () => ipcRenderer.removeListener('dock:v2', handler); },
+  },
   onNotice: callback => { const handler = (_, value) => callback(value); ipcRenderer.on('dock:notice', handler); return () => ipcRenderer.removeListener('dock:notice', handler); }
 });

@@ -19,6 +19,7 @@ const mobileProjects = require('./mobile-projects.cjs');
 const { MobilePreview } = require('./mobile-preview.cjs');
 const { consoleCapabilities } = require('./worker-placement.cjs');
 const { imageJobs, resumableImageJob } = require('./mobile-images.cjs');
+const { StateConnection } = require('./state-sync.cjs');
 const token = () => crypto.randomBytes(32).toString('base64url');
 const digest = text => crypto.createHash('sha256').update(text).digest('hex');
 const match = (value, stored) => {
@@ -55,12 +56,18 @@ const MAX_MISSED_PONGS = 8;
 const WORKER_CONSOLE_READS = new Set(['console.files']);
 const WORKER_ACTIONS = new Set(['worker.submit', 'worker.stop']);
 const GLOBAL_CONSOLE_ACTIONS = new Set(['console.create', 'console.agents', 'console.worktree.root']);
+// Protocol 2 messages on /v2/events; commands arrive as {type: 'request'}.
+const STATE_MESSAGES = new Set(['hello', 'subscribe', 'ack', 'resync', 'pong']);
+// Phone fields that are not slices yet. v2 phones get them in `extras` frames.
+const EXTRA_FIELDS = ['connection', 'previews', 'projects', 'imageJobs', 'imageJobsRunning', 'capabilities', 'alerts', 'unreadResults', 'resultVersion'];
 class MobileCompanion extends EventEmitter {
-  constructor(root, safeStorage, { sessions, results, alerts, queue, prompts, getUsage, getUsageTurns, refreshUsage, getDefaults, getModels, getSettings, toolsStatus = false, getKey, codePanel, networkScript, program, network, worktrees, endMobileSession, concepts, redactImageText, testMode = false, isTailnet = isTailscale } = {}) {
+  constructor(root, safeStorage, { sessions, results, alerts, queue, prompts, getUsage, getUsageTurns, refreshUsage, getDefaults, getModels, getSettings, toolsStatus = false, getKey, codePanel, networkScript, program, network, worktrees, endMobileSession, concepts, redactImageText, testMode = false, isTailnet = isTailscale, stateSync = null } = {}) {
     super(); this.file = path.join(root, 'mobile.json'); this.crypto = safeStorage;
     this.queue = queue; this.prompts = prompts; this.worktrees = worktrees; this.endMobileSession = endMobileSession; this.concepts = concepts; this.redactImageText = redactImageText;
     this.sessions = sessions; this.results = results; this.getUsage = getUsage; this.getDefaults = getDefaults; this.testMode = testMode;
     this.preview = new MobilePreview(sessions);
+    // Opt-in protocol 2: {history, enabled(), options?} (electron/state-sync.cjs).
+    this.stateSync = stateSync;
     this.getModels = getModels;
     this.getUsageTurns = getUsageTurns;
     this.refreshUsage = refreshUsage;
@@ -166,8 +173,11 @@ class MobileCompanion extends EventEmitter {
     const wss = new WebSocketServer({ noServer: true, maxPayload: 70000, perMessageDeflate: false });
     server.on('upgrade', (req, socket, head) => {
       const device = this.authenticate(req);
-      if (!device || req.url !== '/v1/events' || this.clients.size >= 9) { socket.end('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n'); return; }
-      wss.handleUpgrade(req, socket, head, ws => this.attach(ws, device));
+      const v2 = req.url === '/v2/events';
+      if (!device || !(v2 || req.url === '/v1/events') || this.clients.size >= 9) { socket.end('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n'); return; }
+      // Only an authenticated phone learns whether protocol 2 is on; it then falls back to v1.
+      if (v2 && !this.stateV2()) { socket.end('HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n'); return; }
+      wss.handleUpgrade(req, socket, head, ws => this.attach(ws, device, v2));
     });
     server.headersTimeout = 5000; server.requestTimeout = 10000; server.maxConnections = 32;
     try { await new Promise((resolve, reject) => { server.once('error', reject); server.listen(this.config.port, this.config.host, () => { server.off('error', reject); resolve(); }); }); }
@@ -179,6 +189,7 @@ class MobileCompanion extends EventEmitter {
     this.heartbeatTimer = setInterval(() => this.heartbeat(), HEARTBEAT_MS); this.heartbeatTimer.unref?.(); this.emit('changed');
     await this.network.start({ ...this.config });
   }
+  stateV2() { return !!this.stateSync && this.stateSync.enabled?.() !== false; }
   acceptsPeer(req) {
     const address = req.socket.remoteAddress?.replace('::ffff:', '') || '';
     if (req.headers.origin) return false;
@@ -280,12 +291,24 @@ class MobileCompanion extends EventEmitter {
     const localUrl = `https://${this.config.host}:${this.config.port}`;
     const connection = { url: localUrl };
     connection.name = this.name;
-    return { connection, previews: (this.sessions.codePanels?.() || []).filter(p => p.kind === 'web').map(({ id, name, url, state, phoneAllowed }) => ({ id, name, url, state, phoneAllowed: phoneAllowed === true })), projects: (typeof this.sessions.projects?.list === 'function' ? this.sessions.projects.list() || [] : []).filter(x => x.status !== 'archived').map(({ id, name, color }) => ({ id, name, ...(color ? { color } : {}) })), imageJobs: this.concepts ? imageJobs(this.concepts, this.redactImageText) : [], imageJobsRunning: !!this.concepts?.items.some(x => ['submitting', 'waiting', 'downloading'].includes(x.state)), capabilities: [...(this.concepts ? ['image.jobs'] : []), ...(this.toolsStatus ? ['tools.status'] : []), ...(typeof this.getUsageTurns === 'function' ? ['usage.turns'] : []), ...(mobileProjects.available(this.sessions.projects) ? ['projects.read'] : []), 'code.read', 'results.thumbnails', 'results.actions', 'console.agents', ...(this.worktrees && this.endMobileSession ? ['console.worktree'] : []), 'console.files', 'console.close', 'console.projects', 'console.models', ...(typeof this.sessions.switchSettings === 'function' ? ['console.settings'] : []), 'console.ssh', 'console.manage', 'console.switch', 'console.setup', 'alerts.direct', 'console.attachments', ...(this.queue ? ['console.queue'] : []), ...(this.prompts ? ['prompts', 'prompts.edit'] : []), ...(this.sessions.workerBridge ? ['worker.submit', 'worker.stop'] : [])], capacity: (this.sessions.grid?.columns || 3) * (this.sessions.grid?.rows || 3), sessions: this.sessions.list().filter(x => !x.dismissed).map(item => mobileSession(item, this.sessions)), queues: this.queue?.snapshot() || {}, prompts: this.prompts?.list() || [], alerts: this.liveAlerts, unreadResults: this.results.unreadGroups(), resultVersion: digest(this.results.list().map(x => x.id + ':' + x.seenAt + ':' + x.changeCount).join(',')).slice(0, 16) };
+    return { connection, previews: (this.sessions.codePanels?.() || []).filter(p => p.kind === 'web').map(({ id, name, url, state, phoneAllowed }) => ({ id, name, url, state, phoneAllowed: phoneAllowed === true })), projects: (typeof this.sessions.projects?.list === 'function' ? this.sessions.projects.list() || [] : []).filter(x => x.status !== 'archived').map(({ id, name, color }) => ({ id, name, ...(color ? { color } : {}) })), imageJobs: this.concepts ? imageJobs(this.concepts, this.redactImageText) : [], imageJobsRunning: !!this.concepts?.items.some(x => ['submitting', 'waiting', 'downloading'].includes(x.state)), capabilities: [...(this.concepts ? ['image.jobs'] : []), ...(this.toolsStatus ? ['tools.status'] : []), ...(typeof this.getUsageTurns === 'function' ? ['usage.turns'] : []), ...(mobileProjects.available(this.sessions.projects) ? ['projects.read'] : []), 'code.read', 'results.thumbnails', 'results.actions', 'console.agents', ...(this.worktrees && this.endMobileSession ? ['console.worktree'] : []), 'console.files', 'console.close', 'console.projects', 'console.models', ...(typeof this.sessions.switchSettings === 'function' ? ['console.settings'] : []), 'console.ssh', 'console.manage', 'console.switch', 'console.setup', 'alerts.direct', 'console.attachments', ...(this.queue ? ['console.queue'] : []), ...(this.prompts ? ['prompts', 'prompts.edit'] : []), ...(this.sessions.workerBridge ? ['worker.submit', 'worker.stop'] : []), ...(this.stateSync && this.stateSync.enabled?.() !== false ? ['state.v2'] : [])], capacity: (this.sessions.grid?.columns || 3) * (this.sessions.grid?.rows || 3), sessions: this.sessions.list().filter(x => !x.dismissed).map(item => mobileSession(item, this.sessions)), queues: this.queue?.snapshot() || {}, prompts: this.prompts?.list() || [], alerts: this.liveAlerts, unreadResults: this.results.unreadGroups(), resultVersion: digest(this.results.list().map(x => x.id + ':' + x.seenAt + ':' + x.changeCount).join(',')).slice(0, 16) };
   }
   scheduleState() {
     if (!this.server || this.stateTimer) return;
-    this.stateTimer = setTimeout(() => { this.stateTimer = null; const state = this.publicState(); for (const client of this.clients) this.send(client, { type: 'state', state }); }, 150);
+    this.stateTimer = setTimeout(() => {
+      this.stateTimer = null; const state = this.publicState();
+      for (const client of this.clients) client.v2 ? this.sendExtras(client, state) : this.send(client, { type: 'state', state });
+    }, 150);
   }
+  // Slices reach v2 phones through their StateConnection; the remaining
+  // snapshot fields travel in `extras`, sent only when they change.
+  sendExtras(client, state = this.publicState()) {
+    const value = Object.fromEntries(EXTRA_FIELDS.map(key => [key, state[key]]));
+    const text = JSON.stringify(value);
+    if (text === client.extras) return;
+    client.extras = text; client.v2.reply({ type: 'extras', value });
+  }
+  reply(client, value) { return client.v2 ? client.v2.reply(value) : this.send(client, value); }
   send(client, value) {
     if (client.ws.readyState !== WebSocket.OPEN) return false;
     if (client.ws.bufferedAmount > 2 * 1024 * 1024) { client.ws.close(1013, 'Reconnect to catch up'); return false; }
@@ -300,14 +323,23 @@ class MobileCompanion extends EventEmitter {
       if (client.missedPongs >= MAX_MISSED_PONGS) { client.ws.terminate(); continue; }
       client.missedPongs = (client.missedPongs || 0) + 1;
       try { client.ws.ping(); } catch {}
+      client.v2?.ping();
     }
   }
-  attach(ws, device) {
+  attach(ws, device, v2 = false) {
     if (isPublic(ws._socket?.remoteAddress?.replace('::ffff:', '') || '')) { device.lastInternetAt = Date.now(); this.persist(); }
     for (const old of this.clients) if (old.device.id === device.id) old.ws.close(1000, 'Opened on another connection');
     const client = { ws, device, selected: '', sequence: -1, epoch: 0, saver: true, requests: 0, period: Date.now(), inflight: false, seen: new Set(), missedPongs: 0 };
-    ws.on('pong', () => { client.missedPongs = 0; });
-    this.clients.add(client); this.send(client, { type: 'state', state: this.publicState() }); this.emit('changed');
+    ws.on('pong', () => { client.missedPongs = 0; client.v2?.pong(); });
+    if (v2) client.v2 = new StateConnection({ history: this.stateSync.history, view: 'phone', transport: 'ws',
+      write: data => { this.counters.sent += Buffer.byteLength(data); ws.send(data); }, bufferedAmount: () => ws.bufferedAmount,
+      authorized: () => ws.readyState === WebSocket.OPEN && this.clients.has(client) && this.private.devices.includes(client.device),
+      close: (code, reason) => ws.close(code, reason), onPong: () => { client.missedPongs = 0; },
+      // The heartbeat below owns the two-minute grace for backgrounded phones.
+      options: { ...this.stateSync.options, maxMissed: Infinity } });
+    this.clients.add(client);
+    if (v2) this.sendExtras(client); else this.send(client, { type: 'state', state: this.publicState() });
+    this.emit('changed');
     ws.on('message', async (raw, binary) => {
       this.counters.received += raw.length;
       if (Date.now() - client.period >= 1000) { client.period = Date.now(); client.requests = 0; }
@@ -315,13 +347,17 @@ class MobileCompanion extends EventEmitter {
       let request;
       try {
         request = JSON.parse(raw.toString());
+        if (client.v2) {
+          if (STATE_MESSAGES.has(request?.type)) { client.missedPongs = 0; client.v2.receive(request); return; }
+          if (request?.type !== 'request') { client.v2.error('invalid', 'Unknown message type.'); return; }
+        }
         if (typeof request.id !== 'string' || request.id.length > 80 || client.seen.has(request.id)) throw new Error('Duplicate or invalid request.');
         client.seen.add(request.id); if (client.seen.size > 1000) client.seen.delete(client.seen.values().next().value);
         const value = await this.call(client, request.method, request.payload);
-        this.send(client, { type: 'reply', id: request.id, value });
-      } catch (error) { this.send(client, { type: 'reply', id: typeof request?.id === 'string' ? request.id.slice(0, 80) : '', error: error.message || 'The request failed.' }); }
+        this.reply(client, { type: 'reply', id: request.id, value });
+      } catch (error) { this.reply(client, { type: 'reply', id: typeof request?.id === 'string' ? request.id.slice(0, 80) : '', error: error.message || 'The request failed.' }); }
     });
-    ws.on('error', () => {}); ws.on('close', () => { this.clients.delete(client); this.emit('changed'); });
+    ws.on('error', () => {}); ws.on('close', () => { client.v2?.dispose(); this.clients.delete(client); this.emit('changed'); });
   }
   async call(client, method, payload = {}) {
     // Closing a WebSocket is a handshake, not an authorization boundary.
@@ -518,7 +554,7 @@ class MobileCompanion extends EventEmitter {
         if (!resumableImageJob(job)) throw new Error('This image job cannot be resumed.');
         this.concepts.resume(job.id); return true;
       }
-      case 'results.list': return this.results.list().map(({ id, title, kind, status, summary, at, size, image, ext, groupId, sessionId, consoleKey, consoleName, seenAt, project, projectId, changeCount, git, gitEnd }) => ({ id, title, kind, status, summary, at, size, image, ext, groupId, sessionId, consoleKey, consoleName, seenAt, project, projectId, changeCount, git, gitEnd }));
+      case 'results.list': return this.results.list().map(({ id, title, kind, status, summary, at, size, image, ext, groupId, sessionId, consoleKey, consoleName, seenAt, project, projectId, changeCount, git, gitEnd, outcome }) => ({ id, title, kind, status, summary, at, size, image, ext, groupId, sessionId, consoleKey, consoleName, seenAt, project, projectId, changeCount, git, gitEnd, ...(outcome ? { outcome } : {}) }));
       case 'results.preview': {
         if (typeof payload.id !== 'string' || !/^[a-f0-9-]{36}$/.test(payload.id)) throw new Error('Choose a result.');
         if (payload.thumbnail !== undefined && typeof payload.thumbnail !== 'boolean') throw new Error('Invalid thumbnail option.');
@@ -544,10 +580,13 @@ class MobileCompanion extends EventEmitter {
   async flush() {
     for (const client of this.clients) {
       if (!client.selected || client.inflight || Date.now() - (client.lastFlush || 0) < (client.saver ? 250 : 100)) continue;
+      // A congested v2 socket keeps its terminal cursor and catches up later.
+      if (client.v2?.congested()) continue;
       const stream = this.ensureStream(client.selected); if (!stream) continue;
       client.inflight = true; const selected = client.selected;
       try { const chunk = await stream.read(client.sequence, client.epoch); if (selected !== client.selected) continue;
-        if ((chunk.data || chunk.reset) && this.send(client, { type: 'terminal', id: selected, ...chunk })) { client.sequence = chunk.sequence; client.epoch = chunk.epoch; }
+        const frame = { type: 'terminal', id: selected, ...chunk };
+        if ((chunk.data || chunk.reset) && (client.v2 ? await client.v2.terminal(frame) && selected === client.selected : this.send(client, frame))) { client.sequence = chunk.sequence; client.epoch = chunk.epoch; }
       } finally { client.inflight = false; client.lastFlush = Date.now(); }
     }
   }

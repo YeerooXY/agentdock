@@ -178,10 +178,10 @@ test('dock/start_task forwards task arguments, defaults to the caller folder and
   const invoke = async arguments_ => (await fetch(grant.PADDOCK_BRIDGE_URL, { method: 'POST', headers: { Authorization: 'Bearer ' + grant.PADDOCK_BRIDGE_TOKEN }, body: JSON.stringify({ name: 'dock_call', arguments: { tool: tool.name, arguments: arguments_ } }) })).json();
   const reply = await invoke(args);
   assert.equal(reply.isError, undefined); assert.deepEqual(JSON.parse(reply.content[0].text), { id: 'task-1' });
-  assert.deepEqual(calls[0], { ...args, repo: callerFolder });
+  assert.deepEqual(calls[0], { ...args, repo: callerFolder, originConsoleId: 'live' });
   const split = { ...args, repo: project, split: true, planner: { accountId: 'codex:default' }, reviewer: null, workflow: 'worktree' };
-  assert.equal((await invoke(split)).isError, undefined); assert.deepEqual(calls[1], split);
-  await workbench.invoke(tool.name, args); assert.equal(calls[2].repo, project);
+  assert.equal((await invoke(split)).isError, undefined); assert.deepEqual(calls[1], { ...split, originConsoleId: 'live' });
+  await workbench.invoke(tool.name, args); assert.equal(calls[2].repo, project); assert.equal(calls[2].originConsoleId, null);
   for (const invalid of [{ ...args, split: 'yes' }, { ...args, maxRounds: 6 }, { ...args, sessionId: 'someone-else' }, { criteria: 'Missing title' }]) assert.equal((await invoke(invalid)).isError, true);
   assert.equal(calls.length, 3, 'Invalid input never reaches the task loop');
   tasks.start = async () => { throw Error('A task is already running for this repository.'); };
