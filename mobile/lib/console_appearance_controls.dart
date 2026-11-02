@@ -37,7 +37,7 @@ class _ConsoleAppearanceControlsState extends State<ConsoleAppearanceControls> {
 
   @override
   Widget build(BuildContext context) => ListenableBuilder(
-    listenable: widget.client,
+    listenable: widget.client.appearanceSignal,
     builder: (context, _) {
       final a = widget.client.appearance, theme = a.theme;
       final reduced = consoleMotionReduced(context);
