@@ -28,6 +28,9 @@
     "unresolved": [
       "a"
     ],
+    "acknowledgedAt": 1762000100000,
+    "dismissedAt": null,
+    "supersededBy": "t2",
     "criteria": "long private criteria",
     "finalDiff": "diff --git",
     "log": [
@@ -55,6 +58,9 @@
     "reviewer": null,
     "error": "",
     "resultId": null,
-    "unresolved": 1
+    "unresolved": 1,
+    "acknowledgedAt": 1762000100000,
+    "dismissedAt": null,
+    "supersededBy": "t2"
   }
 }

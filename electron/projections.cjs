@@ -44,6 +44,7 @@ function phoneTask(job) {
     round: Array.isArray(job.rounds) ? job.rounds.length : 0, maxRounds: job.maxRounds ?? null,
     implementer: assignment(job.implementer), reviewer: assignment(job.reviewer),
     error: text(job.error) || '', resultId: job.resultId || null, unresolved: Array.isArray(job.unresolved) ? job.unresolved.length : 0,
+    acknowledgedAt: job.acknowledgedAt ?? null, dismissedAt: job.dismissedAt ?? null, supersededBy: job.supersededBy || null,
   };
 }
 function phoneProject(project) {

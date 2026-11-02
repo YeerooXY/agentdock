@@ -1,0 +1,251 @@
+{
+  "limits": {
+    "highWater": 524288,
+    "lowWater": 131072,
+    "chunkBytes": 131072,
+    "maxParts": 512,
+    "maxTotal": 33554432,
+    "pingSeconds": 15,
+    "missedPings": 8
+  },
+  "chunks": [
+    {
+      "name": "complete in order",
+      "chunks": [
+        {
+          "type": "chunk",
+          "subscription": "sub-1",
+          "batch": 1,
+          "part": 1,
+          "parts": 5,
+          "data": "{\"type\":\"changes\",\"epoch\":\"epoch-a\",\"subscription\":\"sub-1\",\"batc"
+        },
+        {
+          "type": "chunk",
+          "subscription": "sub-1",
+          "batch": 1,
+          "part": 2,
+          "parts": 5,
+          "data": "h\":1,\"changes\":[{\"kind\":\"reset\",\"slice\":\"projects\",\"rev\":2,\"valu"
+        },
+        {
+          "type": "chunk",
+          "subscription": "sub-1",
+          "batch": 1,
+          "part": 3,
+          "parts": 5,
+          "data": "e\":{\"byId\":{\"p1\":{\"id\":\"p1\",\"name\":\"Paddock\",\"color\":null,\"statu"
+        },
+        {
+          "type": "chunk",
+          "subscription": "sub-1",
+          "batch": 1,
+          "part": 4,
+          "parts": 5,
+          "data": "s\":\"active\",\"progress\":null,\"lastActiveAt\":null}},\"order\":[\"p1\"]"
+        },
+        {
+          "type": "chunk",
+          "subscription": "sub-1",
+          "batch": 1,
+          "part": 5,
+          "parts": 5,
+          "data": ",\"meta\":{}}}]}"
+        }
+      ],
+      "expect": [
+        "partial",
+        "partial",
+        "partial",
+        "partial",
+        "complete"
+      ],
+      "message": {
+        "type": "changes",
+        "epoch": "epoch-a",
+        "subscription": "sub-1",
+        "batch": 1,
+        "changes": [
+          {
+            "kind": "reset",
+            "slice": "projects",
+            "rev": 2,
+            "value": {
+              "byId": {
+                "p1": {
+                  "id": "p1",
+                  "name": "Paddock",
+                  "color": null,
+                  "status": "active",
+                  "progress": null,
+                  "lastActiveAt": null
+                }
+              },
+              "order": [
+                "p1"
+              ],
+              "meta": {}
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "missing part",
+      "chunks": [
+        {
+          "type": "chunk",
+          "subscription": "sub-1",
+          "batch": 1,
+          "part": 1,
+          "parts": 5,
+          "data": "{\"type\":\"changes\",\"epoch\":\"epoch-a\",\"subscription\":\"sub-1\",\"batc"
+        },
+        {
+          "type": "chunk",
+          "subscription": "sub-1",
+          "batch": 1,
+          "part": 3,
+          "parts": 5,
+          "data": "e\":{\"byId\":{\"p1\":{\"id\":\"p1\",\"name\":\"Paddock\",\"color\":null,\"statu"
+        }
+      ],
+      "expect": [
+        "partial",
+        "reconnect"
+      ]
+    },
+    {
+      "name": "part without its first part",
+      "chunks": [
+        {
+          "type": "chunk",
+          "subscription": "sub-1",
+          "batch": 1,
+          "part": 2,
+          "parts": 5,
+          "data": "h\":1,\"changes\":[{\"kind\":\"reset\",\"slice\":\"projects\",\"rev\":2,\"valu"
+        }
+      ],
+      "expect": [
+        "reconnect"
+      ]
+    },
+    {
+      "name": "a new first part replaces an abandoned batch",
+      "chunks": [
+        {
+          "type": "chunk",
+          "subscription": "sub-1",
+          "batch": 1,
+          "part": 1,
+          "parts": 5,
+          "data": "{\"type\":\"changes\",\"epoch\":\"epoch-a\",\"subscription\":\"sub-1\",\"batc"
+        },
+        {
+          "type": "chunk",
+          "subscription": "sub-1",
+          "batch": 1,
+          "part": 2,
+          "parts": 5,
+          "data": "h\":1,\"changes\":[{\"kind\":\"reset\",\"slice\":\"projects\",\"rev\":2,\"valu"
+        },
+        {
+          "type": "chunk",
+          "subscription": "sub-1",
+          "batch": 1,
+          "part": 1,
+          "parts": 5,
+          "data": "{\"type\":\"changes\",\"epoch\":\"epoch-a\",\"subscription\":\"sub-1\",\"batc"
+        },
+        {
+          "type": "chunk",
+          "subscription": "sub-1",
+          "batch": 1,
+          "part": 2,
+          "parts": 5,
+          "data": "h\":1,\"changes\":[{\"kind\":\"reset\",\"slice\":\"projects\",\"rev\":2,\"valu"
+        },
+        {
+          "type": "chunk",
+          "subscription": "sub-1",
+          "batch": 1,
+          "part": 3,
+          "parts": 5,
+          "data": "e\":{\"byId\":{\"p1\":{\"id\":\"p1\",\"name\":\"Paddock\",\"color\":null,\"statu"
+        },
+        {
+          "type": "chunk",
+          "subscription": "sub-1",
+          "batch": 1,
+          "part": 4,
+          "parts": 5,
+          "data": "s\":\"active\",\"progress\":null,\"lastActiveAt\":null}},\"order\":[\"p1\"]"
+        },
+        {
+          "type": "chunk",
+          "subscription": "sub-1",
+          "batch": 1,
+          "part": 5,
+          "parts": 5,
+          "data": ",\"meta\":{}}}]}"
+        }
+      ],
+      "expect": [
+        "partial",
+        "partial",
+        "partial",
+        "partial",
+        "partial",
+        "partial",
+        "complete"
+      ],
+      "message": {
+        "type": "changes",
+        "epoch": "epoch-a",
+        "subscription": "sub-1",
+        "batch": 1,
+        "changes": [
+          {
+            "kind": "reset",
+            "slice": "projects",
+            "rev": 2,
+            "value": {
+              "byId": {
+                "p1": {
+                  "id": "p1",
+                  "name": "Paddock",
+                  "color": null,
+                  "status": "active",
+                  "progress": null,
+                  "lastActiveAt": null
+                }
+              },
+              "order": [
+                "p1"
+              ],
+              "meta": {}
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "unknown field",
+      "chunks": [
+        {
+          "type": "chunk",
+          "subscription": "sub-1",
+          "batch": 1,
+          "part": 1,
+          "parts": 5,
+          "data": "{\"type\":\"changes\",\"epoch\":\"epoch-a\",\"subscription\":\"sub-1\",\"batc",
+          "extra": true
+        }
+      ],
+      "expect": [
+        "reconnect"
+      ]
+    }
+  ]
+}
