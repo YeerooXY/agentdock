@@ -22,9 +22,13 @@ try {
     getSystemPrompt: () => 'Complete the assigned bounded file task. Follow the supplied project rules. Use only the supplied file tools. Never delegate. Return a concise result and actual verification limits.',
     getSystemPromptSource: () => undefined, getAppendSystemPrompt: () => [], getAppendSystemPromptSources: () => [], extendResources: () => {}, reload: async () => {} };
   const created = await pi.createAgentSession({ cwd: options.workFolder, model, modelRuntime, settingsManager, resourceLoader,
-    thinkingLevel: 'off', tools: options.review ? ['read'] : ['read','write','edit'], excludeTools: ['mcp__*'], sessionManager: pi.SessionManager.inMemory(options.workFolder) });
+    thinkingLevel: options.effort || 'off', tools: options.review ? ['read'] : ['read','write','edit'], excludeTools: ['mcp__*'], sessionManager: pi.SessionManager.inMemory(options.workFolder) });
   session = created.session;
   if (created.modelFallbackMessage) throw Error('The selected route was unavailable; fallback refused.');
+  // Local Strata draft supplied the requested/effective comparison. Only an
+  // explicit choice is enforced; omitted effort preserves the adapter default.
+  emit({ type: 'worker_effort', requested: options.effort || null, effective: session.thinkingLevel, source: 'Pi SDK' });
+  if (options.effort && session.thinkingLevel !== options.effort) throw Error('Selected model does not support the requested thinking level.');
   if (process.argv.includes('--prepare-only')) {
     emit({ type: 'worker_prepared', provider: model.provider, model: model.id, generation: false });
     session.dispose(); session = undefined;

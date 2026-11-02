@@ -9,6 +9,31 @@ const argv = launch => launch.executable.toLowerCase().endsWith('powershell.exe'
 const assistant = (text, usage, extra = {}) => ({ type: 'message_end', message: { role: 'assistant', content: [{ type: 'text', text }], stopReason: 'stop', usage, ...extra } });
 const usage = (input, output, cacheRead = 0, cacheWrite = 0, cost = 0) => ({ input, output, cacheRead, cacheWrite, totalTokens: input + output + cacheRead + cacheWrite, cost: { total: cost } });
 
+test('SDK effort downgrade stops before inference; omitted effort preserves adapter default', t => {
+  const { spawnSync } = require('node:child_process');
+  const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'paddock-pi-effort-'));
+  t.after(() => fs.rmSync(folder, { recursive: true, force: true }));
+  const sdk = path.join(folder, 'mock.mjs'), config = path.join(folder, 'config.json');
+  fs.writeFileSync(sdk, `
+    export const SettingsManager={inMemory:x=>x};
+    export const ModelRuntime={create:async()=>({getAvailable:async()=>[{id:'test',provider:'mock'}]})};
+    export const SessionManager={inMemory:()=>({})};
+    export const createExtensionRuntime=()=>({});
+    export async function createAgentSession(){return {session:{thinkingLevel:'off',dispose(){},
+      subscribe(){},prompt(){throw Error('Inference must not run');}}};}
+  `);
+  const runner = path.resolve(__dirname, '../electron/pi-worker-runner.mjs');
+  for (const effort of ['high', undefined]) {
+    fs.writeFileSync(config, JSON.stringify({route:{provider:'mock',model:'test'},workFolder:folder,effort}));
+    const result = spawnSync(process.execPath, [runner,sdk,config,'--prepare-only'], {encoding:'utf8'});
+    const events = result.stdout.trim().split('\n').map(JSON.parse);
+    assert.equal(result.status, effort ? 1 : 0);
+    assert.equal(events[0].type, 'worker_effort');
+    assert.equal(events[0].effective, 'off');
+    assert.equal(events.some(e => e.type === 'worker_prepared'), !effort);
+  }
+});
+
 test('routes split provider from slash-containing model ids and reject option injection', () => {
   assert.deepEqual(piRoute('openrouter/cohere/north-mini-code:free'), { provider: 'openrouter', model: 'cohere/north-mini-code:free' });
   assert.deepEqual(piRoute('moonshotai/kimi-k2.6'), { provider: null, model: 'moonshotai/kimi-k2.6' });
@@ -35,6 +60,11 @@ test('launch isolates retries, resources and tool access in the native SDK runne
   assert.match(source, /responses > 12/); assert.match(source, /calls > 24/);
   const review = piLaunch('pi.exe', { ...options, review: true });
   assert.equal(JSON.parse(fs.readFileSync(review.args[2], 'utf8')).review, true);
+  const thinking = piLaunch('pi.exe', { ...options, effort: 'high' });
+  assert.equal(JSON.parse(fs.readFileSync(thinking.args[2], 'utf8')).effort, 'high');
+  assert.equal(thinking.effortDispatch.key, 'thinkingLevel');
+  const state = piState(); piEvent(state, {type:'worker_effort',effective:'high'});
+  assert.deepEqual(state.effortEffective, {value:'high',source:'Pi SDK'});
   assert.throws(() => piLaunch('pi.exe', { ...options, model: '' }), /explicit/);
   assert.throws(() => piLaunch('pi.exe', { ...options, promptFile: undefined }), /prompt file/);
   assert.throws(() => piLaunch('pi.exe', { ...options, workFolder: folder }), /outside/);

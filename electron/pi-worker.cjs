@@ -39,7 +39,7 @@ function piSdkPath(executable) {
   }
   throw new Error('This Pi installation has no supported SDK for bounded workers.');
 }
-function piLaunch(executable, { model, review = false, workFolder, promptFile, sdkPath } = {}) {
+function piLaunch(executable, { model, effort, review = false, workFolder, promptFile, sdkPath } = {}) {
   if (!promptFile || !path.isAbsolute(promptFile)) throw new Error('The Pi worker needs a private prompt file.');
   if (workFolder && path.resolve(path.dirname(promptFile)) === path.resolve(workFolder)) throw new Error('The Pi prompt file must stay outside the work folder.');
   const route = piRoute(model);
@@ -47,8 +47,9 @@ function piLaunch(executable, { model, review = false, workFolder, promptFile, s
   // An explicit route overrides the saved default for this process only, so a
   // chosen free model is never replaced by a paid saved default.
   const optionsFile = path.join(path.dirname(promptFile), 'run.json');
-  fs.writeFileSync(optionsFile, JSON.stringify({ route, review, workFolder, promptFile }), { mode: 0o600 });
-  return { executable: process.execPath, args: [path.join(__dirname, 'pi-worker-runner.mjs'), sdkPath || piSdkPath(executable), optionsFile], env: { ELECTRON_RUN_AS_NODE: '1' } };
+  const selected = require('./task-effort.cjs').launchArgs('pi', effort);
+  fs.writeFileSync(optionsFile, JSON.stringify({ route, effort: effort || null, review, workFolder, promptFile }), { mode: 0o600 });
+  return { executable: process.execPath, args: [path.join(__dirname, 'pi-worker-runner.mjs'), sdkPath || piSdkPath(executable), optionsFile], env: { ELECTRON_RUN_AS_NODE: '1' }, effortDispatch: effort ? selected.evidence : { requested: null, status: 'adapter-default', value: 'off' } };
 }
 function piPrompt(folder, brief) {
   const file = path.join(folder, 'prompt.txt');
@@ -76,6 +77,7 @@ function addUsage(state, u, message) {
 }
 function piEvent(state, event) {
   if (!event || typeof event !== 'object' || state.complete) return state;
+  if (event.type === 'worker_effort' && ['off','minimal','low','medium','high','xhigh','max'].includes(event.effective)) state.effortEffective = { value: event.effective, source: 'Pi SDK' };
   if (event.type === 'message_end' && event.message?.role === 'assistant') {
     const message = event.message;
     if (['error', 'aborted'].includes(message.stopReason) || message.errorMessage) state.error = true;

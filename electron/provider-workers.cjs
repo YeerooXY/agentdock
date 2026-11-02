@@ -5,6 +5,7 @@ const { programLaunch } = require('./platform.cjs');
 const { antigravityEvent } = require('./antigravity-events.cjs');
 const { piLaunch, piPrompt, piEvent, piProgress } = require('./pi-worker.cjs');
 const extended = require('./extended-workers.cjs');
+const { validateEffort, launchArgs: effortLaunchArgs } = require('./task-effort.cjs');
 
 const names = Object.freeze({ claude: 'Claude Code', codex: 'Codex', kiro: 'Kiro', antigravity: 'Antigravity', copilot: 'GitHub Copilot', grok: 'Grok Build', pi: 'Pi',
   ...Object.fromEntries(extended.NATIVE_WORKERS.map(id => [id, extended.names[id]])) });
@@ -13,15 +14,18 @@ const isNativeWorker = provider => NATIVE_WORKERS.includes(provider);
 const counter = value => Number.isFinite(value) && value >= 0 ? value : null;
 const sum = values => values.every(value => counter(value) !== null) ? counter(values.reduce((a, b) => a + b, 0)) : null;
 
-function workerLaunch(provider, executable, { model, review = false, workFolder, promptFile } = {}) {
+function workerLaunch(provider, executable, { model, effort, review = false, workFolder, promptFile } = {}) {
+  // Validate before dispatch so unsupported settings cannot be dropped.
+  validateEffort(provider, effort);
   if (extended.NATIVE_WORKERS.includes(provider)) return extended.extensionLaunch(provider, executable, { model, review, workFolder, promptFile });
-  if (provider === 'pi') return piLaunch(executable, { model, review, workFolder, promptFile });
-  const chosen = model ? ['--model', model] : [];
+  if (provider === 'pi') return piLaunch(executable, { model, effort, review, workFolder, promptFile });
+  const selected = effortLaunchArgs(provider, effort);
+  const chosen = [...(model ? ['--model', model] : []), ...selected.args];
   if (provider === 'copilot') {
     const tools = ['view', 'grep', 'glob', ...(review ? [] : ['edit', 'create', 'apply_patch'])];
-    return programLaunch(executable, ['--output-format', 'json', '--no-ask-user', '--no-auto-update', '--no-color',
+    return { ...programLaunch(executable, ['--output-format', 'json', '--no-ask-user', '--no-auto-update', '--no-color',
       '--disable-builtin-mcps', '--disable-mcp-server', 'paddock', '--disallow-temp-dir', '--allow-all-tools',
-      '--available-tools', tools.join(','), '--deny-tool', 'shell', ...(review ? ['--deny-tool', 'write'] : []), ...chosen]);
+      '--available-tools', tools.join(','), '--deny-tool', 'shell', ...(review ? ['--deny-tool', 'write'] : []), ...chosen]), effortDispatch: selected.evidence };
   }
   if (provider === 'antigravity') {
     const settings = { agentMode: review ? 'plan' : 'accept-edits', toolPermission: 'request-review',
@@ -34,10 +38,10 @@ function workerLaunch(provider, executable, { model, review = false, workFolder,
   if (provider === 'grok') {
     if (!promptFile) throw new Error('The Grok worker needs a private prompt file.');
     const scope = path.resolve(workFolder).replaceAll('\\', '/') + '/**';
-    return programLaunch(executable, ['--prompt-file', promptFile, '--output-format', 'streaming-json', '--max-turns', '12',
+    return { ...programLaunch(executable, ['--prompt-file', promptFile, '--output-format', 'streaming-json', '--max-turns', '12',
       '--permission-mode', 'dontAsk', '--tools', ['read_file', 'grep', 'list_dir', ...(review ? [] : ['search_replace', 'write_file'])].join(','),
       '--disallowed-tools', 'Agent', '--disable-web-search', '--allow', 'Read', '--allow', 'Grep',
-      '--deny', 'Bash', '--deny', 'MCPTool', ...(review ? ['--deny', 'Edit', '--deny', 'Write'] : ['--allow', `Edit(${scope})`, '--allow', `Write(${scope})`]), ...chosen]);
+      '--deny', 'Bash', '--deny', 'MCPTool', ...(review ? ['--deny', 'Edit', '--deny', 'Write'] : ['--allow', `Edit(${scope})`, '--allow', `Write(${scope})`]), ...chosen]), effortDispatch: selected.evidence };
   }
   throw new Error('This provider has no native worker adapter.');
 }

@@ -363,7 +363,7 @@ test('restart interrupts every active step and never spawns a provider', async t
     assert.equal(job.state, 'interrupted'); assert.equal(job.rounds[0].implement.state, 'interrupted');
     const stored = JSON.parse(fs.readFileSync(path.join(f.root, 'tasks', `${job.id}.json`)));
     assert.equal(stored.state, 'interrupted'); assert.equal(stored.rounds[0].implement.state, 'interrupted');
-    assert.equal(stored.rounds[0].attemptId, `${job.id}-attempt-1`); assert.equal(stored.schemaVersion, 1);
+    assert.equal(stored.rounds[0].attemptId, `${job.id}-attempt-1`); assert.equal(stored.schemaVersion, 2);
   }
   await Promise.all([...restored.pending.values()]);
   assert.equal(f.spawned.length, 0);
@@ -655,7 +655,11 @@ test('model and provider-specific effort validation happens before launch', asyn
     await assert.rejects(f.start({ implementer: { accountId: codex.id, model } }), /model name/);
     await assert.rejects(f.start({ reviewer: { accountId: claude.id, model } }), /model name/);
   }
-  for (const [accountId, effort] of [[codex.id, 'max'], [claude.id, 'high'], [kiro.id, 'medium']]) await assert.rejects(f.start({ implementer: { accountId, effort } }), /supported Codex reasoning effort/);
+  for (const [accountId, effort] of [[codex.id, 'invalid'], [claude.id, 'minimal'], [kiro.id, 'medium']]) await assert.rejects(f.start({ implementer: { accountId, effort } }), /effort/);
+  for (const [accountId, role, effort] of [[claude.id, 'implementer', 'high'], [claude.id, 'reviewer', 'max'], [codex.id, 'reviewer', 'xhigh']]) {
+    const assignment = f.loop.assignment({ accountId, effort }, role);
+    assert.equal(assignment.requestedEffort, effort);
+  }
   assert.equal(f.spawned.length, 0); assert.equal(f.calls.length, 0);
 });
 

@@ -1,6 +1,6 @@
 'use strict';
 
-const TASK_SCHEMA_VERSION = 1;
+const TASK_SCHEMA_VERSION = 2;
 const ATTEMPT_SCHEMA_VERSION = 1;
 const STEERING_SCHEMA_VERSION = 1;
 
@@ -30,6 +30,11 @@ function migrateTaskRecord(task) {
     if (!Number.isInteger(task[key]) || task[key] < 0) { task[key] = 0; changed = true; }
   }
   if (!Array.isArray(task.rounds)) { task.rounds = []; changed = true; }
+  const assignments = [task.implementer, task.reviewer, task.planner, task.planReviewer, ...(task.subtasks || []).flatMap(item => [item?.implementer, item?.reviewer])];
+  for (const assignment of assignments) {
+    if (!assignment || typeof assignment !== 'object' || Array.isArray(assignment)) continue;
+    if (typeof assignment.effort === 'string' && assignment.effort && !Object.hasOwn(assignment, 'requestedEffort')) { assignment.requestedEffort = assignment.effort; changed = true; }
+  }
   changed = migrateAttempts(task.rounds, task.id) || changed;
   if (task.split) {
     if (!Array.isArray(task.subtasks)) { task.subtasks = []; changed = true; }

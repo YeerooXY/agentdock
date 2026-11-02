@@ -125,7 +125,8 @@ function contractPrompt(job) {
 function planReport(job, usageText) {
   if (!job.split) return [];
   const steps = [];
-  const lines = ['', '## Plan', `Planner: ${job.planner.label} / ${job.planner.model || 'CLI default'}`, job.planReview?.state === 'not-set' ? 'Plan not reviewed (No review).' : `Plan review: ${job.planReview?.verdict || 'not finished'}`, '', '### Contracts', job.plan?.contracts || 'Not available.'];
+  const assignment = item => `${item.label} / ${item.model || 'CLI default'}${item.requestedEffort || item.effort ? ` / requested effort ${item.requestedEffort || item.effort}` : ''}`;
+  const lines = ['', '## Plan', `Planner: ${assignment(job.planner)}`, job.planReview?.state === 'not-set' ? 'Plan not reviewed (No review).' : `Plan review: ${job.planReview?.verdict || 'not finished'}`, '', '### Contracts', job.plan?.contracts || 'Not available.'];
   for (const round of job.planRounds || []) {
     lines.push('', `### Plan round ${round.number}`);
     for (const [name, step] of [['Planner', round.planner], ['Repair', round.repair], ['Review', round.review]]) if (step) {
@@ -135,7 +136,7 @@ function planReport(job, usageText) {
     }
   }
   for (const sub of job.subtasks || []) {
-    lines.push('', `### ${sub.subtaskId}: ${sub.title}`, `Status: ${sub.state}. Elapsed: ${Math.round((sub.elapsedMs || 0) / 1000)}s.`, sub.criteria, `Owns: ${sub.owns.join(', ')}`, `Dependencies: ${sub.dependsOn.join(', ') || 'None'}`, `Assignment: ${sub.implementer ? `${sub.implementer.label} / ${sub.implementer.model || 'CLI default'}` : 'Choose an implementer'}. ${sub.assignmentReason}`, `Work folder: ${sub.workFolder || 'Not created'}`, `Rounds: ${sub.rounds.length}.`, sub.error || '', ...(sub.unresolved || []));
+    lines.push('', `### ${sub.subtaskId}: ${sub.title}`, `Status: ${sub.state}. Elapsed: ${Math.round((sub.elapsedMs || 0) / 1000)}s.`, sub.criteria, `Owns: ${sub.owns.join(', ')}`, `Dependencies: ${sub.dependsOn.join(', ') || 'None'}`, `Assignment: ${sub.implementer ? assignment(sub.implementer) : 'Choose an implementer'}. ${sub.assignmentReason}`, `Work folder: ${sub.workFolder || 'Not created'}`, `Rounds: ${sub.rounds.length}.`, sub.error || '', ...(sub.unresolved || []));
     if (!sub.rounds.length) lines.push('Usage: not reported');
     for (const round of sub.rounds) {
       lines.push(`Round ${round.number}: ${Math.round((round.elapsedMs || 0) / 1000)}s`);

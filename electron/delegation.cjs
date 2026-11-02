@@ -11,6 +11,7 @@ const { StringDecoder } = require('node:string_decoder');
 const { permitted } = require('./code-panel.cjs');
 const { programLaunch } = require('./platform.cjs');
 const { names, isNativeWorker, workerLaunch, workerInput, workerPrompt, workerReply, workerProgress } = require('./provider-workers.cjs');
+const { launchArgs: effortLaunchArgs } = require('./task-effort.cjs');
 const { claudeTokens } = require('./native-token-usage.cjs');
 const { fundingFromLimits } = require('./account-funding.cjs');
 
@@ -109,15 +110,16 @@ function pickReviewer({ candidates, limits, callerProvider, requested, now = Dat
 }
 
 // Briefs use stdin or a private prompt file, never command arguments.
-function reviewerLaunch(provider, executable, { outFile, model, platform = process.platform, workFolder, promptFile }) {
-  if (isNativeWorker(provider)) return workerLaunch(provider, executable, { model, review: true, workFolder, promptFile });
+function reviewerLaunch(provider, executable, { outFile, model, effort, platform = process.platform, workFolder, promptFile }) {
+  if (isNativeWorker(provider)) return workerLaunch(provider, executable, { model, effort, review: true, workFolder, promptFile });
+  const effortLaunch = effortLaunchArgs(provider, effort);
   const args = provider === 'claude'
-    ? ['-p', '--output-format', 'stream-json', '--verbose', '--tools', 'Read,Grep,Glob', '--strict-mcp-config', '--no-session-persistence', ...(model ? ['--model', model] : [])]
+    ? ['-p', '--output-format', 'stream-json', '--verbose', '--tools', 'Read,Grep,Glob', '--strict-mcp-config', '--no-session-persistence', ...(model ? ['--model', model] : []), ...effortLaunch.args]
     : provider === 'kiro'
       ? ['chat', '--no-interactive', '--trust-tools=fs_read', ...(model ? ['--model', model] : [])]
       // Codex's default Windows sandbox rejects every command, even reads; the unelevated one enforces read-only.
-      : ['exec', '--sandbox', 'read-only', ...(platform === 'win32' ? ['-c', 'windows.sandbox=unelevated'] : []), '--json', '--ephemeral', '--skip-git-repo-check', '--color', 'never', '-o', outFile, ...(model ? ['-m', model] : []), '-'];
-  return programLaunch(executable, args);
+      : ['exec', '--sandbox', 'read-only', ...(platform === 'win32' ? ['-c', 'windows.sandbox=unelevated'] : []), '--json', '--ephemeral', '--skip-git-repo-check', '--color', 'never', '-o', outFile, ...(model ? ['-m', model] : []), ...effortLaunch.args, '-'];
+  return { ...programLaunch(executable, args), effortDispatch: effortLaunch.evidence };
 }
 
 function parseReply(provider, stdout, outFile) {
@@ -265,10 +267,11 @@ class Delegation extends EventEmitter {
     const focus = String(args.focus || '').slice(0, MAX_FOCUS);
     const changes = await collectChanges(caller.cwd, { base: args.base || 'HEAD', files: cleanFiles(args.files) }, this.run);
     const picked = pickReviewer({ candidates: this.allowed(), limits: this.getLimits(), callerProvider: caller.provider, requested: args.reviewer, now: this.now(), rules: this.getSettings().routing });
+    const effort = effortLaunchArgs(picked.choice.provider, args.effort).evidence.requested;
     const id = randomUUID(), folder = path.join(this.dir, id);
     fs.mkdirSync(folder, { recursive: true });
     const brief = reviewBrief({ focus, changes }), outFile = path.join(folder, 'reply.md');
-    const job = { id, state: 'running', reviewer: { accountId: picked.choice.id, provider: picked.choice.provider, label: picked.choice.label }, why: picked.why,
+    const job = { id, state: 'running', reviewer: { accountId: picked.choice.id, provider: picked.choice.provider, label: picked.choice.label, effort, requestedEffort: effort }, why: picked.why,
       callerSessionId: caller.sessionId, consoleName: caller.consoleName || '', context: caller.context, cwd: caller.cwd, focus, files: changes.files.length + changes.untracked.length,
       startedAt: this.now(), finishedAt: null, verdict: null, text: '', error: '', usage: null, resultId: null, waiters: [], log: [], panelId: null, noFreeSlot: false };
     this.jobs.set(id, job); this.started.push(job.startedAt);
@@ -300,7 +303,8 @@ class Delegation extends EventEmitter {
       const candidate = this.candidates().find(c => c.id === job.reviewer.accountId), executable = candidate?.executable;
       if (!executable) throw new Error(`${names[provider]} is no longer installed.`);
       const promptFile = workerPrompt(provider, folder, brief);
-      const launch = reviewerLaunch(provider, executable, { outFile, model: settings.delegationModels?.[provider] || candidate?.model, workFolder: job.cwd || job.context?.project, promptFile });
+      const launch = reviewerLaunch(provider, executable, { outFile, model: settings.delegationModels?.[provider] || candidate?.model, effort: job.reviewer.effort, workFolder: job.cwd || job.context?.project, promptFile });
+      job.reviewer.effortDispatch = launch.effortDispatch;
       const env = this.environment(job.reviewer.accountId, provider);
       const write = progressLog({ brief: brief + '\n' + job.focus, environment: env, append: line => { appendLog(job, line); } });
       stream = progressStream(provider, write);

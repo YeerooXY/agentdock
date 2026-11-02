@@ -19,9 +19,10 @@ export function taskLoopUI({ call, getState, getPage, escape: e, renderPage, toa
     return visibleJobs().map(job => `<li><button type="button" data-task-action="select" data-id="${e(job.id)}" aria-current="${job.id === selected ? 'true' : 'false'}"><strong>${e(job.title)}</strong>${chip(job.state)}<small>${job.split ? `${(job.subtasks || []).filter(sub => sub.state === 'merged').length}/${job.subtasks?.length || 0} subtasks` : `${job.rounds.length}/${job.maxRounds} rounds`}</small><span class="task-card-summary">${e(job.error || job.unresolved?.[0] || (job.state === 'passed' ? 'Checks complete. Ready for review.' : job.state === 'accepted' ? 'Accepted.' : job.state === 'stopped' ? 'Stopped.' : job.criteria))}</span></button></li>`).join('');
   }
   function planDraft(job) {
-    if (!planDrafts.has(job.id)) planDrafts.set(job.id, { assignments: Object.fromEntries((job.subtasks || []).map(sub => [sub.subtaskId, { accountId: sub.implementer?.accountId || '', model: sub.implementer?.model || '' }])), parallelLimit: job.parallelLimit || 2, implementer: { accountId: job.implementer.accountId, model: job.implementer.model || '' } });
+    const assignment = value => ({ accountId: value?.accountId || '', model: value?.model || '', effort: value?.requestedEffort || value?.effort || '' });
+    if (!planDrafts.has(job.id)) planDrafts.set(job.id, { assignments: Object.fromEntries((job.subtasks || []).map(sub => [sub.subtaskId, assignment(sub.implementer)])), parallelLimit: job.parallelLimit || 2, implementer: assignment(job.implementer) });
     const settings = planDrafts.get(job.id);
-    for (const sub of job.subtasks || []) if (!Object.hasOwn(settings.assignments, sub.subtaskId)) settings.assignments[sub.subtaskId] = { accountId: sub.implementer?.accountId || '', model: sub.implementer?.model || '' };
+    for (const sub of job.subtasks || []) if (!Object.hasOwn(settings.assignments, sub.subtaskId)) settings.assignments[sub.subtaskId] = assignment(sub.implementer);
     return settings;
   }
   function plan(job) {
@@ -29,7 +30,12 @@ export function taskLoopUI({ call, getState, getPage, escape: e, renderPage, toa
     const editable = job.state === 'plan-ready', settings = planDraft(job);
     const accounts = choices?.implementers || [];
     const accountOptions = current => options(accounts.some(account => account.id === current?.accountId) || !current?.accountId ? accounts : [...accounts, { id: current.accountId, label: current.accountId }], current?.accountId);
-    const assignmentFields = (id, value, sub = '') => `<div class="task-form-pair"><div class="task-field"><label for="${id}-account">${sub ? 'Implementer for ' + e(sub) : 'Main implementer'}</label><select id="${id}-account" data-plan-field="accountId" data-sub="${e(sub)}"><option value="">Choose an agent</option>${accountOptions(value)}</select></div><div class="task-field"><label for="${id}-model">${sub ? 'Model for ' + e(sub) : 'Main implementer model'}</label><input id="${id}-model" data-plan-field="model" data-sub="${e(sub)}" maxlength="120" value="${e(value?.model || '')}" placeholder="CLI default; required for OpenCode"></div></div>`;
+    const assignmentFields = (id, value, sub = '') => {
+      const account = accounts.find(item => item.id === value?.accountId), efforts = account?.efforts || [];
+      const effortOptions = ['', ...efforts.filter(item => item !== '')];
+      if (value?.effort && !effortOptions.includes(value.effort)) effortOptions.push(value.effort);
+      return `<div class="task-form-pair"><div class="task-field"><label for="${id}-account">${sub ? 'Implementer for ' + e(sub) : 'Main implementer'}</label><select id="${id}-account" data-plan-field="accountId" data-sub="${e(sub)}"><option value="">Choose an agent</option>${accountOptions(value)}</select></div><div class="task-field"><label for="${id}-model">${sub ? 'Model for ' + e(sub) : 'Main implementer model'}</label><input id="${id}-model" data-plan-field="model" data-sub="${e(sub)}" maxlength="120" value="${e(value?.model || '')}" placeholder="CLI default; required for OpenCode"></div><div class="task-field"><label for="${id}-effort">Requested effort</label><select id="${id}-effort" data-plan-field="effort" data-sub="${e(sub)}">${effortOptions.map(item => `<option value="${e(item)}" ${item === (value?.effort || '') ? 'selected' : ''}>${e(item || 'Native default')}</option>`).join('')}</select></div></div>`;
+    };
     return `<section class="task-plan" aria-labelledby="task-plan-title"><h3 id="task-plan-title">Plan</h3>
       <p>${job.planReview?.state === 'not-set' ? 'Plan not reviewed (No review).' : job.planReview?.verdict ? `Plan review: ${e(status(job.planReview.verdict))}.` : 'Plan review pending.'}</p>
       ${job.planReview?.reused && job.planReview.planRevision != null && job.planRevision != null ? `<p>Findings from revision ${e(job.planReview.planRevision)}; plan revised to ${e(job.planRevision)}, not re-reviewed.</p>` : ''}
@@ -50,12 +56,20 @@ export function taskLoopUI({ call, getState, getPage, escape: e, renderPage, toa
     if (!value) return `<section class="task-step"><h4>${name}</h4><span class="field-hint">Not run</span></section>`;
     const check = name === 'Checks', review = name === 'Review';
     return `<section class="task-step"><div class="task-step-heading"><h4>${name}</h4>${chip(value.state)}<span ${time(value)}>${e(elapsed(value.elapsedMs))}</span></div>
-      ${value.label ? `<p>${e(value.label)} / ${e(value.model || 'CLI default')}</p><p class="field-hint">${e(usage(value.usage))}</p>` : ''}
+      ${value.label ? `<p>${e(value.label)} / ${e(value.model || 'CLI default')}</p>${effort(value)}<p class="field-hint">${e(usage(value.usage))}</p>` : ''}
       ${value.summary ? `<p>${e(value.summary)}</p>` : ''}
       ${value.changedFiles?.length ? `<p>Changed files: <code>${e(value.changedFiles.join(', '))}</code></p>` : ''}
       ${check && value.state !== 'not-set' ? `<p>${value.outcome && value.state === 'stale' ? `${e(status(value.outcome))} when run. ` : ''}Exit code: ${value.exitCode ?? 'not reported'}${value.timedOut ? ' · Timed out' : ''}</p><details data-task-details="check-${round}"><summary>Check output</summary><pre tabindex="0" aria-label="Round ${round} check output">${e(value.output || 'No output reported.')}</pre></details>` : ''}
       ${review && value.verdict ? `<p>${value.state === 'stale' ? 'Previous verdict' : 'Verdict'}: ${e(status(value.verdict))}</p>${value.findings?.length ? `<ul>${value.findings.map(finding => `<li>${e(String(finding).replace(/^\s*[-*•]\s+/, ''))}</li>`).join('')}</ul>` : ''}` : ''}
     </section>`;
+  }
+  function effort(value) {
+    const requested = value?.requestedEffort || value?.effort;
+    if (!requested) return value?.effortDispatch?.status === 'adapter-default' ? `<p class="field-hint">Effort: adapter default (${e(value.effortDispatch.value)}).</p>` : value?.effortDispatch?.status === 'native-default' ? '<p class="field-hint">Effort: native default.</p>' : '';
+    const dispatch = value.effortDispatch;
+    const sent = dispatch?.method === 'flag' ? `Sent with ${dispatch.flag}.` : ['config','sdk'].includes(dispatch?.method) ? `Sent with ${dispatch.key}.` : 'Awaiting dispatch.';
+    const observed = value.effortEffective ? `${value.effortEffective.source} reports ${value.effortEffective.value}.` : 'Provider-effective effort is not reported.';
+    return `<p class="field-hint">Requested effort: ${e(requested)}. ${e(sent)} ${e(observed)}</p>`;
   }
   function detail(job) {
     if (!job) return '';
@@ -66,7 +80,7 @@ export function taskLoopUI({ call, getState, getPage, escape: e, renderPage, toa
       <div class="task-actions">${running(job) || job.state === 'plan-ready' ? `<button type="button" data-task-action="stop" data-id="${e(job.id)}">Stop</button>` : ''}${job.split && ['needs-you', 'interrupted', 'stopped'].includes(job.state) ? `<button type="button" data-task-action="resume" data-id="${e(job.id)}">Resume</button>` : ''}${['passed', 'needs-you'].includes(job.state) ? `<button type="button" class="${job.unresolved?.length ? 'secondary' : 'primary'}" data-task-action="accept" data-id="${e(job.id)}">${job.unresolved?.length ? 'Accept with issues' : 'Accept'}</button>` : ''}${job.resultId ? `<button type="button" data-task-action="report" data-id="${e(job.id)}">Open report</button>` : ''}</div>
       ${job.reportError ? `<p class="form-error">${e(job.reportError)}</p>` : ''}
       ${job.error ? `<p class="form-error">${e(job.error)}</p>` : ''}
-      <details data-task-details="criteria"><summary>Acceptance criteria and assignments</summary><p class="task-criteria">${e(job.criteria)}</p><p>Implementer: ${e(job.implementer.label)} / ${e(job.implementer.model || 'CLI default')}. ${e(job.why.implementer)}</p><p>Reviewer: ${e(job.reviewer?.label || 'No review')}${job.reviewer ? ` / ${e(job.reviewer.model || 'CLI default')}` : ''}. ${e(job.why.reviewer)}</p><p>Checks: <code>${e(job.checks || 'Not set')}</code></p><p>Limits: ${job.maxRounds} rounds · ${job.timeLimitMinutes} minutes</p></details>
+      <details data-task-details="criteria"><summary>Acceptance criteria and assignments</summary><p class="task-criteria">${e(job.criteria)}</p><p>Implementer: ${e(job.implementer.label)} / ${e(job.implementer.model || 'CLI default')}. ${e(job.why.implementer)}</p>${effort(job.implementer)}<p>Reviewer: ${e(job.reviewer?.label || 'No review')}${job.reviewer ? ` / ${e(job.reviewer.model || 'CLI default')}` : ''}. ${e(job.why.reviewer)}</p>${effort(job.reviewer)}<p>Checks: <code>${e(job.checks || 'Not set')}</code></p><p>Limits: ${job.maxRounds} rounds · ${job.timeLimitMinutes} minutes</p></details>
       ${job.unresolved.length ? `<section class="task-unresolved"><h3>Unresolved items</h3><ul>${job.unresolved.map(item => `<li>${e(item)}</li>`).join('')}</ul></section>` : ''}
       ${plan(job)}
       <ol class="task-rounds">${job.rounds.map(round => `<li><h3>Round ${round.number} <small ${time(round)}>${e(elapsed(round.elapsedMs))}</small></h3>${step('Implement', round.implement, round.number)}${step('Checks', round.check, round.number)}${step('Review', round.review, round.number)}</li>`).join('')}</ol>
@@ -134,7 +148,11 @@ export function taskLoopUI({ call, getState, getPage, escape: e, renderPage, toa
       const job = jobs().find(job => job.id === selected); if (!job || job.state !== 'plan-ready') return;
       const settings = planDraft(job), name = event.target.dataset.planField;
       if (name === 'parallelLimit') settings.parallelLimit = Number(event.target.value);
-      else (event.target.dataset.sub ? settings.assignments[event.target.dataset.sub] : settings.implementer)[name] = event.target.value;
+      else {
+        const assignment = event.target.dataset.sub ? settings.assignments[event.target.dataset.sub] : settings.implementer;
+        assignment[name] = event.target.value;
+        if (name === 'accountId') { assignment.effort = ''; detailStamp = ''; sync(); document.getElementById(event.target.id)?.focus({ preventScroll: true }); }
+      }
       return;
     }
   });

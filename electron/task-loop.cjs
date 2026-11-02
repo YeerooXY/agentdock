@@ -17,6 +17,7 @@ const { isNativeWorker, workerLaunch, workerInput, workerPrompt, workerState, wo
 const { accountFunding } = require('./account-funding.cjs');
 const { claudeTokens, openCodeTokens } = require('./native-token-usage.cjs');
 const { SplitTasks, ACTIVE: RUNNING, SUB_ACTIVE, contractPrompt, planReport } = require('./task-plan.cjs');
+const { levels: effortLevels, validateEffort, launchArgs: effortLaunchArgs } = require('./task-effort.cjs');
 const TASK_PROVIDERS = [...REVIEWERS, 'opencode'];
 const PROCESS_STARTED_AT = Date.now() - process.uptime() * 1000;
 function processAlive(pid) {
@@ -42,9 +43,10 @@ function openCodeEvents(stdout) {
   for (const line of stdout.split(/\r?\n/)) { try { openCodeEvent(state, JSON.parse(line)); } catch {} }
   return state;
 }
-function openCodeLaunch(executable, { model, workFolder, promptFile }) {
+function openCodeLaunch(executable, { model, effort, workFolder, promptFile }) {
   // --file accepts an array: keep it last so the message is not consumed as a filename.
-  return programLaunch(executable, ['run', '-m', model, '--dir', workFolder, '--format', 'json', 'Read the attached file and follow it.', '-f', promptFile]);
+  const selected = effortLaunchArgs('opencode', effort);
+  return { ...programLaunch(executable, ['run', '-m', model, ...selected.args, '--dir', workFolder, '--format', 'json', 'Read the attached file and follow it.', '-f', promptFile]), effortDispatch: selected.evidence };
 }
 
 const REFRESHABLE = new Set(['passed', 'needs-you']), REFRESH_LIMIT = 2, MAX_HISTORY = 20, VERIFICATION_AGE = 7 * 24 * 60 * 60_000;
@@ -71,12 +73,13 @@ function input(value, max, label, required = false) {
   return value.trim();
 }
 function implementerLaunch(provider, executable, { model, effort, platform = process.platform, workFolder, promptFile } = {}) {
-  if (isNativeWorker(provider)) return workerLaunch(provider, executable, { model, workFolder, promptFile });
+  if (isNativeWorker(provider)) return workerLaunch(provider, executable, { model, effort, workFolder, promptFile });
+  const effortLaunch = effortLaunchArgs(provider, effort);
   const args = provider === 'claude'
-    ? ['-p', '--output-format', 'stream-json', '--verbose', '--permission-mode', 'acceptEdits', '--tools', 'Read,Grep,Glob,Edit,Write', '--strict-mcp-config', '--no-session-persistence', ...(model ? ['--model', model] : [])]
+    ? ['-p', '--output-format', 'stream-json', '--verbose', '--permission-mode', 'acceptEdits', '--tools', 'Read,Grep,Glob,Edit,Write', '--strict-mcp-config', '--no-session-persistence', ...(model ? ['--model', model] : []), ...effortLaunch.args]
     : provider === 'kiro' ? ['chat', '--no-interactive', '--trust-tools=fs_read,fs_write', ...(model ? ['--model', model] : [])]
-      : ['exec', '--json', '--sandbox', 'workspace-write', '--skip-git-repo-check', ...(platform === 'win32' ? ['-c', 'windows.sandbox=unelevated'] : []), ...(model ? ['-m', model] : []), ...(effort ? ['-c', `model_reasoning_effort="${effort}"`] : []), '-'];
-  return programLaunch(executable, args);
+      : ['exec', '--json', '--sandbox', 'workspace-write', '--skip-git-repo-check', ...(platform === 'win32' ? ['-c', 'windows.sandbox=unelevated'] : []), ...(model ? ['-m', model] : []), ...effortLaunch.args, '-'];
+  return { ...programLaunch(executable, args), effortDispatch: effortLaunch.evidence };
 }
 function checkLaunch(command, platform = process.platform) {
   const wrapper = `& {\n${command}\n}\n$paddockChecksOK = $?\nif ($null -ne $LASTEXITCODE -and $LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; if (-not $paddockChecksOK) { exit 1 }\nexit 0`;
@@ -158,7 +161,7 @@ class TaskLoop extends EventEmitter {
     const publicChoice = ({ id, provider, label, model, models, local, funding, signedIn, roles, available, readiness, checkedAt, loadedModel }) => {
       const allowance = local ? { status: 'local', remainingPercent: null, windows: [] } : accountAllowance(id, this.getLimits(), this.now());
       const { shortest, controlling, ...publicAllowance } = allowance;
-      return { id, provider, label, funding: accountFunding({ id, local, funding }, allowance, this.getSettings().routing), ...(model ? { model } : {}), ...(models?.length ? { models } : {}), ...(available !== undefined ? { available } : {}), ...(local ? { local: true, available, readiness, checkedAt, loadedModel } : {}), signedIn: signedIn ?? null, ...(roles ? { roles } : {}), allowance: publicAllowance };
+      return { id, provider, label, funding: accountFunding({ id, local, funding }, allowance, this.getSettings().routing), efforts: effortLevels(provider), ...(model ? { model } : {}), ...(models?.length ? { models } : {}), ...(available !== undefined ? { available } : {}), ...(local ? { local: true, available, readiness, checkedAt, loadedModel } : {}), signedIn: signedIn ?? null, ...(roles ? { roles } : {}), allowance: publicAllowance };
     };
     const inventory = (this.getAccounts?.() || accounts).map(choice => ({ ...publicChoice(choice),
       workerSupported: TASK_PROVIDERS.includes(choice.provider), quotaReader: choice.quotaReader || null,
@@ -175,10 +178,9 @@ class TaskLoop extends EventEmitter {
     if (model && (!/^[\w.:/-]{1,120}$/.test(model) || model.startsWith('-'))) throw new Error('Use a model name with letters, numbers, dots, colons, slashes, underscores or dashes.');
     if (account.provider === 'opencode' && !validOpenCodeTaskModel(account.id, model)) throw new Error('Choose a model supported by this OpenCode account. Strata uses strata/local.');
     if (model === STRATA_MODEL) strataConfig(this.getProfiles());
-    const effort = raw.effort ?? '';
-    if (effort && (role !== 'implementer' || account.provider !== 'codex' || !['minimal', 'low', 'medium', 'high', 'xhigh'].includes(effort))) throw new Error('Choose a supported Codex reasoning effort: minimal, low, medium, high or xhigh.');
+    const effort = validateEffort(account.provider, raw.effort, { model, models: account.models });
     return { accountId: account.id, provider: account.provider, label: account.label, model,
-      funding: accountFunding(account, accountAllowance(account.id, this.getLimits(), this.now()), this.getSettings().routing), ...(role === 'implementer' ? { effort } : {}) };
+      funding: accountFunding(account, accountAllowance(account.id, this.getLimits(), this.now()), this.getSettings().routing), effort, requestedEffort: effort || null };
   }
   ensureAvailable(job) {
     if (this.closing) throw new Error('Paddock is closing. Resume after reopening.');
@@ -469,7 +471,7 @@ class TaskLoop extends EventEmitter {
         for (const key of Object.keys(env)) if (/^opencode_/i.test(key)) delete env[key];
         env.OPENCODE_CONFIG = configFile; env.OPENCODE_PERMISSION = JSON.stringify(permission);
         if (local) env.OPENCODE_CONFIG_CONTENT = JSON.stringify({ ...local, permission });
-        launch = openCodeLaunch(choice.executable, { model: step.model, workFolder: job.workFolder, promptFile });
+        launch = openCodeLaunch(choice.executable, { model: step.model, effort: step.effort, workFolder: job.workFolder, promptFile });
         before = await this.fingerprint(job);
       } else {
         let promptFile;
@@ -482,6 +484,10 @@ class TaskLoop extends EventEmitter {
         launch = review ? reviewerLaunch(step.provider, choice.executable, options) : implementerLaunch(step.provider, choice.executable, options);
       }
       if (!RUNNING.has(job.state)) return {};
+      // This is adapter dispatch evidence only. Providers may apply a model or
+      // account default instead and do not necessarily report the effective level.
+      step.effortDispatch = launch.effortDispatch || { requested: step.requestedEffort || null, status: 'native-default' };
+      this.changed(job);
       const result = await this.process(job, launch, { environment: env, brief: step.provider === 'opencode' ? '' : brief, provider: step.provider, step, worker: !review && !!this.workers });
       if (!RUNNING.has(job.state)) return {};
       if (result.code !== 0 || result.providerError) {
@@ -569,7 +575,7 @@ class TaskLoop extends EventEmitter {
         for (const line of lines) {
           let event; try { event = JSON.parse(line); } catch { continue; }
           if (!event || typeof event !== 'object') continue;
-          if (isNativeWorker(provider)) { workerEvent(provider, native, event); step.usage = native.usage; providerError ||= native.error; if (native.retryAttempted) void stopChild({ wait: true }); }
+          if (isNativeWorker(provider)) { workerEvent(provider, native, event); step.usage = native.usage; if (native.effortEffective) step.effortEffective = native.effortEffective; providerError ||= native.error; if (native.retryAttempted) void stopChild({ wait: true }); }
           if (provider === 'opencode') { openCodeEvent(openCode, event); step.usage = openCode.usage; }
           if (provider === 'codex' && event.type === 'turn.completed' && event.usage) {
             const previous = step.usage, reported = {};
