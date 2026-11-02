@@ -278,8 +278,8 @@ function quotaCard(provider, accountId, accountLabel, detailed = false, hideable
   const display = providerName(provider), check = state.usageChecks?.find(item => item.accountId === accountId);
   const card = entry => {
     const windows = Array.isArray(entry?.windows) ? entry.windows : [];
-    const stale = entry && (!Number.isFinite(entry.observedAt) || entry.observedAt > Date.now() || Date.now() - entry.observedAt > 5 * 60000 || windows.some(w => w.resetsAt && w.resetsAt <= Date.now()) || (check && !['current', 'refreshing'].includes(check.status)));
-    const status = check?.status === 'refreshing' ? 'Checking' : entry ? stale ? 'Cached' : 'Current' : ({ 'sign-in': 'Sign in', 'missing-key': 'Add key', 'not-installed': 'Not installed', unsupported: 'Unavailable', limited: 'Try later', timeout: 'Timed out', unavailable: 'Unavailable' })[check?.status] || 'Not checked';
+    const stale = entry && (check?.stale === true || !Number.isFinite(entry.observedAt) || entry.observedAt > Date.now() || Date.now() - entry.observedAt > 5 * 60000 || windows.some(w => w.resetsAt && w.resetsAt <= Date.now()) || (check && !['current', 'refreshing'].includes(check.status)));
+    const status = check?.status === 'refreshing' ? 'Checking' : entry ? stale ? 'Cached' : 'Current' : ({ 'sign-in': 'Sign in', 'missing-key': 'Add key', 'not-installed': 'Not installed', unsupported: check?.reason === 'no-source' ? 'No quota source' : 'Unavailable', limited: 'Try later', timeout: 'Timed out', unavailable: 'Unavailable', stale: 'Cached', 'not-isolated': 'Not read for this account yet', 'no-quota': 'Local, no quota' })[check?.status] || 'Not checked';
     const message = check?.message || (provider === 'opencode' ? 'Add an OpenCode key in Settings to check account limits.' : '') || (provider === 'codex' && state.accountError) || 'Refresh to check account usage.';
     const { primary, exhausted } = quotaState(provider, windows), remaining = remainingPercent(primary?.usedPercent);
     const ringLabel = primary?.unlimited ? 'Unlimited' : remaining === null ? 'Unknown' : `${number(remaining)}%`;
