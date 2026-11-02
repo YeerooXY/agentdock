@@ -13,6 +13,7 @@ const { defaults: routingDefaults, estimateEffort, suggestAssignment, accountAll
 const { TASK_SCHEMA_VERSION, ATTEMPT_SCHEMA_VERSION, STEERING_SCHEMA_VERSION, attemptId, migrateTaskRecord } = require('./task-contracts.cjs');
 const { STRATA_MODEL, strataConfig, validOpenCodeTaskModel } = require('./local-models.cjs');
 const { taskUsage } = require('./workflow-usage.cjs');
+const { buildOutcome } = require('./task-outcome.cjs');
 const { isNativeWorker, workerLaunch, workerInput, workerPrompt, workerState, workerEvent, workerFinalize } = require('./provider-workers.cjs');
 const { accountFunding } = require('./account-funding.cjs');
 const { claudeTokens, openCodeTokens } = require('./native-token-usage.cjs');
@@ -242,10 +243,31 @@ class TaskLoop extends EventEmitter {
     return structuredClone({ ...job, subtasks: job.subtasks?.map(({ baselineUntrackedState, baselineUntracked, processPid, processRecordedAt, ...sub }) => ({ ...sub, log: [] })), log: RUNNING.has(job.state) ? tail([...(job.log || []), ...(job.subtasks || []).flatMap(sub => (sub.log || []).slice(-10).map(line => `${sub.subtaskId}: ${line}`))].join('\n'), 8000).split('\n') : [] });
   }
   snapshot() {
-    const jobs = [...this.jobs.values()].sort((a, b) => b.startedAt - a.startedAt);
+    const jobs = [...this.jobs.values()].filter(job => !job.dismissedAt).sort((a, b) => b.startedAt - a.startedAt);
     const active = job => RUNNING.has(job.state) || job.state === 'plan-ready' || this.cancelling.has(job.id);
     return [...jobs.filter(active), ...jobs.filter(job => !active(job)).slice(0, MAX_HISTORY)]
       .sort((a, b) => b.startedAt - a.startedAt).map(job => this.view(job));
+  }
+  // A newer task for the same project replaces older settled outcomes. Running
+  // tasks and plans waiting for approval stay as they are.
+  supersedeOlder(next) {
+    const scope = job => job.projectId ? 'p:' + job.projectId : 'r:' + job.repoKey;
+    for (const job of this.jobs.values()) {
+      if (job.id === next.id || job.parentId || job.supersededBy || RUNNING.has(job.state) || job.state === 'plan-ready' || scope(job) !== scope(next)) continue;
+      job.supersededBy = next.id; this.persist(job);
+    }
+  }
+  acknowledge(id) {
+    const job = this.jobs.get(String(id)); if (!job) throw new Error('Task not found.');
+    if (!job.acknowledgedAt) { job.acknowledgedAt = this.now(); this.persist(job); }
+    return this.view(job);
+  }
+  // Dismiss hides a finished task from the list and attention counts. Its saved report stays in Results.
+  dismiss(id) {
+    const job = this.jobs.get(String(id)); if (!job) throw new Error('Task not found.');
+    if (RUNNING.has(job.state) || this.cancelling.has(job.id)) throw new Error('Stop the task before dismissing it.');
+    job.dismissedAt = this.now(); job.acknowledgedAt ||= job.dismissedAt; this.persist(job);
+    return true;
   }
   async status(id, repo) {
     const job = this.jobs.get(id);
@@ -297,11 +319,11 @@ class TaskLoop extends EventEmitter {
       }
       const suggestion = this.choices(implementer.accountId);
       const job = { id, schemaVersion: TASK_SCHEMA_VERSION, attemptSchemaVersion: ATTEMPT_SCHEMA_VERSION, steeringSchemaVersion: STEERING_SCHEMA_VERSION, eventSequence: 0, steeringSequence: 0,
-        repo, repoKey, workFolder, projectId: args.projectId || null, title: redactText(title), criteria: redactText(criteria), checks: redactText(checks), workflow, branch, sourceRevision, baseline, baselineUntracked, baselineUntrackedState,
+        repo, repoKey, workFolder, projectId: args.projectId || null, originConsoleId: typeof args.originConsoleId === 'string' ? args.originConsoleId.slice(0, 80) : null, acknowledgedAt: null, dismissedAt: null, supersededBy: null, title: redactText(title), criteria: redactText(criteria), checks: redactText(checks), workflow, branch, sourceRevision, baseline, baselineUntracked, baselineUntrackedState,
         implementer, reviewer, why: { implementer: 'Selected by you.', reviewer: reviewer ? reviewer.accountId === suggestion.suggestion ? `Selected by you. Suggested: ${suggestion.why}` : 'Selected by you.' : 'No review selected.' },
         maxRounds, maxRoundsExplicit: args.maxRounds !== undefined, timeLimitMinutes, startedAt: this.now(), finishedAt: null, state: split ? 'planning' : 'implementing', rounds: [], unresolved: [], log: [], error: '', fingerprint: null, diffStat: '', finalDiff: '', resultId: null,
         ...(split ? { split: true, planner: implementer, planReviewer: reviewer, planRounds: [], subtasks: [], parallelLimit: 2, activeElapsedMs: 0, integrationHead: sourceRevision } : {}) };
-      this.jobs.set(id, job); this.reserved.delete(repoKey); this.changed(job);
+      this.jobs.set(id, job); this.reserved.delete(repoKey); this.supersedeOlder(job); this.changed(job);
       if (this.closing) { await this.finish(job, 'interrupted', 'Paddock closed before this task finished.'); return this.view(job); }
       // The command is held separately while running; agents only receive check output.
       if (split) this.startSplit(job, true, checks);
@@ -708,7 +730,7 @@ class TaskLoop extends EventEmitter {
   settle(job, state, error = '') {
     job.freezeEpoch = (job.freezeEpoch || 0) + 1;
     if (state === 'interrupted') job.rebuildReport = true;
-    job.state = state; job.error = error; job.finishedAt = this.now();
+    job.state = state; job.error = error; job.finishedAt = this.now(); job.acknowledgedAt = null;
     const round = job.rounds.at(-1);
     if (round) {
       round.elapsedMs = job.finishedAt - round.startedAt;
@@ -856,7 +878,7 @@ class TaskLoop extends EventEmitter {
     const pending = previous.catch(() => {}).then(async () => {
       if (!this.saveResult || this.closing) return;
       try {
-        job.resultId = (await this.saveResult({ text: this.report(job), ext: '.md', title: job.title, kind: 'report', status: job.state === 'passed' || (job.state === 'accepted' && !job.unresolved.length) ? 'passed' : job.state === 'failed' ? 'failed' : 'needs-review', summary: `Task: ${job.state}. ${job.rounds.length} round(s).`, taskId: job.id, resultId: job.resultId }, { project: job.repo, projectId: job.projectId || null, consoleName: 'Tasks', consoleKey: `task-${job.id}` }))?.id || job.resultId;
+        job.resultId = (await this.saveResult({ text: this.report(job), ext: '.md', title: job.title, kind: 'report', status: job.state === 'passed' || (job.state === 'accepted' && !job.unresolved.length) ? 'passed' : job.state === 'failed' ? 'failed' : 'needs-review', summary: `Task: ${job.state}. ${job.rounds.length} round(s).`, outcome: buildOutcome(job), taskId: job.id, resultId: job.resultId }, { project: job.repo, projectId: job.projectId || null, consoleName: 'Tasks', consoleKey: `task-${job.id}` }))?.id || job.resultId;
         job.reportError = ''; this.changed(job);
       } catch { job.reportError = 'The report could not be saved to Results.'; this.changed(job); }
     });

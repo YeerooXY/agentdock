@@ -7,6 +7,7 @@ const { atomicJson, readJson } = require('./storage.cjs');
 const { previewArchive } = require('./result-archive.cjs');
 const { cleanGit } = require('./git-context.cjs');
 const { captureChanges } = require('./capture-files.cjs');
+const { cleanOutcome } = require('./task-outcome.cjs');
 const extensions = new Set(['.png', '.jpg', '.jpeg', '.webp', '.txt', '.md', '.json', '.log', '.html', '.pdf', '.glb', '.gltf', '.obj', '.stl', '.zip']);
 const imageExtensions = new Set(['.png', '.jpg', '.jpeg', '.webp']);
 const textExtensions = new Set(['.txt', '.md', '.json', '.log', '.html']);
@@ -52,6 +53,12 @@ class Results extends EventEmitter {
     const end = cleanGit(git); if (!end || end.repository !== repository) return;
     this.persist(this.items.map(item => item.groupId === turnId && item.consoleKey === consoleKey && item.git?.repository === repository ? { ...item, gitEnd: end } : item));
   }
+  // Structured task outcome: stored beside result.md and summarized on the entry.
+  attachOutcome(item, dir, raw) {
+    const outcome = cleanOutcome(raw); if (!outcome) return;
+    fs.writeFileSync(path.join(dir, 'outcome.json'), JSON.stringify(outcome, null, 2), { mode: 0o600 });
+    item.outcome = outcome; item.taskId = outcome.taskId || item.taskId;
+  }
   persist(next) { atomicJson(this.file, next); this.items = next; this.emit('changed'); }
   directory(id) {
     if (!/^[a-f0-9-]{36}$/.test(id)) throw new Error('Unknown result.');
@@ -90,6 +97,7 @@ class Results extends EventEmitter {
       summary: short(raw.summary, 1500), project: short(project, 1000), sessionId, consoleKey: consoleKey || sessionId, consoleName: short(consoleName, 64), seenAt: null, reviewId: trusted ? short(raw.reviewId, 80) : null, groupId: short(turnId || raw.groupId, 80), originalFile: raw.file && project ? path.relative(project, raw.file).replaceAll('\\', '/') : null, source: short(raw.source || 'Agent', 60) };
     const dir = this.directory(item.id); fs.mkdirSync(dir); fs.writeFileSync(path.join(dir, 'result' + ext), buffer, { flag: 'wx' });
     item.projectId = projectId;
+    if (trusted) this.attachOutcome(item, dir, raw.outcome);
     if (item.kind === 'code' && ext === '.json') { try { const report = JSON.parse(buffer.toString('utf8')); if (Array.isArray(report.changes)) { item.changeCount = captureChanges(report.changes).length; item.captureExcludedOnly = report.changes.length > 0 && item.changeCount === 0; item.captureFilterVersion = 1; if (/^\d+ changed files?$/.test(item.title)) item.title = `${item.changeCount} changed ${item.changeCount === 1 ? 'file' : 'files'}`; } item.gitEnd = cleanGit(report.git?.after); } catch {} }
     if (git) item.git = cleanGit(git);
     this.persist([item, ...this.items]); return item;
@@ -124,6 +132,7 @@ class Results extends EventEmitter {
     try { fs.writeFileSync(temp, raw.text, { mode: 0o600 }); fs.renameSync(temp, file); }
     finally { try { fs.unlinkSync(temp); } catch {} }
     const updated = { ...item, size: Buffer.byteLength(raw.text), status: raw.status, summary: short(raw.summary, 1500), updatedAt: Date.now(), contentRevision: (item.contentRevision || 0) + 1 };
+    if (raw.outcome) this.attachOutcome(updated, this.directory(id), raw.outcome);
     this.persist(this.items.map(x => x.id === id ? updated : x)); return updated;
   }
   async remove(ids) {
