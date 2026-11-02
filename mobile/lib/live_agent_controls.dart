@@ -335,9 +335,7 @@ class _LiveAgentControlsState extends State<LiveAgentControls> {
             confirmation?.effort == effort ||
             (reported.at > initial.at && reported.effort == effort) ||
             (provider == 'claude' &&
-                RegExp(
-                  '(?:effort|Effort)[^\\n]{0,30}\\b${RegExp.escape(effort!)}\\b',
-                ).hasMatch(text));
+                (effort == initial.effort || claudeShowsEffort(text, effort!)));
         return modelConfirmed && effortConfirmed;
       });
       if (current) {

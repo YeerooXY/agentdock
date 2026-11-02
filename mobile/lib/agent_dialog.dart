@@ -1,3 +1,5 @@
+import 'agent_menu.dart' show clearHintArrow;
+
 /// A choice dialog drawn by a CLI: its options and the active selection.
 ///
 /// Parsing is structural and per provider. A screen counts only when exactly
@@ -73,7 +75,10 @@ final _escWord = RegExp(r'\besc(ape)?\b', caseSensitive: false);
 AgentDialog? parseAgentDialog(String screen, String provider) {
   final profile = agentDialogProfiles[provider];
   if (profile == null) return null;
-  final lines = screen.split('\n').map((l) => l.trimRight()).toList();
+  final lines = screen
+      .split('\n')
+      .map((l) => clearHintArrow(l.trimRight()))
+      .toList();
   var last = lines.length - 1;
   while (last >= 0 && lines[last].trim().isEmpty) {
     last--;

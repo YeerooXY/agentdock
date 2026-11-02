@@ -39,3 +39,12 @@ AgentSelection? selectionConfirmation(String text) {
   ).firstMatch(last[2] ?? '')?[1]?.toLowerCase();
   return AgentSelection(model: last[1], effort: effort);
 }
+
+/// Claude names the effort beside its status ("◐ medium · /effort") and in
+/// command replies ("Set effort level to low ..."). Either order counts.
+bool claudeShowsEffort(String screen, String effort) {
+  final level = RegExp.escape(effort);
+  return RegExp('effort[^\\n]{0,30}\\b$level\\b', caseSensitive: false)
+          .hasMatch(screen) ||
+      RegExp('\\b$level\\b[^\\n]{0,12}/effort').hasMatch(screen);
+}

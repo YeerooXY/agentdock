@@ -49,6 +49,17 @@ void main() {
       },
     );
 
+    test('captured /model after Up: a hint arrow replaces the selector', () {
+      final d = parseAgentDialog(
+        fixture('claude-model-menu-up.txt'),
+        'claude',
+      )!;
+      final before = parseAgentDialog(fixture('claude-model-menu.txt'), 'claude')!;
+      expect(d.selected, 1);
+      expect(d.options.length, 3);
+      expect(d.signature, before.signature);
+    });
+
     test('captured /theme after Down: the check mark leaves the selector', () {
       final d = parseAgentDialog(
         fixture('claude-theme-menu-moved.txt'),

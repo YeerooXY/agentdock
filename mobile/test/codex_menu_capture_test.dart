@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:xterm/xterm.dart';
 import 'package:agent_dock_mobile/agent_menu.dart';
+import 'package:agent_dock_mobile/agent_selection.dart';
 
 // Screens captured from a real Codex 0.165 /model flow at 60x24.
 AgentMenu menuFrom(String name) {
@@ -71,5 +72,26 @@ void claudeMenu() {
     );
     expect(moved!.selected, 1);
     expect(moved.signature, menu.signature);
+    // Captured after Up: row 3 gains a "↓" hint where its selector was.
+    final up = menuFrom('claude-model-menu-up.txt');
+    expect(up.selected, 1);
+    expect(up.options.length, 3);
+    expect(up.signature, menu.signature);
+  });
+
+  test('captured Claude replies confirm model and effort', () {
+    // Real Claude 2.1.316 screen after "s" in /model.
+    const model =
+        '❯ /model\n'
+        '  ⎿  Set model to Opus 5.5 for this session only\n'
+        '                                        ◐ medium · /effort\n'
+        '❯';
+    expect(selectionConfirmation(model)?.model, 'Opus');
+    expect(claudeShowsEffort(model, 'medium'), isTrue);
+    expect(claudeShowsEffort(model, 'high'), isFalse);
+    const effort =
+        '❯ /effort low\n'
+        '  ⎿  Set effort level to low (saved as your default';
+    expect(claudeShowsEffort(effort, 'low'), isTrue);
   });
 }

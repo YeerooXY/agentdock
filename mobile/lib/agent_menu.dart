@@ -12,11 +12,19 @@ String activeTerminalText(Terminal terminal) {
   return text.toString().trimRight();
 }
 
+/// Claude draws "↓ 3." where a hidden-below hint sits beside an option. The
+/// arrow is not a selector, so blank it and keep the columns.
+String clearHintArrow(String line) => line.replaceFirstMapped(
+  RegExp(r'^(\s*)[↑↓](\s)(?=\d{1,2}[.)]\s)'),
+  (m) => '${m[1]} ${m[2]}',
+);
+
 class AgentMenu {
   final String title, footer;
   final List<String> options;
   final int selected;
   const AgentMenu(this.title, this.options, this.selected, this.footer);
+
   /// Labels only: descriptions and per-row extras (Claude's effort slider,
   /// "+N models") change as the selection moves.
   String get signature {
@@ -25,6 +33,7 @@ class AgentMenu {
     );
     return '$title\n${labels.join('\n')}\n$footer';
   }
+
   bool get sessionOnly => RegExp(
     r'\bs\b.{0,18}(this session|session only|session\b)',
     caseSensitive: false,
@@ -33,7 +42,7 @@ class AgentMenu {
   /// Unknown CLI layouts stay in the terminal. Require numbered choices,
   /// a single active selector, and an Enter/Escape navigation footer.
   static AgentMenu? parse(String text) {
-    final lines = text.split('\n');
+    final lines = text.split('\n').map(clearHintArrow).toList();
     final heading = lines.lastIndexWhere(
       (line) => RegExp(
         r'^\s*((Select|Choose|Set)\s+(a\s+)?(model|reasoning|effort)\b|Advanced Reasoning\b)',
@@ -129,7 +138,9 @@ String _stripBorders(String text) =>
   bool isPrompt(BufferLine line) =>
       prompt.hasMatch(_stripBorders(line.getText()));
   final cursor = buffer.absoluteCursorY;
-  if (cursor >= 0 && cursor < buffer.lines.length && isPrompt(buffer.lines[cursor])) {
+  if (cursor >= 0 &&
+      cursor < buffer.lines.length &&
+      isPrompt(buffer.lines[cursor])) {
     return (row: buffer.lines[cursor], y: cursor);
   }
   for (var y = buffer.height - 1; y >= buffer.scrollBack; y--) {
@@ -188,10 +199,8 @@ bool hasEmptyAgentPrompt(Terminal terminal, String provider) {
       next.trim().isNotEmpty &&
       next.startsWith(' ') &&
       !RegExp(r'^[─━═╌┄┈\-_]{8,}$').hasMatch(next.trim());
-  final text = _stripBorders(found.row.getText()).replaceFirst(
-    RegExp(r'^[›❯>]\s?'),
-    '',
-  );
+  final text = _stripBorders(found.row.getText())
+      .replaceFirst(RegExp(r'^[›❯>]\s?'), '');
   return (text: text, multiline: continues);
 }
 
