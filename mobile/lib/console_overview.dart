@@ -155,10 +155,6 @@ class _ConsoleOverviewState extends State<ConsoleOverview> {
                   session['modelName'] ?? session['model'],
                   session['accountLabel'],
                 ].whereType<String>().where((s) => s.isNotEmpty).join(' · ');
-                final screen = client.screens[id];
-                // Only use output already cached on this phone. This may be
-                // older than the live output of a console that is not selected.
-                final lastLine = screen == null ? '' : consoleLastLine(screen.terminal);
                 return Padding(
                   padding: const EdgeInsets.only(bottom: 8),
                   child: DockFrame(
@@ -208,9 +204,21 @@ class _ConsoleOverviewState extends State<ConsoleOverview> {
                                     if (details.isNotEmpty)
                                       Text(details, maxLines: 2, overflow: TextOverflow.ellipsis,
                                           style: const TextStyle(color: muted, fontSize: 12)),
-                                    if (lastLine.isNotEmpty)
-                                      Text(lastLine, maxLines: 1, overflow: TextOverflow.ellipsis,
-                                          style: const TextStyle(color: muted, fontSize: 12)),
+                                    // Only output already cached on this phone. It may
+                                    // be older than a console that is not selected.
+                                    ListenableBuilder(
+                                      listenable: client.terminalSignal(id),
+                                      builder: (context, _) {
+                                        final screen = client.screens[id];
+                                        final lastLine = screen == null
+                                            ? ''
+                                            : consoleLastLine(screen.terminal);
+                                        return lastLine.isEmpty
+                                            ? const SizedBox.shrink()
+                                            : Text(lastLine, maxLines: 1, overflow: TextOverflow.ellipsis,
+                                                style: const TextStyle(color: muted, fontSize: 12));
+                                      },
+                                    ),
                                   ],
                                 ),
                               ),

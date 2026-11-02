@@ -1,3 +1,4 @@
+import 'build_counts.dart';
 import 'package:flutter/material.dart';
 
 import 'dock_client.dart';
@@ -143,7 +144,12 @@ class _ProjectsPageState extends State<ProjectsPage> {
   }
 
   @override
-  Widget build(BuildContext context) => PopScope(
+  Widget build(BuildContext context) {
+    BuildCounts.hit('projects');
+    return _page(context);
+  }
+
+  Widget _page(BuildContext context) => PopScope(
     canPop: selected == null,
     onPopInvokedWithResult: (didPop, _) { if (!didPop && selected != null) back(); },
     child: RefreshIndicator(
