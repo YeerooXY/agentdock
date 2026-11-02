@@ -112,9 +112,6 @@
 #content[data-view=usage] .usage-status{width:fit-content;font-size:12px;color:var(--usage-soft);padding:2px 9px;border:1px solid #303a52;border-radius:999px}
 #content[data-view=usage] .usage-status[data-status=stale]{border-color:#7d6a45;color:#e6c98f}
 #content[data-view=usage] .usage-stale-why{font-size:12px;color:var(--usage-muted)}
-#content[data-view=usage] .usage-row-actions{display:flex;gap:4px;margin-left:-8px}
-#content[data-view=usage] .usage-row-actions button{font-size:12px;padding:4px 8px;min-height:0;color:var(--usage-muted)}
-#content[data-view=usage] .usage-row-actions button:hover,#content[data-view=usage] .usage-row-actions button:focus-visible{color:#eef3ff}
 #content[data-view=usage] .usage-row-windows{position:relative;display:grid;align-content:center;gap:0;padding:8px 22px;min-width:0}
 #content[data-view=usage] .usage-window{display:grid;grid-template-columns:minmax(110px,170px) minmax(0,1fr) minmax(76px,auto);align-items:center;gap:18px;padding:9px 0;min-width:0}
 #content[data-view=usage] .usage-window+.usage-window,#content[data-view=usage] .usage-more>.usage-window:first-of-type{border-top:1px solid #ffffff0d}

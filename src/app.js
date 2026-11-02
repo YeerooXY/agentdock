@@ -284,7 +284,8 @@ const USAGE_STATUS = {
 const STALE_WHY = { 'check-failed': 'The last check failed.', 'no-observation': 'No reading time.', 'reset-passed': 'A reset time has passed.', old: 'Older than five minutes.' };
 function usageStatusLabel(check) {
   if (!check) return 'Not checked';
-  if (check.status === 'current') return '';
+  // A check in progress shows on the "Last refreshed" line, not as a chip.
+  if (check.status === 'current' || check.status === 'refreshing') return '';
   if (check.status === 'unsupported' && check.reason === 'no-source') return 'No quota source';
   return USAGE_STATUS[check.status] || 'Not checked';
 }
@@ -330,8 +331,7 @@ function usageRow(account, check, fallback) {
   const nextReset = spent.map(w => w.resetsAt).filter(at => Number.isFinite(at) && at > Date.now()).sort((a, b) => a - b)[0];
   const spentNote = spent.length ? `<div class="usage-next-reset" role="status">${nextReset ? `Next reset in: ${escape(usageSpan(nextReset - Date.now()))}` : 'Allowance used'}</div>` : '';
   return `<article class="usage-row ${stale ? 'usage-row-stale' : ''} ${spent.length ? 'usage-row-spent' : ''}" data-usage-provider="${escape(provider)}" data-usage-account-id="${escape(account.id)}" aria-label="${escape(name)}" style="--provider-accent:${accountIdentity(provider).color}">
-    <div class="usage-row-id">${observedAt ? `<span class="usage-age">Last refreshed: ${escape(readAge(observedAt))}</span>` : ''}<div class="usage-row-name">${accountMark(provider)}<div><strong>${escape(name)}</strong>${plan ? `<span class="plan">${escape(plan)}</span>` : ''}</div></div>${status ? `<span class="usage-status" data-status="${escape(check?.status || 'unchecked')}" role="status">${escape(status)}</span>` : ''}${reason ? `<span class="usage-stale-why">${escape(reason)}</span>` : ''}
-      <span class="usage-row-actions"><button class="subtle" type="button" data-action="refresh" data-usage-refresh="${escape(account.id)}" aria-label="Refresh ${escape(name)}" ${check?.status === 'refreshing' ? 'disabled aria-busy="true"' : ''}>${icon('refresh')}Refresh</button><button class="subtle usage-hide" type="button" data-usage-hide="${escape(account.id)}" aria-label="Hide ${escape(name)} from Usage">Hide</button></span></div>
+    <div class="usage-row-id"><span class="usage-age">${check?.checking || check?.status === 'refreshing' ? 'Checking now' : observedAt ? `Last refreshed: ${escape(readAge(observedAt))}` : check?.checkedAt ? `Last checked: ${escape(readAge(check.checkedAt))}` : 'Not checked yet'}</span><div class="usage-row-name">${accountMark(provider)}<div><strong>${escape(name)}</strong>${plan ? `<span class="plan">${escape(plan)}</span>` : ''}</div></div>${status ? `<span class="usage-status" data-status="${escape(check?.status || 'unchecked')}" role="status">${escape(status)}</span>` : ''}${reason ? `<span class="usage-stale-why">${escape(reason)}</span>` : ''}</div>
     <div class="usage-row-windows">${shown.length ? shown.map(w => usageWindowRow(w, display)).join('') : `<p class="usage-row-note">${escape(message)}</p>`}${more.length ? `<details class="usage-more" data-key="more-${escape(account.id)}"><summary>More limits (${more.length})</summary>${more.map(w => usageWindowRow(w, display)).join('')}</details>` : ''}${windows.length && check?.message && !stale ? `<p class="usage-row-note" role="status">${escape(check.message)}</p>` : ''}${spentNote}</div>
     ${provider === 'opencode' ? `<p class="section-note quota-local-usage">Used on this PC (last 7 days): ${check?.localSpending?.week ? `$${check.localSpending.week.cost.toFixed(2)}, ${number(check.localSpending.week.input)} input, ${number(check.localSpending.week.output)} output, ${number(check.localSpending.week.cacheRead)} cache read tokens` : 'Unavailable'}</p>` : ''}
   </article>`;
@@ -1570,8 +1570,8 @@ document.addEventListener('click', async event => {
   const button = event.target.closest('button'); if (!button) return;
   try {
     if (button.dataset.usageMetric) { usageMetric = button.dataset.usageMetric; renderPage(); document.querySelector(`[data-usage-metric="${usageMetric}"]`)?.focus({ preventScroll: true }); return; }
-    if (button.dataset.usageShow || button.dataset.usageHide) {
-      const id = button.dataset.usageShow || button.dataset.usageHide, show = !!button.dataset.usageShow;
+    if (button.dataset.usageShow) {
+      const id = button.dataset.usageShow, show = true;
       const shown = new Set(state.settings.usageShown || []), hidden = new Set(state.settings.usageHidden || []);
       if (show) { shown.add(id); hidden.delete(id); } else { hidden.add(id); shown.delete(id); }
       if (show) usageAddOpen = false;

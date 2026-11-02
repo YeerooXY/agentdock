@@ -122,6 +122,8 @@ function kiroReading(raw, accountId, at = Date.now()) {
   if (!match || !Number.isFinite(used) || !Number.isFinite(total) || used < 0 || total <= 0 || used > total)
     throw new UsageError('unavailable', 'Kiro returned no readable plan allowance. Open /usage in Kiro to check.');
   const reset = /resets on (\d{4}-\d{2}-\d{2})/i.exec(report)?.[1];
+  // The report header names the plan, for example "| KIRO FREE" or "| KIRO PRO+".
+  const plan = /\|\s*KIRO\s+([A-Z][A-Z0-9+]*(?: [A-Z0-9+]+){0,2})\s*(?:\||\r?\n|$)/.exec(report)?.[1];
   const windows = [{ key: 'plan', label: /\bKIRO FREE\b/.test(report) ? 'Free plan credits' : 'Plan credits', minutes: null, used, total, unit: 'credits', usedPercent: used / total * 100, resetsAt: null, resetLabel: reset ? 'Resets on ' + reset : null }];
   const bonus = report.split(/bonus credits:/i)[1]?.split(/\n\s*(?:Credits|Overages:)/)[0] || '';
   for (const line of bonus.split('\n').slice(0, 32)) {
@@ -131,7 +133,7 @@ function kiroReading(raw, accountId, at = Date.now()) {
     if (!Number.isFinite(spent) || !Number.isFinite(allowance) || spent < 0 || allowance <= 0 || spent > allowance) continue;
     windows.push({ key: 'bonus-' + windows.length, label: label(item[1]), minutes: null, usedPercent: spent / allowance * 100, resetsAt: null, resetLabel: `Expires in ${Number(item[4] || item[5])} days` });
   }
-  return [{ id: accountId, accountId, provider: 'kiro', name: 'Kiro', observedAt: at, source: 'Kiro /usage estimate', windows }];
+  return [{ id: accountId, accountId, provider: 'kiro', name: 'Kiro', ...(plan ? { plan: plan.toLowerCase().replace(/\b[a-z]/g, c => c.toUpperCase()) } : {}), observedAt: at, source: 'Kiro /usage estimate', windows }];
 }
 async function readKiroUsage({ executable, accountId = 'kiro:default', cwd, env, run, timeoutMs } = {}) {
   if (!cwd) throw new UsageError('unavailable', 'The usage workspace is unavailable.');
@@ -358,7 +360,9 @@ class SubscriptionUsage {
     if (source?.reader && !source.isolated && account.id !== `${account.provider}:default`)
       return put({ ...none, status: 'not-isolated', message: 'Separate sign-in storage is not verified for this CLI. Only its default account is checked.' });
     if (!reader) return put({ status: 'unsupported', reason: source?.state === 'no-source' ? 'no-source' : 'no-reader', message: usageHelp(account.provider) });
-    this.states.set(account.id, { ...base, status: 'refreshing', message: '' }); this.onChange();
+    // A row keeps its last status and message while it is checked again, so the
+    // card does not change size on every refresh. Only a first check shows 'refreshing'.
+    this.states.set(account.id, before ? { ...before, checking: true } : { ...base, status: 'refreshing', message: '' }); this.onChange();
     try {
       const result = await reader(account);
       const values = Array.isArray(result) ? result : result.values;

@@ -193,6 +193,24 @@ test('Kiro Free native usage reports fractional credits in the current CLI forma
   assert.equal(value[0].observedAt, 123);
 });
 
+test('Kiro readings carry the plan named in the report header', () => {
+  assert.equal(kiroReading('Estimated Usage | resets on 2026-11-01 | KIRO FREE\nCredits (7.95 of 50 covered in plan)', 'kiro:default', 1)[0].plan, 'Free');
+  assert.equal(kiroReading('Estimated Usage | resets on 2026-11-01 | KIRO PRO+\nCredits (1 of 2000 covered in plan)', 'kiro:default', 1)[0].plan, 'Pro+');
+  assert.equal(kiroReading('Estimated Usage | resets on 2026-11-01\nCredits (1 of 50 covered in plan)', 'kiro:default', 1)[0].plan, undefined);
+});
+
+test('a usage check keeps its last status while it is checked again', async () => {
+  const { SubscriptionUsage } = require('../electron/subscription-usage.cjs');
+  let release; const seen = [];
+  const usage = new SubscriptionUsage({ readers: { claude: () => new Promise(resolve => { release = resolve; }) }, onChange: () => {}, cooldownMs: 0 });
+  usage.states.set('claude:default', { accountId: 'claude:default', provider: 'claude', status: 'unavailable', message: 'Failed.', checkedAt: 0, observedAt: null, lastReadings: [] });
+  const pending = usage.read({ id: 'claude:default', provider: 'claude' });
+  seen.push(usage.states.get('claude:default'));
+  assert.equal(seen[0].status, 'unavailable'); assert.equal(seen[0].checking, true); assert.equal(seen[0].message, 'Failed.');
+  release([]); await pending;
+  assert.equal(usage.states.get('claude:default').checking, undefined);
+});
+
 
 test('OpenCode account windows and local stats validate provider data', () => {
   const { opencodeReading, opencodeStats } = require('../electron/subscription-usage.cjs');

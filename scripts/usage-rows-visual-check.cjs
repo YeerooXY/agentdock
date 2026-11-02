@@ -76,11 +76,17 @@ let browser;
     assert.notEqual(await page.evaluate(() => document.activeElement.tagName), 'BODY');
     await page.keyboard.press('Tab'); await page.keyboard.press('Enter');
     assert.equal(await page.locator('.usage-more').evaluate(d => d.open), false, 'Enter toggles closed');
-    // Hide the focused row's account: focus moves to a neighbouring control, never the page body.
-    const hide = page.locator('[data-usage-hide="kiro:default"]'); await hide.focus();
-    state.settings.usageHidden = ['kiro:default']; await push();
-    const focusInfo = await page.evaluate(() => ({ tag: document.activeElement?.tagName, inContent: !!document.activeElement?.closest('#content') }));
-    assert.deepEqual(focusInfo.inContent, true, 'focus stays in content after the row is removed');
+    // Rows carry no per-account Refresh or Hide, and a check in progress keeps every card's size.
+    assert.equal(await page.locator('[data-usage-hide], [data-usage-refresh]').count(), 0);
+    const sizes = () => page.locator('.usage-row').evaluateAll(rows => rows.map(row => Math.round(row.getBoundingClientRect().height)));
+    const before = await sizes();
+    for (const check of state.usageChecks) check.checking = true;
+    state.refreshing = true; await push();
+    assert.match(await text('codex:default'), /Checking now/);
+    assert.deepEqual(await sizes(), before, 'cards keep their size while checking');
+    for (const check of state.usageChecks) delete check.checking;
+    state.refreshing = false; await push();
+    assert.deepEqual(await sizes(), before, 'cards keep their size after checking');
     // Typing survives a push.
     const period = page.locator('[data-usage-period]'); await period.focus(); await page.keyboard.press('ArrowDown');
     await push(); assert.equal(await page.evaluate(() => document.activeElement?.hasAttribute('data-usage-period')), true);
