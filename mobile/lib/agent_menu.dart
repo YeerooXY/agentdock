@@ -127,6 +127,9 @@ bool agentWorking(String screen) =>
 /// Box-drawing borders some Claude Code layouts put around the input.
 const _borders = [0x2502, 0x2503, 0x7c];
 
+/// ─ ━ ═ ╌ and the ASCII dash some terminals fall back to.
+const _ruleChars = [0x2500, 0x2501, 0x2550, 0x254c, 0x2d];
+
 String _stripBorders(String text) =>
     text.replaceAll(RegExp(r'^[│┃|]\s*|\s*[│┃|]$'), '').trim();
 
@@ -157,7 +160,18 @@ bool _typed(BufferLine row) {
   while (x < row.length && !glyphs.contains(row.getCodePoint(x))) {
     x++;
   }
-  for (x++; x < row.length; x++) {
+  // A repaint can leave the rule that sat on this row after the placeholder
+  // ("Try "fix lint"-----"). Trailing rule characters are not typed text.
+  var end = row.length;
+  while (end > x + 1) {
+    final cp = row.getCodePoint(end - 1);
+    if (cp == 0 || cp == 32 || _ruleChars.contains(cp)) {
+      end--;
+    } else {
+      break;
+    }
+  }
+  for (x++; x < end; x++) {
     final cp = row.getCodePoint(x);
     if (cp == 0 || cp == 32 || _borders.contains(cp)) continue;
     final styled =
@@ -200,7 +214,8 @@ bool hasEmptyAgentPrompt(Terminal terminal, String provider) {
       next.startsWith(' ') &&
       !RegExp(r'^[─━═╌┄┈\-_]{8,}$').hasMatch(next.trim());
   final text = _stripBorders(found.row.getText())
-      .replaceFirst(RegExp(r'^[›❯>]\s?'), '');
+      .replaceFirst(RegExp(r'^[›❯>]\s?'), '')
+      .replaceFirst(RegExp(r'\s*[─━═╌-]{3,}$'), '');
   return (text: text, multiline: continues);
 }
 

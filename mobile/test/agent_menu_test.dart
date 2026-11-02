@@ -106,4 +106,14 @@ void main() {
     boxedTyped.write('│ > hello        │');
     expect(hasEmptyAgentPrompt(boxedTyped, 'claude'), false);
   });
+
+  test('a placeholder followed by leftover rule characters is still empty', () {
+    final t = Terminal()..resize(60, 10);
+    t.write('❯ \x1b[7mT\x1b[0m\x1b[2mry "fix lint errors"\x1b[0m----------------');
+    expect(hasEmptyAgentPrompt(t, 'claude'), true);
+    final typed = Terminal()..resize(60, 10);
+    typed.write('❯ hello----------------');
+    expect(hasEmptyAgentPrompt(typed, 'claude'), false);
+    expect(agentPromptDraft(typed, 'claude').text, 'hello');
+  });
 }
