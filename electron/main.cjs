@@ -61,11 +61,9 @@ const { userDataPath } = require('./user-data.cjs');
 const { AccountProfiles, defaultId } = require('./account-profiles.cjs');
 const { DraftBridge } = require('./draft-bridge.cjs');
 const { accountIdForLimit } = require('./account-switching-policy.cjs');
-const { SubscriptionUsage, readClaudeUsage, readClaudeModels, readCopilotUsage, readKiroUsage, readKimiUsage, readOpenCodeUsage, copilotExecutable, usageEnvironment, stopUsageReaders } = require('./subscription-usage.cjs');
-const { readAntigravityUsage } = require('./antigravity-usage.cjs');
-const { readCursorUsage } = require('./cursor-usage.cjs');
+const { SubscriptionUsage, readClaudeModels, usageEnvironment, stopUsageReaders } = require('./subscription-usage.cjs');
+const { buildUsageReaders } = require('./usage-readers.cjs');
 const { modelsFromReading } = require('./routing-models.cjs');
-const { readPiUsage } = require('./pi-usage.cjs');
 const { clineRoute } = require('./native-account-route.cjs');
 const { CrashReport, diagnose, redact, guardStartup } = require('./crash-report.cjs');
 const { courseFromArgs, profileFromArgs, openCourseConsole } = require('./course-launch.cjs');
@@ -397,7 +395,9 @@ app.whenReady().then(() => guardStartup(async () => {
   await startupStep('Claude Code check', () => { claude = findClaude(); }, { optional: true });
   const usageDirectory = path.join(root, 'usage-reader'); fs.mkdirSync(usageDirectory, { recursive: true });
   subscriptionUsage = new SubscriptionUsage({
-    readers: {
+    readers: buildUsageReaders({
+      executable: id => cliSetup.executable(id), accounts, usageDirectory,
+      getOpenCodeKey: () => { const entry = vault.list().find(item => item.id.toLowerCase() === 'opencode' || item.label.toLowerCase() === 'opencode'); return entry ? vault.get(entry.id) : null; },
       codex: async choice => {
         const reader = getCodexAccount(choice.id), readings = await reader.refresh();
         // The native account catalog is filtered by this profile, unlike global
@@ -406,15 +406,7 @@ app.whenReady().then(() => guardStartup(async () => {
         try { models = (await reader.models()).map(model => ({ ...model, available: true, source: 'native account model/list' })); } catch {}
         return readings.map(row => ({ ...row, models }));
       },
-      antigravity: choice => readAntigravityUsage({ executable: cliSetup.executable('antigravity'), accountId: choice.id, cwd: usageDirectory, env: usageEnvironment() }),
-      claude: choice => readClaudeUsage({ executable: cliSetup.executable('claude'), accountId: choice.id, cwd: usageDirectory, env: accounts.environment(choice.id, 'claude', { baseEnv: process.env }) }),
-      copilot: choice => readCopilotUsage({ executable: copilotExecutable(cliSetup.executable('copilot')), accountId: choice.id, cwd: usageDirectory, env: usageEnvironment() }),
-      cursor: choice => readCursorUsage({ executable: cliSetup.executable('cursor'), accountId: choice.id, cwd: usageDirectory, env: usageEnvironment() }),
-      pi: choice => readPiUsage({ executable: cliSetup.executable('pi'), accountId: choice.id, cwd: usageDirectory, env: usageEnvironment(accounts.environment(choice.id, 'pi', { baseEnv: process.env })), settingsPath: accounts.getAccount(choice.id, 'pi').configDir ? path.join(accounts.getAccount(choice.id, 'pi').configDir, 'settings.json') : undefined }),
-      kiro: choice => readKiroUsage({ executable: cliSetup.executable('kiro'), accountId: choice.id, cwd: path.join(usageDirectory, 'kiro'), env: usageEnvironment() }),
-      kimi: choice => readKimiUsage({ executable: cliSetup.executable('kimi'), accountId: choice.id, cwd: usageDirectory, env: usageEnvironment() }),
-      opencode: choice => readOpenCodeUsage({ executable: cliSetup.executable('opencode'), accountId: choice.id, cwd: usageDirectory, env: usageEnvironment(), getKey: () => { const entry = vault.list().find(item => item.id.toLowerCase() === 'opencode' || item.label.toLowerCase() === 'opencode'); return entry ? vault.get(entry.id) : null; } }),
-    },
+    }),
     onReading: saveUsage, onChange: () => { publish(); mobile?.scheduleState(); },
   });
   capabilities = { codex: false, claude: !!claude, claudeLocation: claude?.label, node: !!runtime.node, shell: true };
