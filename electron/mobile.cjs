@@ -50,6 +50,8 @@ function mobileSession(item, sessions) {
     ...(worktree && typeof worktree.branch === 'string' && typeof worktree.path === 'string' ? { worktree: { branch: worktree.branch, path: worktree.path } } : {}) };
 }
 const HEARTBEAT_MS = 15000;
+// A phone app in the background can pause for a while; allow about two minutes.
+const MAX_MISSED_PONGS = 8;
 const WORKER_CONSOLE_READS = new Set(['console.files']);
 const WORKER_ACTIONS = new Set(['worker.submit', 'worker.stop']);
 const GLOBAL_CONSOLE_ACTIONS = new Set(['console.create', 'console.agents', 'console.worktree.root']);
@@ -291,10 +293,11 @@ class MobileCompanion extends EventEmitter {
     const packet = compressed && compressed.length < buffer.length ? compressed : text;
     this.counters.sent += Buffer.byteLength(packet); client.ws.send(packet); return true;
   }
-  // Half-open sockets never close on their own; drop a phone after two missed pongs.
+  // Half-open sockets never close on their own; drop a phone after about two
+  // minutes of missed pongs, which leaves room for a backgrounded phone app.
   heartbeat() {
     for (const client of this.clients) {
-      if (client.missedPongs >= 2) { client.ws.terminate(); continue; }
+      if (client.missedPongs >= MAX_MISSED_PONGS) { client.ws.terminate(); continue; }
       client.missedPongs = (client.missedPongs || 0) + 1;
       try { client.ws.ping(); } catch {}
     }

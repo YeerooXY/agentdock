@@ -958,14 +958,16 @@ test('mobile idle settings and model choices stay pinned to the selected launch 
   assert.deepEqual(f.sessions.writes, []);
 });
 
-test('heartbeat pings phones and terminates a socket after two missed pongs', () => {
+test('heartbeat pings phones and terminates a socket after about two minutes of missed pongs', () => {
   const companion = Object.create(MobileCompanion.prototype);
   const socket = () => { const ws = new EventEmitter(); ws.pings = 0; ws.terminated = false; ws.ping = () => { ws.pings++; }; ws.terminate = () => { ws.terminated = true; }; return ws; };
   const live = { ws: socket(), missedPongs: 0 }, silent = { ws: socket(), missedPongs: 0 };
   companion.clients = new Set([live, silent]);
-  for (let tick = 0; tick < 3; tick++) { companion.heartbeat(); live.missedPongs = 0; }
+  for (let tick = 0; tick < 8; tick++) { companion.heartbeat(); live.missedPongs = 0; }
+  assert.equal(silent.ws.terminated, false, 'a backgrounded phone gets about two minutes before it is dropped');
+  companion.heartbeat(); live.missedPongs = 0;
   assert.equal(live.ws.terminated, false, 'a phone that answers stays connected');
-  assert.equal(live.ws.pings, 3);
-  assert.equal(silent.ws.pings, 2, 'two pings go unanswered');
-  assert.equal(silent.ws.terminated, true, 'the third tick drops the half-open socket');
+  assert.equal(live.ws.pings, 9);
+  assert.equal(silent.ws.pings, 8, 'eight pings go unanswered');
+  assert.equal(silent.ws.terminated, true, 'the next tick drops the half-open socket');
 });
