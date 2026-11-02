@@ -1,0 +1,31 @@
+{
+  "input": {
+    "id": "p1",
+    "name": "Paddock",
+    "color": "#47c",
+    "status": "active",
+    "progress": {
+      "done": 1,
+      "total": 4
+    },
+    "lastActiveAt": 1762000000000,
+    "createdAt": 1761000000000,
+    "folders": [
+      {
+        "path": "C:/Users/me/Projects/agent-dock"
+      }
+    ],
+    "instructions": "private"
+  },
+  "output": {
+    "id": "p1",
+    "name": "Paddock",
+    "color": "#47c",
+    "status": "active",
+    "progress": {
+      "done": 1,
+      "total": 4
+    },
+    "lastActiveAt": 1762000000000
+  }
+}

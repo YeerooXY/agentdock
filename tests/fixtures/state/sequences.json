@@ -1,0 +1,1750 @@
+[
+  {
+    "name": "reset then patch then replace",
+    "view": "desktop",
+    "description": "Fresh client: welcome, resets, a patch with implicit order, a value replace.",
+    "start": {
+      "view": "desktop",
+      "epoch": null,
+      "subscription": null,
+      "slices": [],
+      "revs": {},
+      "values": {},
+      "lastBatch": 0
+    },
+    "steps": [
+      {
+        "message": {
+          "type": "welcome",
+          "protocol": 2,
+          "epoch": "epoch-a",
+          "subscription": "sub-1",
+          "slices": [
+            "sessions",
+            "tasks",
+            "usage"
+          ],
+          "compression": "none"
+        },
+        "expect": {
+          "outcome": "welcome",
+          "state": {
+            "view": "desktop",
+            "epoch": "epoch-a",
+            "subscription": "sub-1",
+            "slices": [
+              "sessions",
+              "tasks",
+              "usage"
+            ],
+            "revs": {},
+            "values": {},
+            "lastBatch": 0
+          }
+        }
+      },
+      {
+        "message": {
+          "type": "changes",
+          "epoch": "epoch-a",
+          "subscription": "sub-1",
+          "batch": 1,
+          "changes": [
+            {
+              "kind": "reset",
+              "slice": "sessions",
+              "rev": 3,
+              "value": {
+                "byId": {
+                  "a": {
+                    "id": "a",
+                    "name": "A"
+                  },
+                  "b": {
+                    "id": "b",
+                    "name": "B"
+                  }
+                },
+                "order": [
+                  "a",
+                  "b"
+                ],
+                "meta": {}
+              }
+            },
+            {
+              "kind": "reset",
+              "slice": "tasks",
+              "rev": 0,
+              "value": {
+                "byId": {},
+                "order": [],
+                "meta": {}
+              }
+            },
+            {
+              "kind": "reset",
+              "slice": "usage",
+              "rev": 1,
+              "value": {
+                "accounts": []
+              }
+            }
+          ]
+        },
+        "expect": {
+          "outcome": "applied",
+          "batch": 1,
+          "state": {
+            "view": "desktop",
+            "epoch": "epoch-a",
+            "subscription": "sub-1",
+            "slices": [
+              "sessions",
+              "tasks",
+              "usage"
+            ],
+            "revs": {
+              "sessions": 3,
+              "tasks": 0,
+              "usage": 1
+            },
+            "values": {
+              "sessions": {
+                "byId": {
+                  "a": {
+                    "id": "a",
+                    "name": "A"
+                  },
+                  "b": {
+                    "id": "b",
+                    "name": "B"
+                  }
+                },
+                "order": [
+                  "a",
+                  "b"
+                ],
+                "meta": {}
+              },
+              "tasks": {
+                "byId": {},
+                "order": [],
+                "meta": {}
+              },
+              "usage": {
+                "accounts": []
+              }
+            },
+            "lastBatch": 1
+          }
+        }
+      },
+      {
+        "message": {
+          "type": "changes",
+          "epoch": "epoch-a",
+          "subscription": "sub-1",
+          "batch": 2,
+          "changes": [
+            {
+              "kind": "patch",
+              "slice": "sessions",
+              "baseRev": 3,
+              "rev": 4,
+              "upsert": {
+                "c": {
+                  "id": "c",
+                  "name": "C"
+                },
+                "a": {
+                  "id": "a",
+                  "name": "A2"
+                }
+              },
+              "remove": [
+                "b"
+              ]
+            }
+          ]
+        },
+        "expect": {
+          "outcome": "applied",
+          "batch": 2,
+          "state": {
+            "view": "desktop",
+            "epoch": "epoch-a",
+            "subscription": "sub-1",
+            "slices": [
+              "sessions",
+              "tasks",
+              "usage"
+            ],
+            "revs": {
+              "sessions": 4,
+              "tasks": 0,
+              "usage": 1
+            },
+            "values": {
+              "sessions": {
+                "byId": {
+                  "a": {
+                    "id": "a",
+                    "name": "A2"
+                  },
+                  "c": {
+                    "id": "c",
+                    "name": "C"
+                  }
+                },
+                "order": [
+                  "a",
+                  "c"
+                ],
+                "meta": {}
+              },
+              "tasks": {
+                "byId": {},
+                "order": [],
+                "meta": {}
+              },
+              "usage": {
+                "accounts": []
+              }
+            },
+            "lastBatch": 2
+          }
+        }
+      },
+      {
+        "message": {
+          "type": "changes",
+          "epoch": "epoch-a",
+          "subscription": "sub-1",
+          "batch": 3,
+          "changes": [
+            {
+              "kind": "replace",
+              "slice": "usage",
+              "baseRev": 1,
+              "rev": 2,
+              "value": {
+                "accounts": [
+                  {
+                    "id": "codex:default"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "expect": {
+          "outcome": "applied",
+          "batch": 3,
+          "state": {
+            "view": "desktop",
+            "epoch": "epoch-a",
+            "subscription": "sub-1",
+            "slices": [
+              "sessions",
+              "tasks",
+              "usage"
+            ],
+            "revs": {
+              "sessions": 4,
+              "tasks": 0,
+              "usage": 2
+            },
+            "values": {
+              "sessions": {
+                "byId": {
+                  "a": {
+                    "id": "a",
+                    "name": "A2"
+                  },
+                  "c": {
+                    "id": "c",
+                    "name": "C"
+                  }
+                },
+                "order": [
+                  "a",
+                  "c"
+                ],
+                "meta": {}
+              },
+              "tasks": {
+                "byId": {},
+                "order": [],
+                "meta": {}
+              },
+              "usage": {
+                "accounts": [
+                  {
+                    "id": "codex:default"
+                  }
+                ]
+              }
+            },
+            "lastBatch": 3
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "explicit order and meta",
+    "view": "desktop",
+    "description": "A patch that only reorders and changes meta.",
+    "start": {
+      "view": "desktop",
+      "epoch": null,
+      "subscription": null,
+      "slices": [],
+      "revs": {},
+      "values": {},
+      "lastBatch": 0
+    },
+    "steps": [
+      {
+        "message": {
+          "type": "welcome",
+          "protocol": 2,
+          "epoch": "epoch-a",
+          "subscription": "sub-1",
+          "slices": [
+            "sessions",
+            "tasks",
+            "usage"
+          ],
+          "compression": "none"
+        },
+        "expect": {
+          "outcome": "welcome",
+          "state": {
+            "view": "desktop",
+            "epoch": "epoch-a",
+            "subscription": "sub-1",
+            "slices": [
+              "sessions",
+              "tasks",
+              "usage"
+            ],
+            "revs": {},
+            "values": {},
+            "lastBatch": 0
+          }
+        }
+      },
+      {
+        "message": {
+          "type": "changes",
+          "epoch": "epoch-a",
+          "subscription": "sub-1",
+          "batch": 1,
+          "changes": [
+            {
+              "kind": "reset",
+              "slice": "tasks",
+              "rev": 5,
+              "value": {
+                "byId": {
+                  "x": {
+                    "id": "x"
+                  },
+                  "y": {
+                    "id": "y"
+                  }
+                },
+                "order": [
+                  "x",
+                  "y"
+                ],
+                "meta": {
+                  "busy": false
+                }
+              }
+            }
+          ]
+        },
+        "expect": {
+          "outcome": "applied",
+          "batch": 1,
+          "state": {
+            "view": "desktop",
+            "epoch": "epoch-a",
+            "subscription": "sub-1",
+            "slices": [
+              "sessions",
+              "tasks",
+              "usage"
+            ],
+            "revs": {
+              "tasks": 5
+            },
+            "values": {
+              "tasks": {
+                "byId": {
+                  "x": {
+                    "id": "x"
+                  },
+                  "y": {
+                    "id": "y"
+                  }
+                },
+                "order": [
+                  "x",
+                  "y"
+                ],
+                "meta": {
+                  "busy": false
+                }
+              }
+            },
+            "lastBatch": 1
+          }
+        }
+      },
+      {
+        "message": {
+          "type": "changes",
+          "epoch": "epoch-a",
+          "subscription": "sub-1",
+          "batch": 2,
+          "changes": [
+            {
+              "kind": "patch",
+              "slice": "tasks",
+              "baseRev": 5,
+              "rev": 6,
+              "upsert": {},
+              "remove": [],
+              "order": [
+                "y",
+                "x"
+              ],
+              "meta": {
+                "busy": true
+              }
+            }
+          ]
+        },
+        "expect": {
+          "outcome": "applied",
+          "batch": 2,
+          "state": {
+            "view": "desktop",
+            "epoch": "epoch-a",
+            "subscription": "sub-1",
+            "slices": [
+              "sessions",
+              "tasks",
+              "usage"
+            ],
+            "revs": {
+              "tasks": 6
+            },
+            "values": {
+              "tasks": {
+                "byId": {
+                  "x": {
+                    "id": "x"
+                  },
+                  "y": {
+                    "id": "y"
+                  }
+                },
+                "order": [
+                  "y",
+                  "x"
+                ],
+                "meta": {
+                  "busy": true
+                }
+              }
+            },
+            "lastBatch": 2
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "duplicate batch ignored",
+    "view": "desktop",
+    "description": "A batch number at or below the last applied one changes nothing; the client acks again.",
+    "start": {
+      "view": "desktop",
+      "epoch": null,
+      "subscription": null,
+      "slices": [],
+      "revs": {},
+      "values": {},
+      "lastBatch": 0
+    },
+    "steps": [
+      {
+        "message": {
+          "type": "welcome",
+          "protocol": 2,
+          "epoch": "epoch-a",
+          "subscription": "sub-1",
+          "slices": [
+            "sessions",
+            "tasks",
+            "usage"
+          ],
+          "compression": "none"
+        },
+        "expect": {
+          "outcome": "welcome",
+          "state": {
+            "view": "desktop",
+            "epoch": "epoch-a",
+            "subscription": "sub-1",
+            "slices": [
+              "sessions",
+              "tasks",
+              "usage"
+            ],
+            "revs": {},
+            "values": {},
+            "lastBatch": 0
+          }
+        }
+      },
+      {
+        "message": {
+          "type": "changes",
+          "epoch": "epoch-a",
+          "subscription": "sub-1",
+          "batch": 1,
+          "changes": [
+            {
+              "kind": "reset",
+              "slice": "usage",
+              "rev": 1,
+              "value": {
+                "n": 1
+              }
+            }
+          ]
+        },
+        "expect": {
+          "outcome": "applied",
+          "batch": 1,
+          "state": {
+            "view": "desktop",
+            "epoch": "epoch-a",
+            "subscription": "sub-1",
+            "slices": [
+              "sessions",
+              "tasks",
+              "usage"
+            ],
+            "revs": {
+              "usage": 1
+            },
+            "values": {
+              "usage": {
+                "n": 1
+              }
+            },
+            "lastBatch": 1
+          }
+        }
+      },
+      {
+        "message": {
+          "type": "changes",
+          "epoch": "epoch-a",
+          "subscription": "sub-1",
+          "batch": 1,
+          "changes": [
+            {
+              "kind": "reset",
+              "slice": "usage",
+              "rev": 9,
+              "value": {
+                "n": 9
+              }
+            }
+          ]
+        },
+        "expect": {
+          "outcome": "duplicate",
+          "batch": 1,
+          "state": {
+            "view": "desktop",
+            "epoch": "epoch-a",
+            "subscription": "sub-1",
+            "slices": [
+              "sessions",
+              "tasks",
+              "usage"
+            ],
+            "revs": {
+              "usage": 1
+            },
+            "values": {
+              "usage": {
+                "n": 1
+              }
+            },
+            "lastBatch": 1
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "gap asks for resync atomically",
+    "view": "desktop",
+    "description": "baseRev mismatch on one slice rejects the whole batch and names the slice.",
+    "start": {
+      "view": "desktop",
+      "epoch": null,
+      "subscription": null,
+      "slices": [],
+      "revs": {},
+      "values": {},
+      "lastBatch": 0
+    },
+    "steps": [
+      {
+        "message": {
+          "type": "welcome",
+          "protocol": 2,
+          "epoch": "epoch-a",
+          "subscription": "sub-1",
+          "slices": [
+            "sessions",
+            "tasks",
+            "usage"
+          ],
+          "compression": "none"
+        },
+        "expect": {
+          "outcome": "welcome",
+          "state": {
+            "view": "desktop",
+            "epoch": "epoch-a",
+            "subscription": "sub-1",
+            "slices": [
+              "sessions",
+              "tasks",
+              "usage"
+            ],
+            "revs": {},
+            "values": {},
+            "lastBatch": 0
+          }
+        }
+      },
+      {
+        "message": {
+          "type": "changes",
+          "epoch": "epoch-a",
+          "subscription": "sub-1",
+          "batch": 1,
+          "changes": [
+            {
+              "kind": "reset",
+              "slice": "usage",
+              "rev": 1,
+              "value": {
+                "n": 1
+              }
+            },
+            {
+              "kind": "reset",
+              "slice": "tasks",
+              "rev": 1,
+              "value": {
+                "byId": {},
+                "order": [],
+                "meta": {}
+              }
+            }
+          ]
+        },
+        "expect": {
+          "outcome": "applied",
+          "batch": 1,
+          "state": {
+            "view": "desktop",
+            "epoch": "epoch-a",
+            "subscription": "sub-1",
+            "slices": [
+              "sessions",
+              "tasks",
+              "usage"
+            ],
+            "revs": {
+              "usage": 1,
+              "tasks": 1
+            },
+            "values": {
+              "usage": {
+                "n": 1
+              },
+              "tasks": {
+                "byId": {},
+                "order": [],
+                "meta": {}
+              }
+            },
+            "lastBatch": 1
+          }
+        }
+      },
+      {
+        "message": {
+          "type": "changes",
+          "epoch": "epoch-a",
+          "subscription": "sub-1",
+          "batch": 2,
+          "changes": [
+            {
+              "kind": "replace",
+              "slice": "usage",
+              "baseRev": 1,
+              "rev": 2,
+              "value": {
+                "n": 2
+              }
+            },
+            {
+              "kind": "patch",
+              "slice": "tasks",
+              "baseRev": 4,
+              "rev": 5,
+              "upsert": {
+                "t": {
+                  "id": "t"
+                }
+              },
+              "remove": []
+            }
+          ]
+        },
+        "expect": {
+          "outcome": "resync",
+          "slices": [
+            "tasks"
+          ],
+          "state": {
+            "view": "desktop",
+            "epoch": "epoch-a",
+            "subscription": "sub-1",
+            "slices": [
+              "sessions",
+              "tasks",
+              "usage"
+            ],
+            "revs": {
+              "usage": 1,
+              "tasks": 1
+            },
+            "values": {
+              "usage": {
+                "n": 1
+              },
+              "tasks": {
+                "byId": {},
+                "order": [],
+                "meta": {}
+              }
+            },
+            "lastBatch": 1
+          }
+        }
+      },
+      {
+        "message": {
+          "type": "changes",
+          "epoch": "epoch-a",
+          "subscription": "sub-1",
+          "batch": 3,
+          "changes": [
+            {
+              "kind": "reset",
+              "slice": "tasks",
+              "rev": 5,
+              "value": {
+                "byId": {
+                  "t": {
+                    "id": "t"
+                  }
+                },
+                "order": [
+                  "t"
+                ],
+                "meta": {}
+              }
+            }
+          ]
+        },
+        "expect": {
+          "outcome": "applied",
+          "batch": 3,
+          "state": {
+            "view": "desktop",
+            "epoch": "epoch-a",
+            "subscription": "sub-1",
+            "slices": [
+              "sessions",
+              "tasks",
+              "usage"
+            ],
+            "revs": {
+              "usage": 1,
+              "tasks": 5
+            },
+            "values": {
+              "usage": {
+                "n": 1
+              },
+              "tasks": {
+                "byId": {
+                  "t": {
+                    "id": "t"
+                  }
+                },
+                "order": [
+                  "t"
+                ],
+                "meta": {}
+              }
+            },
+            "lastBatch": 3
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "deletion",
+    "view": "desktop",
+    "description": "Removing every item leaves an empty collection.",
+    "start": {
+      "view": "desktop",
+      "epoch": null,
+      "subscription": null,
+      "slices": [],
+      "revs": {},
+      "values": {},
+      "lastBatch": 0
+    },
+    "steps": [
+      {
+        "message": {
+          "type": "welcome",
+          "protocol": 2,
+          "epoch": "epoch-a",
+          "subscription": "sub-1",
+          "slices": [
+            "sessions",
+            "tasks",
+            "usage"
+          ],
+          "compression": "none"
+        },
+        "expect": {
+          "outcome": "welcome",
+          "state": {
+            "view": "desktop",
+            "epoch": "epoch-a",
+            "subscription": "sub-1",
+            "slices": [
+              "sessions",
+              "tasks",
+              "usage"
+            ],
+            "revs": {},
+            "values": {},
+            "lastBatch": 0
+          }
+        }
+      },
+      {
+        "message": {
+          "type": "changes",
+          "epoch": "epoch-a",
+          "subscription": "sub-1",
+          "batch": 1,
+          "changes": [
+            {
+              "kind": "reset",
+              "slice": "sessions",
+              "rev": 2,
+              "value": {
+                "byId": {
+                  "a": {
+                    "id": "a"
+                  }
+                },
+                "order": [
+                  "a"
+                ],
+                "meta": {}
+              }
+            }
+          ]
+        },
+        "expect": {
+          "outcome": "applied",
+          "batch": 1,
+          "state": {
+            "view": "desktop",
+            "epoch": "epoch-a",
+            "subscription": "sub-1",
+            "slices": [
+              "sessions",
+              "tasks",
+              "usage"
+            ],
+            "revs": {
+              "sessions": 2
+            },
+            "values": {
+              "sessions": {
+                "byId": {
+                  "a": {
+                    "id": "a"
+                  }
+                },
+                "order": [
+                  "a"
+                ],
+                "meta": {}
+              }
+            },
+            "lastBatch": 1
+          }
+        }
+      },
+      {
+        "message": {
+          "type": "changes",
+          "epoch": "epoch-a",
+          "subscription": "sub-1",
+          "batch": 2,
+          "changes": [
+            {
+              "kind": "patch",
+              "slice": "sessions",
+              "baseRev": 2,
+              "rev": 3,
+              "upsert": {},
+              "remove": [
+                "a"
+              ]
+            }
+          ]
+        },
+        "expect": {
+          "outcome": "applied",
+          "batch": 2,
+          "state": {
+            "view": "desktop",
+            "epoch": "epoch-a",
+            "subscription": "sub-1",
+            "slices": [
+              "sessions",
+              "tasks",
+              "usage"
+            ],
+            "revs": {
+              "sessions": 3
+            },
+            "values": {
+              "sessions": {
+                "byId": {},
+                "order": [],
+                "meta": {}
+              }
+            },
+            "lastBatch": 2
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "server restart changes epoch",
+    "view": "desktop",
+    "description": "Changes from another epoch need a fresh hello; a new welcome drops cached slices.",
+    "start": {
+      "view": "desktop",
+      "epoch": null,
+      "subscription": null,
+      "slices": [],
+      "revs": {},
+      "values": {},
+      "lastBatch": 0
+    },
+    "steps": [
+      {
+        "message": {
+          "type": "welcome",
+          "protocol": 2,
+          "epoch": "epoch-a",
+          "subscription": "sub-1",
+          "slices": [
+            "sessions",
+            "tasks",
+            "usage"
+          ],
+          "compression": "none"
+        },
+        "expect": {
+          "outcome": "welcome",
+          "state": {
+            "view": "desktop",
+            "epoch": "epoch-a",
+            "subscription": "sub-1",
+            "slices": [
+              "sessions",
+              "tasks",
+              "usage"
+            ],
+            "revs": {},
+            "values": {},
+            "lastBatch": 0
+          }
+        }
+      },
+      {
+        "message": {
+          "type": "changes",
+          "epoch": "epoch-a",
+          "subscription": "sub-1",
+          "batch": 1,
+          "changes": [
+            {
+              "kind": "reset",
+              "slice": "usage",
+              "rev": 4,
+              "value": {
+                "n": 4
+              }
+            }
+          ]
+        },
+        "expect": {
+          "outcome": "applied",
+          "batch": 1,
+          "state": {
+            "view": "desktop",
+            "epoch": "epoch-a",
+            "subscription": "sub-1",
+            "slices": [
+              "sessions",
+              "tasks",
+              "usage"
+            ],
+            "revs": {
+              "usage": 4
+            },
+            "values": {
+              "usage": {
+                "n": 4
+              }
+            },
+            "lastBatch": 1
+          }
+        }
+      },
+      {
+        "message": {
+          "type": "changes",
+          "epoch": "epoch-b",
+          "subscription": "sub-1",
+          "batch": 2,
+          "changes": [
+            {
+              "kind": "replace",
+              "slice": "usage",
+              "baseRev": 4,
+              "rev": 5,
+              "value": {
+                "n": 5
+              }
+            }
+          ]
+        },
+        "expect": {
+          "outcome": "reconnect",
+          "error": "epoch",
+          "state": {
+            "view": "desktop",
+            "epoch": "epoch-a",
+            "subscription": "sub-1",
+            "slices": [
+              "sessions",
+              "tasks",
+              "usage"
+            ],
+            "revs": {
+              "usage": 4
+            },
+            "values": {
+              "usage": {
+                "n": 4
+              }
+            },
+            "lastBatch": 1
+          }
+        }
+      },
+      {
+        "message": {
+          "type": "welcome",
+          "protocol": 2,
+          "epoch": "epoch-b",
+          "subscription": "sub-2",
+          "slices": [
+            "sessions",
+            "tasks",
+            "usage"
+          ],
+          "compression": "none"
+        },
+        "expect": {
+          "outcome": "welcome",
+          "state": {
+            "view": "desktop",
+            "epoch": "epoch-b",
+            "subscription": "sub-2",
+            "slices": [
+              "sessions",
+              "tasks",
+              "usage"
+            ],
+            "revs": {},
+            "values": {},
+            "lastBatch": 0
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "resume in same epoch keeps cache",
+    "view": "desktop",
+    "description": "A welcome in the same epoch keeps cached values for subscribed slices only.",
+    "start": {
+      "view": "desktop",
+      "epoch": null,
+      "subscription": null,
+      "slices": [],
+      "revs": {},
+      "values": {},
+      "lastBatch": 0
+    },
+    "steps": [
+      {
+        "message": {
+          "type": "welcome",
+          "protocol": 2,
+          "epoch": "epoch-a",
+          "subscription": "sub-1",
+          "slices": [
+            "sessions",
+            "tasks",
+            "usage"
+          ],
+          "compression": "none"
+        },
+        "expect": {
+          "outcome": "welcome",
+          "state": {
+            "view": "desktop",
+            "epoch": "epoch-a",
+            "subscription": "sub-1",
+            "slices": [
+              "sessions",
+              "tasks",
+              "usage"
+            ],
+            "revs": {},
+            "values": {},
+            "lastBatch": 0
+          }
+        }
+      },
+      {
+        "message": {
+          "type": "changes",
+          "epoch": "epoch-a",
+          "subscription": "sub-1",
+          "batch": 1,
+          "changes": [
+            {
+              "kind": "reset",
+              "slice": "usage",
+              "rev": 4,
+              "value": {
+                "n": 4
+              }
+            },
+            {
+              "kind": "reset",
+              "slice": "tasks",
+              "rev": 2,
+              "value": {
+                "byId": {},
+                "order": [],
+                "meta": {}
+              }
+            }
+          ]
+        },
+        "expect": {
+          "outcome": "applied",
+          "batch": 1,
+          "state": {
+            "view": "desktop",
+            "epoch": "epoch-a",
+            "subscription": "sub-1",
+            "slices": [
+              "sessions",
+              "tasks",
+              "usage"
+            ],
+            "revs": {
+              "usage": 4,
+              "tasks": 2
+            },
+            "values": {
+              "usage": {
+                "n": 4
+              },
+              "tasks": {
+                "byId": {},
+                "order": [],
+                "meta": {}
+              }
+            },
+            "lastBatch": 1
+          }
+        }
+      },
+      {
+        "message": {
+          "type": "welcome",
+          "protocol": 2,
+          "epoch": "epoch-a",
+          "subscription": "sub-2",
+          "slices": [
+            "usage"
+          ],
+          "compression": "none"
+        },
+        "expect": {
+          "outcome": "welcome",
+          "state": {
+            "view": "desktop",
+            "epoch": "epoch-a",
+            "subscription": "sub-2",
+            "slices": [
+              "usage"
+            ],
+            "revs": {
+              "usage": 4
+            },
+            "values": {
+              "usage": {
+                "n": 4
+              }
+            },
+            "lastBatch": 0
+          }
+        }
+      },
+      {
+        "message": {
+          "type": "changes",
+          "epoch": "epoch-a",
+          "subscription": "sub-2",
+          "batch": 1,
+          "changes": [
+            {
+              "kind": "replace",
+              "slice": "usage",
+              "baseRev": 4,
+              "rev": 5,
+              "value": {
+                "n": 5
+              }
+            }
+          ]
+        },
+        "expect": {
+          "outcome": "applied",
+          "batch": 1,
+          "state": {
+            "view": "desktop",
+            "epoch": "epoch-a",
+            "subscription": "sub-2",
+            "slices": [
+              "usage"
+            ],
+            "revs": {
+              "usage": 5
+            },
+            "values": {
+              "usage": {
+                "n": 5
+              }
+            },
+            "lastBatch": 1
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "stale subscription ignored",
+    "view": "desktop",
+    "description": "Changes for an old subscription are ignored.",
+    "start": {
+      "view": "desktop",
+      "epoch": null,
+      "subscription": null,
+      "slices": [],
+      "revs": {},
+      "values": {},
+      "lastBatch": 0
+    },
+    "steps": [
+      {
+        "message": {
+          "type": "welcome",
+          "protocol": 2,
+          "epoch": "epoch-a",
+          "subscription": "sub-1",
+          "slices": [
+            "sessions",
+            "tasks",
+            "usage"
+          ],
+          "compression": "none"
+        },
+        "expect": {
+          "outcome": "welcome",
+          "state": {
+            "view": "desktop",
+            "epoch": "epoch-a",
+            "subscription": "sub-1",
+            "slices": [
+              "sessions",
+              "tasks",
+              "usage"
+            ],
+            "revs": {},
+            "values": {},
+            "lastBatch": 0
+          }
+        }
+      },
+      {
+        "message": {
+          "type": "changes",
+          "epoch": "epoch-a",
+          "subscription": "sub-0",
+          "batch": 1,
+          "changes": [
+            {
+              "kind": "reset",
+              "slice": "usage",
+              "rev": 1,
+              "value": {}
+            }
+          ]
+        },
+        "expect": {
+          "outcome": "ignored",
+          "error": "subscription",
+          "state": {
+            "view": "desktop",
+            "epoch": "epoch-a",
+            "subscription": "sub-1",
+            "slices": [
+              "sessions",
+              "tasks",
+              "usage"
+            ],
+            "revs": {},
+            "values": {},
+            "lastBatch": 0
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "unsubscribed slice reconnects",
+    "view": "desktop",
+    "description": "A change for a slice outside the subscription is a protocol error.",
+    "start": {
+      "view": "desktop",
+      "epoch": null,
+      "subscription": null,
+      "slices": [],
+      "revs": {},
+      "values": {},
+      "lastBatch": 0
+    },
+    "steps": [
+      {
+        "message": {
+          "type": "welcome",
+          "protocol": 2,
+          "epoch": "epoch-a",
+          "subscription": "sub-1",
+          "slices": [
+            "sessions",
+            "tasks",
+            "usage"
+          ],
+          "compression": "none"
+        },
+        "expect": {
+          "outcome": "welcome",
+          "state": {
+            "view": "desktop",
+            "epoch": "epoch-a",
+            "subscription": "sub-1",
+            "slices": [
+              "sessions",
+              "tasks",
+              "usage"
+            ],
+            "revs": {},
+            "values": {},
+            "lastBatch": 0
+          }
+        }
+      },
+      {
+        "message": {
+          "type": "changes",
+          "epoch": "epoch-a",
+          "subscription": "sub-1",
+          "batch": 1,
+          "changes": [
+            {
+              "kind": "reset",
+              "slice": "projects",
+              "rev": 1,
+              "value": {
+                "byId": {},
+                "order": [],
+                "meta": {}
+              }
+            }
+          ]
+        },
+        "expect": {
+          "outcome": "reconnect",
+          "error": "subscription",
+          "state": {
+            "view": "desktop",
+            "epoch": "epoch-a",
+            "subscription": "sub-1",
+            "slices": [
+              "sessions",
+              "tasks",
+              "usage"
+            ],
+            "revs": {},
+            "values": {},
+            "lastBatch": 0
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "phone view",
+    "view": "phone",
+    "description": "The phone applies its own slice kinds: usage is a collection of accounts.",
+    "start": {
+      "view": "phone",
+      "epoch": null,
+      "subscription": null,
+      "slices": [],
+      "revs": {},
+      "values": {},
+      "lastBatch": 0
+    },
+    "steps": [
+      {
+        "message": {
+          "type": "welcome",
+          "protocol": 2,
+          "epoch": "epoch-a",
+          "subscription": "sub-1",
+          "slices": [
+            "usage",
+            "results"
+          ],
+          "compression": "none"
+        },
+        "expect": {
+          "outcome": "welcome",
+          "state": {
+            "view": "phone",
+            "epoch": "epoch-a",
+            "subscription": "sub-1",
+            "slices": [
+              "usage",
+              "results"
+            ],
+            "revs": {},
+            "values": {},
+            "lastBatch": 0
+          }
+        }
+      },
+      {
+        "message": {
+          "type": "changes",
+          "epoch": "epoch-a",
+          "subscription": "sub-1",
+          "batch": 1,
+          "changes": [
+            {
+              "kind": "reset",
+              "slice": "usage",
+              "rev": 2,
+              "value": {
+                "byId": {
+                  "codex:default": {
+                    "id": "codex:default",
+                    "label": "Codex"
+                  }
+                },
+                "order": [
+                  "codex:default"
+                ],
+                "meta": {}
+              }
+            },
+            {
+              "kind": "reset",
+              "slice": "results",
+              "rev": 1,
+              "value": {
+                "unread": 0,
+                "count": 0
+              }
+            }
+          ]
+        },
+        "expect": {
+          "outcome": "applied",
+          "batch": 1,
+          "state": {
+            "view": "phone",
+            "epoch": "epoch-a",
+            "subscription": "sub-1",
+            "slices": [
+              "usage",
+              "results"
+            ],
+            "revs": {
+              "usage": 2,
+              "results": 1
+            },
+            "values": {
+              "usage": {
+                "byId": {
+                  "codex:default": {
+                    "id": "codex:default",
+                    "label": "Codex"
+                  }
+                },
+                "order": [
+                  "codex:default"
+                ],
+                "meta": {}
+              },
+              "results": {
+                "unread": 0,
+                "count": 0
+              }
+            },
+            "lastBatch": 1
+          }
+        }
+      },
+      {
+        "message": {
+          "type": "changes",
+          "epoch": "epoch-a",
+          "subscription": "sub-1",
+          "batch": 2,
+          "changes": [
+            {
+              "kind": "patch",
+              "slice": "usage",
+              "baseRev": 2,
+              "rev": 3,
+              "upsert": {
+                "codex:default": {
+                  "id": "codex:default",
+                  "label": "Codex",
+                  "inUse": true
+                }
+              },
+              "remove": []
+            },
+            {
+              "kind": "replace",
+              "slice": "results",
+              "baseRev": 1,
+              "rev": 2,
+              "value": {
+                "unread": 1,
+                "count": 1
+              }
+            }
+          ]
+        },
+        "expect": {
+          "outcome": "applied",
+          "batch": 2,
+          "state": {
+            "view": "phone",
+            "epoch": "epoch-a",
+            "subscription": "sub-1",
+            "slices": [
+              "usage",
+              "results"
+            ],
+            "revs": {
+              "usage": 3,
+              "results": 2
+            },
+            "values": {
+              "usage": {
+                "byId": {
+                  "codex:default": {
+                    "id": "codex:default",
+                    "label": "Codex",
+                    "inUse": true
+                  }
+                },
+                "order": [
+                  "codex:default"
+                ],
+                "meta": {}
+              },
+              "results": {
+                "unread": 1,
+                "count": 1
+              }
+            },
+            "lastBatch": 2
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "ping and error",
+    "view": "desktop",
+    "description": "Ping is answered with its nonce; error is surfaced.",
+    "start": {
+      "view": "desktop",
+      "epoch": null,
+      "subscription": null,
+      "slices": [],
+      "revs": {},
+      "values": {},
+      "lastBatch": 0
+    },
+    "steps": [
+      {
+        "message": {
+          "type": "welcome",
+          "protocol": 2,
+          "epoch": "epoch-a",
+          "subscription": "sub-1",
+          "slices": [
+            "sessions",
+            "tasks",
+            "usage"
+          ],
+          "compression": "none"
+        },
+        "expect": {
+          "outcome": "welcome",
+          "state": {
+            "view": "desktop",
+            "epoch": "epoch-a",
+            "subscription": "sub-1",
+            "slices": [
+              "sessions",
+              "tasks",
+              "usage"
+            ],
+            "revs": {},
+            "values": {},
+            "lastBatch": 0
+          }
+        }
+      },
+      {
+        "message": {
+          "type": "ping",
+          "nonce": "n7"
+        },
+        "expect": {
+          "outcome": "pong",
+          "nonce": "n7",
+          "state": {
+            "view": "desktop",
+            "epoch": "epoch-a",
+            "subscription": "sub-1",
+            "slices": [
+              "sessions",
+              "tasks",
+              "usage"
+            ],
+            "revs": {},
+            "values": {},
+            "lastBatch": 0
+          }
+        }
+      },
+      {
+        "message": {
+          "type": "error",
+          "code": "unauthorized",
+          "message": "This phone was removed."
+        },
+        "expect": {
+          "outcome": "error",
+          "error": "unauthorized",
+          "state": {
+            "view": "desktop",
+            "epoch": "epoch-a",
+            "subscription": "sub-1",
+            "slices": [
+              "sessions",
+              "tasks",
+              "usage"
+            ],
+            "revs": {},
+            "values": {},
+            "lastBatch": 0
+          }
+        }
+      }
+    ]
+  }
+]

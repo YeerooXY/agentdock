@@ -1,0 +1,174 @@
+{
+  "protocol": 2,
+  "slices": {
+    "shell": {
+      "kind": "value",
+      "writer": "main"
+    },
+    "preferences": {
+      "kind": "value",
+      "writer": "main"
+    },
+    "sessions": {
+      "kind": "collection",
+      "writer": "sessions"
+    },
+    "panels": {
+      "kind": "collection",
+      "writer": "sessions"
+    },
+    "queues": {
+      "kind": "value",
+      "writer": "messageQueue"
+    },
+    "prompts": {
+      "kind": "collection",
+      "writer": "prompts"
+    },
+    "tasks": {
+      "kind": "collection",
+      "writer": "taskLoop"
+    },
+    "delegations": {
+      "kind": "collection",
+      "writer": "delegation"
+    },
+    "projects": {
+      "kind": "collection",
+      "writer": "projects"
+    },
+    "projectProposals": {
+      "kind": "collection",
+      "writer": "projects"
+    },
+    "accounts": {
+      "kind": "collection",
+      "writer": "accountProfiles"
+    },
+    "agents": {
+      "kind": "collection",
+      "writer": "cliSetup"
+    },
+    "skills": {
+      "kind": "collection",
+      "writer": "skillPacks"
+    },
+    "usage": {
+      "kind": "value",
+      "writer": "usage"
+    },
+    "usageHistory": {
+      "kind": "value",
+      "writer": "usage"
+    },
+    "results": {
+      "kind": "collection",
+      "writer": "workbench"
+    },
+    "imageJobs": {
+      "kind": "value",
+      "writer": "workbench"
+    },
+    "setupRequests": {
+      "kind": "collection",
+      "writer": "workbench"
+    },
+    "tools": {
+      "kind": "value",
+      "writer": "sharedHub"
+    },
+    "keyMetadata": {
+      "kind": "value",
+      "writer": "vault"
+    },
+    "sshHosts": {
+      "kind": "collection",
+      "writer": "ssh"
+    },
+    "mobileStatus": {
+      "kind": "value",
+      "writer": "mobile"
+    },
+    "updates": {
+      "kind": "value",
+      "writer": "updates"
+    },
+    "screenshots": {
+      "kind": "value",
+      "writer": "screenshots"
+    },
+    "alerts": {
+      "kind": "collection",
+      "writer": "alerts"
+    }
+  },
+  "views": [
+    "desktop",
+    "phone"
+  ],
+  "phone": {
+    "shell": {
+      "kind": "value",
+      "deps": [
+        "shell"
+      ]
+    },
+    "sessions": {
+      "kind": "collection",
+      "deps": [
+        "sessions"
+      ]
+    },
+    "queues": {
+      "kind": "value",
+      "deps": [
+        "queues"
+      ]
+    },
+    "prompts": {
+      "kind": "collection",
+      "deps": [
+        "prompts"
+      ]
+    },
+    "projects": {
+      "kind": "collection",
+      "deps": [
+        "projects"
+      ]
+    },
+    "tasks": {
+      "kind": "collection",
+      "deps": [
+        "tasks"
+      ]
+    },
+    "usage": {
+      "kind": "collection",
+      "deps": [
+        "usage"
+      ]
+    },
+    "results": {
+      "kind": "value",
+      "deps": [
+        "results"
+      ]
+    }
+  },
+  "secretKeyPattern": "^(?:token|accesstoken|refreshtoken|idtoken|bearertoken|authtoken|devicetoken|pushtoken|secret|clientsecret|password|passphrase|apikey|api_key|privatekey|private_key|authorization|cookie|cookies|env|environment|credential|credentials|pairingcode|pairingsecret|usercode|requestkey|vaultkey)$",
+  "secretKeyFlags": "i",
+  "compression": [
+    "gzip",
+    "none"
+  ],
+  "errorCodes": [
+    "invalid",
+    "epoch",
+    "subscription",
+    "duplicate",
+    "gap",
+    "unauthorized",
+    "unsupported"
+  ]
+}

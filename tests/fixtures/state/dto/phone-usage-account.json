@@ -1,0 +1,145 @@
+{
+  "input": {
+    "usageAccounts": [
+      {
+        "id": "claude:default",
+        "provider": "claude",
+        "label": "Claude",
+        "hasUsage": true,
+        "inUse": true
+      }
+    ],
+    "usageChecks": [
+      {
+        "accountId": "claude:default",
+        "provider": "claude",
+        "status": "stale",
+        "checkedAt": 1762000300000,
+        "observedAt": 1762000000000,
+        "message": "Sign in again.",
+        "stale": true,
+        "staleReason": "check-failed",
+        "failure": "sign-in",
+        "lastReading": {
+          "accountId": "claude:default",
+          "provider": "claude",
+          "accountLabel": null,
+          "plan": "Max",
+          "source": "claude /usage",
+          "method": "cli",
+          "observedAt": 1762000000000,
+          "precision": "exact",
+          "windows": [
+            {
+              "key": "five-hour",
+              "label": "5 hours",
+              "scope": "account",
+              "modelGroup": null,
+              "minutes": 300,
+              "usedPercent": 42,
+              "unlimited": false,
+              "resetsAt": 1762003600000,
+              "resetLabel": null,
+              "raw": {
+                "cookie": "x"
+              }
+            },
+            {
+              "key": "weekly-opus",
+              "label": "Opus weekly",
+              "scope": "model-group",
+              "modelGroup": "opus",
+              "minutes": 10080,
+              "usedPercent": null,
+              "unlimited": false,
+              "resetsAt": null,
+              "resetLabel": null
+            }
+          ]
+        },
+        "lastReadings": [
+          {
+            "accountId": "claude:default",
+            "provider": "claude",
+            "accountLabel": null,
+            "plan": "Max",
+            "source": "claude /usage",
+            "method": "cli",
+            "observedAt": 1762000000000,
+            "precision": "exact",
+            "windows": [
+              {
+                "key": "five-hour",
+                "label": "5 hours",
+                "scope": "account",
+                "modelGroup": null,
+                "minutes": 300,
+                "usedPercent": 42,
+                "unlimited": false,
+                "resetsAt": 1762003600000,
+                "resetLabel": null,
+                "raw": {
+                  "cookie": "x"
+                }
+              },
+              {
+                "key": "weekly-opus",
+                "label": "Opus weekly",
+                "scope": "model-group",
+                "modelGroup": "opus",
+                "minutes": 10080,
+                "usedPercent": null,
+                "unlimited": false,
+                "resetsAt": null,
+                "resetLabel": null
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "limits": []
+  },
+  "output": {
+    "id": "claude:default",
+    "provider": "claude",
+    "label": "Claude",
+    "hasUsage": true,
+    "inUse": true,
+    "check": {
+      "status": "stale",
+      "stale": true,
+      "staleReason": "check-failed",
+      "message": "Sign in again.",
+      "observedAt": 1762000000000,
+      "checkedAt": 1762000300000,
+      "failure": "sign-in"
+    },
+    "windows": [
+      {
+        "usedPercent": 42,
+        "resetsAt": 1762003600000,
+        "key": "five-hour",
+        "label": "5 hours",
+        "scope": "account",
+        "modelGroup": null,
+        "minutes": 300,
+        "unlimited": false,
+        "resetLabel": null,
+        "observedAt": 1762000000000
+      },
+      {
+        "usedPercent": null,
+        "resetsAt": null,
+        "key": "weekly-opus",
+        "label": "Opus weekly",
+        "scope": "model-group",
+        "modelGroup": "opus",
+        "minutes": 10080,
+        "unlimited": false,
+        "resetLabel": null,
+        "observedAt": 1762000000000
+      }
+    ]
+  }
+}

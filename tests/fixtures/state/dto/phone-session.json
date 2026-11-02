@@ -1,0 +1,93 @@
+{
+  "input": {
+    "id": "s1",
+    "slot": 2,
+    "name": "Codex",
+    "provider": "codex",
+    "alive": true,
+    "state": "active",
+    "cols": 120,
+    "rows": 30,
+    "consoleKey": "k1",
+    "projectId": "p1",
+    "remote": null,
+    "updatedAt": 1762000000000,
+    "providerSessionId": "thread-1",
+    "model": "GPT-6",
+    "modelId": "gpt-6",
+    "effort": "high",
+    "settingsAt": 1762000000000,
+    "launchId": "l1",
+    "accountId": "codex:default",
+    "accountLabel": "Codex",
+    "switchTargets": [
+      {
+        "id": "codex:work",
+        "label": "Work",
+        "ready": true
+      }
+    ],
+    "switching": false,
+    "purpose": "agent",
+    "taskId": null,
+    "consoleCapabilities": {
+      "input": true,
+      "stop": true
+    },
+    "draftSupported": true,
+    "cwd": "C:/Users/me/Projects/x",
+    "env": {
+      "OPENAI_API_KEY": "sk-test"
+    },
+    "worktree": {
+      "branch": "feature",
+      "path": "C:/w/feature",
+      "secretRoot": "x"
+    }
+  },
+  "output": {
+    "id": "s1",
+    "slot": 2,
+    "name": "Codex",
+    "provider": "codex",
+    "alive": true,
+    "state": "active",
+    "cols": 120,
+    "rows": 30,
+    "consoleKey": "k1",
+    "projectId": "p1",
+    "remote": null,
+    "updatedAt": 1762000000000,
+    "providerSessionId": "thread-1",
+    "model": "gpt-6",
+    "modelName": "GPT-6",
+    "effort": "high",
+    "settingsAt": 1762000000000,
+    "launchId": "l1",
+    "accountId": "codex:default",
+    "accountLabel": "Codex",
+    "switchTargets": [
+      {
+        "id": "codex:work",
+        "label": "Work",
+        "ready": true
+      }
+    ],
+    "switching": false,
+    "purpose": "agent",
+    "taskId": null,
+    "sliceId": null,
+    "steeringState": null,
+    "steeringSupported": false,
+    "consoleCapabilities": {
+      "input": true,
+      "stop": true
+    },
+    "draftSupported": true,
+    "switchOffer": null,
+    "worktree": {
+      "branch": "feature",
+      "path": "C:/w/feature"
+    }
+  }
+}
