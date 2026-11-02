@@ -10,7 +10,7 @@ const taskTime = item => item.startedAt || item.finishedAt || 0;
 // problem, and a newer task in the same project replaces an older outcome.
 // A plan waiting for approval always counts.
 function needsAttention(item, newest) {
-  if (!attentionStates.has(item.state) || closedByApp(item)) return false;
+  if (!attentionStates.has(item.state) || closedByApp(item) || item.acknowledgedAt || item.dismissedAt || item.supersededBy) return false;
   return item.state === 'plan-ready' || taskTime(item) >= newest;
 }
 
