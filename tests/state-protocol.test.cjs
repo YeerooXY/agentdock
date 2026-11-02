@@ -72,6 +72,8 @@ test('collections keep implicit order and reject inconsistent shapes', () => {
 test('secret-named fields are found at any depth', () => {
   assert.deepEqual(P.secretPaths({ a: [{ b: { apiKey: 1 } }], env: {}, tokens: 5, inputTokens: 3, key: 'alert-key' }), ['a[0].b.apiKey', 'env']);
   assert.throws(() => P.assertNoSecrets({ devices: [{ token: 'x' }] }), /private fields/);
+  // A variable name is not a secret; a resolved environment is.
+  assert.deepEqual(P.secretPaths({ key: { env: 'NOTION_TOKEN', label: 'Notion token' }, run: { env: { NOTION_TOKEN: 'x' } } }), ['run.env']);
 });
 
 test('JSON validation rejects non-data values', () => {

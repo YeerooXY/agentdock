@@ -108,6 +108,13 @@ function assertJson(value, path = 'value', seen = new Set()) {
   fail('invalid', `${path} is not JSON data.`);
 }
 
+// `env` and `environment` may name a variable (catalog `key.env: 'NOTION_TOKEN'`);
+// only a map of resolved values is private.
+const ENV_KEY = /^(?:env|environment)$/i;
+function isSecretField(key, value) {
+  if (!SECRET_KEY.test(key)) return false;
+  return !ENV_KEY.test(key) || (value !== null && typeof value === 'object');
+}
 // Returns the dotted paths of secret-named fields anywhere inside a value.
 function secretPaths(value, path = '', found = [], seen = new Set()) {
   if (value === null || typeof value !== 'object' || seen.has(value)) return found;
@@ -115,7 +122,7 @@ function secretPaths(value, path = '', found = [], seen = new Set()) {
   if (Array.isArray(value)) value.forEach((item, index) => secretPaths(item, `${path}[${index}]`, found, seen));
   else for (const [key, item] of Object.entries(value)) {
     const next = path ? `${path}.${key}` : key;
-    if (SECRET_KEY.test(key)) found.push(next);
+    if (isSecretField(key, item)) found.push(next);
     secretPaths(item, next, found, seen);
   }
   return found;
@@ -320,7 +327,7 @@ function applyServerMessage(state, message) {
 }
 
 module.exports = {
-  PROTOCOL, SLICES, SLICE_NAMES, PHONE_SLICES, VIEWS, viewTable, SECRET_KEY, COMPRESSION, CHANGE_KINDS, ERROR_CODES, ProtocolError,
+  PROTOCOL, SLICES, SLICE_NAMES, PHONE_SLICES, VIEWS, viewTable, isSecretField, SECRET_KEY, COMPRESSION, CHANGE_KINDS, ERROR_CODES, ProtocolError,
   isPlainObject, assertJson, secretPaths, assertNoSecrets,
   emptyCollection, emptyValue, validateCollection, toCollection, fromCollection, implicitOrder, applyPatch,
   validateCursor, validateChange, validateClientMessage, validateServerMessage,

@@ -4,7 +4,7 @@
 // slice's revision once and notifies subscribers with one batch.
 const crypto = require('node:crypto');
 const { EventEmitter } = require('node:events');
-const { SLICES, SLICE_NAMES, SECRET_KEY, ProtocolError, isPlainObject, secretPaths, emptyValue, validateCollection, implicitOrder, applyPatch } = require('./state-protocol.cjs');
+const { SLICES, SLICE_NAMES, isSecretField, ProtocolError, isPlainObject, secretPaths, emptyValue, validateCollection, implicitOrder, applyPatch } = require('./state-protocol.cjs');
 
 const fail = message => { throw new ProtocolError('invalid', message); };
 
@@ -49,11 +49,11 @@ function jsonEqual(a, b) {
 
 // Removes secret-named fields from a copy. Used when the store runs with the
 // `strip` policy; the `throw` policy rejects the write instead.
-function stripSecrets(value, test) {
+function stripSecrets(value, test = isSecretField) {
   if (value === null || typeof value !== 'object') return value;
   if (Array.isArray(value)) return value.map(item => stripSecrets(item, test));
   const copy = {};
-  for (const [key, item] of Object.entries(value)) if (!test(key)) copy[key] = stripSecrets(item, test);
+  for (const [key, item] of Object.entries(value)) if (!test(key, item)) copy[key] = stripSecrets(item, test);
   return copy;
 }
 
@@ -140,7 +140,7 @@ class StateStore extends EventEmitter {
     if (!found.length) return value;
     if (this.policy === 'throw') throw new ProtocolError('invalid', `${slice} contains private fields: ${found.slice(0, 5).join(', ')}.`);
     this.onSecret(slice, found);
-    return stripSecrets(value, key => SECRET_KEY.test(key));
+    return stripSecrets(value);
   }
   request() {
     if (this.scheduled || !this.staged.size) return;
