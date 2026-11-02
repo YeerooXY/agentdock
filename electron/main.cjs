@@ -546,6 +546,8 @@ app.whenReady().then(() => guardStartup(async () => {
       : taskAccounts.saveResult(raw, context)
   });
   tasks.on('changed', publish);
+  // Snapshots no longer refresh; verification runs on its own timer.
+  tasks.startVerification();
   projects.on('tracking-error', message => { storageError = message; publish(); });
   hub = new SharedHub(root, vault, { integrations, workbench, skills: () => skillPacks.snapshot().packs, confirm: confirmToolCall, isLaunchCurrent: owner => {
     const item = sessions?.items.get(owner?.sessionId);
