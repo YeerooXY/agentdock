@@ -1170,7 +1170,7 @@ function mountTerminal(session, host, compact) {
       }));
     }, { passive: true, capture: true });
     term.onData(data => { if (!session.taskId) call('session.input', { id, data }).catch(error => toast(error.message, true)); });
-    fileLinks(term, value => openFile(id, value));
+    fileLinks(term, value => openFile(id, value), value => call('open.link', value).catch(error => toast(error.message, true)));
     // Ctrl+V in a local agent console also pastes clipboard images as a file path.
     term.attachCustomKeyEventHandler(e => {
       if (e.type === 'keydown' && (e.ctrlKey || e.metaKey) && !e.altKey && e.code === 'KeyC' && (term.hasSelection() || e.shiftKey)) {

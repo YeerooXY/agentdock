@@ -1,5 +1,7 @@
 # Concrete wording and evidence
 
+Owner correction, 2 November 2026: avoid decorative em dashes and middle-dot separators in headings, status text and metadata. Use spacing or ordinary sentences. Remove atmospheric footer jokes, congratulatory empty-state filler and redundant filter subtitles. Put secondary storage explanations behind a named details control. Check empty, completed and error states, not only the initial screen.
+
 Keep development status in the handoff. Do not call the website a demo, prototype or sample site, and do not add development-status banners. Explain real limitations beside the affected action without inventing availability: a download needs an actual artifact and a form must not claim delivery without a receiver. Preserve necessary prices, terms, privacy disclosures and error recovery.
 
 Write from verified product facts and the visitor's next decision. Use concrete names, actions and consequences. Preserve prices, units, eligibility, limitations, privacy information and recovery instructions.

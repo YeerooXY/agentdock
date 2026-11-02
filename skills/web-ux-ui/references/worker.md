@@ -1,5 +1,7 @@
 # Website worker brief
 
+Avoid decorative em dashes and middle-dot separators, atmospheric footer jokes and congratulatory empty-state filler. Omit redundant filter subtitles. Check rendered empty, completed and error states against the owner's wording rules.
+
 Work only on the assigned outcome and files. Preserve the selected composition, supplied facts, primary action and unrelated changes. Ask the orchestrator when a missing fact changes the result; never replace the requested site with an editor or another product. An unanswered fact belongs in the handoff, not an invented claim.
 
 Use concrete headings and controls. Remove generic slogans, promotional reversals and decorative labels. Do not label the website a demo, prototype or sample site, or add development-status banners. Keep build status in the handoff. Explain unavailable actions precisely where needed: a form must not claim delivery without a receiver, and a download needs an actual artifact. Preserve necessary prices, conditions, privacy and error recovery.

@@ -8,6 +8,22 @@ function fakeTerm(rows, cols = 40) {
   return { cols, buffer: { active: { getLine: i => i < rows.length ? { isWrapped: rows[i].wrapped, translateToString: trim => trim ? rows[i].text.trimEnd() : rows[i].text.padEnd(cols) } : undefined } } };
 }
 
+test('web links support local previews, Markdown and wrapped URLs without other schemes', async () => {
+  const { findWebLinks, fileLinks } = await import('../src/file-links.js');
+  const one = text => findWebLinks(fakeTerm([{ text }], 160), 1).map(x => x.value);
+  assert.deepEqual(one('[Preview](http://127.0.0.1:5181/) and https://example.com/a_(b).'), ['http://127.0.0.1:5181/', 'https://example.com/a_(b)']);
+  assert.deepEqual(one('javascript:alert(1) file:///tmp/test ftp://example.com'), []);
+  const url = 'http://127.0.0.1:5180/';
+  const term = fakeTerm([{ text: url.slice(0, 16) }, { text: url.slice(16), wrapped: true }], 16);
+  assert.equal(findWebLinks(term, 2)[0].value, url);
+  assert.deepEqual(findWebLinks(term, 2)[0].range, { start: { x: 1, y: 1 }, end: { x: 6, y: 2 } });
+  let provider, opened = [];
+  term.registerLinkProvider = value => { provider = value; };
+  fileLinks(term, value => opened.push(['file', value]), value => opened.push(['web', value]));
+  provider.provideLinks(2, links => { links[0].activate({ button: 2 }); links[0].activate({ button: 0 }); });
+  assert.deepEqual(opened, [['web', url]]);
+});
+
 test('previews text, markdown, images, folders and binaries', t => {
   const root = folder(t);
   fs.writeFileSync(path.join(root, 'notes.txt'), 'hello');

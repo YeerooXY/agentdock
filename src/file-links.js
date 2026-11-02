@@ -28,9 +28,32 @@ export function findPaths(term, y) {
   return links;
 }
 
-export function fileLinks(term, open) {
+export function findWebLinks(term, y) {
+  const buffer = term.buffer.active, cols = term.cols;
+  let start = y - 1, end = y - 1;
+  while (start > 0 && buffer.getLine(start)?.isWrapped) start--;
+  while (buffer.getLine(end + 1)?.isWrapped) end++;
+  let text = '';
+  for (let row = start; row <= end; row++) text += buffer.getLine(row)?.translateToString(row === end) || '';
+  const links = [];
+  for (const match of text.matchAll(/https?:\/\/[^\s<>"'`]+/gi)) {
+    let value = match[0].replace(/[.,;:!?]+$/, '');
+    // Strip Markdown/prose closing delimiters, retaining balanced URL parentheses.
+    for (const [left, right] of [['(', ')'], ['[', ']']]) {
+      while (value.endsWith(right) && value.split(right).length > value.split(left).length) value = value.slice(0, -1);
+    }
+    try { const url = new URL(value); if (!url.hostname) continue; } catch { continue; }
+    const point = index => ({ x: index % cols + 1, y: start + Math.floor(index / cols) + 1 });
+    const range = { start: point(match.index), end: point(match.index + value.length - 1) };
+    if (range.start.y <= y && range.end.y >= y) links.push({ value, range });
+  }
+  return links;
+}
+
+export function fileLinks(term, open, openWeb) {
   term.registerLinkProvider({ provideLinks(y, callback) {
     const links = findPaths(term, y).map(link => ({ range: link.range, text: link.value, decorations: { underline: true, pointerCursor: true }, activate: event => { if (!event || event.button === 0) open(link.value); } }));
+    if (openWeb) links.unshift(...findWebLinks(term, y).map(link => ({ range: link.range, text: link.value, decorations: { underline: true, pointerCursor: true }, activate: event => { if (!event || event.button === 0) openWeb(link.value); } })));
     callback(links.length ? links : undefined);
   } });
 }

@@ -2,6 +2,8 @@
 
 Local Windows desktop app. Keep user-facing copy short, direct and factual. Preserve any applicable parent writing instructions.
 
+- Wording correction, 2 November 2026: no decorative em dashes or middle-dot separators in website headings, status text or metadata. Use spacing, semantic grouping or ordinary sentences. Remove atmospheric footer jokes and congratulatory empty-state filler. Omit redundant filter subtitles; put secondary storage explanations behind a clearly named details control. Review rendered empty, completed and error states as well as the initial screen.
+
 - Keyboard focus, 2 November 2026: preserve focus after toggles, edits and rerenders. When the focused control is removed, focus its logical successor. Verify repeated actions with Tab, Shift+Tab, Enter and Space; focus falling to the page body fails the check.
 
 - Website workflow preference, 1 November 2026: keep development status in the handoff; do not call the website a demo or add development-status banners. Preserve accurate action limitations. Creative concepts must change composition and content treatment, not only colors. Prefer bounded local assistance and deterministic checks; avoid duplicate manager/reviewer loops. Measure accepted output, total usage and owner preference before claiming savings or quality gains.
