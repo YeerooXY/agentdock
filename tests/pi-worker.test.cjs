@@ -134,3 +134,12 @@ test('text is bounded and progress reports only tools and assistant text', () =>
   assert.deepEqual(piProgress({ type: 'message_update' }), []);
   assert.equal(piEvent(s, null), s);
 });
+
+test('worker budget failure has a fixed diagnostic and remains failed after final text', () => {
+  const state = piState();
+  piEvent(state, { type: 'worker_limit', kind: 'budget', responses: 13, calls: 8 });
+  piEvent(state, assistant('Author authentication component written.', usage(1, 1)));
+  piEvent(state, { type: 'agent_settled', aborted: true });
+  assert.equal(state.error, true);
+  assert.equal(state.failureReason, 'Pi reached its bounded worker response or tool-call limit.');
+});

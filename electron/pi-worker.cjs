@@ -77,6 +77,10 @@ function addUsage(state, u, message) {
 }
 function piEvent(state, event) {
   if (!event || typeof event !== 'object' || state.complete) return state;
+  if (event.type === 'worker_limit' && event.kind === 'budget') {
+    state.error = true;
+    state.failureReason = 'Pi reached its bounded worker response or tool-call limit.';
+  }
   if (event.type === 'worker_effort' && ['off','minimal','low','medium','high','xhigh','max'].includes(event.effective)) state.effortEffective = { value: event.effective, source: 'Pi SDK' };
   if (event.type === 'message_end' && event.message?.role === 'assistant') {
     const message = event.message;

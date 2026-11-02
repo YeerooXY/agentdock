@@ -38,7 +38,11 @@ try {
   session.subscribe(event => {
     if (event.type === 'message_end' && event.message?.role === 'assistant') responses++;
     if (event.type === 'tool_execution_start') calls++;
-    if (responses > 12 || calls > 24) { budgetHit = true; void session.abort(); }
+    if (!budgetHit && (responses > 12 || calls > 24)) {
+      budgetHit = true;
+      emit({ type: 'worker_limit', kind: 'budget', responses, calls });
+      void session.abort();
+    }
     if (['message_end','agent_settled','tool_execution_start'].includes(event.type)) emit(budgetHit && event.type === 'agent_settled' ? { ...event, aborted: true } : event);
   });
   await session.prompt(fs.readFileSync(options.promptFile, 'utf8'));

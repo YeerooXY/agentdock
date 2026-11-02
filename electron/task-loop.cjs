@@ -491,7 +491,10 @@ class TaskLoop extends EventEmitter {
       const result = await this.process(job, launch, { environment: env, brief: step.provider === 'opencode' ? '' : brief, provider: step.provider, step, worker: !review && !!this.workers });
       if (!RUNNING.has(job.state)) return {};
       if (result.code !== 0 || result.providerError) {
-        const hint = /log ?in|sign ?in|auth|credential/i.test(result.stdout + result.output) ? ` Sign in to ${step.label} in a console first.` : '';
+        if (step.provider === 'pi' && result.native?.failureReason) throw new ProviderError(result.native.failureReason);
+        // Pi output includes generated code and briefs. Words such as "author"
+        // or "authentication" there do not establish an authentication error.
+        const hint = step.provider !== 'pi' && /log ?in|sign ?in|auth|credential/i.test(result.stdout + result.output) ? ` Sign in to ${step.label} in a console first.` : '';
         throw new ProviderError(`${step.label} ${result.code ? `exited with code ${result.code}` : 'could not finish the request'}.${hint}`);
       }
       const summaryReply = summary => {
