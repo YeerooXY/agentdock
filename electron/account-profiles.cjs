@@ -4,10 +4,10 @@ const path = require('node:path');
 const os = require('node:os');
 const crypto = require('node:crypto');
 const { atomicJson, readJson } = require('./storage.cjs');
+const providerAccounts = require('./provider-account-capabilities.cjs');
 
-const PROVIDERS = new Set(['codex', 'claude']);
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
-const DEFAULT_LABEL = { codex: 'Default Codex', claude: 'Default Claude' };
+const DEFAULT_LABEL = Object.fromEntries(providerAccounts.listAccountProviders().map(x => [x.id, `Default ${x.id === 'claude' ? 'Claude' : x.name}`]));
 const envValue = (env, name) => Object.entries(env).find(([key]) => key.toLowerCase() === name.toLowerCase())?.[1];
 const defaultId = provider => `${provider}:default`;
 const cleanLabel = value => {
@@ -17,17 +17,18 @@ const cleanLabel = value => {
 };
 
 class AccountProfiles {
-  constructor(root, { env = process.env, home = os.homedir() } = {}) {
+  constructor(root, { env = process.env, home = os.homedir(), registry = providerAccounts } = {}) {
     root = require('./platform.cjs').realRoot(root);
     this.root = path.join(root, 'agent-accounts');
     this.file = path.join(root, 'agent-accounts.json');
     this.env = env;
     this.home = home;
+    this.registry = registry;
     try { fs.mkdirSync(this.root); } catch (error) { if (error.code !== 'EEXIST') throw error; }
     this.checkedRoot();
     const saved = readJson(this.file, { version: 1, profiles: [] });
     this.profiles = Array.isArray(saved?.profiles) ? saved.profiles.filter(x =>
-      x && UUID.test(x.id || '') && PROVIDERS.has(x.provider) && typeof x.label === 'string' && x.label.length <= 64
+      x && UUID.test(x.id || '') && /^[a-z][a-z0-9-]{0,63}$/.test(x.provider || '') && typeof x.label === 'string' && x.label.length <= 64
     ) : [];
   }
 
@@ -42,17 +43,34 @@ class AccountProfiles {
     return profiles.map(({ id, provider, label, createdAt, loginCompletedAt }) => ({ id, provider, label, createdAt, loginCompletedAt: loginCompletedAt || null }));
   }
   get(id) { return this.profiles.find(x => x.id === id) || null; }
+  provider(id) { return this.registry.getAccountProvider(id); }
+  providers() { return this.registry.listAccountProviders().map(({ isolation, login, ...publicFields }) => ({ ...publicFields, loginInstruction: login?.instruction || '' })); }
+  allChoices() {
+    return [...this.registry.listAccountProviders().flatMap(x => this.choices(x.id)),
+      ...this.list().filter(x => !this.provider(x.provider)).map(x => ({ ...x, profile: true, unavailableReason: 'Provider adapter is unavailable. This account has been kept.' }))];
+  }
   getAccount(id, provider) {
-    if (id === defaultId(provider) && PROVIDERS.has(provider)) return { id, provider, label: DEFAULT_LABEL[provider], profile: false, configDir: this.defaultConfigDir(provider) };
+    if (id === defaultId(provider) && this.provider(provider)) return { id, provider, label: DEFAULT_LABEL[provider] || `Default ${this.provider(provider).name}`, profile: false, configDir: this.defaultConfigDir(provider) };
     const profile = this.get(id);
     if (!profile || (provider && profile.provider !== provider)) throw new Error('Choose an account for this provider.');
-    return { ...profile, profile: true, configDir: this.directory(profile.id) };
+    if (!this.provider(profile.provider)?.namedProfiles) throw new Error('Separate sign-in storage is unavailable for this provider. The saved account has been kept.');
+    const configRoot = this.directory(profile.id), isolation = this.provider(profile.provider).isolation;
+    let configDir = configRoot;
+    if (isolation.homeScoped) {
+      configDir = path.join(configRoot, isolation.defaultSubdir);
+      if (!inside(configRoot, configDir)) throw new Error('Account configuration path is invalid.');
+      fs.mkdirSync(configDir, { recursive: true });
+      const info = fs.lstatSync(configDir), real = fs.realpathSync(configDir);
+      if (!info.isDirectory() || info.isSymbolicLink() || canonical(real) !== canonical(configDir) || !inside(configRoot, real)) throw new Error('Account configuration folder is linked or unavailable.');
+    }
+    return { ...profile, profile: true, configDir, configRoot };
   }
   choices(provider) {
-    if (!PROVIDERS.has(provider)) return [];
+    if (!this.provider(provider)) return [];
     return [
-      { id: defaultId(provider), provider, label: DEFAULT_LABEL[provider], profile: false },
-      ...this.list(provider).map(x => ({ ...x, profile: true }))
+      { id: defaultId(provider), provider, label: DEFAULT_LABEL[provider] || `Default ${this.provider(provider).name}`, profile: false },
+      ...this.list(provider).map(x => ({ ...x, profile: true,
+        ...(!this.provider(provider).namedProfiles ? { unavailableReason: 'Separate sign-in storage is unavailable. This account has been kept.' } : {}) }))
     ];
   }
   directory(id) {
@@ -71,14 +89,14 @@ class AccountProfiles {
     return realTarget;
   }
   create(provider, label) {
-    if (!PROVIDERS.has(provider)) throw new Error('Choose Codex or Claude Code.');
+    if (!this.provider(provider)?.namedProfiles) throw new Error('Separate sign-in storage has not been verified for this provider.');
     const profile = { id: crypto.randomUUID(), provider, label: cleanLabel(label), createdAt: Date.now(), loginCompletedAt: null };
     this.checkedRoot();
     const target = path.join(this.root, profile.id);
     fs.mkdirSync(target);
     this.profiles.push(profile);
     this.persist();
-    return { ...profile, configDir: this.directory(profile.id) };
+    return { ...profile, configDir: this.getAccount(profile.id, provider).configDir };
   }
   rename(id, label) {
     const profile = this.get(id);
@@ -109,18 +127,24 @@ class AccountProfiles {
       const configured = envValue(this.env, 'CODEX_HOME');
       return configured ? path.resolve(configured) : path.join(this.home, '.codex');
     }
-    const configured = envValue(this.env, 'CLAUDE_CONFIG_DIR');
+    const isolation = this.provider(provider)?.isolation;
+    if (!isolation) return null;
+    const configured = envValue(this.env, isolation.env);
+    if (isolation.homeScoped) return path.join(configured && path.isAbsolute(configured) ? configured : this.home, isolation.defaultSubdir);
     if (configured && path.isAbsolute(configured)) return path.resolve(configured);
-    return path.join(this.home, '.claude');
+    return path.join(this.home, isolation.defaultSubdir);
   }
   environment(id, provider, { bridge = null, login = false, baseEnv = this.env } = {}) {
     const account = this.getAccount(id, provider);
     const env = { ...baseEnv };
+    const isolation = this.provider(provider)?.isolation;
     for (const key of Object.keys(env)) {
       const normalized = key.toLowerCase();
       if (login && normalized.startsWith('paddock_')) delete env[key];
       if (['paddock_draft_url', 'paddock_draft_token', 'paddock_draft_session', 'paddock_draft_launch', 'paddock_draft_roots', 'paddock_draft_provider', 'paddock_real_editor', 'paddock_bridge_url', 'paddock_bridge_token'].includes(normalized)) delete env[key];
-      if (account.profile && ['codex_home', 'codex_sqlite_home', 'claude_config_dir'].includes(normalized)) delete env[key];
+      if (account.profile && [...this.registry.listAccountProviders().flatMap(x => x.isolation ? [x.isolation.env.toLowerCase()] : []), 'codex_sqlite_home'].includes(normalized)) delete env[key];
+      if (account.profile && (isolation.clearEnv || []).some(name => name.toLowerCase() === normalized)) delete env[key];
+      if (account.profile && (/(?:_API_KEY|_AUTH_TOKEN|_ACCESS_TOKEN|_OAUTH_TOKEN)$/i.test(key) || /^(?:GH_TOKEN|GITHUB_TOKEN|COPILOT_GITHUB_TOKEN|GOOGLE_APPLICATION_CREDENTIALS|CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE|GEMINI_CLI_CUSTOM_OAUTH_CREDS)$/i.test(key))) delete env[key];
       if (account.profile && ['codex_access_token', 'codex_api_key', 'openai_api_key', 'openai_base_url', 'codex_base_url', 'anthropic_api_key', 'anthropic_auth_token', 'claude_code_oauth_token', 'anthropic_base_url', 'claude_code_use_bedrock', 'claude_code_use_vertex', 'claude_code_use_foundry'].includes(normalized)) delete env[key];
       if (bridge && !login && ['visual', 'editor'].includes(normalized)) delete env[key];
     }
@@ -133,9 +157,11 @@ class AccountProfiles {
       }
       env.CODEX_HOME = account.configDir;
       env.CODEX_SQLITE_HOME = sqlite;
-    } else if (account.profile && provider === 'claude') {
-      env.CLAUDE_CONFIG_DIR = account.configDir;
+    } else if (account.profile) {
+      // Gemini receives a home root and appends .gemini itself; Pi uses the directory directly.
+      env[isolation.env] = isolation.homeScoped ? account.configRoot : account.configDir;
     }
+    if (account.profile) Object.assign(env, isolation.envOverrides || {});
     if (bridge && !login) {
       const editor = bridge.editorCommand;
       env.PADDOCK_DRAFT_URL = bridge.url;

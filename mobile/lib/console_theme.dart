@@ -53,7 +53,7 @@ class ConsoleTheme {
     ConsoleTheme(
       'classic',
       'Paddock',
-      'Pastel glass · blooming rings',
+      'Pastel glass, blooming rings',
       ConsoleOpening.bloom,
       SkyKind.stars,
       Color(0xff090b15),
@@ -64,7 +64,7 @@ class ConsoleTheme {
     ConsoleTheme(
       'hot-pink',
       'Hot pink',
-      'Neon tubes · hearts and glitter',
+      'Neon tubes, hearts and glitter',
       ConsoleOpening.neon,
       SkyKind.glitter,
       Color(0xff14060f),
@@ -75,7 +75,7 @@ class ConsoleTheme {
     ConsoleTheme(
       'blue',
       'Blue',
-      'Steel rails · lightning strike',
+      'Steel rails, lightning strike',
       ConsoleOpening.lightning,
       SkyKind.stars,
       Color(0xff060d1b),
@@ -86,7 +86,7 @@ class ConsoleTheme {
     ConsoleTheme(
       'violet',
       'Violet',
-      'Arcane arcs · spiral portal',
+      'Arcane arcs, spiral portal',
       ConsoleOpening.portal,
       SkyKind.stars,
       Color(0xff0e091b),
@@ -97,7 +97,7 @@ class ConsoleTheme {
     ConsoleTheme(
       'void',
       'Void',
-      'Near black · collapsing star',
+      'Near black, collapsing star',
       ConsoleOpening.implode,
       SkyKind.dust,
       Color(0xff020205),
@@ -108,7 +108,7 @@ class ConsoleTheme {
     ConsoleTheme(
       'redline',
       'Redline',
-      'Black weave · red slash trim',
+      'Black weave, red slash trim',
       ConsoleOpening.redline,
       SkyKind.dust,
       Color(0xff040404),
@@ -119,7 +119,7 @@ class ConsoleTheme {
     ConsoleTheme(
       'cyber',
       'Cyber',
-      'Cut corners · glyph rain',
+      'Cut corners, glyph rain',
       ConsoleOpening.glitch,
       SkyKind.data,
       Color(0xff080b17),
@@ -130,7 +130,7 @@ class ConsoleTheme {
     ConsoleTheme(
       'icy',
       'Arctic',
-      'Ice facets · spreading frost',
+      'Ice facets, spreading frost',
       ConsoleOpening.frost,
       SkyKind.snow,
       Color(0xff05121e),
@@ -141,7 +141,7 @@ class ConsoleTheme {
     ConsoleTheme(
       'fiery',
       'Inferno',
-      'Ember glow · fireball blast',
+      'Ember glow, fireball blast',
       ConsoleOpening.explosion,
       SkyKind.embers,
       Color(0xff160906),
@@ -152,7 +152,7 @@ class ConsoleTheme {
     ConsoleTheme(
       'gamer',
       'RGB',
-      'Spectrum edge · rainbow shockwave',
+      'Spectrum edge, rainbow shockwave',
       ConsoleOpening.spectrum,
       SkyKind.rainbow,
       Color(0xff090c12),
@@ -163,7 +163,7 @@ class ConsoleTheme {
     ConsoleTheme(
       'normal',
       'Plain',
-      'Quiet frame · soft fade',
+      'Quiet frame, soft fade',
       ConsoleOpening.soft,
       SkyKind.stars,
       Color(0xff090b10),

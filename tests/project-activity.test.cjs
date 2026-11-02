@@ -20,3 +20,18 @@ test('project activity respects POSIX case and does not fall through an explicit
   const state = { projects: [{ id: 'one', folders: [{ path: '/work/Site' }] }], tasks: [{ repo: '/work/site', state: 'checking' }, { projectId: 'deleted', repo: '/work/Site', state: 'checking' }] };
   assert.equal(projectActivity(state).get('one').running, 0);
 });
+test('attention ignores tasks closed with Paddock and tasks replaced by a newer task, with a correct plural', async () => {
+  const { projectActivity, attentionLabel } = await import('../src/project-activity.js');
+  const state = { projects: [{ id: 'p', folders: [{ path: '/work/p' }] }], tasks: [
+    { repo: '/work/p', state: 'interrupted', error: 'Paddock closed before this task finished.', startedAt: 50 },
+    { repo: '/work/p', state: 'failed', startedAt: 10 },
+    { repo: '/work/p', state: 'needs-you', startedAt: 20 },
+    { repo: '/work/p', state: 'plan-ready', startedAt: 5 },
+    { repo: '/work/p', state: 'interrupted', error: 'Stopped by you.', startedAt: 40 },
+  ] };
+  assert.equal(projectActivity(state).get('p').attention, 1, 'only the waiting plan still matters');
+  state.tasks.push({ repo: '/work/p', state: 'failed', startedAt: 60 });
+  assert.equal(projectActivity(state).get('p').attention, 2, 'the newest failure counts');
+  assert.equal(attentionLabel(1), '1 needs attention');
+  assert.equal(attentionLabel(12), '12 need attention');
+});

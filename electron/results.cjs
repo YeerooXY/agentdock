@@ -11,10 +11,11 @@ const extensions = new Set(['.png', '.jpg', '.jpeg', '.webp', '.txt', '.md', '.j
 const imageExtensions = new Set(['.png', '.jpg', '.jpeg', '.webp']);
 const textExtensions = new Set(['.txt', '.md', '.json', '.log', '.html']);
 const inside = (root, file) => { const relative = path.relative(root, file); return relative !== '' && !relative.startsWith('..' + path.sep) && relative !== '..' && !path.isAbsolute(relative); };
+const normalizedFolder = value => { const folder = String(value || '').replaceAll('\\', '/').replace(/\/+$/, ''); return /^[a-z]:\//i.test(folder) || folder.startsWith('//') ? folder.toLowerCase() : folder; };
 const short = (value, max = 120) => String(value || '').replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, '').slice(0, max);
 class Results extends EventEmitter {
-  constructor(root, { trash, nativeImage } = {}) {
-    super(); this.root = root; this.dir = path.join(root, 'results'); this.file = path.join(this.dir, 'index.json');
+  constructor(root, { trash, nativeImage, projectFor } = {}) {
+    super(); this.projectFor = projectFor; this.root = root; this.dir = path.join(root, 'results'); this.file = path.join(this.dir, 'index.json');
     fs.mkdirSync(this.dir, { recursive: true });
     this.items = readJson(this.file, []).filter(x => /^[a-f0-9-]{36}$/.test(x.id) && extensions.has(x.ext)).slice(0, 1000);
     // Older captures did not store the count. Read only our bounded code reports,
@@ -35,7 +36,9 @@ class Results extends EventEmitter {
     this.trash = trash; this.nativeImage = nativeImage; this.deleting = false;
   }
   list() { return this.items.filter(x => !x.captureExcludedOnly).map(x => ({ ...x, image: imageExtensions.has(x.ext) })); }
-  groupKey(item) { return JSON.stringify([item.projectId || item.project || '', item.consoleKey || item.sessionId || item.source || 'Dock', item.groupId || item.id]); }
+  // Mirrors resultGroupKey in src/results-model.js: a bound project id, else the
+  // registered project owning the folder, else the normalized folder.
+  groupKey(item) { return JSON.stringify([item.projectId || this.projectFor?.(item.project) || normalizedFolder(item.project) || 'unassigned', item.consoleKey || item.sessionId || item.source || 'Dock', item.groupId || item.id]); }
   unreadGroups() { return new Set(this.list().filter(x => !x.seenAt).map(x => this.groupKey(x))).size; }
   markSeen(ids) {
     if (!Array.isArray(ids) || ids.length > 1000) throw new Error('Choose results to mark as seen.');

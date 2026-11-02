@@ -213,6 +213,14 @@ async function readClaudeUsage({ executable, accountId = 'claude:default', env, 
     return claudeReading(await transport.request('get_usage', { skip_behaviors: true }), accountId);
   } finally { transport.close(); }
 }
+async function readClaudeModels({ executable, env, cwd, spawnProcess, timeoutMs } = {}) {
+  if (!executable) throw new UsageError('not-installed', 'Install Claude Code to read model choices.');
+  const transport = new UsageTransport(executable, ['--print', '--verbose', '--input-format', 'stream-json', '--output-format', 'stream-json', '--restricted', '--no-session-persistence', '--settings', '{"disableAllHooks":true}'], { env, cwd, spawnProcess, timeoutMs });
+  try {
+    const result = await transport.request('initialize', { hooks: {}, sdkMcpServers: [], agents: {} });
+    return require('./model-selection.cjs').normalizeClaudeModels(result);
+  } finally { transport.close(); }
+}
 function copilotReading(raw, accountId, at = Date.now()) {
   const windows = Object.entries(raw?.quotaSnapshots || {}).slice(0, 32).flatMap(([key, item]) => {
     if (!item || typeof item !== 'object') return [];
@@ -354,4 +362,4 @@ function usageHelp(provider) {
 }
 function stopUsageReaders() { for (const child of ownedReaders) { try { child.kill(); } catch {} } ownedReaders.clear(); }
 function trackUsageReader(child) { ownedReaders.add(child); return () => ownedReaders.delete(child); }
-module.exports = { UsageError, UsageTransport, SubscriptionUsage, usageEnvironment, responseError, claudeReading, copilotReading, copilotExecutable, readClaudeUsage, readCopilotUsage, runUsageCommand, kiroReading, readKiroUsage, kimiReading, readKimiUsage, opencodeReading, opencodeStats, readOpenCodeAccount, readOpenCodeUsage, usageHelp, stopUsageReaders, trackUsageReader };
+module.exports = { UsageError, UsageTransport, SubscriptionUsage, usageEnvironment, responseError, claudeReading, copilotReading, copilotExecutable, readClaudeUsage, readClaudeModels, readCopilotUsage, runUsageCommand, kiroReading, readKiroUsage, kimiReading, readKimiUsage, opencodeReading, opencodeStats, readOpenCodeAccount, readOpenCodeUsage, usageHelp, stopUsageReaders, trackUsageReader };

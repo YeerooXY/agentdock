@@ -58,7 +58,7 @@ function saveManagedMcp(file, server) {
   const temp = file + '.paddock-tmp'; fs.writeFileSync(temp, after, { mode: 0o600 }); fs.renameSync(temp, file);
   return { file, changed: true };
 }
-function prepareCli(id, { directory, runtime, summary, summaryPath, home = os.homedir(), model, permissions, profiles = [] }) {
+function prepareCli(id, { directory, runtime, summary, summaryPath, home = os.homedir(), configDir = null, model, permissions, profiles = [] }) {
   const agent = byId.get(id), env = {}, args = [...(agent.args || [])];
   if (model && agent.model) args.push(agent.model, model);
   if (permissions === 'unrestricted' && agent.unrestricted) args.push(...agent.unrestricted);
@@ -83,7 +83,7 @@ function prepareCli(id, { directory, runtime, summary, summaryPath, home = os.ho
   } else if (id === 'gemini') {
     // System defaults are administrator-owned policy files in current Gemini.
     // Use its ordinary user MCP settings; initialization supplies shared context.
-    saveManagedMcp(path.join(home, '.gemini', 'settings.json'), bridgeConfig(runtime));
+    saveManagedMcp(path.join(configDir || path.join(home, '.gemini'), 'settings.json'), bridgeConfig(runtime));
   } else if (id === 'qwen') {
     fs.writeFileSync(path.join(directory, 'PADDOCK.md'), summary, { mode: 0o600 });
     const settingsFile = path.join(directory, 'cli-settings.json');
@@ -93,7 +93,8 @@ function prepareCli(id, { directory, runtime, summary, summaryPath, home = os.ho
     const syntax = id === 'cursor' ? 'cursor' : ['cline', 'antigravity', 'kimi'].includes(id) ? 'inherit' : 'shell';
     // The maintained Kimi Code CLI discovers its user MCP file; the former
     // kimi-cli --mcp-config-file option is no longer supported.
-    saveManagedMcp(path.join(home, id === 'kimi' ? '.kimi-code/mcp.json' : agent.mcp), bridgeConfig(runtime, syntax));
+    const userMcp = id === 'pi' && configDir ? path.join(configDir, 'mcp.json') : path.join(home, id === 'kimi' ? '.kimi-code/mcp.json' : agent.mcp);
+    saveManagedMcp(userMcp, bridgeConfig(runtime, syntax));
     if (id === 'antigravity') {
       require('./antigravity-session.cjs').prepareAntigravityTracking(home, runtime);
       env.PADDOCK_CLI_PROVIDER = 'antigravity';

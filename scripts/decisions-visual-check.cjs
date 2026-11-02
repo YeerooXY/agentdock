@@ -40,7 +40,7 @@ let browser;const reports=[];
     await nav('projects');
     const section=page.locator('.project-decisions').first();
     assert.equal(await section.evaluate(x=>x.open),true,'Proposals open the section');
-    assert.match(await section.locator('summary').innerText(),/Decisions · 2\s*1 to review/);
+    assert.match(await section.locator('summary').innerText(),/Decisions \(2\)\s*1 to review/);
     await capture('proposed');
     await section.locator('[data-decision-id=d1] [data-decision=approve]').click();
     await page.waitForFunction(()=>!document.querySelector('[data-decision-id=d1] [data-decision=approve]'));

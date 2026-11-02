@@ -60,7 +60,7 @@ class Workbench {
     this.electron = electron; this.getSessions = getSessions; this.getProject = getProject; this.getWindow = getWindow;
     this.getTasks = getTasks;
     this.localAssist = new LocalAssist({ getProfiles: () => getHub?.()?.config.profiles || [], onEntry: onLocalEntry, testMode });
-    this.results = new Results(root, { trash: file => fs.promises.rm(file, { recursive: true, maxRetries: 2, retryDelay: 100 }), nativeImage: electron.nativeImage });
+    this.results = new Results(root, { trash: file => fs.promises.rm(file, { recursive: true, maxRetries: 2, retryDelay: 100 }), nativeImage: electron.nativeImage, projectFor: folder => folder ? this.projects?.forFolder(folder)?.id || null : null });
     this.alerts = new AlertEvents(); this.reviews = new Reviews(root, this.results, this.alerts, electron);
     this.concepts = new Concepts(root, runtime, this.results, this.reviews, this.alerts, { testMode, getSettings: () => getHub?.()?.config.imageGeneration, getKey: id => getHub().vault.get(id), authorizePreview: (job, balance) => getHub().authorizePreview(job, balance) });
     this.setup = new SetupRequests(root, { getHub, getAgents, onChange });
@@ -189,7 +189,7 @@ class Workbench {
       case 'results.seen': return this.results.markSeen(payload);
       case 'results.folder': { const error = await this.electron.shell.openPath(this.results.dir); if (error) throw new Error(error); return; }
       case 'results.import': {
-        const selected = await this.electron.dialog.showOpenDialog(this.getWindow(), { title: 'Add results', properties: ['openFile','multiSelections'], filters: [{ name: 'Results', extensions: ['png','jpg','jpeg','webp','txt','md','json','log','html','pdf','glb','gltf','obj','stl','zip'] }] });
+        const selected = await this.electron.dialog.showOpenDialog(this.getWindow(), { title: 'Import files into Results', properties: ['openFile','multiSelections'], filters: [{ name: 'Results', extensions: ['png','jpg','jpeg','webp','txt','md','json','log','html','pdf','glb','gltf','obj','stl','zip'] }] });
         const imported = [], errors = [], groupId = randomUUID();
         for (const file of selected.filePaths.slice(0, 50)) { try { imported.push(this.results.add({ file, groupId, title: path.basename(file), source: 'Import', kind: /\.(png|jpe?g|webp)$/i.test(file) ? 'screenshot' : 'report' }, await resultGitContext({ file }, { project: this.getProject(), trusted: true }, this.results.root)).id); } catch (error) { errors.push(path.basename(file) + ': ' + error.message); } }
         return { imported, errors };

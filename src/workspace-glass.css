@@ -9,7 +9,6 @@
 .project-card:nth-child(3n),.result-folder:nth-child(3n) { --glass-glow:var(--accent-pink) }
 .project-card:hover,.result-folder:hover,.result-card:hover { border-color:#d3e3ffbf!important; box-shadow:inset 0 1px 1px #fffb,0 8px 26px #03081766,0 0 26px color-mix(in srgb,var(--glass-glow) 28%,transparent)!important }
 #content :is(.project-card,.task-list,.result-card,.result-folder) :focus-visible { outline:2px solid #d5dfff; outline-offset:3px }
-#content[data-view=projects] .project-cards { grid-template-columns:repeat(auto-fill,minmax(min(280px,100%),1fr)); gap:18px; align-items:stretch }
 .project-card { padding:20px; min-width:0; position:relative }
 .project-card-heading { align-items:center; gap:12px; margin-bottom:14px }
 .project-card-icon { display:grid; place-items:center; width:42px; height:42px; border-radius:10px; color:color-mix(in srgb,var(--accent-pink) 70%,white); background:linear-gradient(145deg,color-mix(in srgb,var(--accent-blue) 32%,transparent),color-mix(in srgb,var(--accent-pink) 35%,transparent)); border:1px solid #cad9ff75; box-shadow:inset 0 1px 1px #fff6,0 0 20px color-mix(in srgb,var(--accent-pink) 25%,transparent) }

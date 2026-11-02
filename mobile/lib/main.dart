@@ -410,7 +410,9 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
       );
 
   Future<void> liveControls(String action) async {
-    if (c.sessions.any((s) => s['id'] == c.selected && s['taskId'] != null)) return;
+    if (c.sessions.any((s) => s['id'] == c.selected && s['taskId'] != null)) {
+      return;
+    }
     stopTerminalTyping();
     composerFocus.unfocus();
     await showModalBottomSheet<void>(
@@ -593,19 +595,37 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
     if (session['taskId'] != null) {
       final pinned = Map<String, dynamic>.from(session);
       final pc = c.activePC, generation = c.generation;
-      final confirmed = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
-        title: Text('Stop worker for ${pinned['name']}?'),
-        content: const Text('All work is kept.'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Keep running')),
-          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Stop worker')),
-        ],
-      ));
-      if (mounted && confirmed == true && c.activePC == pc && c.generation == generation && c.selected == pinned['id']) {
-        await run(() => c.request('worker.stop', {
-          'id': pinned['id'], 'consoleKey': pinned['consoleKey'], 'launchId': pinned['launchId'],
-          'sliceId': pinned['sliceId'], 'confirm': true,
-        }));
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text('Stop worker for ${pinned['name']}?'),
+          content: const Text('All work is kept.'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Keep running'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Stop worker'),
+            ),
+          ],
+        ),
+      );
+      if (mounted &&
+          confirmed == true &&
+          c.activePC == pc &&
+          c.generation == generation &&
+          c.selected == pinned['id']) {
+        await run(
+          () => c.request('worker.stop', {
+            'id': pinned['id'],
+            'consoleKey': pinned['consoleKey'],
+            'launchId': pinned['launchId'],
+            'sliceId': pinned['sliceId'],
+            'confirm': true,
+          }),
+        );
       }
       return;
     }
@@ -630,7 +650,8 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
     if (tree != null) {
       try {
         status = await c.request('console.worktree.status', {
-          'id': target.session, 'launchId': session['launchId'],
+          'id': target.session,
+          'launchId': session['launchId'],
         }) as Map;
       } catch (_) {
         status = null;
@@ -641,24 +662,45 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text('Close ${session['name']}?'),
-        content: Text(tree != null
-            ? 'This ends the console and its running task. ${status?['dirty'] == false ? 'The worktree is clean. Removing the folder keeps branch ${tree['branch']} and its commits.' : status?['dirty'] == true ? 'The worktree has uncommitted changes and will be kept at ${tree['path']}.' : 'Worktree status is unavailable. The folder will be kept at ${tree['path']}.'}'
-            : session['remote'] != null
-                ? 'This ends the remote tmux session, including its running task. SSH-key login is required.'
-                : 'This ends the console on your PC, including any running task.'),
+        content: Text(
+          tree != null
+              ? 'This ends the console and its running task. ${status?['dirty'] == false
+                    ? 'The worktree is clean. Removing the folder keeps branch ${tree['branch']} and its commits.'
+                    : status?['dirty'] == true
+                    ? 'The worktree has uncommitted changes and will be kept at ${tree['path']}.'
+                    : 'Worktree status is unavailable. The folder will be kept at ${tree['path']}.'}'
+              : session['remote'] != null
+              ? 'This ends the remote tmux session, including its running task. SSH-key login is required.'
+              : 'This ends the console on your PC, including any running task.',
+        ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Keep open')),
-          TextButton(onPressed: () => Navigator.pop(ctx, 'keep'), child: const Text('Close console')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Keep open'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, 'keep'),
+            child: const Text('Close console'),
+          ),
           if (tree != null && status?['dirty'] == false)
-            FilledButton(onPressed: () => Navigator.pop(ctx, 'remove'), child: const Text('Close and remove worktree')),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, 'remove'),
+              child: const Text('Close and remove worktree'),
+            ),
         ],
       ),
     );
     if (choice != null && commandTargetIsCurrent(target)) {
-      await run(() => c.request('console.close', {
-        'id': target.session, 'confirm': true,
-        if (tree != null) ...{'worktree': choice, 'launchId': session['launchId']},
-      }));
+      await run(
+        () => c.request('console.close', {
+          'id': target.session,
+          'confirm': true,
+          if (tree != null) ...{
+            'worktree': choice,
+            'launchId': session['launchId'],
+          },
+        }),
+      );
     }
   }
 
@@ -779,7 +821,9 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
                         },
                         onSelected: (id) {
                           if (id == ConsoleSwitcher.allConsoles) {
-                            if (!tablet) setState(() => showConsoleOverview = true);
+                            if (!tablet) {
+                              setState(() => showConsoleOverview = true);
+                            }
                           } else if (id == '+') {
                             newConsole();
                           } else if (c.sessions.any((s) => s['id'] == id)) {
@@ -848,21 +892,34 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
               onSelected: (action) {
                 if (action == 'code') {
                   final source = pinnedAccountSession;
-                  if (source != null && c.activePC == pinnedAccountPC &&
-                      c.generation == pinnedAccountGeneration && c.connected) {
-                    Navigator.of(context).push(MaterialPageRoute<void>(
-                      builder: (_) => CodePage(client: c, consoleId: source['id'] as String),
-                    )).then((_) {
-                      if (!mounted || draftKey == null) return;
-                      final value = c.drafts.get(draftKey!);
-                      if (composer.text != value) {
-                        restoringDraft = true;
-                        composer.value = TextEditingValue(text: value,
-                          selection: TextSelection.collapsed(offset: value.length));
-                        restoringDraft = false;
-                        setState(() {});
-                      }
-                    });
+                  if (source != null &&
+                      c.activePC == pinnedAccountPC &&
+                      c.generation == pinnedAccountGeneration &&
+                      c.connected) {
+                    Navigator.of(context)
+                        .push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => CodePage(
+                              client: c,
+                              consoleId: source['id'] as String,
+                            ),
+                          ),
+                        )
+                        .then((_) {
+                          if (!mounted || draftKey == null) return;
+                          final value = c.drafts.get(draftKey!);
+                          if (composer.text != value) {
+                            restoringDraft = true;
+                            composer.value = TextEditingValue(
+                              text: value,
+                              selection: TextSelection.collapsed(
+                                offset: value.length,
+                              ),
+                            );
+                            restoringDraft = false;
+                            setState(() {});
+                          }
+                        });
                   }
                   pinnedAccountSession = null;
                   return;
@@ -916,24 +973,24 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
                 pinnedAccountSession = null;
                 pinnedAccountPC = '';
                 pinnedAccountGeneration = -1;
-                if (action == 'updates') openUpdates(context);
-                if (action == 'previews') {
-                  Navigator.of(context).push(
-                    MaterialPageRoute<void>(builder: (_) => PreviewListPage(client: c)),
-                  );
+                if (action == 'app') appOptions();
+                if (action == 'view' && current != null) {
+                  viewOptions(Map<String, dynamic>.from(current));
                 }
-                if (action == 'reconnect') run(c.reconnect);
-                if (action == 'display') displaySettings();
-                if (action == 'appearance') appearanceSettings();
                 if (current != null) consoleAction(action, current);
               },
               itemBuilder: (_) => [
                 if (page == 0 && !overviewShown && menuSession != null) ...[
-                  if (supports('code.read') && menuSession['remote'] == null &&
+                  if (supports('code.read') &&
+                      menuSession['remote'] == null &&
                       !['code', 'web'].contains(menuSession['purpose']))
-                    PopupMenuItem(value: 'code', enabled: c.connected,
-                      child: const Text('Code')),
-                  if (supports('console.manage') && menuSession['taskId'] == null) ...[
+                    PopupMenuItem(
+                      value: 'code',
+                      enabled: c.connected,
+                      child: const Text('Code'),
+                    ),
+                  if (supports('console.manage') &&
+                      menuSession['taskId'] == null) ...[
                     PopupMenuItem(
                       value: 'rename',
                       enabled: c.connected && menuSession['alive'] == true,
@@ -945,7 +1002,8 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
                       child: const Text('Project'),
                     ),
                   ],
-                  if (menuSession['taskId'] == null && ['codex', 'claude'].contains(menuSession['provider']) &&
+                  if (menuSession['taskId'] == null &&
+                      ['codex', 'claude'].contains(menuSession['provider']) &&
                       menuSession['draftSupported'] == true &&
                       menuSession['switching'] != true) ...[
                     for (final target
@@ -971,45 +1029,28 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
                       child: Text('Account · ${menuSession['accountLabel']}'),
                     ),
                   const PopupMenuItem(
-                    value: 'display',
-                    child: Text('Text & display'),
-                  ),
-                  const PopupMenuItem(
-                    value: 'appearance',
-                    child: Text('Console style'),
-                  ),
-                  const PopupMenuItem(value: 'copy', child: Text('Copy text')),
-                  const PopupMenuItem(
-                    value: 'links',
-                    child: Text('Console links'),
+                    value: 'view',
+                    child: Text('View options'),
                   ),
                   PopupMenuItem(
                     value: 'keyboard',
                     enabled: c.connected && menuSession['taskId'] == null,
                     child: const Text('Type directly in terminal'),
                   ),
-                  const PopupMenuItem(
-                    value: 'clear-view',
-                    child: Text('Clear mobile history'),
-                  ),
                   PopupMenuItem(
                     value: 'close',
                     enabled: c.connected,
-                    child: Text(menuSession['taskId'] != null ? 'Stop worker' : 'Close console'),
+                    child: Text(
+                      menuSession['taskId'] != null
+                          ? 'Stop worker'
+                          : 'Close console',
+                    ),
                   ),
                   const PopupMenuDivider(),
                 ],
                 const PopupMenuItem(
-                  value: 'previews',
-                  child: Text('Previews'),
-                ),
-                const PopupMenuItem(
-                  value: 'updates',
-                  child: Text('App updates'),
-                ),
-                const PopupMenuItem(
-                  value: 'reconnect',
-                  child: Text('Reconnect'),
+                  value: 'app',
+                  child: Text('App & connection'),
                 ),
               ],
             ),
@@ -1050,13 +1091,22 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
                   ),
                 ),
               if (c.state['imageJobsRunning'] == true && c.connected)
-                Align(alignment: Alignment.centerRight, child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: ActionChip(avatar: const Icon(Icons.image_outlined, size: 18),
-                    label: const Text('Image job running'),
-                    onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => ImageJobsPage(client: c))),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: ActionChip(
+                      avatar: const Icon(Icons.image_outlined, size: 18),
+                      label: const Text('Image job running'),
+                      onPressed: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => ImageJobsPage(client: c),
+                        ),
+                      ),
+                    ),
                   ),
-                )),
+                ),
               Expanded(
                 child: page == 0
                     ? consoleWorkspace(current)
@@ -1082,8 +1132,10 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
             ? null
             : NavigationBar(
                 height: 64,
-                labelBehavior: MediaQuery.textScalerOf(context).scale(14) > 22 ||
-                        (projectAccess && MediaQuery.sizeOf(context).width < 380)
+                labelBehavior:
+                    MediaQuery.textScalerOf(context).scale(14) > 22 ||
+                        (projectAccess &&
+                            MediaQuery.sizeOf(context).width < 380)
                     ? NavigationDestinationLabelBehavior.onlyShowSelected
                     : NavigationDestinationLabelBehavior.alwaysShow,
                 selectedIndex: destinations.indexOf(page),
@@ -1148,22 +1200,21 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
       children: [
         Positioned.fill(
           left: tablet ? paneWidth + 1 : 0,
-          child: Offstage(
-            offstage: overviewShown,
-            child: terminal(current),
-          ),
+          child: Offstage(offstage: overviewShown, child: terminal(current)),
         ),
         Positioned(
-          left: 0, top: 0, bottom: 0,
+          left: 0,
+          top: 0,
+          bottom: 0,
           right: tablet ? null : 0,
           width: tablet ? paneWidth : null,
-          child: Offstage(
-            offstage: !overviewVisible,
-            child: overview,
-          ),
+          child: Offstage(offstage: !overviewVisible, child: overview),
         ),
         Positioned(
-          left: paneWidth, top: 0, bottom: 0, width: 1,
+          left: paneWidth,
+          top: 0,
+          bottom: 0,
+          width: 1,
           child: Offstage(
             offstage: !tablet,
             child: const VerticalDivider(width: 1),
@@ -1304,7 +1355,8 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
       if (name != null && mounted) await submit({'name': name});
     } else {
       final projects = (c.state['projects'] as List? ?? []).whereType<Map>();
-      final missingProject = session['projectId'] != null &&
+      final missingProject =
+          session['projectId'] != null &&
           !projects.any((project) => project['id'] == session['projectId']);
       final choice = await showModalBottomSheet<Map<String, dynamic>>(
         context: context,
@@ -1499,7 +1551,9 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
   }
 
   Future<void> terminalKeys() async {
-    if (c.sessions.any((s) => s['id'] == c.selected && s['taskId'] != null)) return;
+    if (c.sessions.any((s) => s['id'] == c.selected && s['taskId'] != null)) {
+      return;
+    }
     stopTerminalTyping();
     composerFocus.unfocus();
     await showModalBottomSheet<void>(
@@ -1514,6 +1568,90 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
   int queuedCount(Object? id) =>
       ((((c.state['queues'] as Map?)?[id] as Map?)?['entries']) as List? ?? [])
           .length;
+
+  Future<void> viewOptions(Map<String, dynamic> session) async {
+    stopTerminalTyping();
+    composerFocus.unfocus();
+    Widget row(String label, IconData icon, VoidCallback open) => ListTile(
+      leading: Icon(icon),
+      title: Text(label),
+      onTap: () {
+        Navigator.pop(context);
+        open();
+      },
+    );
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (_) => SafeArea(
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              row('Text & display', Icons.text_fields, displaySettings),
+              row('Console style', Icons.palette_outlined, appearanceSettings),
+              row(
+                'Copy text',
+                Icons.copy,
+                () => consoleAction('copy', session),
+              ),
+              row(
+                'Console links',
+                Icons.link,
+                () => consoleAction('links', session),
+              ),
+              row(
+                'Clear mobile history',
+                Icons.delete_sweep_outlined,
+                () => consoleAction('clear-view', session),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> appOptions() async {
+    stopTerminalTyping();
+    composerFocus.unfocus();
+    Widget row(String label, IconData icon, VoidCallback open) => ListTile(
+      leading: Icon(icon),
+      title: Text(label),
+      onTap: () {
+        Navigator.pop(context);
+        open();
+      },
+    );
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (_) => SafeArea(
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              row('Previews', Icons.visibility_outlined, () {
+                Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => PreviewListPage(client: c),
+                  ),
+                );
+              }),
+              row(
+                'App updates',
+                Icons.system_update,
+                () => openUpdates(context),
+              ),
+              row('Reconnect', Icons.sync, () => run(c.reconnect)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 
   Future<void> displaySettings() async {
     stopTerminalTyping();
@@ -1630,50 +1768,6 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
     final selection = c.agentSelection(session['id'] as String);
     return Column(
       children: [
-        if (session['switchOffer'] is Map && session['switching'] != true)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(10, 8, 10, 2),
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: blue.withValues(alpha: .10),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: blue.withValues(alpha: .35)),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 8,
-                ),
-                child: Wrap(
-                  alignment: WrapAlignment.spaceBetween,
-                  spacing: 8,
-                  runSpacing: 4,
-                  children: [
-                    Text(
-                      'Usage reached ${(session['switchOffer'] as Map)['usedPercent'] ?? '?'}%.',
-                      style: const TextStyle(color: muted),
-                    ),
-                    TextButton(
-                      onPressed: c.connected
-                          ? () {
-                              final offer = session['switchOffer'] as Map;
-                              switchAccountPinned(
-                                Map<String, dynamic>.from(session),
-                                '${offer['targetAccountId'] ?? ''}',
-                                c.activePC,
-                                c.generation,
-                              );
-                            }
-                          : null,
-                      child: Text(
-                        'Switch to ${(session['switchOffer'] as Map)['targetLabel'] ?? 'account'}',
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
         Expanded(
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -1749,7 +1843,7 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
                         label: Text(
                           selection.model == null
                               ? 'Model unknown'
-                              : modelLabel(selection.model!),
+                              : '${modelLabel(selection.model!)}${selection.pending ? ' (selected)' : ''}',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -1762,8 +1856,10 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
                           icon: const Icon(Icons.speed, size: 18),
                           label: Text(
                             selection.effort == null
-                                ? 'Effort unknown'
-                                : effortLabel(selection.effort!),
+                                ? selection.pending
+                                      ? 'Agent default (selected)'
+                                      : 'Effort unknown'
+                                : '${effortLabel(selection.effort!)}${selection.pending ? ' (selected)' : ''}',
                           ),
                         ),
                     ],
@@ -1839,12 +1935,19 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
           if (session['taskId'] != null && session['steeringState'] != null)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Text('${session['steeringState']}', style: const TextStyle(fontSize: 12)),
+              child: Text(
+                '${session['steeringState']}',
+                style: const TextStyle(fontSize: 12),
+              ),
             ),
-          if (session['taskId'] != null && (session['consoleCapabilities'] as Map?)?['steering'] != true)
+          if (session['taskId'] != null &&
+              (session['consoleCapabilities'] as Map?)?['steering'] != true)
             const Padding(
               padding: EdgeInsets.symmetric(horizontal: 16),
-              child: Text('Steering unavailable for this CLI', style: TextStyle(fontSize: 12)),
+              child: Text(
+                'Steering unavailable for this CLI',
+                style: TextStyle(fontSize: 12),
+              ),
             ),
           Padding(
             padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
@@ -1872,7 +1975,9 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
                       autocorrect: false,
                       enableSuggestions: false,
                       decoration: InputDecoration(
-                        hintText: session['taskId'] != null ? 'Worker message' : 'Message',
+                        hintText: session['taskId'] != null
+                            ? 'Worker message'
+                            : 'Message',
                         contentPadding: const EdgeInsets.symmetric(
                           horizontal: 14,
                           vertical: 12,
@@ -1881,7 +1986,11 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
                         suffixIcon: PopupMenuButton<String>(
                           tooltip: 'Attach',
                           icon: Icon(Icons.add, color: blue),
-                          enabled: c.connected && !sending && !attaching && session['taskId'] == null,
+                          enabled:
+                              c.connected &&
+                              !sending &&
+                              !attaching &&
+                              session['taskId'] == null,
                           onSelected: (action) =>
                               consoleAction(action, session),
                           itemBuilder: (_) => [
@@ -1903,8 +2012,13 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
                 const SizedBox(width: 8),
                 DockSendButton(
                   onPressed:
-                      c.connected && !sending && composer.text.trim().isNotEmpty &&
-                      (session['taskId'] == null || (session['consoleCapabilities'] as Map?)?['steering'] == true)
+                      c.connected &&
+                          !sending &&
+                          composer.text.trim().isNotEmpty &&
+                          (session['taskId'] == null ||
+                              (session['consoleCapabilities']
+                                      as Map?)?['steering'] ==
+                                  true)
                       ? send
                       : null,
                   sending: sending,

@@ -1,7 +1,7 @@
 import { Marked } from 'marked';
 import DOMPurify from 'dompurify';
 
-const escape = value => String(value || '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#39;');
+import { escapeHtml as escape } from './html-escape.js';
 const markdown = new Marked({ gfm: true, renderer: {
   html: ({ text }) => escape(text),
   // Reports must not make network requests simply because someone previews them.

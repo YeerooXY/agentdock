@@ -165,6 +165,8 @@ void main() {
       await tester.pumpWidget(DockApp(client: c));
       await tester.tap(find.byTooltip('More options'));
       await tester.pumpAndSettle();
+      await tester.tap(find.text('View options'));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('Copy text'));
       await tester.pumpAndSettle();
       c.screen!.terminal.write('\r\nNew output');

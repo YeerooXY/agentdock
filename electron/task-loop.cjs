@@ -182,11 +182,16 @@ class TaskLoop extends EventEmitter {
     return { accountId: account.id, provider: account.provider, label: account.label, model,
       funding: accountFunding(account, accountAllowance(account.id, this.getLimits(), this.now()), this.getSettings().routing), effort, requestedEffort: effort || null };
   }
+  // Plan-ready tasks wait for approval and hold no running slot or repository lock.
+  occupying(except) { return [...this.jobs.values()].filter(job => job.id !== except && (RUNNING.has(job.state) || this.cancelling.has(job.id))); }
+  checkCapacity(repoKey, except) {
+    const active = this.occupying(except);
+    if (this.reserved.has(repoKey) || active.some(job => job.repoKey === repoKey)) throw new Error('A task is already running for this repository.');
+    if (this.reserved.size + active.length >= 2) throw new Error('Two tasks are already running. Wait for one to finish.');
+  }
   ensureAvailable(job) {
     if (this.closing) throw new Error('Paddock is closing. Resume after reopening.');
-    const active = [...this.jobs.values()].filter(other => other.id !== job.id && (RUNNING.has(other.state) || other.state === 'plan-ready' || this.cancelling.has(other.id)));
-    if (this.reserved.has(job.repoKey) || active.some(other => other.repoKey === job.repoKey)) throw new Error('A task is already running for this repository.');
-    if (this.reserved.size + active.length >= 2) throw new Error('Two tasks are already running. Wait for one to finish.');
+    this.checkCapacity(job.repoKey, job.id);
   }
   reviewFindings(reply) { return findings(reply); }
   approvePlan(args) { return this.split.approve(args); }
@@ -194,14 +199,14 @@ class TaskLoop extends EventEmitter {
   startSplit(job, planning, command = job.checks) {
     const remaining = Math.max(0, job.timeLimitMinutes * 60_000 - (job.activeElapsedMs || 0)), started = this.now();
     job.deadlineAt = started + remaining;
-    job.runStartedAt = started; this.persist(job);
+    job.runStartedAt = started; this.changed(job);
     const timer = setTimeout(() => { if (RUNNING.has(job.state)) this.deadline(job); }, remaining); timer.unref?.();
     const running = Promise.resolve().then(() => {
       if (!RUNNING.has(job.state)) return;
       if (!remaining) return this.finish(job, 'needs-you', 'The task reached its time limit.');
       return planning ? this.split.plan(job) : this.split.build(job, command);
     }).catch(error => this.finish(job, error instanceof ProviderError ? 'failed' : 'needs-you', redactText(error.message)))
-      .finally(() => { clearTimeout(timer); job.activeElapsedMs = (job.activeElapsedMs || 0) + Math.max(0, this.now() - started); delete job.runStartedAt; this.persist(job); if (this.pending.get(job.id) === running) this.pending.delete(job.id); });
+      .finally(() => { clearTimeout(timer); job.activeElapsedMs = (job.activeElapsedMs || 0) + Math.max(0, this.now() - started); delete job.runStartedAt; this.changed(job); if (this.pending.get(job.id) === running) this.pending.delete(job.id); });
     this.pending.set(job.id, running);
   }
   view({ baselineUntrackedState, baselineUntracked, processPid, processRecordedAt, ...job }) {
@@ -247,9 +252,7 @@ class TaskLoop extends EventEmitter {
     } catch { throw new Error('Choose a folder in a Git working tree with a commit.'); }
     if (folderKey(args.repo) !== folderKey(repo)) throw new Error('Select the Git repository root as the project or console folder. Subfolders cannot start tasks.');
     if (this.closing) throw new Error('Paddock is closing. Start the task after reopening.');
-    const active = [...this.jobs.values()].filter(job => RUNNING.has(job.state) || job.state === 'plan-ready' || this.cancelling.has(job.id));
-    if (this.reserved.has(repoKey) || active.some(job => job.repoKey === repoKey)) throw new Error('A task is already running for this repository.');
-    if (this.reserved.size + active.length >= 2) throw new Error('Two tasks are already running. Wait for one to finish.');
+    this.checkCapacity(repoKey);
     this.reserved.add(repoKey);
     try {
       const id = randomUUID(), sourceRevision = (await this.git(repo, ['rev-parse', 'HEAD'])).trim();

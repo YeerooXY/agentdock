@@ -44,6 +44,8 @@ void main() {
       if (paired) {
         await tester.tap(find.byTooltip('More options'));
         await tester.pumpAndSettle();
+        await tester.tap(find.text('App & connection'));
+        await tester.pumpAndSettle();
       }
       await tester.tap(
         paired ? find.text('App updates') : find.text('Updates'),

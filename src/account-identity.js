@@ -1,3 +1,4 @@
+import { escapeHtml as escape } from './html-escape.js';
 import openai from '../mobile/assets/providers/openai.png';
 import cursor from '../mobile/assets/providers/cursor.png';
 import opencode from '../mobile/assets/providers/opencode.png';
@@ -37,7 +38,6 @@ const identities = {
 identities['z.ai'] = identities.zai;
 identities.alibaba = identities.qwen;
 identities.moonshot = identities.kimi;
-const escape = value => String(value).replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' })[c]);
 export function accountIdentity(provider) {
   const key = String(provider).toLowerCase();
   const [name, color, logo] = Object.hasOwn(identities, key) ? identities[key] : [String(provider || 'Account'), '#b5bbd0'];

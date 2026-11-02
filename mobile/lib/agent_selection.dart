@@ -1,12 +1,21 @@
 class AgentSelection {
   final String? model, effort;
   final int at;
-  const AgentSelection({this.model, this.effort, this.at = 0});
-  factory AgentSelection.fromSession(Map session) => AgentSelection(
+  final bool pending;
+  const AgentSelection({this.model, this.effort, this.at = 0, this.pending = false});
+  factory AgentSelection.fromSession(Map session) {
+    final requested = session['requestedSettings'];
+    if (requested is Map && requested['status'] == 'awaiting-provider' &&
+        ((requested['at'] as num?)?.toInt() ?? 0) > ((session['settingsAt'] as num?)?.toInt() ?? 0)) {
+      return AgentSelection(model: requested['model'] as String?, effort: requested['effort'] as String?,
+        at: (requested['at'] as num?)?.toInt() ?? 0, pending: true);
+    }
+    return AgentSelection(
     model: session['model'] as String?,
     effort: session['effort'] as String?,
     at: (session['settingsAt'] as num?)?.toInt() ?? 0,
-  );
+    );
+  }
 }
 
 String effortLabel(String value) => value == 'xhigh'

@@ -216,3 +216,14 @@ test('OpenCode rejects credentials without exposing secrets', async () => {
   await usage.refresh([{ id: 'opencode:default', provider: 'opencode' }]);
   assert.equal(JSON.stringify(usage.snapshot()).includes(key), false);
 });
+
+
+test('Claude model discovery initializes only and preserves account environment without inference', async () => {
+  const f = protocolFixture('lines', method => ({ result: { models: [{ value: 'sonnet', resolvedModel: 'claude-sonnet-native', displayName: 'Sonnet', supportedEffortLevels: ['low', 'high'] }] } }));
+  const { readClaudeModels } = require('../electron/subscription-usage.cjs');
+  const models = await readClaudeModels({ executable: 'claude.exe', env: { CLAUDE_CONFIG_DIR: '/isolated-profile' }, ...f });
+  assert.deepEqual(f.requests.map(x => x.request.subtype), ['initialize']);
+  assert.equal(f.options.env.CLAUDE_CONFIG_DIR, '/isolated-profile');
+  assert.deepEqual(models[0].efforts, ['low', 'high']); assert.equal(models[0].resolvedModel, 'claude-sonnet-native');
+  assert.ok(f.argv.includes('--restricted')); assert.ok(f.argv.includes('--no-session-persistence'));
+});

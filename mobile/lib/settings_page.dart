@@ -284,23 +284,13 @@ class _SettingsPageState extends State<SettingsPage> {
         client: c,
         refreshRevision: turnRefreshRevision,
       ),
-      if (usage?['threshold'] is num)
+      if (usage != null)
         Padding(
           padding: const EdgeInsets.only(top: 14),
           child: panel(
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Switch offer threshold: ${usage!['threshold']}% · Automatic switching ${usage!['autoSwitch'] == true ? 'on' : 'off'}',
-                  style: const TextStyle(color: muted),
-                ),
-                const SizedBox(height: 8),
-                const Text(
-                  'Use subscriptions within provider terms. Switching accounts must respect each provider?s rate limits and restrictions.',
-                  style: TextStyle(color: muted, height: 1.45),
-                ),
-              ],
+            const Text(
+              "Use subscriptions within provider terms. Switching accounts must respect each provider's rate limits and restrictions.",
+              style: TextStyle(color: muted, height: 1.45),
             ),
           ),
         ),
