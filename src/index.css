@@ -1,0 +1,9 @@
+﻿/*
+ * Cascade layer order for the renderer, lowest to highest priority.
+ * Layered rules always lose to unlayered rules, so existing stylesheets stay
+ * unlayered until every file can move into a layer together. New shared
+ * primitives (tokens, .page) live in layers from the start.
+ */
+@layer reset, tokens, base, layout, components, themes, overrides;
+
+@import './tokens.css';
