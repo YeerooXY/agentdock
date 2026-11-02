@@ -1,0 +1,599 @@
+{
+  "valid": [
+    {
+      "name": "hello fresh",
+      "direction": "client",
+      "message": {
+        "type": "hello",
+        "protocol": 2,
+        "lastRev": null,
+        "slices": [
+          "sessions",
+          "tasks"
+        ],
+        "compression": [
+          "gzip",
+          "none"
+        ]
+      }
+    },
+    {
+      "name": "hello resume",
+      "direction": "client",
+      "message": {
+        "type": "hello",
+        "protocol": 2,
+        "lastRev": {
+          "epoch": "epoch-a",
+          "revs": {
+            "sessions": 4,
+            "tasks": 2
+          }
+        },
+        "slices": [
+          "sessions",
+          "tasks"
+        ],
+        "compression": [
+          "none"
+        ]
+      }
+    },
+    {
+      "name": "subscribe",
+      "direction": "client",
+      "message": {
+        "type": "subscribe",
+        "slices": [
+          "usage"
+        ]
+      }
+    },
+    {
+      "name": "ack",
+      "direction": "client",
+      "message": {
+        "type": "ack",
+        "subscription": "sub-1",
+        "batch": 3
+      }
+    },
+    {
+      "name": "resync",
+      "direction": "client",
+      "message": {
+        "type": "resync",
+        "subscription": "sub-1",
+        "slices": [
+          "tasks"
+        ]
+      }
+    },
+    {
+      "name": "pong",
+      "direction": "client",
+      "message": {
+        "type": "pong",
+        "nonce": "n1"
+      }
+    },
+    {
+      "name": "welcome",
+      "direction": "server",
+      "message": {
+        "type": "welcome",
+        "protocol": 2,
+        "epoch": "epoch-a",
+        "subscription": "sub-1",
+        "slices": [
+          "sessions",
+          "tasks"
+        ],
+        "compression": "gzip"
+      }
+    },
+    {
+      "name": "changes reset and patch",
+      "direction": "server",
+      "message": {
+        "type": "changes",
+        "epoch": "epoch-a",
+        "subscription": "sub-1",
+        "batch": 1,
+        "changes": [
+          {
+            "kind": "reset",
+            "slice": "sessions",
+            "rev": 4,
+            "value": {
+              "byId": {
+                "s1": {
+                  "id": "s1",
+                  "name": "One"
+                }
+              },
+              "order": [
+                "s1"
+              ],
+              "meta": {}
+            }
+          },
+          {
+            "kind": "patch",
+            "slice": "tasks",
+            "baseRev": 2,
+            "rev": 3,
+            "upsert": {
+              "t1": {
+                "id": "t1",
+                "state": "done"
+              }
+            },
+            "remove": [
+              "t0"
+            ],
+            "order": [
+              "t1"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "changes replace",
+      "direction": "server",
+      "message": {
+        "type": "changes",
+        "epoch": "epoch-a",
+        "subscription": "sub-1",
+        "batch": 2,
+        "changes": [
+          {
+            "kind": "replace",
+            "slice": "queues",
+            "baseRev": 0,
+            "rev": 1,
+            "value": {
+              "s1": {
+                "paused": false,
+                "entries": []
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "phone hello",
+      "direction": "client",
+      "view": "phone",
+      "message": {
+        "type": "hello",
+        "protocol": 2,
+        "lastRev": null,
+        "slices": [
+          "sessions",
+          "tasks",
+          "usage",
+          "projects"
+        ],
+        "compression": [
+          "gzip",
+          "none"
+        ]
+      }
+    },
+    {
+      "name": "phone usage patch",
+      "direction": "server",
+      "view": "phone",
+      "message": {
+        "type": "changes",
+        "epoch": "epoch-a",
+        "subscription": "sub-1",
+        "batch": 1,
+        "changes": [
+          {
+            "kind": "patch",
+            "slice": "usage",
+            "baseRev": 0,
+            "rev": 1,
+            "upsert": {
+              "claude:default": {
+                "id": "claude:default",
+                "provider": "claude",
+                "label": "Claude",
+                "hasUsage": true,
+                "inUse": false,
+                "check": null,
+                "windows": []
+              }
+            },
+            "remove": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "ping",
+      "direction": "server",
+      "message": {
+        "type": "ping",
+        "nonce": "n1"
+      }
+    },
+    {
+      "name": "error",
+      "direction": "server",
+      "message": {
+        "type": "error",
+        "code": "unauthorized",
+        "message": "This phone was removed."
+      }
+    }
+  ],
+  "invalid": [
+    {
+      "name": "hello wrong protocol",
+      "direction": "client",
+      "code": "unsupported",
+      "message": {
+        "type": "hello",
+        "protocol": 1,
+        "lastRev": null,
+        "slices": [
+          "sessions"
+        ],
+        "compression": [
+          "none"
+        ]
+      }
+    },
+    {
+      "name": "hello unknown slice",
+      "direction": "client",
+      "code": "invalid",
+      "message": {
+        "type": "hello",
+        "protocol": 2,
+        "lastRev": null,
+        "slices": [
+          "secrets"
+        ],
+        "compression": [
+          "none"
+        ]
+      }
+    },
+    {
+      "name": "hello repeated slice",
+      "direction": "client",
+      "code": "invalid",
+      "message": {
+        "type": "hello",
+        "protocol": 2,
+        "lastRev": null,
+        "slices": [
+          "tasks",
+          "tasks"
+        ],
+        "compression": [
+          "none"
+        ]
+      }
+    },
+    {
+      "name": "hello bad compression",
+      "direction": "client",
+      "code": "invalid",
+      "message": {
+        "type": "hello",
+        "protocol": 2,
+        "lastRev": null,
+        "slices": [
+          "tasks"
+        ],
+        "compression": [
+          "brotli"
+        ]
+      }
+    },
+    {
+      "name": "hello negative rev",
+      "direction": "client",
+      "code": "invalid",
+      "message": {
+        "type": "hello",
+        "protocol": 2,
+        "lastRev": {
+          "epoch": "epoch-a",
+          "revs": {
+            "tasks": -1
+          }
+        },
+        "slices": [
+          "tasks"
+        ],
+        "compression": [
+          "none"
+        ]
+      }
+    },
+    {
+      "name": "ack zero batch",
+      "direction": "client",
+      "code": "invalid",
+      "message": {
+        "type": "ack",
+        "subscription": "sub-1",
+        "batch": 0
+      }
+    },
+    {
+      "name": "client unknown field",
+      "direction": "client",
+      "code": "invalid",
+      "message": {
+        "type": "pong",
+        "nonce": "n",
+        "extra": 1
+      }
+    },
+    {
+      "name": "patch on value slice",
+      "direction": "server",
+      "code": "invalid",
+      "message": {
+        "type": "changes",
+        "epoch": "epoch-a",
+        "subscription": "sub-1",
+        "batch": 1,
+        "changes": [
+          {
+            "kind": "patch",
+            "slice": "usage",
+            "baseRev": 0,
+            "rev": 1,
+            "upsert": {},
+            "remove": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "replace on collection",
+      "direction": "server",
+      "code": "invalid",
+      "message": {
+        "type": "changes",
+        "epoch": "epoch-a",
+        "subscription": "sub-1",
+        "batch": 1,
+        "changes": [
+          {
+            "kind": "replace",
+            "slice": "tasks",
+            "baseRev": 0,
+            "rev": 1,
+            "value": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "rev not after baseRev",
+      "direction": "server",
+      "code": "invalid",
+      "message": {
+        "type": "changes",
+        "epoch": "epoch-a",
+        "subscription": "sub-1",
+        "batch": 1,
+        "changes": [
+          {
+            "kind": "replace",
+            "slice": "usage",
+            "baseRev": 2,
+            "rev": 2,
+            "value": {}
+          }
+        ]
+      }
+    },
+    {
+      "name": "slice twice in batch",
+      "direction": "server",
+      "code": "invalid",
+      "message": {
+        "type": "changes",
+        "epoch": "epoch-a",
+        "subscription": "sub-1",
+        "batch": 1,
+        "changes": [
+          {
+            "kind": "replace",
+            "slice": "usage",
+            "baseRev": 0,
+            "rev": 1,
+            "value": {}
+          },
+          {
+            "kind": "replace",
+            "slice": "usage",
+            "baseRev": 1,
+            "rev": 2,
+            "value": {}
+          }
+        ]
+      }
+    },
+    {
+      "name": "upsert and remove same id",
+      "direction": "server",
+      "code": "invalid",
+      "message": {
+        "type": "changes",
+        "epoch": "epoch-a",
+        "subscription": "sub-1",
+        "batch": 1,
+        "changes": [
+          {
+            "kind": "patch",
+            "slice": "tasks",
+            "baseRev": 0,
+            "rev": 1,
+            "upsert": {
+              "a": {
+                "id": "a"
+              }
+            },
+            "remove": [
+              "a"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "item id differs from key",
+      "direction": "server",
+      "code": "invalid",
+      "message": {
+        "type": "changes",
+        "epoch": "epoch-a",
+        "subscription": "sub-1",
+        "batch": 1,
+        "changes": [
+          {
+            "kind": "patch",
+            "slice": "tasks",
+            "baseRev": 0,
+            "rev": 1,
+            "upsert": {
+              "a": {
+                "id": "b"
+              }
+            },
+            "remove": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "reset collection order mismatch",
+      "direction": "server",
+      "code": "invalid",
+      "message": {
+        "type": "changes",
+        "epoch": "epoch-a",
+        "subscription": "sub-1",
+        "batch": 1,
+        "changes": [
+          {
+            "kind": "reset",
+            "slice": "tasks",
+            "rev": 1,
+            "value": {
+              "byId": {
+                "a": {
+                  "id": "a"
+                }
+              },
+              "order": [
+                "b"
+              ],
+              "meta": {}
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "secret field in change",
+      "direction": "server",
+      "code": "invalid",
+      "message": {
+        "type": "changes",
+        "epoch": "epoch-a",
+        "subscription": "sub-1",
+        "batch": 1,
+        "changes": [
+          {
+            "kind": "replace",
+            "slice": "mobileStatus",
+            "baseRev": 0,
+            "rev": 1,
+            "value": {
+              "devices": [
+                {
+                  "id": "d",
+                  "token": "abc"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "empty changes",
+      "direction": "server",
+      "code": "invalid",
+      "message": {
+        "type": "changes",
+        "epoch": "epoch-a",
+        "subscription": "sub-1",
+        "batch": 1,
+        "changes": []
+      }
+    },
+    {
+      "name": "phone cannot subscribe to settings",
+      "direction": "client",
+      "view": "phone",
+      "code": "invalid",
+      "message": {
+        "type": "hello",
+        "protocol": 2,
+        "lastRev": null,
+        "slices": [
+          "preferences"
+        ],
+        "compression": [
+          "gzip"
+        ]
+      }
+    },
+    {
+      "name": "phone usage is a collection",
+      "direction": "server",
+      "view": "phone",
+      "code": "invalid",
+      "message": {
+        "type": "changes",
+        "epoch": "epoch-a",
+        "subscription": "sub-1",
+        "batch": 1,
+        "changes": [
+          {
+            "kind": "replace",
+            "slice": "usage",
+            "baseRev": 0,
+            "rev": 1,
+            "value": {}
+          }
+        ]
+      }
+    },
+    {
+      "name": "unknown error code",
+      "direction": "server",
+      "code": "invalid",
+      "message": {
+        "type": "error",
+        "code": "oops",
+        "message": ""
+      }
+    }
+  ]
+}

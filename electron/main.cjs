@@ -68,7 +68,7 @@ const { modelsFromReading } = require('./routing-models.cjs');
 const { readPiUsage } = require('./pi-usage.cjs');
 const { clineRoute } = require('./native-account-route.cjs');
 const { CrashReport, diagnose, redact, guardStartup } = require('./crash-report.cjs');
-const { SLICES } = require('./state-protocol.cjs');
+const { SLICES, toCollection } = require('./state-protocol.cjs');
 const { StateStore, jsonEqual } = require('./state-store.cjs');
 const { desktopProjection, phoneProjection, slicesFromLegacy, legacySnapshot, ephemeralFromLegacy } = require('./projections.cjs');
 const { courseFromArgs, profileFromArgs, openCourseConsole } = require('./course-launch.cjs');
@@ -179,6 +179,7 @@ function stateFailure(slice, error) {
 function syncState() {
   const raw = serviceSnapshot();
   const values = slicesFromLegacy(raw, stateFailure);
+  if (tasks) delete values.tasks;
   stateStore.transaction(() => {
     for (const [slice, value] of Object.entries(values)) {
       try { stateWriters[slice].set(value); } catch (error) { stateFailure(slice, error); }
@@ -545,7 +546,16 @@ app.whenReady().then(() => guardStartup(async () => {
       ? workbench.results.updateText(raw.resultId, raw)
       : taskAccounts.saveResult(raw, context)
   });
-  tasks.on('changed', publish);
+  // The tasks slice is written by TaskLoop's events, not by the publish-time sync.
+  const writeTasks = () => { try { stateWriters.tasks.set(toCollection(tasks.snapshot())); } catch (error) { stateFailure('tasks', error); } };
+  writeTasks();
+  tasks.on('changed', () => { writeTasks(); publish(); });
+  let taskStorageError = null;
+  tasks.on('storage-error', ({ error }) => {
+    if (error) { storageError = taskStorageError = error; }
+    else if (storageError === taskStorageError) { storageError = taskStorageError = null; }
+    publish();
+  });
   // Snapshots no longer refresh; verification runs on its own timer.
   tasks.startVerification();
   projects.on('tracking-error', message => { storageError = message; publish(); });

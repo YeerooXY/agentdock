@@ -3,7 +3,7 @@
 // revisions, so a change the phone cannot see never advances the phone cursor.
 // Also holds the legacy adapter that rebuilds today's full desktop snapshot.
 const { EventEmitter } = require('node:events');
-const { SLICES, SLICE_NAMES, toCollection, fromCollection, emptyCollection, assertNoSecrets } = require('./state-protocol.cjs');
+const { SLICES, SLICE_NAMES, PHONE_SLICES, toCollection, fromCollection, emptyCollection, assertNoSecrets } = require('./state-protocol.cjs');
 const { freezeJson, jsonEqual, collectionChange } = require('./state-store.cjs');
 
 const pick = (source, fields) => {
@@ -69,18 +69,18 @@ const phonePrompt = item => pick(item, ['id', 'name', 'text', 'projectId', 'crea
 // slice -> { deps, build(state) }. A projection slice is rebuilt only when one
 // of its dependencies changed in a store commit.
 const PHONE = Object.freeze({
-  shell: { kind: 'value', deps: ['shell'], build: state => ({ capacity: (state.shell?.grid?.columns || 3) * (state.shell?.grid?.rows || 3), version: state.shell?.version || null }) },
-  sessions: { kind: 'collection', deps: ['sessions'], build: state => mapCollection(state.sessions, phoneSession, item => !item.dismissed) },
-  queues: { kind: 'value', deps: ['queues'], build: state => {
+  shell: { ...PHONE_SLICES.shell, build: state => ({ capacity: (state.shell?.grid?.columns || 3) * (state.shell?.grid?.rows || 3), version: state.shell?.version || null }) },
+  sessions: { ...PHONE_SLICES.sessions, build: state => mapCollection(state.sessions, phoneSession, item => !item.dismissed) },
+  queues: { ...PHONE_SLICES.queues, build: state => {
     const out = {};
     for (const [id, queue] of Object.entries(state.queues || {})) out[id] = { paused: !!queue?.paused, entries: (queue?.entries || []).map(entry => pick(entry, ['id', 'text', 'at', 'state', 'error'])) };
     return out;
   } },
-  prompts: { kind: 'collection', deps: ['prompts'], build: state => mapCollection(state.prompts, phonePrompt) },
-  projects: { kind: 'collection', deps: ['projects'], build: state => mapCollection(state.projects, phoneProject, item => item.status !== 'archived') },
-  tasks: { kind: 'collection', deps: ['tasks'], build: state => mapCollection(state.tasks, phoneTask) },
-  usage: { kind: 'collection', deps: ['usage'], build: state => phoneUsageAccounts(state.usage) },
-  results: { kind: 'value', deps: ['results'], build: state => ({ unread: state.results?.meta?.unread ?? 0, count: state.results?.order?.length || 0 }) },
+  prompts: { ...PHONE_SLICES.prompts, build: state => mapCollection(state.prompts, phonePrompt) },
+  projects: { ...PHONE_SLICES.projects, build: state => mapCollection(state.projects, phoneProject, item => item.status !== 'archived') },
+  tasks: { ...PHONE_SLICES.tasks, build: state => mapCollection(state.tasks, phoneTask) },
+  usage: { ...PHONE_SLICES.usage, build: state => phoneUsageAccounts(state.usage) },
+  results: { ...PHONE_SLICES.results, build: state => ({ unread: state.results?.meta?.unread ?? 0, count: state.results?.order?.length || 0 }) },
 });
 // The desktop sees every slice; secret-named fields never reach the store.
 const DESKTOP = Object.freeze(Object.fromEntries(SLICE_NAMES.map(slice => [slice, { kind: SLICES[slice].kind, deps: [slice], build: state => state[slice] }])));

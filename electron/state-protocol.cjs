@@ -36,6 +36,23 @@ const SLICES = Object.freeze({
 });
 for (const value of Object.values(SLICES)) Object.freeze(value);
 const SLICE_NAMES = Object.freeze(Object.keys(SLICES));
+// The phone sees its own allowlisted slices (built in electron/projections.cjs)
+// with its own revisions. Desktop IPC uses the full slice table.
+const PHONE_SLICES = Object.freeze({
+  shell: Object.freeze({ kind: 'value', deps: Object.freeze(['shell']) }),
+  sessions: Object.freeze({ kind: 'collection', deps: Object.freeze(['sessions']) }),
+  queues: Object.freeze({ kind: 'value', deps: Object.freeze(['queues']) }),
+  prompts: Object.freeze({ kind: 'collection', deps: Object.freeze(['prompts']) }),
+  projects: Object.freeze({ kind: 'collection', deps: Object.freeze(['projects']) }),
+  tasks: Object.freeze({ kind: 'collection', deps: Object.freeze(['tasks']) }),
+  usage: Object.freeze({ kind: 'collection', deps: Object.freeze(['usage']) }),
+  results: Object.freeze({ kind: 'value', deps: Object.freeze(['results']) }),
+});
+const VIEWS = Object.freeze({ desktop: SLICES, phone: PHONE_SLICES });
+function viewTable(view) {
+  if (!Object.prototype.hasOwnProperty.call(VIEWS, view)) throw new Error(`Unknown view: ${String(view).slice(0, 20)}.`);
+  return VIEWS[view];
+}
 
 // Field names that never enter a slice, a projection or a protocol message.
 // Builders must allowlist fields; this guard is the last line of defence.
@@ -63,13 +80,13 @@ const isText = (value, max = 256) => typeof value === 'string' && value.length >
 function onlyKeys(value, allowed, label) {
   for (const key of Object.keys(value)) if (!allowed.includes(key)) fail('invalid', `${label} has an unknown field: ${key}.`);
 }
-function sliceName(value, label = 'slice') {
-  if (typeof value !== 'string' || !Object.prototype.hasOwnProperty.call(SLICES, value)) fail('invalid', `Unknown ${label}: ${String(value).slice(0, 40)}.`);
+function sliceName(value, label = 'slice', view = 'desktop') {
+  if (typeof value !== 'string' || !Object.prototype.hasOwnProperty.call(viewTable(view), value)) fail('invalid', `Unknown ${label}: ${String(value).slice(0, 40)}.`);
   return value;
 }
-function sliceList(value, label = 'slices') {
-  if (!Array.isArray(value) || value.length === 0 || value.length > SLICE_NAMES.length) fail('invalid', `${label} must list known slices.`);
-  for (const name of value) sliceName(name);
+function sliceList(value, label = 'slices', view = 'desktop') {
+  if (!Array.isArray(value) || value.length === 0 || value.length > Object.keys(viewTable(view)).length) fail('invalid', `${label} must list known slices.`);
+  for (const name of value) sliceName(name, 'slice', view);
   if (new Set(value).size !== value.length) fail('invalid', `${label} repeats a slice.`);
   return value;
 }
@@ -109,7 +126,7 @@ function assertNoSecrets(value, label = 'value') {
 }
 
 function emptyCollection() { return { byId: {}, order: [], meta: {} }; }
-function emptyValue(slice) { return SLICES[slice].kind === 'collection' ? emptyCollection() : null; }
+function emptyValue(slice, view = 'desktop') { return viewTable(view)[slice].kind === 'collection' ? emptyCollection() : null; }
 
 function validateCollection(value, label = 'collection') {
   if (!isObject(value)) fail('invalid', `${label} must be {byId, order}.`);
@@ -159,18 +176,18 @@ function applyPatch(previous, { upsert = {}, remove = [], order, meta }) {
   return validateCollection(next, 'patched collection');
 }
 
-function validateCursor(value, label = 'cursor') {
+function validateCursor(value, label = 'cursor', view = 'desktop') {
   if (!isObject(value)) fail('invalid', `${label} must be {epoch, revs}.`);
   onlyKeys(value, ['epoch', 'revs'], label);
   if (!isText(value.epoch, 64)) fail('invalid', `${label}.epoch must be text.`);
   if (!isObject(value.revs)) fail('invalid', `${label}.revs must be an object.`);
-  for (const [slice, rev] of Object.entries(value.revs)) { sliceName(slice); if (!isRev(rev)) fail('invalid', `${label}.revs.${slice} must be a revision.`); }
+  for (const [slice, rev] of Object.entries(value.revs)) { sliceName(slice, 'slice', view); if (!isRev(rev)) fail('invalid', `${label}.revs.${slice} must be a revision.`); }
   return value;
 }
 
-function validateChange(change) {
+function validateChange(change, view = 'desktop') {
   if (!isObject(change) || !CHANGE_KINDS.includes(change.kind)) fail('invalid', 'Unknown change kind.');
-  const slice = sliceName(change.slice), kind = SLICES[slice].kind;
+  const slice = sliceName(change.slice, 'slice', view), kind = viewTable(view)[slice].kind;
   if (!isRev(change.rev)) fail('invalid', 'Change rev must be a revision.');
   if (change.kind === 'reset') {
     onlyKeys(change, ['kind', 'slice', 'rev', 'value'], 'reset');
@@ -203,18 +220,19 @@ function validateChange(change) {
   return change;
 }
 
-function validateClientMessage(message) {
+// view: 'desktop' for IPC, 'phone' for /v2/events.
+function validateClientMessage(message, view = 'desktop') {
   if (!isObject(message)) fail('invalid', 'A message must be an object.');
   switch (message.type) {
     case 'hello':
       onlyKeys(message, ['type', 'protocol', 'lastRev', 'slices', 'compression'], 'hello');
       if (message.protocol !== PROTOCOL) fail('unsupported', 'Unsupported protocol.');
-      if (message.lastRev !== null) validateCursor(message.lastRev, 'hello.lastRev');
-      sliceList(message.slices);
+      if (message.lastRev !== null) validateCursor(message.lastRev, 'hello.lastRev', view);
+      sliceList(message.slices, 'slices', view);
       if (!Array.isArray(message.compression) || !message.compression.length || message.compression.some(x => !COMPRESSION.includes(x)) || new Set(message.compression).size !== message.compression.length) fail('invalid', 'hello.compression must list gzip or none.');
       return message;
     case 'subscribe':
-      onlyKeys(message, ['type', 'slices'], 'subscribe'); sliceList(message.slices); return message;
+      onlyKeys(message, ['type', 'slices'], 'subscribe'); sliceList(message.slices, 'slices', view); return message;
     case 'ack':
       onlyKeys(message, ['type', 'subscription', 'batch'], 'ack');
       if (!isText(message.subscription, 64) || !Number.isSafeInteger(message.batch) || message.batch < 1) fail('invalid', 'ack needs a subscription and batch.');
@@ -222,7 +240,7 @@ function validateClientMessage(message) {
     case 'resync':
       onlyKeys(message, ['type', 'subscription', 'slices'], 'resync');
       if (!isText(message.subscription, 64)) fail('invalid', 'resync needs a subscription.');
-      sliceList(message.slices); return message;
+      sliceList(message.slices, 'slices', view); return message;
     case 'pong':
       onlyKeys(message, ['type', 'nonce'], 'pong');
       if (!isText(message.nonce, 64)) fail('invalid', 'pong needs a nonce.');
@@ -231,14 +249,14 @@ function validateClientMessage(message) {
   }
 }
 
-function validateServerMessage(message) {
+function validateServerMessage(message, view = 'desktop') {
   if (!isObject(message)) fail('invalid', 'A message must be an object.');
   switch (message.type) {
     case 'welcome':
       onlyKeys(message, ['type', 'protocol', 'epoch', 'subscription', 'slices', 'compression'], 'welcome');
       if (message.protocol !== PROTOCOL) fail('unsupported', 'Unsupported protocol.');
       if (!isText(message.epoch, 64) || !isText(message.subscription, 64)) fail('invalid', 'welcome needs an epoch and subscription.');
-      sliceList(message.slices);
+      sliceList(message.slices, 'slices', view);
       if (!COMPRESSION.includes(message.compression)) fail('invalid', 'welcome.compression must be gzip or none.');
       return message;
     case 'changes': {
@@ -246,7 +264,7 @@ function validateServerMessage(message) {
       if (!isText(message.epoch, 64) || !isText(message.subscription, 64)) fail('invalid', 'changes needs an epoch and subscription.');
       if (!Number.isSafeInteger(message.batch) || message.batch < 1) fail('invalid', 'changes needs a batch number.');
       if (!Array.isArray(message.changes) || !message.changes.length) fail('invalid', 'changes needs at least one change.');
-      const slices = message.changes.map(change => validateChange(change).slice);
+      const slices = message.changes.map(change => validateChange(change, view).slice);
       if (new Set(slices).size !== slices.length) fail('invalid', 'A batch changes each slice once.');
       assertNoSecrets(message.changes, 'changes');
       return message;
@@ -267,10 +285,10 @@ function validateServerMessage(message) {
 //   state = { epoch, subscription, slices, revs, values, lastBatch }
 // Outcomes: welcome, applied, duplicate, ignored, resync (with slices),
 // reconnect (send hello with lastRev null), pong (with nonce), error.
-function initialClientState() { return { epoch: null, subscription: null, slices: [], revs: {}, values: {}, lastBatch: 0 }; }
+function initialClientState(view = 'desktop') { viewTable(view); return { view, epoch: null, subscription: null, slices: [], revs: {}, values: {}, lastBatch: 0 }; }
 
 function applyServerMessage(state, message) {
-  try { validateServerMessage(message); }
+  try { validateServerMessage(message, state.view || 'desktop'); }
   catch (error) { return { state, outcome: 'reconnect', error: error.code || 'invalid' }; }
   if (message.type === 'ping') return { state, outcome: 'pong', nonce: message.nonce };
   if (message.type === 'error') return { state, outcome: 'error', error: message.code };
@@ -279,7 +297,7 @@ function applyServerMessage(state, message) {
     const keep = new Set(sameEpoch ? message.slices : []);
     const revs = {}, values = {};
     for (const slice of keep) if (slice in state.revs) { revs[slice] = state.revs[slice]; values[slice] = state.values[slice]; }
-    return { state: { epoch: message.epoch, subscription: message.subscription, slices: [...message.slices], revs, values, lastBatch: 0 }, outcome: 'welcome' };
+    return { state: { view: state.view || 'desktop', epoch: message.epoch, subscription: message.subscription, slices: [...message.slices], revs, values, lastBatch: 0 }, outcome: 'welcome' };
   }
   if (message.epoch !== state.epoch) return { state, outcome: 'reconnect', error: 'epoch' };
   if (message.subscription !== state.subscription) return { state, outcome: 'ignored', error: 'subscription' };
@@ -302,7 +320,7 @@ function applyServerMessage(state, message) {
 }
 
 module.exports = {
-  PROTOCOL, SLICES, SLICE_NAMES, SECRET_KEY, COMPRESSION, CHANGE_KINDS, ERROR_CODES, ProtocolError,
+  PROTOCOL, SLICES, SLICE_NAMES, PHONE_SLICES, VIEWS, viewTable, SECRET_KEY, COMPRESSION, CHANGE_KINDS, ERROR_CODES, ProtocolError,
   isPlainObject, assertJson, secretPaths, assertNoSecrets,
   emptyCollection, emptyValue, validateCollection, toCollection, fromCollection, implicitOrder, applyPatch,
   validateCursor, validateChange, validateClientMessage, validateServerMessage,

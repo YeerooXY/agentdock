@@ -1,0 +1,60 @@
+{
+  "input": {
+    "id": "t1",
+    "parentId": null,
+    "projectId": "p1",
+    "title": "Fix tests",
+    "state": "reviewing",
+    "workflow": "current",
+    "startedAt": 1762000000000,
+    "finishedAt": null,
+    "rounds": [
+      {},
+      {}
+    ],
+    "maxRounds": 3,
+    "implementer": {
+      "accountId": "codex:default",
+      "provider": "codex",
+      "label": "Codex",
+      "model": "gpt-6",
+      "env": {
+        "X": "1"
+      }
+    },
+    "reviewer": null,
+    "error": "",
+    "resultId": null,
+    "unresolved": [
+      "a"
+    ],
+    "criteria": "long private criteria",
+    "finalDiff": "diff --git",
+    "log": [
+      "line"
+    ]
+  },
+  "output": {
+    "id": "t1",
+    "parentId": null,
+    "projectId": "p1",
+    "title": "Fix tests",
+    "state": "reviewing",
+    "workflow": "current",
+    "split": false,
+    "startedAt": 1762000000000,
+    "finishedAt": null,
+    "round": 2,
+    "maxRounds": 3,
+    "implementer": {
+      "accountId": "codex:default",
+      "provider": "codex",
+      "label": "Codex",
+      "model": "gpt-6"
+    },
+    "reviewer": null,
+    "error": "",
+    "resultId": null,
+    "unresolved": 1
+  }
+}

@@ -1,0 +1,62 @@
+{
+  "input": {
+    "usageAccounts": [
+      {
+        "id": "claude:default",
+        "provider": "claude",
+        "label": "Claude",
+        "hasUsage": true,
+        "inUse": true
+      }
+    ],
+    "usageChecks": [
+      {
+        "accountId": "claude:default",
+        "status": "current",
+        "observedAt": 1762000000000,
+        "message": ""
+      }
+    ],
+    "limits": [
+      {
+        "provider": "claude",
+        "accountId": "claude:default",
+        "observedAt": 1762000000000,
+        "windows": [
+          {
+            "key": "five-hour",
+            "label": "5 hours",
+            "minutes": 300,
+            "usedPercent": 42,
+            "resetsAt": 1762003600000,
+            "raw": {
+              "cookie": "x"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "output": {
+    "id": "claude:default",
+    "provider": "claude",
+    "label": "Claude",
+    "hasUsage": true,
+    "inUse": true,
+    "check": {
+      "status": "current",
+      "observedAt": 1762000000000,
+      "message": ""
+    },
+    "windows": [
+      {
+        "key": "five-hour",
+        "label": "5 hours",
+        "minutes": 300,
+        "usedPercent": 42,
+        "resetsAt": 1762003600000,
+        "observedAt": 1762000000000
+      }
+    ]
+  }
+}
