@@ -1,3 +1,15 @@
+/* Page width primitive. Pick a width with data-width="narrow|default|wide". */
+@layer layout {
+  .page { width:100%; max-width:var(--page-max, var(--page-default)); margin-inline:auto; min-width:0 }
+  .page[data-width=narrow] { --page-max:var(--page-narrow) }
+  .page[data-width=default] { --page-max:var(--page-default) }
+  .page[data-width=wide] { --page-max:var(--page-wide) }
+}
+/* Views whose markup is built outside these stylesheets get the same widths here. */
+#content:is([data-view=usage],[data-view=projects],[data-view=tasks],[data-view=results])>:not(dialog,[hidden]) { width:100%; max-width:var(--page-max, var(--page-default)); margin-inline:auto; min-width:0 }
+#content:is([data-view=tasks],[data-view=results]) { --page-max:var(--page-wide) }
+#content:is([data-view=usage],[data-view=projects]) { --page-max:var(--page-default) }
+
 /* Shared spacing for the redesigned pages. Console layout is independent. */
 #content:is([data-view=projects],[data-view=results],[data-view=usage]) { padding:24px; min-width:0 }
 #content:is([data-view=projects],[data-view=results],[data-view=usage])>.page-heading { gap:16px; margin-bottom:24px; flex-wrap:wrap }
