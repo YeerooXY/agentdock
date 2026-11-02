@@ -22,6 +22,7 @@ import 'console_switcher.dart';
 import 'console_overview.dart';
 import 'console_drafts.dart';
 import 'code_page.dart';
+import 'agent_dialog_panel.dart';
 import 'live_agent_controls.dart';
 import 'agent_selection.dart';
 import 'terminal_keys.dart';
@@ -1719,6 +1720,7 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
             ),
           ),
         ),
+        AgentDialogPanel(client: c, onTerminalKeys: terminalKeys),
         if (!chatMode)
           Align(
             alignment: Alignment.centerRight,

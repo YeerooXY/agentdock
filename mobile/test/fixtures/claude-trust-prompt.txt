@@ -1,0 +1,23 @@
+────────────────────────────────────────────────────────────
+ Accessing workspace:
+
+ C:\Users\7yeer\AppData\Roaming\Paddock\sessions\9273269b-4
+ b1b-4c78-b618-cde7eeb3faf6\draft-editor\5f736787-1f6b-43ed
+ -a7bc-0822a22c1ca0\claude\C--Users-7yeer-Projects-agent-do
+ ck\09587819-029f-451c-875a-ede214cae1ca\scratchpad\untrust
+ ed1
+
+ Quick safety check: Is this a project you created or one
+ you trust? (Like your own code, a well-known open source
+ project, or work from your team). If not, take a moment to
+ review what's in this folder first.
+
+ Claude Code'll be able to read, edit, and execute files
+ here.
+
+ Security guide
+
+ ❯ No, exit
+   Yes, I trust this folder
+
+ Enter to confirm · Esc to cancel

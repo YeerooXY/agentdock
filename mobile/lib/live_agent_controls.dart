@@ -46,15 +46,24 @@ class _LiveAgentControlsState extends State<LiveAgentControls> {
       session['providerSessionId'] == chat;
   AgentMenu? get menu =>
       terminal == null ? null : AgentMenu.parse(activeTerminalText(terminal!));
-  bool get idle =>
-      current &&
-      terminal != null &&
-      // The PC marks a console working on any Enter (a trust prompt, an empty
-      // line, an earlier /model) until a turn ends, so trust the screen too.
-      (['open', 'ready', 'idle'].contains(session['state']) ||
+  bool get working =>
+      !(['open', 'ready', 'idle'].contains(session['state']) ||
           (['active', 'attention'].contains(session['state']) &&
-              !agentWorking(activeTerminalText(terminal!)))) &&
-      hasEmptyAgentPrompt(terminal!, provider);
+              !agentWorking(activeTerminalText(terminal!))));
+
+  /// Why a command cannot be typed now. The PC marks a console working on any
+  /// Enter (a trust prompt, an empty line, an earlier /model) until a turn
+  /// ends, so the screen decides as well as the reported state. Typed prompt
+  /// text is not a block: Apply stashes it and types it back afterwards.
+  AgentBlock? get blocked {
+    if (terminal == null || working) return AgentBlock.working;
+    if (menu != null) return AgentBlock.menuOpen;
+    if (hasEmptyAgentPrompt(terminal!, provider)) return null;
+    final draft = agentPromptDraft(terminal!, provider);
+    if (draft.text == null) return AgentBlock.noPrompt;
+    return draft.multiline ? AgentBlock.multilineInput : null;
+  }
+
   Map<String, dynamic>? get chosen =>
       models.where((x) => x['id'] == model).firstOrNull;
   List<String> get efforts =>
@@ -199,16 +208,47 @@ class _LiveAgentControlsState extends State<LiveAgentControls> {
     await waitFor(() => activeTerminalText(terminal!) != before);
   }
 
+  /// Backs out of a menu this Apply opened so a failure never leaves the PC
+  /// stuck on it. Only Escape is sent, and only while it is still this console.
+  Future<void> closeMenus() async {
+    for (var i = 0; i < 4 && current && menu != null; i++) {
+      final before = activeTerminalText(terminal!);
+      try {
+        await c.input('', id: id);
+        await waitFor(() => activeTerminalText(terminal!) != before);
+      } catch (_) {
+        return;
+      }
+    }
+  }
+
+  /// Types stashed prompt text back, only into a still-empty prompt.
+  Future<void> restoreDraft(String text) async {
+    try {
+      await waitFor(
+        () => menu == null && hasEmptyAgentPrompt(terminal!, provider),
+      );
+      final paste = terminal!.bracketedPasteMode;
+      await c.input(paste ? '[200~$text[201~' : text, id: id);
+    } catch (_) {
+      if (mounted) {
+        setState(
+          () => error =
+              'Could not restore your prompt text: $text',
+        );
+      }
+    }
+  }
+
   Future<void> apply() async {
     if (!current || busy || loading) return;
     if (unchanged) {
       Navigator.pop(context);
       return;
     }
-    if (!idle || menu != null) {
-      setState(
-        () => error = 'Wait for the agent and clear its terminal input first.',
-      );
+    final block = blocked;
+    if (block != null) {
+      setState(() => error = agentBlockMessage(block));
       return;
     }
     final latest = c.agentSelection(id);
@@ -223,9 +263,19 @@ class _LiveAgentControlsState extends State<LiveAgentControls> {
       attempted = true;
       error = '';
     });
+    String? stashed;
+    var opened = false;
     try {
       final before = activeTerminalText(terminal!);
+      if (!hasEmptyAgentPrompt(terminal!, provider)) {
+        // Ctrl+E then Ctrl+U clears one row wherever the cursor sits, in both
+        // CLIs. The text is typed back when the change ends.
+        stashed = agentPromptDraft(terminal!, provider).text;
+        await c.input('', id: id);
+        await waitFor(() => hasEmptyAgentPrompt(terminal!, provider));
+      }
       if (provider == 'codex' || model != initial.model) {
+        opened = true;
         await c.submit('/model', command: true, canContinue: () => current);
         await waitFor(() => menu != null);
         final live = menu!;
@@ -264,6 +314,7 @@ class _LiveAgentControlsState extends State<LiveAgentControls> {
         await waitFor(
           () => menu == null && hasEmptyAgentPrompt(terminal!, provider),
         );
+        opened = false;
         await c.submit(
           '/effort $effort',
           command: true,
@@ -298,12 +349,16 @@ class _LiveAgentControlsState extends State<LiveAgentControls> {
             at: DateTime.now().millisecondsSinceEpoch,
           ),
         );
-        if (mounted) Navigator.pop(context);
+        if (stashed != null) await restoreDraft(stashed);
+        stashed = null;
+        if (mounted && error.isEmpty) Navigator.pop(context);
       }
     } catch (e) {
       if (mounted) {
         setState(() => error = e.toString().replaceFirst('Bad state: ', ''));
       }
+      if (opened && current) await closeMenus();
+      if (stashed != null && current) await restoreDraft(stashed);
     } finally {
       if (mounted) setState(() => busy = false);
     }

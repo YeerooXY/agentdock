@@ -182,21 +182,80 @@ void main() {
     await tester.pumpAndSettle();
     expect(c.inputs, isEmpty);
     expect(
-      find.text('Wait for the agent and clear its terminal input first.'),
+      find.text('The agent is still working. Try again when it stops.'),
       findsOneWidget,
     );
   });
-  testWidgets('existing prompt input is preserved', (tester) async {
+  testWidgets('typed prompt text is cleared for the change and typed back', (
+    tester,
+  ) async {
     final c = FakeDock();
     addTearDown(c.dispose);
+    simulate(c);
+    final inner = c.onInput!;
+    c.onInput = (input) async {
+      if (input['data'] == '\x05\x15') return paint(c, '› ');
+      await inner(input);
+    };
     await open(tester, c);
     await effort(tester);
     paint(c, '› Unsent draft');
     await tester.tap(find.text('Apply'));
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pumpAndSettle();
+    expect(c.inputs.map((x) => x['data']), [
+      '\x05\x15',
+      '/model',
+      '\r',
+      '\r',
+      '\x1b[B',
+      '\r',
+      'Unsent draft',
+    ]);
+    expect(c.agentSelection('one').effort, 'high');
+  });
+  testWidgets('a multi-line prompt draft is left alone', (tester) async {
+    final c = FakeDock();
+    addTearDown(c.dispose);
+    await open(tester, c);
+    await effort(tester);
+    paint(c, '› first line\r\n  second line');
+    await tester.tap(find.text('Apply'));
     await tester.pumpAndSettle();
     expect(c.inputs, isEmpty);
     expect(
-      find.text('Wait for the agent and clear its terminal input first.'),
+      find.text('The prompt holds a multi-line draft. Send or delete it, then apply.'),
+      findsOneWidget,
+    );
+  });
+  testWidgets('a model the menu does not list closes the menu again', (
+    tester,
+  ) async {
+    final c = FakeDock();
+    addTearDown(c.dispose);
+    c.onInput = (input) async {
+      final data = input['data'];
+      if (data == '\r') {
+        paint(
+          c,
+          'Select Model and Effort\r\n\r\n› 1. Other One\r\n  2. Other Two\r\n\r\nenter select · esc back',
+        );
+      } else if (data == '\x1b') {
+        paint(c, '› ');
+      }
+    };
+    await open(tester, c);
+    await tester.tap(find.byType(DropdownButtonFormField<String>).first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Test Model B').last);
+    await tester.pumpAndSettle();
+    await effort(tester);
+    await tester.tap(find.text('Apply'));
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pumpAndSettle();
+    expect(c.inputs.map((x) => x['data']), ['/model', '\r', '\x1b']);
+    expect(
+      find.text('The agent does not offer this choice. Refresh the chooser.'),
       findsOneWidget,
     );
   });

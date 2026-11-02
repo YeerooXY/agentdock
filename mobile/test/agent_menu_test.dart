@@ -88,4 +88,22 @@ void main() {
     expect(menu?.options, ['Test Model A', 'Test Model B']);
     expect(menu?.sessionOnly, true);
   });
+
+  test('empty-prompt check accepts themed, inverse-cursor and boxed placeholders', () {
+    final themed = Terminal()..resize(60, 10);
+    themed.write('[38;2;136;136;136m❯ Try "fix lint errors"[0m');
+    expect(hasEmptyAgentPrompt(themed, 'claude'), true);
+    final cursor = Terminal()..resize(60, 10);
+    cursor.write('> [7mT[0m[2mry "fix lint errors"[0m');
+    expect(hasEmptyAgentPrompt(cursor, 'claude'), true);
+    final boxed = Terminal()..resize(60, 10);
+    boxed.write('│ > [7mT[0m[2mry "write tests"[0m     │');
+    expect(hasEmptyAgentPrompt(boxed, 'claude'), true);
+    final typed = Terminal()..resize(60, 10);
+    typed.write('> hello[7m [0m');
+    expect(hasEmptyAgentPrompt(typed, 'claude'), false);
+    final boxedTyped = Terminal()..resize(60, 10);
+    boxedTyped.write('│ > hello        │');
+    expect(hasEmptyAgentPrompt(boxedTyped, 'claude'), false);
+  });
 }

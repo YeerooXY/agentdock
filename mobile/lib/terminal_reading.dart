@@ -31,6 +31,9 @@ class _TerminalReadingViewState extends State<TerminalReadingView> {
   Timer? _timer;
   bool _selecting = false;
   bool _pending = false;
+  // Whether the reader was at the newest output before the viewport resized.
+  bool _atEnd = true;
+  double _height = 0;
 
   @override
   void initState() {
@@ -60,6 +63,7 @@ class _TerminalReadingViewState extends State<TerminalReadingView> {
 
   void _savePlace() {
     if (_scroll.hasClients) {
+      _atEnd = _scroll.position.extentAfter < 24;
       widget.positions?.remember(
         widget.positionKey,
         'reading',
@@ -138,34 +142,45 @@ class _TerminalReadingViewState extends State<TerminalReadingView> {
           ),
         ),
       Expanded(
-        child: SingleChildScrollView(
-          key: const ValueKey('terminal-reading-scroll'),
-          controller: _scroll,
-          padding: const EdgeInsets.all(12),
-          child: SizedBox(
-            width: double.infinity,
-            child: SelectableText.rich(
-              _span,
-              key: ValueKey(widget.positionKey),
-              // Native selection handles and Copy; selection never requests
-              // terminal input or sends anything to the PC.
-              style: const TextStyle(
-                fontFamily: 'monospace',
-                fontSize: 16,
-                height: 1.45,
-                color: Color(0xffe4e7ef),
+        child: LayoutBuilder(
+          builder: (context, box) {
+            // The keyboard and the chat field resize this view; keep the
+            // prompt in sight when the reader was following the output.
+            if (box.maxHeight != _height) {
+              // The first layout keeps the place _restorePlace chose.
+              if (_height != 0 && _atEnd) _followEnd();
+              _height = box.maxHeight;
+            }
+            return SingleChildScrollView(
+              key: const ValueKey('terminal-reading-scroll'),
+              controller: _scroll,
+              padding: const EdgeInsets.all(12),
+              child: SizedBox(
+                width: double.infinity,
+                child: SelectableText.rich(
+                  _span,
+                  key: ValueKey(widget.positionKey),
+                  // Native selection handles and Copy; selection never requests
+                  // terminal input or sends anything to the PC.
+                  style: const TextStyle(
+                    fontFamily: 'monospace',
+                    fontSize: 16,
+                    height: 1.45,
+                    color: Color(0xffe4e7ef),
+                  ),
+                  cursorColor: widget.theme.cursor,
+                  showCursor: false,
+                  onSelectionChanged: (selection, _) {
+                    _selecting = !selection.isCollapsed;
+                    if (!_selecting && _pending) {
+                      _pending = false;
+                      _changed();
+                    }
+                  },
+                ),
               ),
-              cursorColor: widget.theme.cursor,
-              showCursor: false,
-              onSelectionChanged: (selection, _) {
-                _selecting = !selection.isCollapsed;
-                if (!_selecting && _pending) {
-                  _pending = false;
-                  _changed();
-                }
-              },
-            ),
-          ),
+            );
+          },
         ),
       ),
     ],

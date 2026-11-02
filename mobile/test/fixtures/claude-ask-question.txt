@@ -1,0 +1,12 @@
+ Where is the text you want to keep while switching model or effort?
+
+ ❯ 1. Phone chat box
+      The draft in the phone's message field. It never reaches the PC.
+   2. PC terminal prompt
+      Text already typed into the Claude or Codex prompt on the PC.
+ ────────────────────────────────────────────────────────────
+   3. Type something.
+ ────────────────────────────────────────────────────────────
+   4. Chat about this
+
+ Enter to select · ↑/↓ to navigate · Esc to cancel

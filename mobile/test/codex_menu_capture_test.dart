@@ -12,6 +12,7 @@ AgentMenu menuFrom(String name) {
 }
 
 void main() {
+  claudeMenu();
   test('model menu matches labels, including names with spaces', () {
     final menu = menuFrom('codex-model-menu.txt');
     expect(menu.selected, 2);
@@ -47,5 +48,28 @@ void main() {
     terminal.write('\x1b[21;1H\x1b[1m›\x1b[0m \x1b[2mAsk Codex to do anything\x1b[0m'
         '\x1b[23;3HGPT-6.1 Terra xhigh · ~\\Projects\x1b[21;3H');
     expect(hasEmptyAgentPrompt(terminal, 'codex'), isTrue);
+  });
+}
+
+void claudeMenu() {
+  // Screen captured from Claude Code 2.1.316 /model at 60x24. The footer wraps
+  // and the effort slider sits between the options and the footer.
+  test('Claude model menu parses with a wrapped footer and ignores the slider', () {
+    final menu = menuFrom('claude-model-menu.txt');
+    expect(menu.title, 'Select model');
+    expect(menu.selected, 2);
+    expect(menu.sessionOnly, isTrue);
+    expect(menuOptionIndex(menu, 'opus', name: 'Opus'), 1);
+    expect(menuOptionIndex(menu, 'sonnet', name: 'Sonnet'), 2);
+    expect(menuOptionIndex(menu, 'haiku', name: 'Haiku'), -1);
+    final moved = AgentMenu.parse(
+      File('test/fixtures/claude-model-menu.txt')
+          .readAsStringSync()
+          .replaceAll('● High effort', '● Max effort')
+          .replaceAll('❯ 3.', '  3.')
+          .replaceAll('  2.  Opus', '❯ 2.  Opus'),
+    );
+    expect(moved!.selected, 1);
+    expect(moved.signature, menu.signature);
   });
 }

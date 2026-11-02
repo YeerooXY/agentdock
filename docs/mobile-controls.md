@@ -28,11 +28,24 @@ Inside chat, **+ → Files** inserts a relative path into the draft. It does not
 
 Tap either current value to open **Model & effort**. Choose the model and effort locally, then tap **Apply**. Opening, browsing, cancelling, swiping away and closing an unchanged selection send no terminal input. To change **6.1 Sol Medium → Max**, keep the model and change only effort.
 
-Codex choices come from the PC's model catalog, with supported effort metadata when available. Claude uses its documented model aliases and effort levels; availability depends on the model. Applying requires an idle agent and an empty terminal prompt. Paddock does not clear existing PC input. After Apply, it drives recognized numbered CLI menus with an active selection and an Enter/Escape footer. Unsupported layouts stay in the terminal. Reopen the chooser after resolving an unrecognized dialog. Other harnesses retain direct terminal input.
+Codex choices come from the PC's model catalog, with supported effort metadata when available. Claude uses its documented model aliases and effort levels; availability depends on the model. Applying requires an idle agent with no menu open. Text already typed in the PC prompt (one row) is cleared with Ctrl+E, Ctrl+U, then typed back after the change, or after a failed attempt. A multi-line prompt draft blocks Apply until you send or delete it. If a menu step fails, Paddock presses Esc to close the menu it opened, so the PC is not left on the model screen. The phone chat draft is never touched. After Apply, it drives recognized numbered CLI menus with an active selection and an Enter/Escape footer. Unsupported layouts stay in the terminal. Reopen the chooser after resolving an unrecognized dialog. Other harnesses retain direct terminal input.
 
 Each selected row waits for the CLI to acknowledge navigation before sending the next key. A changed connection, computer, console or menu stops the operation. Requests are never replayed after reconnect. Unknown confirmation or billing dialogs stay in the terminal for the user; Paddock does not approve them automatically.
 
 Paddock uses the **session only** key when the live menu explicitly advertises it. Otherwise it follows the CLI's normal selection behavior. The footer changes only after an explicit CLI confirmation or fresh confirmed PC metadata. Failed confirmation keeps the pending choice and asks you to inspect the terminal before retrying. Changing a model can affect usage and caching; the CLI's warnings remain relevant. See [Codex commands](https://developers.openai.com/codex/cli/slash-commands/) and [Claude commands](https://code.claude.com/docs/en/commands), checked 21 October 2026. CLI updates can change menu layouts.
+
+## Tap to choose in CLI dialogs
+
+When Claude or Codex shows a choice dialog (a question, a permission request, a trust prompt, a settings menu), a panel above the chat controls lists its options. Tap one: Paddock moves the CLI's own selector there one row at a time, waits for the screen to confirm each move, then presses Enter. **Cancel dialog** sends Esc. Showing the panel sends nothing, and Paddock never picks an option for you.
+
+- A row that needs typed text (for example "Type something.") is selected, Enter is not pressed, and Terminal keys opens for your reply.
+- Multi-select dialogs and dialogs with several questions show a note and stay in the terminal.
+- A step stops if the connection, console or dialog changes. Nothing is replayed.
+- Only providers with a profile in `mobile/lib/agent_dialog.dart` are read (Claude and Codex). Other harnesses keep Terminal keys.
+
+Verified against real captures: Claude trust prompt, `/model`, `/theme` (including the moved check mark) and Codex `/model`, reasoning and `/permissions`, plus Up, Down and Esc behavior in the live CLIs. Reconstructed, not captured: Claude's question and permission dialogs and Codex's approval dialog, because raising them needs a model request. Replace those fixtures with captures when they can be raised safely. See `mobile/test/agent_dialog_test.dart` and `mobile/test/agent_dialog_panel_test.dart`.
+
+Adding a harness: add a profile (selector character, start-up banner), capture each dialog it shows into `mobile/test/fixtures/`, add parser tests per dialog, then simulated tap tests in the panel test.
 
 ## Folder trust and permission prompts
 

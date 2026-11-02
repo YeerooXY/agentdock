@@ -17,7 +17,14 @@ class AgentMenu {
   final List<String> options;
   final int selected;
   const AgentMenu(this.title, this.options, this.selected, this.footer);
-  String get signature => '$title\n${options.join('\n')}\n$footer';
+  /// Labels only: descriptions and per-row extras (Claude's effort slider,
+  /// "+N models") change as the selection moves.
+  String get signature {
+    final labels = options.map(
+      (o) => o.split('\n').first.split(RegExp(r'\s{2,}')).first,
+    );
+    return '$title\n${labels.join('\n')}\n$footer';
+  }
   bool get sessionOnly => RegExp(
     r'\bs\b.{0,18}(this session|session only|session\b)',
     caseSensitive: false,
@@ -34,14 +41,21 @@ class AgentMenu {
       ).hasMatch(line),
     );
     if (heading < 0) return null;
+    // A narrow terminal can wrap the footer, leaving "Esc" on the next row.
+    final enter = RegExp(r'\benter\b', caseSensitive: false),
+        esc = RegExp(r'\besc(ape)?\b', caseSensitive: false);
     final footerIndex = lines.indexWhere(
-      (line) =>
-          RegExp(r'\benter\b', caseSensitive: false).hasMatch(line) &&
-          RegExp(r'\besc(ape)?\b', caseSensitive: false).hasMatch(line),
+      (line) => enter.hasMatch(line),
       heading + 1,
     );
     if (footerIndex < 0) return null;
-    if (lines.skip(footerIndex + 1).any((line) => line.trim().isNotEmpty)) {
+    final footerEnd = esc.hasMatch(lines[footerIndex])
+        ? footerIndex
+        : footerIndex + 1 < lines.length && esc.hasMatch(lines[footerIndex + 1])
+        ? footerIndex + 1
+        : -1;
+    if (footerEnd < 0) return null;
+    if (lines.skip(footerEnd + 1).any((line) => line.trim().isNotEmpty)) {
       return null;
     }
     final options = <String>[];
@@ -101,28 +115,32 @@ int menuOptionIndex(AgentMenu menu, String value, {String? name}) {
 bool agentWorking(String screen) =>
     RegExp(r'esc to interrupt', caseSensitive: false).hasMatch(screen);
 
-bool hasEmptyAgentPrompt(Terminal terminal, String provider) {
-  if (!['codex', 'claude'].contains(provider)) return false;
+/// Box-drawing borders some Claude Code layouts put around the input.
+const _borders = [0x2502, 0x2503, 0x7c];
+
+String _stripBorders(String text) =>
+    text.replaceAll(RegExp(r'^[│┃|]\s*|\s*[│┃|]$'), '').trim();
+
+/// The input row of a Claude or Codex prompt: the cursor row, or the lowest
+/// prompt row when the TUI parks its hidden cursor elsewhere.
+({BufferLine row, int y})? _promptRow(Terminal terminal) {
   final buffer = terminal.buffer;
   final prompt = RegExp(r'^[›❯>](\s|$)');
-  var row = buffer.lines[buffer.absoluteCursorY];
-  // A TUI may park its hidden cursor below the input box; then use the
-  // lowest prompt row on screen.
-  if (!prompt.hasMatch(row.getText().trim())) {
-    for (var y = buffer.height - 1; y >= buffer.scrollBack; y--) {
-      if (prompt.hasMatch(buffer.lines[y].getText().trim())) {
-        row = buffer.lines[y];
-        break;
-      }
-    }
+  bool isPrompt(BufferLine line) =>
+      prompt.hasMatch(_stripBorders(line.getText()));
+  final cursor = buffer.absoluteCursorY;
+  if (cursor >= 0 && cursor < buffer.lines.length && isPrompt(buffer.lines[cursor])) {
+    return (row: buffer.lines[cursor], y: cursor);
   }
-  final line = row.getText().trim();
-  if (RegExp(r'^[›❯>]\s*$').hasMatch(line) ||
-      (provider == 'codex' && line == '› Ask Codex to do anything')) {
-    return true;
+  for (var y = buffer.height - 1; y >= buffer.scrollBack; y--) {
+    if (isPrompt(buffer.lines[y])) return (row: buffer.lines[y], y: y);
   }
-  if (!prompt.hasMatch(line)) return false;
-  // Both CLIs draw rotating placeholder hints dimmed; typed text is not dim.
+  return null;
+}
+
+/// Placeholder hints are dimmed, themed or carry the inverse cursor cell; text
+/// the user typed is drawn in the default color with none of those.
+bool _typed(BufferLine row) {
   const glyphs = [0x203a, 0x276f, 0x3e];
   var x = 0;
   while (x < row.length && !glyphs.contains(row.getCodePoint(x))) {
@@ -130,8 +148,62 @@ bool hasEmptyAgentPrompt(Terminal terminal, String provider) {
   }
   for (x++; x < row.length; x++) {
     final cp = row.getCodePoint(x);
-    if (cp == 0 || cp == 32) continue;
-    if (row.getAttributes(x) & CellAttr.faint == 0) return false;
+    if (cp == 0 || cp == 32 || _borders.contains(cp)) continue;
+    final styled =
+        row.getAttributes(x) & (CellAttr.faint | CellAttr.inverse) != 0 ||
+        row.getForeground(x) & CellColor.typeMask != CellColor.normal;
+    if (!styled) return true;
   }
-  return true;
+  return false;
 }
+
+bool hasEmptyAgentPrompt(Terminal terminal, String provider) {
+  if (!['codex', 'claude'].contains(provider)) return false;
+  final found = _promptRow(terminal);
+  if (found == null) return false;
+  final line = _stripBorders(found.row.getText());
+  if (RegExp(r'^[›❯>]\s*$').hasMatch(line) ||
+      (provider == 'codex' && line == '› Ask Codex to do anything')) {
+    return true;
+  }
+  return !_typed(found.row);
+}
+
+/// Text typed into the prompt, when it is one row. [multiline] is true when
+/// more rows follow, which Paddock cannot reproduce exactly; [text] is null when
+/// no prompt row is on screen.
+({String? text, bool multiline}) agentPromptDraft(
+  Terminal terminal,
+  String provider,
+) {
+  final found = _promptRow(terminal);
+  if (found == null || hasEmptyAgentPrompt(terminal, provider)) {
+    return (text: null, multiline: false);
+  }
+  final buffer = terminal.buffer;
+  final next = found.y + 1 < buffer.lines.length
+      ? buffer.lines[found.y + 1].getText().trimRight()
+      : '';
+  final continues =
+      next.trim().isNotEmpty &&
+      next.startsWith(' ') &&
+      !RegExp(r'^[─━═╌┄┈\-_]{8,}$').hasMatch(next.trim());
+  final text = _stripBorders(found.row.getText()).replaceFirst(
+    RegExp(r'^[›❯>]\s?'),
+    '',
+  );
+  return (text: text, multiline: continues);
+}
+
+/// Why Apply cannot proceed, or null when the agent is ready for a command.
+enum AgentBlock { working, menuOpen, noPrompt, multilineInput }
+
+String agentBlockMessage(AgentBlock block) => switch (block) {
+  AgentBlock.working => 'The agent is still working. Try again when it stops.',
+  AgentBlock.menuOpen =>
+    'A menu is open in the terminal. Close it, then reopen the chooser.',
+  AgentBlock.noPrompt =>
+    'The agent prompt is not showing. Close any dialog on the PC, then apply.',
+  AgentBlock.multilineInput =>
+    'The prompt holds a multi-line draft. Send or delete it, then apply.',
+};
