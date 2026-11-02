@@ -2,6 +2,8 @@
 
 The completed runs do not establish a cheaper or faster Paddock workflow. They demonstrate useful local/free implementation and better keyboard handling in several team outputs, alongside substantial coordination overhead, worker failures and scheduling delays. This is a diagnostic pass, not a controlled model ranking.
 
+Owner review after the initial ranking: natural Opus is the preferred design. Its dusk palette harmonizes with actual product screenshots, and Fog Keeper is more engaging than Sol's firefly game. Paddock Sol's green palette separates the page from the product images, and repeated arrows weaken its controls. Future reviews must weight product-image harmony and game engagement explicitly. The next proposed workflow and improvement backlog are in `docs/opus-assisted-design-handoff-2026-11-02.md`.
+
 Each run received the same natural Playtime website brief and eight screenshots. The brief requested a creative, interesting, unique art style, a memorable first screen, thoughtful animations, a playable minigame and phone support. Coordinators chose their own direction. Luna briefed Sol itself; Haiku briefed Sonnet itself. Plans were not shared between arms.
 
 Natural runs used native CLI processes with isolated configuration on the same host, without Paddock routing/design instructions. They were not Docker-container runs. Team runs received the Paddock workflow and wording/focus rules. The owner allowed host image fulfillment for this pass; each agent supplied its own prompts. Luna instead used its native image tool directly.
