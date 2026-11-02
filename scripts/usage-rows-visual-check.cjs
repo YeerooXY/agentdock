@@ -54,11 +54,11 @@ let browser;
     assert.equal(await page.locator('.usage-provider').count(), 5, 'one header per provider');
     assert.equal(await page.locator('select[data-usage-account]').count(), 0, 'account select removed');
     assert.match(await text('codex:default'), /62% left/);
-    assert.match(await text('codex:work'), /Stale/); assert.match(await text('codex:work'), /Last read 3 h ago/); assert.match(await text('codex:work'), /80% left/);
+    assert.match(await text('codex:work'), /Stale/); assert.match(await text('codex:work'), /Last refreshed: 3h ago/); assert.match(await text('codex:work'), /80% left/);
     const claude = await text('claude:default');
     assert.match(claude, /More limits/);
-    assert.match(claude, /More limits \(2\)/);
-    assert.deepEqual(await page.locator('[data-usage-account-id="claude:default"] .usage-window-head strong').allTextContents(), ['10% left', '60% left', '90% left', '95% left', 'Unknown']);
+    assert.match(claude, /More limits \(1\)/);
+    assert.deepEqual(await page.locator('[data-usage-account-id="claude:default"] .usage-window-value').allTextContents(), ['10% left', '60% left', '90% left', '95% left', 'Unknown']);
     assert.match(await text('kiro:default'), /Unavailable/); assert.match(await text('grok:default'), /No quota source/); assert.match(await text('copilot:work'), /Not isolated/);
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false, name + ' overflow');
     await page.screenshot({ path: path.join(out, name + '-usage-states.png'), fullPage: true });
@@ -82,6 +82,11 @@ let browser;
     // Typing survives a push.
     const period = page.locator('[data-usage-period]'); await period.focus(); await page.keyboard.press('ArrowDown');
     await push(); assert.equal(await page.evaluate(() => document.activeElement?.hasAttribute('data-usage-period')), true);
+    // Used-up allowance: limits blur and the next reset is centred over them.
+    state.usageChecks[0].lastReadings[0].windows[1].usedPercent = 100; state.usageChecks[0].lastReadings[0].windows[1].resetsAt = Date.now() + (37 * 60 + 5) * 60000; await push();
+    assert.match(await page.locator('[data-usage-account-id="codex:default"] .usage-next-reset').innerText(), /^Next reset in: 1d 13h$/);
+    await page.locator('[data-usage-account-id="codex:default"]').screenshot({ path: path.join(out, name + '-usage-spent.png') });
+    await page.locator('.usage-add-slot').scrollIntoViewIfNeeded(); await page.screenshot({ path: path.join(out, name + '-usage-bottom.png') });
     // Empty state
     state.settings.usageHidden = state.usageAccounts.map(a => a.id); await push();
     assert.match(await page.locator('.usage-empty').innerText(), /hidden/);

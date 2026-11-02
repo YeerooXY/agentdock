@@ -94,35 +94,56 @@
 #content:is([data-view=usage],[data-view=agent-settings]) .image-usage,#content:is([data-view=usage],[data-view=agent-settings]) .message-usage{margin-top:16px}
 @media(min-width:1200px){#content:is([data-view=usage],[data-view=agent-settings]) .usage-management{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:700px){#content:is([data-view=usage],[data-view=agent-settings]) .account-profile-form{grid-template-columns:minmax(0,1fr)}}
-/* One row per account under a provider header. */
-#content[data-view=usage] .usage-groups{display:grid;gap:24px}
-#content[data-view=usage] .usage-provider{display:grid;gap:10px;min-width:0}
-#content[data-view=usage] .usage-provider-head{display:flex;align-items:center;gap:10px;margin:0;font-size:18px}
-#content[data-view=usage] .usage-provider-head small{font-size:13px;font-weight:400;color:var(--usage-muted)}
-#content[data-view=usage] .usage-rows{display:grid;gap:10px}
-#content[data-view=usage] .usage-row{--provider-accent:#9cbfff;display:grid;grid-template-columns:minmax(0,220px) minmax(0,1fr);gap:12px 24px;padding:16px 20px;border:1px solid color-mix(in srgb,var(--provider-accent) 28%,#232638);border-radius:8px;background:#0b0d14;min-width:0}
-#content[data-view=usage] .usage-row-id{display:flex;flex-wrap:wrap;align-items:flex-start;gap:10px;min-width:0}
-#content[data-view=usage] .usage-row-id>div{display:grid;gap:2px;min-width:0;flex:1 1 90px}
-#content[data-view=usage] .usage-row-id strong{font-size:16px;overflow-wrap:anywhere}
-#content[data-view=usage] .usage-row-id .plan{font-size:13px;color:var(--usage-muted)}
-#content[data-view=usage] .usage-status{flex-basis:100%;font-size:13px;color:var(--usage-soft);padding:2px 8px;border:1px solid #303448;border-radius:999px;width:fit-content}
+/* Usage: one card per account. Name column, a divider, then one line per
+   limit (name and reset, bar, amount left). Add subscription comes last. */
+#content[data-view=usage] .page-heading h1{display:flex;align-items:center;gap:14px}
+#content[data-view=usage] .page-heading h1::before{content:"";width:6px;height:1.1em;border-radius:3px;background:linear-gradient(180deg,#7fe9ff,#7b8cff);box-shadow:0 0 14px #5fb8ff99}
+#content[data-view=usage] .page-heading h1::after{content:"";width:72px;height:2px;border-radius:2px;background:linear-gradient(90deg,#5fb8ffaa,transparent)}
+#content[data-view=usage] .usage-groups{display:grid;gap:12px}
+#content[data-view=usage] .usage-provider,#content[data-view=usage] .usage-rows{display:grid;gap:12px;min-width:0}
+#content[data-view=usage] .usage-row{--provider-accent:#9cbfff;position:relative;display:grid;grid-template-columns:minmax(0,230px) minmax(0,1fr);gap:0;padding:0;border:1px solid color-mix(in srgb,var(--provider-accent) 40%,#22304a);border-radius:12px;background:linear-gradient(135deg,color-mix(in srgb,var(--provider-accent) 9%,#0b1222),#0a0f1c 60%);box-shadow:inset 0 1px 0 #ffffff0d,0 0 18px color-mix(in srgb,var(--provider-accent) 10%,transparent);min-width:0;font:inherit}
+#content[data-view=usage] .usage-row-id{display:flex;flex-direction:column;justify-content:center;gap:8px;padding:16px 20px;border-right:1px solid #ffffff14;min-width:0}
+#content[data-view=usage] .usage-age{font-size:12px;color:var(--usage-muted)}
+#content[data-view=usage] .usage-row-name{display:flex;align-items:center;gap:12px;min-width:0}
+#content[data-view=usage] .usage-row-name .account-mark,#content[data-view=usage] .usage-row-name .provider-icon{width:40px;height:40px;flex:none;border-radius:10px}
+#content[data-view=usage] .usage-row-name>div{display:grid;gap:5px;min-width:0}
+#content[data-view=usage] .usage-row-name strong{font-size:17px;font-weight:600;color:#eef3ff;overflow-wrap:anywhere}
+#content[data-view=usage] .usage-row-name .plan{width:fit-content;font-size:12px;color:var(--usage-soft);padding:2px 9px;border-radius:999px;background:color-mix(in srgb,var(--provider-accent) 16%,#141b2c);border:0;box-shadow:none;text-transform:none;letter-spacing:0}
+#content[data-view=usage] .usage-status{width:fit-content;font-size:12px;color:var(--usage-soft);padding:2px 9px;border:1px solid #303a52;border-radius:999px}
 #content[data-view=usage] .usage-status[data-status=stale]{border-color:#7d6a45;color:#e6c98f}
-#content[data-view=usage] .usage-status[data-status=refreshing]{color:var(--usage-muted)}
-#content[data-view=usage] .usage-row-windows{display:grid;gap:12px;min-width:0}
-#content[data-view=usage] .usage-window{display:grid;gap:4px;min-width:0}
-#content[data-view=usage] .usage-window-head{display:flex;justify-content:space-between;gap:12px;font-size:14px;color:var(--usage-soft)}
-#content[data-view=usage] .usage-window-head strong{font-size:18px;color:#f4f6ff}
-#content[data-view=usage] .usage-window .meter{height:8px;margin:2px 0}
-#content[data-view=usage] .usage-window .meter>span{background:linear-gradient(90deg,color-mix(in srgb,var(--provider-accent) 80%,#232638),var(--provider-accent))}
-#content[data-view=usage] .usage-window .meter.warning>span{background:#efbc7a}
-#content[data-view=usage] .usage-window .meter.unknown{background:repeating-linear-gradient(135deg,#232638,#232638 5px,#303448 5px,#303448 7px)}
-#content[data-view=usage] .usage-window .reset{font-size:13px;color:var(--usage-muted)}
-#content[data-view=usage] .usage-row-note{margin:0;font-size:14px;color:var(--usage-muted)}
-#content[data-view=usage] .usage-more{display:grid;gap:12px}
-#content[data-view=usage] .usage-more>summary{cursor:pointer;font-size:14px;color:var(--usage-soft);padding:6px 0;width:fit-content}
-#content[data-view=usage] .usage-row-foot{grid-column:1/-1;display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;font-size:13px;color:var(--usage-muted)}
-#content[data-view=usage] .usage-row-actions{margin-left:auto;display:flex;gap:8px}
-#content[data-view=usage] .usage-row .quota-local-usage{grid-column:1/-1;margin:0}
+#content[data-view=usage] .usage-stale-why{font-size:12px;color:var(--usage-muted)}
+#content[data-view=usage] .usage-row-actions{display:flex;gap:4px;margin-left:-8px}
+#content[data-view=usage] .usage-row-actions button{font-size:12px;padding:4px 8px;min-height:0;color:var(--usage-muted)}
+#content[data-view=usage] .usage-row-actions button:hover,#content[data-view=usage] .usage-row-actions button:focus-visible{color:#eef3ff}
+#content[data-view=usage] .usage-row-windows{position:relative;display:grid;align-content:center;gap:0;padding:8px 22px;min-width:0}
+#content[data-view=usage] .usage-window{display:grid;grid-template-columns:minmax(110px,170px) minmax(0,1fr) minmax(76px,auto);align-items:center;gap:18px;padding:9px 0;min-width:0}
+#content[data-view=usage] .usage-window+.usage-window,#content[data-view=usage] .usage-more>.usage-window:first-of-type{border-top:1px solid #ffffff0d}
+#content[data-view=usage] .usage-window-name{display:grid;gap:2px;min-width:0}
+#content[data-view=usage] .usage-window-name>span{font-size:14px;color:#e4eafa;overflow-wrap:anywhere}
+#content[data-view=usage] .usage-window-name .reset{font-size:12px;color:var(--usage-muted)}
+#content[data-view=usage] .usage-window-value{font-size:14px;font-weight:500;color:#e4eafa;text-align:right;white-space:nowrap}
+#content[data-view=usage] .usage-window .meter{height:6px;margin:0;border-radius:3px;background:#ffffff10}
+#content[data-view=usage] .usage-window .meter>span{border-radius:3px;background:linear-gradient(90deg,color-mix(in srgb,var(--provider-accent) 70%,#2a6cff),var(--provider-accent));box-shadow:0 0 10px color-mix(in srgb,var(--provider-accent) 55%,transparent)}
+#content[data-view=usage] .usage-window .meter.warning>span{background:#efbc7a;box-shadow:0 0 10px #efbc7a66}
+#content[data-view=usage] .usage-window .meter.unknown{background:repeating-linear-gradient(135deg,#1c2436,#1c2436 5px,#273148 5px,#273148 7px)}
+#content[data-view=usage] .usage-row-note{margin:8px 0;font-size:14px;color:var(--usage-muted)}
+#content[data-view=usage] .usage-more{display:grid}
+#content[data-view=usage] .usage-more>summary{cursor:pointer;font-size:13px;color:var(--usage-soft);padding:8px 0;width:fit-content}
+#content[data-view=usage] .usage-row .quota-local-usage{grid-column:1/-1;margin:0;padding:10px 20px;border-top:1px solid #ffffff0d}
 #content[data-view=usage] .usage-row-stale{border-style:dashed}
 #content[data-view=usage] .usage-row-stale .meter{opacity:.5}
-@media(max-width:700px){#content[data-view=usage] .usage-row{grid-template-columns:minmax(0,1fr);padding:14px}#content[data-view=usage] .usage-row-actions{margin-left:0;width:100%}#content[data-view=usage] .usage-row-actions button{flex:1}}
+/* Used-up allowance: limits blur and the next reset sits centred over them. */
+#content[data-view=usage] .usage-row-spent .usage-row-windows>:not(.usage-next-reset){filter:blur(3px);opacity:.55}
+#content[data-view=usage] .usage-next-reset{position:absolute;inset:0;margin:auto;width:fit-content;height:fit-content;padding:9px 22px;border-radius:999px;border:1px solid color-mix(in srgb,var(--provider-accent) 60%,#7fe9ff);background:#0a1426e6;color:#eef3ff;font-size:15px;font-weight:500;box-shadow:0 0 18px #5fb8ff40}
+/* Add subscription is the last element, out of the way once accounts exist. */
+#content[data-view=usage] .usage-add-slot{display:grid;gap:12px;margin-top:12px;padding:22px;border:1px dashed #5fb8ff55;border-radius:12px;background:#0a0f1c80}
+#content[data-view=usage] .usage-add-button{justify-self:center;display:inline-flex;align-items:center;gap:10px;padding:10px 26px;border-radius:999px;border:1px solid #5fb8ffaa;background:#0b1a30;color:#dff4ff;font:inherit;font-size:15px;cursor:pointer;box-shadow:0 0 16px #5fb8ff33}
+#content[data-view=usage] .usage-add-button:hover,#content[data-view=usage] .usage-add-button:focus-visible{background:#10264a;box-shadow:0 0 22px #5fb8ff55}
+#content[data-view=usage] .usage-add-slot .usage-add{border:0;padding:0}
+@media(max-width:760px){
+  #content[data-view=usage] .usage-row{grid-template-columns:minmax(0,1fr)}
+  #content[data-view=usage] .usage-row-id{border-right:0;border-bottom:1px solid #ffffff14;padding:14px 16px}
+  #content[data-view=usage] .usage-row-windows{padding:6px 16px}
+  #content[data-view=usage] .usage-window{grid-template-columns:minmax(0,1fr) auto;gap:6px 12px}
+  #content[data-view=usage] .usage-window .meter{grid-column:1/-1;grid-row:2}
+}
