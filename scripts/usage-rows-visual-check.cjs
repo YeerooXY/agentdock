@@ -22,6 +22,8 @@ function build() {
   const state = structuredClone(base);
   state.mode = 'dashboard'; state.settings.setupComplete = true; state.settings.sidebarCollapsed = false; state.settings.usageHidden = []; state.ledger = []; state.limits = [];
   const accounts = [['codex:default', 'codex', 'Codex'], ['codex:work', 'codex', 'Work'], ['claude:default', 'claude', 'Claude Code'], ['kiro:default', 'kiro', 'Kiro'], ['grok:default', 'grok', 'Grok'], ['copilot:work', 'copilot', 'Copilot work']];
+  state.accountProviders = [['claude', 'Claude Code', true], ['codex', 'Codex', true], ['gemini', 'Gemini CLI', true], ['pi', 'Pi', true], ['kiro', 'Kiro', false], ['grok', 'Grok', false], ['copilot', 'GitHub Copilot', false], ['cursor', 'Cursor', false], ['cline', 'Cline', false]].map(([id, name, namedProfiles]) => ({ id, name, namedProfiles }));
+  state.agents = [{ id: 'cline', installed: false }];
   state.usageAccounts = accounts.map(([id, provider, label]) => ({ id, provider, label, hasUsage: true }));
   const r1 = reading('codex:default', 'codex', [win('5-hour', 300, 38), win('Weekly', 10080, 71)], 'Pro');
   const r2 = reading('codex:work', 'codex', [win('5-hour', 300, 20)], 'Plus'); r2.observedAt = now - 3 * 3600000;
@@ -87,6 +89,14 @@ let browser;
     assert.match(await page.locator('[data-usage-account-id="codex:default"] .usage-next-reset').innerText(), /^Next reset in: 1d 13h$/);
     await page.locator('[data-usage-account-id="codex:default"]').screenshot({ path: path.join(out, name + '-usage-spent.png') });
     await page.locator('.usage-add-slot').scrollIntoViewIfNeeded(); await page.screenshot({ path: path.join(out, name + '-usage-bottom.png') });
+    // Add subscription lists every provider with what adding it does.
+    await page.locator('[data-action=usage-add]').click();
+    assert.equal(await page.locator('.usage-choice').count(), 9);
+    assert.match(await page.locator('.usage-choice', { hasText: 'Gemini CLI' }).innerText(), /Add account/);
+    assert.match(await page.locator('.usage-choice', { hasText: 'Cline' }).innerText(), /Install the CLI first/);
+    assert.equal(await page.evaluate(() => document.activeElement?.closest('#usage-add-panel') !== null), true, 'focus moves into the chooser');
+    await page.locator('#usage-add-panel').scrollIntoViewIfNeeded(); await page.screenshot({ path: path.join(out, name + '-usage-chooser.png') });
+    await page.locator('[data-action=usage-add]').click();
     // Empty state
     state.settings.usageHidden = state.usageAccounts.map(a => a.id); await push();
     assert.match(await page.locator('.usage-empty').innerText(), /hidden/);

@@ -572,8 +572,18 @@ function renderUsage() {
   const legacyReadings = id => state.limits.filter(x => (x.accountId || (x.provider === 'codex' ? 'codex:default' : x.provider === 'claude' && x.id === 'claude:account' ? 'claude:default' : x.id)) === id);
   const accountCards = [...groups.entries()].map(([provider, accounts]) => `<section class="usage-provider" data-key="usage-provider-${escape(provider)}" aria-labelledby="usage-provider-${escape(provider)}"><h2 id="usage-provider-${escape(provider)}" class="usage-provider-head sr-only">${accountMark(provider)}<span>${escape(providerName(provider))}</span><small>${accounts.length === 1 ? '1 account' : `${accounts.length} accounts`}</small></h2><div class="usage-rows">${accounts.map(account => usageRow(account, state.usageChecks?.find(item => item.accountId === account.id), legacyReadings(account.id))).join('')}</div></section>`).join('') || `<p class="section-note usage-empty">${hidden.size ? 'Every account is hidden. Use Hidden accounts to show one.' : 'No accounts to show. Add a subscription to see its limits.'}</p>`;
   const addable = listed.filter(account => !visible.includes(account));
-  const addGroup = (title, items, restoring = false) => items.length ? `<p>${title}</p><div class="usage-add-list">${items.map(account => `<button type="button" class="secondary" data-usage-show="${escape(account.id)}" ${restoring ? 'data-usage-hidden-item' : ''}>${accountMark(account.provider)}<span>${restoring ? 'Show ' : ''}${escape(account.label)}</span></button>`).join('')}</div>` : '';
-  const addPanel = usageAddOpen ? `<div class="usage-add" id="usage-add-panel" role="group" aria-label="Add a subscription">${addGroup('Hidden accounts', addable.filter(account => hidden.has(account.id)), true)}${addGroup('Installed agents', addable.filter(account => !hidden.has(account.id)))}<p>Another account</p><div class="usage-add-list">${profileProviders().filter(provider => provider.namedProfiles).map(provider => `<button type="button" class="secondary" data-usage-new-account="${escape(provider.id)}">${accountMark(provider.id)}<span>${escape(provider.name)} account</span></button>`).join('')}</div></div>` : '';
+  // Every provider is listed. Each tile says what adding it does today.
+  const providerTile = provider => {
+    const waiting = addable.filter(account => account.provider === provider.id);
+    const agent = state.agents?.find(item => item.id === provider.id), installed = agent ? agent.installed !== false : true;
+    const [attrs, note] = waiting.length ? [`data-usage-show="${escape(waiting[0].id)}"${hidden.has(waiting[0].id) ? ' data-usage-hidden-item' : ''}`, hidden.has(waiting[0].id) ? 'Show hidden account' : 'Show account']
+      : provider.namedProfiles ? [`data-usage-new-account="${escape(provider.id)}"`, listed.some(account => account.provider === provider.id) ? 'Add another account' : 'Add account']
+      : !installed ? ['data-page="agent-settings"', 'Install the CLI first']
+      : ['disabled aria-disabled="true"', 'One account for now'];
+    return `<button type="button" class="usage-choice" ${attrs}>${accountMark(provider.id)}<span><strong>${escape(provider.name)}</strong><small>${note}</small></span></button>`;
+  };
+  const providers = [...profileProviders()].sort((a, b) => a.name.localeCompare(b.name));
+  const addPanel = usageAddOpen ? `<div class="usage-add" id="usage-add-panel" role="group" aria-label="Add a subscription"><div class="usage-choices">${providers.map(providerTile).join('')}</div></div>` : '';
   return pageHeading('', 'Usage', 'Account-wide limits, checked every two minutes.', `<div class="usage-heading-actions"><button class="secondary" data-action="refresh" ${state.refreshing ? 'disabled aria-busy="true"' : ''}>${icon('refresh')}${state.refreshing ? 'Checking accounts…' : 'Refresh'}</button>${hidden.size ? `<button type="button" class="secondary" data-action="usage-hidden" aria-expanded="${usageAddOpen}" aria-controls="usage-add-panel">Hidden accounts (${hidden.size})</button>` : ''}</div>`) +
     `<section class="surface account-switch-settings usage-subscriptions"><div class="usage-groups">${accountCards}</div><div class="usage-add-slot"><button type="button" class="usage-add-button" data-action="usage-add" aria-expanded="${usageAddOpen}" aria-controls="usage-add-panel">${icon('plus')}Add subscription</button>${addPanel}</div></section>${renderUsageAnalytics()}`;
 }
@@ -1643,7 +1653,7 @@ document.addEventListener('click', async event => {
       case 'minimize': await call('minimize'); break;
       case 'tray': await call('tray'); break;
       case 'refresh': await call('refresh'); break;
-      case 'usage-add': usageAddOpen = !usageAddOpen; renderPage(); $('#usage-add-panel button, [data-action=usage-add]')?.focus({ preventScroll: true }); break;
+      case 'usage-add': usageAddOpen = !usageAddOpen; renderPage(); ($('#usage-add-panel button:not([disabled])') || $('[data-action=usage-add]'))?.focus({ preventScroll: true }); break;
       case 'usage-hidden': usageAddOpen = !usageAddOpen; renderPage(); $('[data-usage-hidden-item], [data-action=usage-hidden]')?.focus({ preventScroll: true }); break;
       case 'quit': await call('quit'); break;
       case 'restart-normal': await call('restart.normal'); break;
