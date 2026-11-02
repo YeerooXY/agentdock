@@ -214,6 +214,47 @@ void main() {
     ]);
     expect(c.agentSelection('one').effort, 'high');
   });
+  testWidgets('Claude types /model and /effort, keeping a draft', (
+    tester,
+  ) async {
+    final c = FakeDock();
+    addTearDown(c.dispose);
+    c.state['sessions'][0]['provider'] = 'Claude';
+    var typed = '';
+    c.onInput = (input) async {
+      final data = input['data'] as String;
+      if (data == '\x05\x15') return paint(c, '❯ ');
+      if (data.startsWith('/')) {
+        typed = data;
+        return;
+      }
+      if (data == '\r' && typed.startsWith('/model')) {
+        paint(c, '❯ $typed\r\n  ⎿  Set model to Test Model B and saved\r\n❯ ');
+      } else if (data == '\r' && typed.startsWith('/effort')) {
+        paint(c, '❯ $typed\r\n  ⎿  Set effort level to high (saved)\r\n❯ ');
+      }
+    };
+    await open(tester, c);
+    await tester.tap(find.byType(DropdownButtonFormField<String>).first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Test Model B').last);
+    await tester.pumpAndSettle();
+    await effort(tester);
+    paint(c, '❯ Unsent draft');
+    await tester.tap(find.text('Apply'));
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pumpAndSettle();
+    expect(c.inputs.map((x) => x['data']), [
+      '\x05\x15',
+      '/model test-model-b',
+      '\r',
+      '/effort high',
+      '\r',
+      'Unsent draft',
+    ]);
+    expect(c.agentSelection('one').model, 'test-model-b');
+    expect(c.agentSelection('one').effort, 'high');
+  });
   testWidgets('a multi-line prompt draft is left alone', (tester) async {
     final c = FakeDock();
     addTearDown(c.dispose);

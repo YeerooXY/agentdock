@@ -274,7 +274,23 @@ class _LiveAgentControlsState extends State<LiveAgentControls> {
         await c.input('', id: id);
         await waitFor(() => hasEmptyAgentPrompt(terminal!, provider));
       }
-      if (provider == 'codex' || model != initial.model) {
+      if (provider == 'claude' && model != initial.model) {
+        // Same as typing it: /model <id> takes effect without a menu.
+        final names = {
+          modelLabel(model!).toLowerCase(),
+          (chosen?['name'] as String? ?? '').toLowerCase(),
+        }..remove('');
+        await c.submit('/model $model', command: true, canContinue: () => current);
+        await waitFor(() {
+          final text = activeTerminalText(terminal!).toLowerCase();
+          if (menu != null) return false;
+          final at = text.lastIndexOf('set model to');
+          return at >= 0 && names.any((n) => text.substring(at).contains(n));
+        });
+        await waitFor(
+          () => menu == null && hasEmptyAgentPrompt(terminal!, provider),
+        );
+      } else if (provider == 'codex') {
         opened = true;
         await c.submit('/model', command: true, canContinue: () => current);
         await waitFor(() => menu != null);
@@ -329,7 +345,7 @@ class _LiveAgentControlsState extends State<LiveAgentControls> {
         final modelConfirmed =
             confirmation?.model?.toLowerCase() == model?.toLowerCase() ||
             (reported.at > initial.at && reported.model == model) ||
-            (provider == 'claude' && model == initial.model);
+            provider == 'claude';
         final effortConfirmed =
             effort == null ||
             confirmation?.effort == effort ||
