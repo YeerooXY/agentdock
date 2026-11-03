@@ -87,3 +87,12 @@ test('failed disk flush keeps the previous save and removes the unfinished tempo
   atomicJson(file, { restoreConsoles: false });
   assert.deepEqual(readJson(file, {}), { restoreConsoles: false });
 });
+
+test('readJson accepts a UTF-8 byte order mark written by Windows tools', t => {
+  const { readJson } = require('../electron/storage.cjs');
+  const dir = require('node:fs').mkdtempSync(require('node:path').join(require('node:os').tmpdir(), 'paddock-bom-'));
+  t.after(() => require('node:fs').rmSync(dir, { recursive: true, force: true }));
+  const file = require('node:path').join(dir, 'task.json');
+  require('node:fs').writeFileSync(file, '﻿{"id":"a","state":"passed"}');
+  assert.deepEqual(readJson(file, null), { id: 'a', state: 'passed' });
+});

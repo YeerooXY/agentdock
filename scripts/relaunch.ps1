@@ -12,7 +12,7 @@
 # Paddock and the console that started it have closed. Results are written to
 # .build\relaunch\<time>\status.json and supervisor.log; create a file named
 # "stop" there to end supervision early.
-param([string]$Fallback = '', [double]$Hours = 16, [string[]]$DismissTasks = @(), [int]$DelaySeconds = 0)
+param([string]$Fallback = '', [double]$Hours = 16, [int]$DelaySeconds = 0)
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $PSScriptRoot
 $exe = Join-Path $repo 'node_modules\electron\dist\electron.exe'
@@ -48,7 +48,7 @@ $run = Join-Path $runs (Get-Date -Format 'yyyyMMdd-HHmmss'); New-Item -ItemType 
 [ordered]@{
   exe = $exe; appFolder = $repo; rollbackFolder = $(if ($fallbackFolder) { $fallbackFolder } else { $repo }); dataFolder = $data
   mobileEnabled = [bool]$mobile.enabled; mobileHost = [string]$mobile.host; mobilePort = $(if ($mobile.port) { [int]$mobile.port } else { 47831 })
-  hours = $Hours; startDelaySeconds = $DelaySeconds; newCommit = $newCommit; lastGoodFile = $lastGoodFile; dismissTasks = $DismissTasks
+  hours = $Hours; startDelaySeconds = $DelaySeconds; newCommit = $newCommit; lastGoodFile = $lastGoodFile
 } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $run 'config.json') -Encoding utf8
 
 # A scheduled task runs outside Paddock's process tree, in this user's desktop session.

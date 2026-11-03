@@ -1156,3 +1156,14 @@ test('a late child close persists the cleared PID on both tasks and subtasks', a
     assert.equal(item.state, 'stopped');
   }
 });
+
+test('a damaged task record is set aside and the other tasks still load', t => {
+  const f = fixture(t);
+  const tasks = path.join(f.root, 'tasks');
+  fs.writeFileSync(path.join(tasks, 'broken-task.json'), '{"id": "broken-task", "state":');
+  fs.writeFileSync(path.join(tasks, 'bom-task.json'), '﻿' + JSON.stringify({ id: 'bom-task', state: 'passed', repo: f.repo, title: 'Kept', startedAt: 1 }));
+  const restored = new TaskLoop(f.root, { ...f.options, saveResult: null });
+  assert.equal(restored.jobs.has('broken-task'), false);
+  assert.equal(restored.jobs.has('bom-task'), true, 'a byte order mark does not hide a task');
+  assert.ok(fs.readdirSync(tasks).some(name => name.startsWith('broken-task.json.') && name.endsWith('.corrupt')), 'the damaged file is kept for inspection');
+});

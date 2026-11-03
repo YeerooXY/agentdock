@@ -48,7 +48,7 @@ function Launch {
   $folder = AppFolder
   try {
     $p = Start-Process -FilePath $config.exe -ArgumentList ('"' + $folder + '"') -WorkingDirectory $folder -PassThru
-    $state.launches++; Log "Launched $($state.mode) copy ($folder) as process $($p.Id)."; Save
+    $state.launches++; $state.lastLaunchAt = (Get-Date).ToString('o'); Log "Launched $($state.mode) copy ($folder) as process $($p.Id)."; Save
   } catch { Log "Launch failed: $($_.Exception.Message)" }
 }
 # Waits up to $seconds for a main process that stays up and has the phone listener.
@@ -66,23 +66,19 @@ function WaitHealthy([int]$seconds) {
   }
   return $false
 }
-function DismissFailedTask {
-  # Pi's empty meter task: close it while Paddock is stopped, with a reason.
-  foreach ($id in @($config.dismissTasks)) {
-    if (-not $id) { continue }
-    $file = Join-Path $config.dataFolder "tasks\$id.json"
-    try {
-      $job = Get-Content -LiteralPath $file -Raw | ConvertFrom-Json
-      if (-not $job.dismissedAt) {
-        $now = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
-        $job | Add-Member -NotePropertyName dismissedAt -NotePropertyValue $now -Force
-        if (-not $job.acknowledgedAt) { $job | Add-Member -NotePropertyName acknowledgedAt -NotePropertyValue $now -Force }
-        $job | Add-Member -NotePropertyName dismissReason -NotePropertyValue 'Worker made no changes; the meter was written directly (commit 83f98cb).' -Force
-        $job | Add-Member -NotePropertyName dismissedBy -NotePropertyValue 'agent' -Force
-        $tmp = "$file.tmp"; ($job | ConvertTo-Json -Depth 100) | Set-Content -LiteralPath $tmp -Encoding utf8; Move-Item -LiteralPath $tmp -Destination $file -Force
-        Log "Closed task $id."
-      }
-    } catch { Log "Could not close task ${id}: $($_.Exception.Message)" }
+# Copies Paddock's own startup errors since a launch into this log, so a
+# failed start says why. The supervisor never edits Paddock's data: on
+# 3 November it rewrote a task file in a form Paddock could not read, which
+# stopped every start for 13 hours.
+function ReportStartupErrors([datetime]$since) {
+  $file = Join-Path $config.dataFolder 'logs\main.log'
+  if (-not (Test-Path -LiteralPath $file)) { return }
+  $cutoff = $since.ToUniversalTime()
+  foreach ($line in (Get-Content -LiteralPath $file -Tail 200)) {
+    if ($line -match '^(\S+) ERROR (.+)$') {
+      $at = [datetime]::MinValue
+      if ([datetime]::TryParse($Matches[1], [ref]$at) -and $at.ToUniversalTime() -ge $cutoff) { Log "Paddock reported: $($Matches[2])" }
+    }
   }
 }
 
@@ -92,7 +88,6 @@ if ($config.startDelaySeconds) { Start-Sleep -Seconds ([int]$config.startDelaySe
 # Switch to the new code.
 $state.phase = 'switching'; Save
 StopAll
-if (-not (MainProcesses).Count) { DismissFailedTask }
 for ($attempt = 1; $attempt -le 4; $attempt++) {
   if ($attempt -eq 3 -and $state.mode -eq 'new') { $state.mode = 'rollback'; Log 'New code did not become ready twice; switching to the rollback copy.'; StopAll }
   if (-not (MainProcesses).Count) { Launch }
@@ -103,22 +98,24 @@ for ($attempt = 1; $attempt -le 4; $attempt++) {
     break
   }
   if ($state.mode -eq 'new') { $state.newFailures++ }
-  Log "Not ready after attempt $attempt."
+  Log "Not ready after attempt $attempt."; ReportStartupErrors $state.lastLaunchAt
   StopAll
 }
 # Keep it running.
 $state.phase = 'supervising'; Save
-$recentCrashes = New-Object System.Collections.ArrayList
+$recentCrashes = New-Object System.Collections.ArrayList; $failedInRow = 0
 while ((Get-Date) -lt [datetime]$state.until) {
   if (Test-Path -LiteralPath (Join-Path $Root 'stop')) { Log 'Stop file found; ending supervision.'; break }
   Start-Sleep -Seconds 60
-  if ((MainProcesses).Count) { $state.lastHealthyAt = (Get-Date).ToString('o'); Save; continue }
+  if ((MainProcesses).Count) { $state.lastHealthyAt = (Get-Date).ToString('o'); $failedInRow = 0; Save; continue }
+  # After five failed starts in a row, try every ten minutes instead of every minute.
+  if ($failedInRow -ge 5 -and $state.lastLaunchAt -and ((Get-Date) - [datetime]$state.lastLaunchAt).TotalMinutes -lt 10) { continue }
   Log 'Paddock is not running; relaunching.'
   [void]$recentCrashes.Add((Get-Date))
   $window = (Get-Date).AddMinutes(-30)
   $count = @($recentCrashes | Where-Object { $_ -gt $window }).Count
   if ($state.mode -eq 'new' -and $count -ge 3) { $state.mode = 'rollback'; Log 'Three stops in 30 minutes; switching to the rollback copy.' }
   Launch
-  [void](WaitHealthy 150)
+  if (WaitHealthy 150) { $failedInRow = 0 } else { $failedInRow++; ReportStartupErrors $state.lastLaunchAt }
 }
 $state.phase = 'finished'; Save; Log 'Supervisor finished.'

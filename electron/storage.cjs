@@ -4,7 +4,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 function readJson(file, fallback, { recoverCorrupt = false, onRecovery = () => {} } = {}) {
-  try { return JSON.parse(fs.readFileSync(file, 'utf8')); }
+  // Windows tools (PowerShell 5.1 Set-Content -Encoding utf8) add a byte order mark.
+  try { return JSON.parse(fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, '')); }
   catch (error) {
     if (error.code === 'ENOENT') return fallback;
     // Only disposable caches may recover. Settings, credentials and other saves

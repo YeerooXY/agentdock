@@ -117,7 +117,9 @@ class TaskLoop extends EventEmitter {
     this.split = new SplitTasks(this); this.providerSlots = 0; this.providerQueue = []; this.unconfirmed = new Map();
     fs.mkdirSync(this.dir, { recursive: true });
     for (const file of fs.readdirSync(this.dir).filter(file => /^[\w-]+\.json$/.test(file))) {
-      const job = readJson(path.join(this.dir, file), null);
+      // One damaged task record must not stop Paddock from starting: it is
+      // moved aside as <name>.<id>.corrupt and reported in the log.
+      const job = readJson(path.join(this.dir, file), null, { recoverCorrupt: true, onRecovery: backup => console.error(`Task record ${file} could not be read and was moved to ${path.basename(backup)}.`) });
       if (!job?.id || path.basename(file, '.json') !== job.id) continue;
       let migrated = migrateTaskRecord(job);
       // Row 7 mail is volatile. A saved dispatch or queued text reference has
