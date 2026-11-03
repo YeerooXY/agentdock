@@ -1,0 +1,1871 @@
+{
+  "at": "2026-11-03T06:27:36.263Z",
+  "summary": {
+    "lines": 41160,
+    "largeFiles": 5,
+    "longFunctions": 30,
+    "duplicateWindows": 41,
+    "providerBranches": 398
+  },
+  "files": [
+    {
+      "file": "mobile/lib/main.dart",
+      "lines": 2168
+    },
+    {
+      "file": "src/app.js",
+      "lines": 1988
+    },
+    {
+      "file": "mobile/lib/console_surface.dart",
+      "lines": 1596
+    },
+    {
+      "file": "mobile/lib/dock_client.dart",
+      "lines": 1399
+    },
+    {
+      "file": "electron/main.cjs",
+      "lines": 1273
+    },
+    {
+      "file": "electron/sessions.cjs",
+      "lines": 920
+    },
+    {
+      "file": "electron/task-loop.cjs",
+      "lines": 890
+    },
+    {
+      "file": "src/style.css",
+      "lines": 864
+    },
+    {
+      "file": "mobile/lib/results_page.dart",
+      "lines": 811
+    },
+    {
+      "file": "mobile/lib/console_actions.dart",
+      "lines": 619
+    },
+    {
+      "file": "electron/mobile.cjs",
+      "lines": 604
+    },
+    {
+      "file": "src/console-effects.js",
+      "lines": 518
+    },
+    {
+      "file": "mobile/lib/message_queue_sheet.dart",
+      "lines": 514
+    },
+    {
+      "file": "mobile/lib/settings_page.dart",
+      "lines": 512
+    },
+    {
+      "file": "mobile/lib/state_protocol.dart",
+      "lines": 465
+    },
+    {
+      "file": "electron/shared.cjs",
+      "lines": 443
+    },
+    {
+      "file": "electron/task-plan.cjs",
+      "lines": 411
+    },
+    {
+      "file": "electron/subscription-usage.cjs",
+      "lines": 397
+    },
+    {
+      "file": "src/workbench-ui.js",
+      "lines": 390
+    },
+    {
+      "file": "electron/delegation.cjs",
+      "lines": 359
+    },
+    {
+      "file": "src/theme-system.css",
+      "lines": 346
+    },
+    {
+      "file": "electron/state-protocol.cjs",
+      "lines": 336
+    },
+    {
+      "file": "mobile/lib/live_agent_controls.dart",
+      "lines": 329
+    },
+    {
+      "file": "mobile/lib/console_theme.dart",
+      "lines": 305
+    },
+    {
+      "file": "mobile/lib/state_models.dart",
+      "lines": 304
+    },
+    {
+      "file": "mobile/lib/account_usage.dart",
+      "lines": 299
+    },
+    {
+      "file": "mobile/lib/agent_dialog_panel.dart",
+      "lines": 296
+    },
+    {
+      "file": "electron/state-sync.cjs",
+      "lines": 289
+    },
+    {
+      "file": "mobile/lib/projects_page.dart",
+      "lines": 287
+    },
+    {
+      "file": "electron/cli-setup.cjs",
+      "lines": 284
+    },
+    {
+      "file": "mobile/lib/pair_page.dart",
+      "lines": 282
+    },
+    {
+      "file": "mobile/lib/agent_dialog.dart",
+      "lines": 279
+    },
+    {
+      "file": "src/console-polish.css",
+      "lines": 264
+    },
+    {
+      "file": "electron/task-routing.cjs",
+      "lines": 260
+    },
+    {
+      "file": "mobile/lib/update_panel.dart",
+      "lines": 257
+    },
+    {
+      "file": "mobile/lib/code_page.dart",
+      "lines": 251
+    },
+    {
+      "file": "mobile/lib/console_overview.dart",
+      "lines": 242
+    },
+    {
+      "file": "electron/projects.cjs",
+      "lines": 237
+    },
+    {
+      "file": "src/console-sky.js",
+      "lines": 237
+    },
+    {
+      "file": "mobile/lib/agent_menu.dart",
+      "lines": 234
+    },
+    {
+      "file": "src/project-plan-ui.js",
+      "lines": 230
+    },
+    {
+      "file": "mobile/lib/terminal_links.dart",
+      "lines": 230
+    },
+    {
+      "file": "mobile/lib/project_turn_usage.dart",
+      "lines": 225
+    },
+    {
+      "file": "mobile/lib/terminal_viewport.dart",
+      "lines": 225
+    },
+    {
+      "file": "mobile/lib/console_switcher.dart",
+      "lines": 224
+    },
+    {
+      "file": "electron/workbench.cjs",
+      "lines": 218
+    },
+    {
+      "file": "mobile/lib/console_appearance_controls.dart",
+      "lines": 218
+    },
+    {
+      "file": "src/console-themes.css",
+      "lines": 212
+    },
+    {
+      "file": "mobile/lib/devices_page.dart",
+      "lines": 212
+    },
+    {
+      "file": "mobile/lib/terminal_keys.dart",
+      "lines": 209
+    },
+    {
+      "file": "electron/projections.cjs",
+      "lines": 208
+    },
+    {
+      "file": "mobile/lib/pc_settings_page.dart",
+      "lines": 208
+    },
+    {
+      "file": "src/projects-ui.js",
+      "lines": 200
+    },
+    {
+      "file": "electron/owner-consoles.cjs",
+      "lines": 193
+    },
+    {
+      "file": "electron/adapters.cjs",
+      "lines": 191
+    },
+    {
+      "file": "electron/account-history.cjs",
+      "lines": 189
+    },
+    {
+      "file": "electron/account-profiles.cjs",
+      "lines": 189
+    },
+    {
+      "file": "src/task-loop-ui.js",
+      "lines": 189
+    },
+    {
+      "file": "mobile/lib/terminal_reading.dart",
+      "lines": 189
+    },
+    {
+      "file": "src/tool-features.js",
+      "lines": 188
+    },
+    {
+      "file": "electron/turns.cjs",
+      "lines": 187
+    },
+    {
+      "file": "src/ask-agent-ui.js",
+      "lines": 187
+    },
+    {
+      "file": "electron/project-planning.cjs",
+      "lines": 186
+    },
+    {
+      "file": "mobile/lib/terminal_styles.dart",
+      "lines": 186
+    },
+    {
+      "file": "electron/extended-workers.cjs",
+      "lines": 179
+    },
+    {
+      "file": "electron/concepts.cjs",
+      "lines": 178
+    },
+    {
+      "file": "electron/integrations.cjs",
+      "lines": 178
+    },
+    {
+      "file": "electron/state-store.cjs",
+      "lines": 178
+    },
+    {
+      "file": "electron/ssh-hosts.cjs",
+      "lines": 171
+    },
+    {
+      "file": "electron/worker-sessions.cjs",
+      "lines": 171
+    },
+    {
+      "file": "electron/code-panel.cjs",
+      "lines": 167
+    },
+    {
+      "file": "electron/skill-packs.cjs",
+      "lines": 166
+    },
+    {
+      "file": "src/usage-page.css",
+      "lines": 156
+    },
+    {
+      "file": "electron/results.cjs",
+      "lines": 154
+    },
+    {
+      "file": "electron/screenshots.cjs",
+      "lines": 154
+    },
+    {
+      "file": "src/core/dom.js",
+      "lines": 154
+    },
+    {
+      "file": "src/mobile-ui.js",
+      "lines": 153
+    },
+    {
+      "file": "electron/message-queue.cjs",
+      "lines": 151
+    },
+    {
+      "file": "electron/credential-switch.cjs",
+      "lines": 150
+    },
+    {
+      "file": "electron/crash-report.cjs",
+      "lines": 147
+    },
+    {
+      "file": "electron/draft-editor.cjs",
+      "lines": 141
+    },
+    {
+      "file": "electron/mobile-network.cjs",
+      "lines": 139
+    },
+    {
+      "file": "src/console-queue.js",
+      "lines": 137
+    },
+    {
+      "file": "mobile/lib/agent_identity.dart",
+      "lines": 137
+    },
+    {
+      "file": "electron/providers/index.cjs",
+      "lines": 135
+    },
+    {
+      "file": "src/workbench.css",
+      "lines": 135
+    },
+    {
+      "file": "electron/study-context.cjs",
+      "lines": 132
+    },
+    {
+      "file": "src/vim-controls.js",
+      "lines": 132
+    },
+    {
+      "file": "mobile/lib/pairing_request.dart",
+      "lines": 132
+    },
+    {
+      "file": "electron/provider-workers.cjs",
+      "lines": 131
+    },
+    {
+      "file": "src/projects.css",
+      "lines": 131
+    },
+    {
+      "file": "electron/worker-registry.cjs",
+      "lines": 129
+    },
+    {
+      "file": "mobile/lib/console_drafts.dart",
+      "lines": 126
+    },
+    {
+      "file": "mobile/lib/saved_devices.dart",
+      "lines": 125
+    },
+    {
+      "file": "src/navigation-rail.css",
+      "lines": 124
+    },
+    {
+      "file": "electron/cli-launch.cjs",
+      "lines": 121
+    },
+    {
+      "file": "electron/draft-bridge.cjs",
+      "lines": 119
+    },
+    {
+      "file": "electron/message-usage.cjs",
+      "lines": 117
+    },
+    {
+      "file": "electron/agent-event.cjs",
+      "lines": 115
+    },
+    {
+      "file": "src/console-layout-ui.js",
+      "lines": 115
+    },
+    {
+      "file": "mobile/lib/connection_panel.dart",
+      "lines": 115
+    },
+    {
+      "file": "mobile/lib/state_client.dart",
+      "lines": 115
+    },
+    {
+      "file": "src/console-projects.js",
+      "lines": 114
+    },
+    {
+      "file": "electron/mobile-console.cjs",
+      "lines": 113
+    },
+    {
+      "file": "electron/pi-usage.cjs",
+      "lines": 113
+    },
+    {
+      "file": "electron/workflow-comparison.cjs",
+      "lines": 113
+    },
+    {
+      "file": "electron/pi-worker.cjs",
+      "lines": 109
+    },
+    {
+      "file": "electron/reviews.cjs",
+      "lines": 107
+    },
+    {
+      "file": "src/first-run.js",
+      "lines": 105
+    },
+    {
+      "file": "src/workspace-glass.css",
+      "lines": 103
+    },
+    {
+      "file": "src/console-trim.css",
+      "lines": 101
+    },
+    {
+      "file": "src/file-links.js",
+      "lines": 101
+    },
+    {
+      "file": "mobile/lib/image_jobs_page.dart",
+      "lines": 101
+    },
+    {
+      "file": "electron/mobile-settings.cjs",
+      "lines": 100
+    },
+    {
+      "file": "electron/console-layout.cjs",
+      "lines": 97
+    },
+    {
+      "file": "electron/preload.cjs",
+      "lines": 97
+    },
+    {
+      "file": "electron/turn-completion.cjs",
+      "lines": 96
+    },
+    {
+      "file": "electron/local-assist.cjs",
+      "lines": 92
+    },
+    {
+      "file": "src/console-drag.js",
+      "lines": 92
+    },
+    {
+      "file": "src/mobile.css",
+      "lines": 92
+    },
+    {
+      "file": "electron/tool-policy.cjs",
+      "lines": 91
+    },
+    {
+      "file": "electron/antigravity-usage.cjs",
+      "lines": 90
+    },
+    {
+      "file": "mobile/lib/preview_page.dart",
+      "lines": 88
+    },
+    {
+      "file": "electron/capacity-reservations.cjs",
+      "lines": 85
+    },
+    {
+      "file": "electron/workspace.cjs",
+      "lines": 85
+    },
+    {
+      "file": "src/shell-picker.js",
+      "lines": 85
+    },
+    {
+      "file": "src/ssh-ui.js",
+      "lines": 85
+    },
+    {
+      "file": "mobile/lib/dock_style.dart",
+      "lines": 84
+    },
+    {
+      "file": "electron/task-outcome.cjs",
+      "lines": 82
+    },
+    {
+      "file": "electron/worker-placement.cjs",
+      "lines": 82
+    },
+    {
+      "file": "electron/cursor-usage.cjs",
+      "lines": 81
+    },
+    {
+      "file": "electron/domain.cjs",
+      "lines": 81
+    },
+    {
+      "file": "electron/workflow-usage.cjs",
+      "lines": 81
+    },
+    {
+      "file": "src/console-appearance.js",
+      "lines": 80
+    },
+    {
+      "file": "electron/mirofish.cjs",
+      "lines": 79
+    },
+    {
+      "file": "electron/managed-downloads.cjs",
+      "lines": 78
+    },
+    {
+      "file": "electron/windows-credentials.cjs",
+      "lines": 78
+    },
+    {
+      "file": "electron/mobile-preview.cjs",
+      "lines": 77
+    },
+    {
+      "file": "electron/upscayl-install.cjs",
+      "lines": 77
+    },
+    {
+      "file": "src/usage-glass.css",
+      "lines": 76
+    },
+    {
+      "file": "electron/result-archive.cjs",
+      "lines": 75
+    },
+    {
+      "file": "electron/worktrees.cjs",
+      "lines": 75
+    },
+    {
+      "file": "electron/usage-reading.cjs",
+      "lines": 73
+    },
+    {
+      "file": "electron/mcp-catalog.cjs",
+      "lines": 72
+    },
+    {
+      "file": "electron/mobile-attachments.cjs",
+      "lines": 72
+    },
+    {
+      "file": "src/launch-gesture.js",
+      "lines": 72
+    },
+    {
+      "file": "mobile/lib/result_revision.dart",
+      "lines": 69
+    },
+    {
+      "file": "electron/api-run.cjs",
+      "lines": 68
+    },
+    {
+      "file": "electron/local-models.cjs",
+      "lines": 66
+    },
+    {
+      "file": "src/review-panel-ui.js",
+      "lines": 66
+    },
+    {
+      "file": "electron/codex-session.cjs",
+      "lines": 65
+    },
+    {
+      "file": "electron/upscayl-engine.cjs",
+      "lines": 65
+    },
+    {
+      "file": "src/page-layout.css",
+      "lines": 65
+    },
+    {
+      "file": "electron/platform.cjs",
+      "lines": 64
+    },
+    {
+      "file": "electron/session-end.cjs",
+      "lines": 64
+    },
+    {
+      "file": "electron/usage-readers.cjs",
+      "lines": 63
+    },
+    {
+      "file": "src/image-generation-ui.js",
+      "lines": 63
+    },
+    {
+      "file": "electron/image-generation.cjs",
+      "lines": 62
+    },
+    {
+      "file": "electron/antigravity-session.cjs",
+      "lines": 61
+    },
+    {
+      "file": "electron/storage.cjs",
+      "lines": 60
+    },
+    {
+      "file": "src/state-client.js",
+      "lines": 60
+    },
+    {
+      "file": "mobile/lib/agent_selection.dart",
+      "lines": 60
+    },
+    {
+      "file": "electron/git-context.cjs",
+      "lines": 58
+    },
+    {
+      "file": "electron/mobile-code.cjs",
+      "lines": 57
+    },
+    {
+      "file": "electron/study-timer.cjs",
+      "lines": 57
+    },
+    {
+      "file": "electron/updates.cjs",
+      "lines": 57
+    },
+    {
+      "file": "src/console-motion.js",
+      "lines": 57
+    },
+    {
+      "file": "src/results-model.js",
+      "lines": 56
+    },
+    {
+      "file": "electron/providers/gemini.cjs",
+      "lines": 54
+    },
+    {
+      "file": "electron/providers/grok.cjs",
+      "lines": 54
+    },
+    {
+      "file": "src/task-loop.css",
+      "lines": 54
+    },
+    {
+      "file": "src/terminal-output.js",
+      "lines": 54
+    },
+    {
+      "file": "electron/mobile-stream.cjs",
+      "lines": 53
+    },
+    {
+      "file": "src/account-identity.js",
+      "lines": 53
+    },
+    {
+      "file": "electron/task-contracts.cjs",
+      "lines": 51
+    },
+    {
+      "file": "electron/windows-identity.cjs",
+      "lines": 51
+    },
+    {
+      "file": "electron/notifications.cjs",
+      "lines": 50
+    },
+    {
+      "file": "electron/alert-summary.cjs",
+      "lines": 49
+    },
+    {
+      "file": "electron/route-allowance.cjs",
+      "lines": 49
+    },
+    {
+      "file": "electron/task-effort.cjs",
+      "lines": 49
+    },
+    {
+      "file": "electron/providers/pi.cjs",
+      "lines": 48
+    },
+    {
+      "file": "electron/setup-requests.cjs",
+      "lines": 48
+    },
+    {
+      "file": "electron/prompt-library.cjs",
+      "lines": 47
+    },
+    {
+      "file": "electron/mobile-projects.cjs",
+      "lines": 46
+    },
+    {
+      "file": "electron/providers/antigravity.cjs",
+      "lines": 46
+    },
+    {
+      "file": "electron/routing-models.cjs",
+      "lines": 45
+    },
+    {
+      "file": "src/project-activity.js",
+      "lines": 45
+    },
+    {
+      "file": "electron/course-launch.cjs",
+      "lines": 43
+    },
+    {
+      "file": "src/setup.css",
+      "lines": 43
+    },
+    {
+      "file": "src/console-themes.js",
+      "lines": 42
+    },
+    {
+      "file": "electron/mobile-address.cjs",
+      "lines": 41
+    },
+    {
+      "file": "src/project-usage.js",
+      "lines": 41
+    },
+    {
+      "file": "electron/file-preview.cjs",
+      "lines": 40
+    },
+    {
+      "file": "electron/mobile-usage.cjs",
+      "lines": 40
+    },
+    {
+      "file": "src/code-editor.js",
+      "lines": 40
+    },
+    {
+      "file": "src/worker-composer.js",
+      "lines": 40
+    },
+    {
+      "file": "electron/providers/claude.cjs",
+      "lines": 38
+    },
+    {
+      "file": "electron/model-selection.cjs",
+      "lines": 37
+    },
+    {
+      "file": "electron/opencode-allowance.cjs",
+      "lines": 37
+    },
+    {
+      "file": "electron/providers/codex.cjs",
+      "lines": 37
+    },
+    {
+      "file": "electron/settings.cjs",
+      "lines": 37
+    },
+    {
+      "file": "electron/console-appearance.cjs",
+      "lines": 35
+    },
+    {
+      "file": "src/window-drag.js",
+      "lines": 34
+    },
+    {
+      "file": "electron/providers/cursor.cjs",
+      "lines": 33
+    },
+    {
+      "file": "electron/providers/kiro.cjs",
+      "lines": 33
+    },
+    {
+      "file": "electron/website-guide.cjs",
+      "lines": 32
+    },
+    {
+      "file": "mobile/lib/help_link.dart",
+      "lines": 32
+    },
+    {
+      "file": "mobile/lib/worktree_badge.dart",
+      "lines": 32
+    },
+    {
+      "file": "electron/providers/kimi.cjs",
+      "lines": 30
+    },
+    {
+      "file": "electron/study-subject.cjs",
+      "lines": 30
+    },
+    {
+      "file": "src/ask-agent.js",
+      "lines": 30
+    },
+    {
+      "file": "electron/opencode-auth.cjs",
+      "lines": 29
+    },
+    {
+      "file": "src/project-identity.js",
+      "lines": 29
+    },
+    {
+      "file": "electron/providers/copilot.cjs",
+      "lines": 28
+    },
+    {
+      "file": "electron/providers/droid.cjs",
+      "lines": 28
+    },
+    {
+      "file": "electron/providers/opencode.cjs",
+      "lines": 28
+    },
+    {
+      "file": "src/markdown.js",
+      "lines": 28
+    },
+    {
+      "file": "electron/providers/cline.cjs",
+      "lines": 27
+    },
+    {
+      "file": "electron/providers/qwen.cjs",
+      "lines": 27
+    },
+    {
+      "file": "electron/task-guidance.cjs",
+      "lines": 27
+    },
+    {
+      "file": "electron/alerts.cjs",
+      "lines": 26
+    },
+    {
+      "file": "electron/draft-policy.cjs",
+      "lines": 25
+    },
+    {
+      "file": "electron/power.cjs",
+      "lines": 25
+    },
+    {
+      "file": "src/tokens.css",
+      "lines": 25
+    },
+    {
+      "file": "electron/mobile-images.cjs",
+      "lines": 24
+    },
+    {
+      "file": "electron/website-copy.cjs",
+      "lines": 24
+    },
+    {
+      "file": "electron/user-data.cjs",
+      "lines": 23
+    },
+    {
+      "file": "src/account-usage.css",
+      "lines": 23
+    },
+    {
+      "file": "electron/account-funding.cjs",
+      "lines": 22
+    },
+    {
+      "file": "electron/agent-tools.cjs",
+      "lines": 22
+    },
+    {
+      "file": "electron/antigravity-events.cjs",
+      "lines": 22
+    },
+    {
+      "file": "electron/web-preview.cjs",
+      "lines": 22
+    },
+    {
+      "file": "src/usage-analytics.js",
+      "lines": 22
+    },
+    {
+      "file": "electron/upscayl-mcp.cjs",
+      "lines": 20
+    },
+    {
+      "file": "src/quota-state.js",
+      "lines": 20
+    },
+    {
+      "file": "src/ssh.css",
+      "lines": 20
+    },
+    {
+      "file": "electron/agent-env.cjs",
+      "lines": 18
+    },
+    {
+      "file": "electron/native-account-route.cjs",
+      "lines": 18
+    },
+    {
+      "file": "src/settings-ui.js",
+      "lines": 18
+    },
+    {
+      "file": "electron/completion-notice.cjs",
+      "lines": 17
+    },
+    {
+      "file": "src/review-panel.css",
+      "lines": 17
+    },
+    {
+      "file": "mobile/lib/build_counts.dart",
+      "lines": 17
+    },
+    {
+      "file": "electron/native-token-usage.cjs",
+      "lines": 16
+    },
+    {
+      "file": "electron/cli-catalog.cjs",
+      "lines": 15
+    },
+    {
+      "file": "electron/runtime.cjs",
+      "lines": 15
+    },
+    {
+      "file": "src/setup-ui.js",
+      "lines": 15
+    },
+    {
+      "file": "electron/creative-tools.cjs",
+      "lines": 14
+    },
+    {
+      "file": "electron/mirofish-mcp.cjs",
+      "lines": 14
+    },
+    {
+      "file": "electron/review-panel.cjs",
+      "lines": 14
+    },
+    {
+      "file": "electron/capture-files.cjs",
+      "lines": 12
+    },
+    {
+      "file": "electron/provider-account-capabilities.cjs",
+      "lines": 12
+    },
+    {
+      "file": "electron/account-switching-policy.cjs",
+      "lines": 11
+    },
+    {
+      "file": "electron/meshy-zod.cjs",
+      "lines": 11
+    },
+    {
+      "file": "electron/providers/strata.cjs",
+      "lines": 11
+    },
+    {
+      "file": "src/shared-ui.js",
+      "lines": 11
+    },
+    {
+      "file": "src/updates-ui.js",
+      "lines": 11
+    },
+    {
+      "file": "electron/api.cjs",
+      "lines": 10
+    },
+    {
+      "file": "electron/guides.cjs",
+      "lines": 10
+    },
+    {
+      "file": "src/index.css",
+      "lines": 10
+    },
+    {
+      "file": "electron/tool-contract.cjs",
+      "lines": 9
+    },
+    {
+      "file": "src/image-viewer-geometry.js",
+      "lines": 9
+    },
+    {
+      "file": "src/project-stacks.js",
+      "lines": 9
+    },
+    {
+      "file": "src/project-colors.js",
+      "lines": 7
+    },
+    {
+      "file": "electron/no-dotenv.cjs",
+      "lines": 5
+    },
+    {
+      "file": "src/html-escape.js",
+      "lines": 5
+    },
+    {
+      "file": "src/worker-composer.css",
+      "lines": 5
+    }
+  ],
+  "functions": [
+    {
+      "file": "src/workbench-ui.js",
+      "name": "workbenchUI",
+      "line": 6,
+      "length": 384
+    },
+    {
+      "file": "electron/task-plan.cjs",
+      "name": "overlap",
+      "line": 39,
+      "length": 373
+    },
+    {
+      "file": "electron/mobile.cjs",
+      "name": "call",
+      "line": 362,
+      "length": 218
+    },
+    {
+      "file": "electron/sessions.cjs",
+      "name": "createOne",
+      "line": 183,
+      "length": 203
+    },
+    {
+      "file": "src/task-loop-ui.js",
+      "name": "taskLoopUI",
+      "line": 3,
+      "length": 186
+    },
+    {
+      "file": "src/ask-agent-ui.js",
+      "name": "askAgentUI",
+      "line": 3,
+      "length": 184
+    },
+    {
+      "file": "src/app.js",
+      "name": "sessionCard",
+      "line": 382,
+      "length": 183
+    },
+    {
+      "file": "src/mobile-ui.js",
+      "name": "mobileUI",
+      "line": 2,
+      "length": 151
+    },
+    {
+      "file": "electron/results.cjs",
+      "name": "normalizedFolder",
+      "line": 15,
+      "length": 140
+    },
+    {
+      "file": "src/console-queue.js",
+      "name": "consoleQueue",
+      "line": 3,
+      "length": 134
+    },
+    {
+      "file": "src/vim-controls.js",
+      "name": "vimControls",
+      "line": 6,
+      "length": 126
+    },
+    {
+      "file": "electron/shared.cjs",
+      "name": "invokeForOwner",
+      "line": 295,
+      "length": 125
+    },
+    {
+      "file": "src/app.js",
+      "name": "receive",
+      "line": 811,
+      "length": 115
+    },
+    {
+      "file": "src/console-layout-ui.js",
+      "name": "consoleLayoutUI",
+      "line": 1,
+      "length": 114
+    },
+    {
+      "file": "src/console-projects.js",
+      "name": "consoleProjects",
+      "line": 2,
+      "length": 112
+    },
+    {
+      "file": "electron/workbench.cjs",
+      "name": "invoke",
+      "line": 72,
+      "length": 111
+    },
+    {
+      "file": "electron/sessions.cjs",
+      "name": "switchAccount",
+      "line": 579,
+      "length": 107
+    },
+    {
+      "file": "src/first-run.js",
+      "name": "firstRun",
+      "line": 3,
+      "length": 102
+    },
+    {
+      "file": "src/tool-features.js",
+      "name": "toolFeatures",
+      "line": 90,
+      "length": 98
+    },
+    {
+      "file": "src/app.js",
+      "name": "mountTerminal",
+      "line": 1166,
+      "length": 96
+    },
+    {
+      "file": "electron/agent-event.cjs",
+      "name": "accept",
+      "line": 14,
+      "length": 95
+    },
+    {
+      "file": "electron/sessions.cjs",
+      "name": "operation",
+      "line": 590,
+      "length": 93
+    },
+    {
+      "file": "src/app.js",
+      "name": "renderConsoles",
+      "line": 431,
+      "length": 93
+    },
+    {
+      "file": "src/console-drag.js",
+      "name": "consoleDragging",
+      "line": 1,
+      "length": 91
+    },
+    {
+      "file": "src/console-sky.js",
+      "name": "draw",
+      "line": 67,
+      "length": 90
+    },
+    {
+      "file": "src/ask-agent-ui.js",
+      "name": "open",
+      "line": 53,
+      "length": 87
+    },
+    {
+      "file": "electron/task-loop.cjs",
+      "name": "providerTurn",
+      "line": 502,
+      "length": 85
+    },
+    {
+      "file": "src/ssh-ui.js",
+      "name": "sshUI",
+      "line": 1,
+      "length": 84
+    },
+    {
+      "file": "electron/task-loop.cjs",
+      "name": "runTask",
+      "line": 396,
+      "length": 83
+    },
+    {
+      "file": "src/shell-picker.js",
+      "name": "shellPicker",
+      "line": 3,
+      "length": 82
+    },
+    {
+      "file": "electron/task-loop.cjs",
+      "name": "process",
+      "line": 618,
+      "length": 74
+    },
+    {
+      "file": "src/console-appearance.js",
+      "name": "consoleAppearance",
+      "line": 7,
+      "length": 73
+    },
+    {
+      "file": "electron/integrations.cjs",
+      "name": "prepare",
+      "line": 105,
+      "length": 71
+    },
+    {
+      "file": "src/launch-gesture.js",
+      "name": "holdToChoose",
+      "line": 1,
+      "length": 71
+    },
+    {
+      "file": "electron/task-routing.cjs",
+      "name": "suggestAssignment",
+      "line": 193,
+      "length": 66
+    },
+    {
+      "file": "electron/turns.cjs",
+      "name": "snapshot",
+      "line": 17,
+      "length": 66
+    },
+    {
+      "file": "electron/cli-setup.cjs",
+      "name": "install",
+      "line": 217,
+      "length": 65
+    },
+    {
+      "file": "electron/result-archive.cjs",
+      "name": "previewArchive",
+      "line": 9,
+      "length": 65
+    },
+    {
+      "file": "electron/mobile.cjs",
+      "name": "constructor",
+      "line": 64,
+      "length": 64
+    },
+    {
+      "file": "electron/sessions.cjs",
+      "name": "createLoginConsole",
+      "line": 386,
+      "length": 64
+    },
+    {
+      "file": "src/review-panel-ui.js",
+      "name": "reviewPanelUI",
+      "line": 3,
+      "length": 63
+    },
+    {
+      "file": "src/image-generation-ui.js",
+      "name": "imageGenerationUI",
+      "line": 1,
+      "length": 62
+    },
+    {
+      "file": "electron/workflow-comparison.cjs",
+      "name": "checkComparable",
+      "line": 16,
+      "length": 60
+    },
+    {
+      "file": "electron/cli-launch.cjs",
+      "name": "prepareCli",
+      "line": 61,
+      "length": 59
+    },
+    {
+      "file": "electron/cursor-usage.cjs",
+      "name": "readCursorUsage",
+      "line": 21,
+      "length": 59
+    },
+    {
+      "file": "electron/mobile-settings.cjs",
+      "name": "settingsSummary",
+      "line": 4,
+      "length": 59
+    },
+    {
+      "file": "src/app.js",
+      "name": "renderPage",
+      "line": 706,
+      "length": 57
+    },
+    {
+      "file": "src/project-plan-ui.js",
+      "name": "projectPlanUI",
+      "line": 27,
+      "length": 57
+    },
+    {
+      "file": "electron/main.cjs",
+      "name": "moveWindow",
+      "line": 301,
+      "length": 56
+    },
+    {
+      "file": "electron/task-loop.cjs",
+      "name": "start",
+      "line": 279,
+      "length": 55
+    }
+  ],
+  "duplicates": [
+    {
+      "preview": "'${value['accountId'] ?? (value['provider'] == 'codex'",
+      "places": [
+        "mobile/lib/settings_page.dart:221",
+        "mobile/lib/settings_page.dart:242",
+        "mobile/lib/settings_page.dart:265"
+      ]
+    },
+    {
+      "preview": "? 'codex:default'",
+      "places": [
+        "mobile/lib/settings_page.dart:222",
+        "mobile/lib/settings_page.dart:243",
+        "mobile/lib/settings_page.dart:266"
+      ]
+    },
+    {
+      "preview": ": value['id'] == 'claude:account'",
+      "places": [
+        "mobile/lib/settings_page.dart:223",
+        "mobile/lib/settings_page.dart:244",
+        "mobile/lib/settings_page.dart:267"
+      ]
+    },
+    {
+      "preview": "if (c.sessions.any((s) => s['id'] == c.selected && s['taskId'] != null)) {",
+      "places": [
+        "mobile/lib/main.dart:417",
+        "mobile/lib/main.dart:1559"
+      ]
+    },
+    {
+      "preview": "stopTerminalTyping();",
+      "places": [
+        "mobile/lib/main.dart:739",
+        "mobile/lib/main.dart:757"
+      ]
+    },
+    {
+      "preview": "Map<String, dynamic> session,",
+      "places": [
+        "mobile/lib/main.dart:1405",
+        "mobile/lib/main.dart:1476"
+      ]
+    },
+    {
+      "preview": "String targetAccountId,",
+      "places": [
+        "mobile/lib/main.dart:1406",
+        "mobile/lib/main.dart:1477"
+      ]
+    },
+    {
+      "preview": "String pc,",
+      "places": [
+        "mobile/lib/main.dart:1407",
+        "mobile/lib/main.dart:1478"
+      ]
+    },
+    {
+      "preview": "int generation,",
+      "places": [
+        "mobile/lib/main.dart:1408",
+        "mobile/lib/main.dart:1479"
+      ]
+    },
+    {
+      "preview": ") async {",
+      "places": [
+        "mobile/lib/main.dart:1409",
+        "mobile/lib/main.dart:1480"
+      ]
+    },
+    {
+      "preview": "if (!mounted) return;",
+      "places": [
+        "mobile/lib/main.dart:1410",
+        "mobile/lib/main.dart:1481"
+      ]
+    },
+    {
+      "preview": "final id = '${session['id'] ?? ''}';",
+      "places": [
+        "mobile/lib/main.dart:1411",
+        "mobile/lib/main.dart:1482"
+      ]
+    },
+    {
+      "preview": "bool currentLaunch() =>",
+      "places": [
+        "mobile/lib/main.dart:1412",
+        "mobile/lib/main.dart:1483"
+      ]
+    },
+    {
+      "preview": "mounted &&",
+      "places": [
+        "mobile/lib/main.dart:1413",
+        "mobile/lib/main.dart:1484"
+      ]
+    },
+    {
+      "preview": "c.connected &&",
+      "places": [
+        "mobile/lib/main.dart:1414",
+        "mobile/lib/main.dart:1485"
+      ]
+    },
+    {
+      "preview": "c.foreground &&",
+      "places": [
+        "mobile/lib/main.dart:1415",
+        "mobile/lib/main.dart:1486"
+      ]
+    },
+    {
+      "preview": "c.activePC == pc &&",
+      "places": [
+        "mobile/lib/main.dart:1416",
+        "mobile/lib/main.dart:1487"
+      ]
+    },
+    {
+      "preview": "c.generation == generation &&",
+      "places": [
+        "mobile/lib/main.dart:1417",
+        "mobile/lib/main.dart:1488"
+      ]
+    },
+    {
+      "preview": "c.selected == id &&",
+      "places": [
+        "mobile/lib/main.dart:1418",
+        "mobile/lib/main.dart:1489"
+      ]
+    },
+    {
+      "preview": "c.sessions.any(",
+      "places": [
+        "mobile/lib/main.dart:1419",
+        "mobile/lib/main.dart:1490"
+      ]
+    },
+    {
+      "preview": "(item) =>",
+      "places": [
+        "mobile/lib/main.dart:1420",
+        "mobile/lib/main.dart:1491"
+      ]
+    },
+    {
+      "preview": "item['id'] == id &&",
+      "places": [
+        "mobile/lib/main.dart:1421",
+        "mobile/lib/main.dart:1492"
+      ]
+    },
+    {
+      "preview": "item['launchId'] == session['launchId'] &&",
+      "places": [
+        "mobile/lib/main.dart:1422",
+        "mobile/lib/main.dart:1493"
+      ]
+    },
+    {
+      "preview": "item['consoleKey'] == session['consoleKey'] &&",
+      "places": [
+        "mobile/lib/main.dart:1423",
+        "mobile/lib/main.dart:1494"
+      ]
+    },
+    {
+      "preview": "stopTerminalTyping();",
+      "places": [
+        "mobile/lib/main.dart:1578",
+        "mobile/lib/main.dart:1622"
+      ]
+    },
+    {
+      "preview": "composerFocus.unfocus();",
+      "places": [
+        "mobile/lib/main.dart:1579",
+        "mobile/lib/main.dart:1623"
+      ]
+    },
+    {
+      "preview": "Widget row(String label, IconData icon, VoidCallback open) => ListTile(",
+      "places": [
+        "mobile/lib/main.dart:1580",
+        "mobile/lib/main.dart:1624"
+      ]
+    },
+    {
+      "preview": "leading: Icon(icon),",
+      "places": [
+        "mobile/lib/main.dart:1581",
+        "mobile/lib/main.dart:1625"
+      ]
+    },
+    {
+      "preview": "title: Text(label),",
+      "places": [
+        "mobile/lib/main.dart:1582",
+        "mobile/lib/main.dart:1626"
+      ]
+    },
+    {
+      "preview": "onTap: () {",
+      "places": [
+        "mobile/lib/main.dart:1583",
+        "mobile/lib/main.dart:1627"
+      ]
+    },
+    {
+      "preview": "Navigator.pop(context);",
+      "places": [
+        "mobile/lib/main.dart:1584",
+        "mobile/lib/main.dart:1628"
+      ]
+    },
+    {
+      "preview": "open();",
+      "places": [
+        "mobile/lib/main.dart:1585",
+        "mobile/lib/main.dart:1629"
+      ]
+    },
+    {
+      "preview": "await showModalBottomSheet<void>(",
+      "places": [
+        "mobile/lib/main.dart:1588",
+        "mobile/lib/main.dart:1632"
+      ]
+    },
+    {
+      "preview": "context: context,",
+      "places": [
+        "mobile/lib/main.dart:1589",
+        "mobile/lib/main.dart:1633"
+      ]
+    },
+    {
+      "preview": "child: Column(",
+      "places": [
+        "mobile/lib/message_queue_sheet.dart:322",
+        "mobile/lib/terminal_keys.dart:104"
+      ]
+    },
+    {
+      "preview": "Padding(",
+      "places": [
+        "mobile/lib/pc_settings_page.dart:111",
+        "mobile/lib/pc_settings_page.dart:163"
+      ]
+    },
+    {
+      "preview": "(value) =>",
+      "places": [
+        "mobile/lib/settings_page.dart:220",
+        "mobile/lib/settings_page.dart:241"
+      ]
+    },
+    {
+      "preview": "? 'claude:default'",
+      "places": [
+        "mobile/lib/settings_page.dart:224",
+        "mobile/lib/settings_page.dart:268"
+      ]
+    }
+  ],
+  "providers": [
+    {
+      "file": "electron/sessions.cjs",
+      "count": 53
+    },
+    {
+      "file": "src/app.js",
+      "count": 46
+    },
+    {
+      "file": "electron/main.cjs",
+      "count": 27
+    },
+    {
+      "file": "mobile/lib/agent_identity.dart",
+      "count": 24
+    },
+    {
+      "file": "electron/cli-launch.cjs",
+      "count": 21
+    },
+    {
+      "file": "electron/provider-workers.cjs",
+      "count": 21
+    },
+    {
+      "file": "electron/skill-packs.cjs",
+      "count": 21
+    },
+    {
+      "file": "electron/usage-readers.cjs",
+      "count": 19
+    },
+    {
+      "file": "electron/task-loop.cjs",
+      "count": 17
+    },
+    {
+      "file": "electron/extended-workers.cjs",
+      "count": 15
+    },
+    {
+      "file": "electron/adapters.cjs",
+      "count": 11
+    },
+    {
+      "file": "electron/account-history.cjs",
+      "count": 8
+    },
+    {
+      "file": "electron/crash-report.cjs",
+      "count": 8
+    },
+    {
+      "file": "electron/task-routing.cjs",
+      "count": 8
+    },
+    {
+      "file": "electron/cli-setup.cjs",
+      "count": 6
+    },
+    {
+      "file": "electron/delegation.cjs",
+      "count": 6
+    },
+    {
+      "file": "src/setup-ui.js",
+      "count": 6
+    },
+    {
+      "file": "electron/subscription-usage.cjs",
+      "count": 5
+    },
+    {
+      "file": "mobile/lib/console_actions.dart",
+      "count": 5
+    },
+    {
+      "file": "electron/domain.cjs",
+      "count": 4
+    },
+    {
+      "file": "src/quota-state.js",
+      "count": 4
+    },
+    {
+      "file": "mobile/lib/main.dart",
+      "count": 4
+    },
+    {
+      "file": "electron/account-profiles.cjs",
+      "count": 3
+    },
+    {
+      "file": "electron/local-models.cjs",
+      "count": 3
+    },
+    {
+      "file": "electron/worker-placement.cjs",
+      "count": 3
+    },
+    {
+      "file": "electron/worker-sessions.cjs",
+      "count": 3
+    },
+    {
+      "file": "src/image-generation-ui.js",
+      "count": 3
+    },
+    {
+      "file": "mobile/lib/agent_menu.dart",
+      "count": 3
+    },
+    {
+      "file": "mobile/lib/settings_page.dart",
+      "count": 3
+    },
+    {
+      "file": "electron/account-switching-policy.cjs",
+      "count": 2
+    },
+    {
+      "file": "electron/agent-event.cjs",
+      "count": 2
+    },
+    {
+      "file": "electron/image-generation.cjs",
+      "count": 2
+    },
+    {
+      "file": "electron/mobile.cjs",
+      "count": 2
+    },
+    {
+      "file": "electron/pi-worker.cjs",
+      "count": 2
+    },
+    {
+      "file": "electron/screenshots.cjs",
+      "count": 2
+    },
+    {
+      "file": "electron/settings.cjs",
+      "count": 2
+    },
+    {
+      "file": "electron/ssh-hosts.cjs",
+      "count": 2
+    },
+    {
+      "file": "electron/study-context.cjs",
+      "count": 2
+    },
+    {
+      "file": "electron/workspace.cjs",
+      "count": 2
+    },
+    {
+      "file": "src/shared-ui.js",
+      "count": 2
+    },
+    {
+      "file": "mobile/lib/agent_dialog.dart",
+      "count": 2
+    },
+    {
+      "file": "electron/antigravity-usage.cjs",
+      "count": 1
+    },
+    {
+      "file": "electron/cursor-usage.cjs",
+      "count": 1
+    },
+    {
+      "file": "electron/draft-policy.cjs",
+      "count": 1
+    },
+    {
+      "file": "electron/local-assist.cjs",
+      "count": 1
+    },
+    {
+      "file": "electron/mobile-console.cjs",
+      "count": 1
+    },
+    {
+      "file": "electron/native-account-route.cjs",
+      "count": 1
+    },
+    {
+      "file": "electron/opencode-allowance.cjs",
+      "count": 1
+    },
+    {
+      "file": "electron/opencode-auth.cjs",
+      "count": 1
+    },
+    {
+      "file": "electron/pi-usage.cjs",
+      "count": 1
+    },
+    {
+      "file": "electron/state-protocol.cjs",
+      "count": 1
+    },
+    {
+      "file": "electron/worker-registry.cjs",
+      "count": 1
+    },
+    {
+      "file": "src/first-run.js",
+      "count": 1
+    },
+    {
+      "file": "src/usage-analytics.js",
+      "count": 1
+    },
+    {
+      "file": "mobile/lib/account_usage.dart",
+      "count": 1
+    }
+  ]
+}
