@@ -108,6 +108,10 @@ while ((Get-Date) -lt [datetime]$state.until) {
   if (Test-Path -LiteralPath (Join-Path $Root 'stop')) { Log 'Stop file found; ending supervision.'; break }
   Start-Sleep -Seconds 60
   if ((MainProcesses).Count) { $state.lastHealthyAt = (Get-Date).ToString('o'); $failedInRow = 0; Save; continue }
+  # One empty process query is not proof: on 3 November a single miss started
+  # a second copy while Paddock was running. Confirm after ten seconds.
+  Start-Sleep -Seconds 10
+  if ((MainProcesses).Count) { Log 'A process check missed Paddock once; it is running.'; continue }
   # After five failed starts in a row, try every ten minutes instead of every minute.
   if ($failedInRow -ge 5 -and $state.lastLaunchAt -and ((Get-Date) - [datetime]$state.lastLaunchAt).TotalMinutes -lt 10) { continue }
   Log 'Paddock is not running; relaunching.'
