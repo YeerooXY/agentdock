@@ -11,8 +11,15 @@ const capabilities = Object.freeze({
   gemini: { builder: true, reviewer: true, isolation: 'per-process core tools and admin policy', retries: 'one main request attempt; model availability policy is native' },
   kimi: { builder: true, reviewer: true, isolation: 'explicit agent tool allowlist', retries: 'native retries reported as failure', usage: 'not emitted by print mode' },
   droid: { builder: true, reviewer: true, isolation: 'native only-tools allowlist', retries: 'native transport policy' },
-  cursor: { builder: false, reviewer: false, reason: 'A process-only restriction for built-in subagent dispatch has not been verified. The console can coordinate through Paddock.' },
-  qwen: { builder: false, reviewer: false, reason: 'Safe mode ignores the core-tools allowlist in this CLI version. A bounded worker profile still needs verification.' }
+  // Verified 3 November 2026 (Cursor 2026.10.22): a private CURSOR_CONFIG_DIR
+  // permission list denied the shell, MCP and web, rejected writes outside the
+  // task folder by absolute and relative path, and bound a Task subagent the
+  // same way. The sign-in stays in the system keychain.
+  cursor: { builder: true, reviewer: true, isolation: 'private permission config: no shell, MCP or web; writes only in the task folder; subagents inherit it', retries: 'native' },
+  // Rechecked 3 November 2026 (Qwen Code 0.26.1): --exclude-tools removes the
+  // shell, but with edits auto-approved it wrote a file outside the task folder
+  // by absolute path. It stays off until writes can be confined.
+  qwen: { builder: false, reviewer: false, reason: 'This CLI version can write files outside the task folder when edits are approved. A bounded worker profile still needs verification.' }
 });
 const NATIVE_WORKERS = Object.freeze(Object.keys(capabilities).filter(id => capabilities[id].builder));
 const count = n => typeof n === 'number' && Number.isFinite(n) && n >= 0 ? n : null;
@@ -94,6 +101,16 @@ function extensionLaunch(provider, executable, { model, review = false, workFold
   if (provider === 'droid') return programLaunch(executable, ['exec', '--output-format', 'json', '--file', promptFile,
     '--only-tools', [...readTools, ...(review ? [] : ['Edit', 'Create', 'ApplyPatch'])].join(','),
     '--disable-builtin-skills', '--cwd', workFolder, ...(review ? [] : ['--auto', 'low']), ...chosen]);
+  if (provider === 'cursor') {
+    // Forward slashes: Cursor permission globs do not accept backslashes.
+    const scope = path.resolve(workFolder).split(path.sep).join('/') + '/**', config = path.join(temp, 'cursor-config');
+    fs.mkdirSync(config, { recursive: true });
+    privateWrite(config, 'cli-config.json', JSON.stringify({ version: 1, permissions: {
+      allow: ['Read(**)', ...(review ? [] : [`Write(${scope})`])], deny: ['Shell(*)', 'Mcp(*:*)', 'WebFetch(*)'] } }));
+    return { ...programLaunch(executable, ['-p', '--output-format', 'stream-json', '--trust', '--workspace', workFolder,
+      ...(review ? ['--mode', 'plan'] : []), ...chosen, `Read the instruction file ${promptFile} and complete its assigned task.`]),
+      env: { CURSOR_CONFIG_DIR: config } };
+  }
   if (provider === 'kimi') {
     const skills = path.join(temp, 'empty-skills'); fs.mkdirSync(skills, { recursive: true });
     const profile = privateWrite(temp, 'worker.md', ['---', 'name: paddock-worker', 'description: Execute one assigned file task.',
@@ -157,6 +174,15 @@ function extensionEvent(provider, state, event) {
       if (event.stats) state.usage = { inputTokens: count(event.stats.input_tokens), outputTokens: count(event.stats.output_tokens), cachedInputTokens: count(event.stats.cached) };
     }
   }
+  if (provider === 'cursor') {
+    if (event.type === 'assistant') tail(state, (event.message?.content || []).filter(c => c?.type === 'text').map(c => c.text).join('') || state.text);
+    if (event.type === 'result') {
+      state.complete = true; state.error ||= event.is_error !== false || event.subtype !== 'success'; tail(state, event.result);
+      const u = event.usage;
+      // Cursor reports prompt tokens without cache reads; the total includes both.
+      if (u) state.usage = { inputTokens: sum([u.inputTokens, u.cacheReadTokens, u.cacheWriteTokens]), outputTokens: count(u.outputTokens), cachedInputTokens: count(u.cacheReadTokens) };
+    }
+  }
   if (provider === 'kimi') {
     if (event.role === 'assistant' && typeof event.content === 'string') tail(state, event.content);
     if (event.type === 'retrying' || event.type === 'error') state.error = true;
@@ -173,6 +199,7 @@ function extensionFinalize(provider, state, exitCode) {
 function extensionProgress(provider, event) {
   if (provider === 'cline') return event.type === 'run_result' && typeof event.text === 'string' ? [event.text] : [];
   if (provider === 'gemini') return event.type === 'tool_use' ? ['Using project tool'] : [];
+  if (provider === 'cursor') return event.type === 'tool_call' && event.subtype === 'started' ? ['Using project tool'] : [];
   return [];
 }
 module.exports = { names, capabilities, NATIVE_WORKERS, extensionLaunch, extensionPrompt, extensionInput, extensionEvent, extensionFinalize, extensionProgress, clineToolDecision };

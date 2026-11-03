@@ -17,7 +17,8 @@ test('every console origin receives the same inventory and can address every sup
   for (const origin of origins) {
     const result = await bridge.invoke('dock/task_candidates', {}, origin);
     assert.equal(result.accounts.length, 14); assert.equal(result.suggestionRole, 'reviewer');
-    assert.equal(result.accounts.find(a => a.provider === 'cursor').workerSupported, false);
+    assert.equal(result.accounts.find(a => a.provider === 'cursor').workerSupported, true);
+    assert.equal(result.accounts.find(a => a.provider === 'qwen').workerSupported, false);
     assert.equal(result.accounts.find(a => a.provider === 'cursor').allowance.status, 'unknown');
     for (const target of targets) await bridge.invoke('dock/start_task', { title: 'Check routing', criteria: 'Bounded assignment', implementer: { accountId: `${target}:default` }, reviewer: null }, origin);
   }

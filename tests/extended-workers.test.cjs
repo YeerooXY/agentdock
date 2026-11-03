@@ -5,8 +5,22 @@ const { capabilities, NATIVE_WORKERS, extensionPrompt, extensionLaunch, extensio
 const state = () => ({ text: '', usage: null, complete: false, error: false, maxText: 40, seen: new Set() });
 function temp(t) { const root = fs.mkdtempSync(path.join(os.tmpdir(), 'paddock-native-')); t.after(() => fs.rmSync(root, { recursive: true, force: true })); const work = path.join(root, 'work'), privateDir = path.join(root, 'private'); fs.mkdirSync(work); fs.mkdirSync(privateDir); return { root, work, privateDir }; }
 
+test('Cursor denies shell, MCP and web through a private permission file and writes only in the task folder', t => {
+  const { work, privateDir } = temp(t), promptFile = extensionPrompt('cursor', privateDir, 'Task');
+  for (const review of [false, true]) {
+    const launch = extensionLaunch('cursor', '/native/cursor-agent.exe', { workFolder: work, promptFile, review });
+    const config = JSON.parse(fs.readFileSync(path.join(launch.env.CURSOR_CONFIG_DIR, 'cli-config.json'), 'utf8'));
+    assert.deepEqual(config.permissions.deny, ['Shell(*)', 'Mcp(*:*)', 'WebFetch(*)']);
+    assert.deepEqual(config.permissions.allow, ['Read(**)', ...(review ? [] : [`Write(${path.resolve(work).split(path.sep).join('/')}/**)`])]);
+    assert.equal(launch.args.includes('--force') || launch.args.includes('--yolo'), false);
+    assert.equal(launch.args.includes('plan'), review);
+    assert.ok(launch.env.CURSOR_CONFIG_DIR.startsWith(privateDir), 'the owner Cursor config is never used');
+  }
+  const s = extensionEvent('cursor', state(), { type: 'result', subtype: 'success', is_error: false, result: 'Done', usage: { inputTokens: 10, outputTokens: 2, cacheReadTokens: 30, cacheWriteTokens: 0 } });
+  assert.equal(s.complete, true); assert.equal(s.error, false); assert.deepEqual(s.usage, { inputTokens: 40, outputTokens: 2, cachedInputTokens: 30 });
+});
 test('unverified launchers remain visible but cannot run as bounded workers', () => {
-  for (const p of ['cursor', 'qwen']) { assert.equal(capabilities[p].builder, false); assert.equal(NATIVE_WORKERS.includes(p), false); assert.throws(() => extensionLaunch(p, 'native'), /verified|verification/); }
+  for (const p of ['qwen']) { assert.equal(capabilities[p].builder, false); assert.equal(NATIVE_WORKERS.includes(p), false); assert.throws(() => extensionLaunch(p, 'native'), /verified|verification/); }
 });
 test('Droid permits only file tools and keeps review read-only', t => {
   const { work, privateDir } = temp(t), promptFile = extensionPrompt('droid', privateDir, 'A bounded task');
