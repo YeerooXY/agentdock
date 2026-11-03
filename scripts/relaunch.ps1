@@ -19,18 +19,18 @@ $exe = Join-Path $repo 'node_modules\electron\dist\electron.exe'
 $node = (Get-Command node -ErrorAction Stop).Source
 $runs = Join-Path $repo '.build\relaunch'; New-Item -ItemType Directory -Force -Path $runs | Out-Null
 $lastGoodFile = Join-Path $runs 'last-good.txt'
-function Git { & git -C $repo @args; if ($LASTEXITCODE) { throw "git $args failed." } }
+function RepoGit { & git.exe -C $repo @args; if ($LASTEXITCODE) { throw "git $args failed." } }
 
 if (-not (Test-Path $exe)) { throw 'Electron is not installed in node_modules. Run npm install first.' }
-$newCommit = (Git rev-parse --short HEAD).Trim()
+$newCommit = (RepoGit rev-parse --short HEAD).Trim()
 
 # Fallback copy: a detached worktree of a known-good commit sharing node_modules.
 if (-not $Fallback -and (Test-Path $lastGoodFile)) { $Fallback = (Get-Content $lastGoodFile -Raw).Trim() }
 $fallbackFolder = ''
 if ($Fallback -and $Fallback -ne 'none') {
-  $sha = (Git rev-parse --short "$Fallback^{commit}").Trim()
+  $sha = (RepoGit rev-parse --short "$Fallback^{commit}").Trim()
   $fallbackFolder = Join-Path $repo ".build\rollback-$sha"
-  if (-not (Test-Path (Join-Path $fallbackFolder 'electron\main.cjs'))) { Git worktree add --detach $fallbackFolder $sha | Out-Null }
+  if (-not (Test-Path (Join-Path $fallbackFolder 'electron\main.cjs'))) { RepoGit worktree add --detach $fallbackFolder $sha | Out-Null }
   if (-not (Test-Path (Join-Path $fallbackFolder 'node_modules'))) { New-Item -ItemType Junction -Path (Join-Path $fallbackFolder 'node_modules') -Target (Join-Path $repo 'node_modules') | Out-Null }
   if (-not (Test-Path (Join-Path $fallbackFolder 'dist\index.html'))) {
     Push-Location $fallbackFolder; try { & $node node_modules/vite/bin/vite.js build | Out-Null; if ($LASTEXITCODE) { throw 'The fallback copy did not build.' } } finally { Pop-Location }
