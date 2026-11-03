@@ -499,10 +499,13 @@ class Sessions extends EventEmitter {
     const captureOnce = async () => {
       await this.waitForOutputIdle(session);
       const marker = `PDK${crypto.randomUUID().replaceAll('-', '')}`;
-      const firstSequence = session.sequence;
       const text = await this.nativeDraft(session, 'capture', marker);
+      // The editor helper reports before it exits; the CLI redraws its composer
+      // with the marker only afterwards. Wait for that redraw, not for quiet
+      // output from before it, or the deletes arrive first and the marker stays.
+      const editorClosedSequence = session.sequence;
       this.validateSwitchDraft(text, session.provider);
-      await this.waitForOutputIdle(session, { afterSequence: firstSequence });
+      await this.waitForOutputIdle(session, { afterSequence: editorClosedSequence });
       if (!session.alive) throw new Error('The CLI closed while Paddock checked the draft. Keep this console open and restore the draft before closing it.');
       const deleteSequence = session.sequence;
       session.terminal.write('\x7f'.repeat(marker.length));
@@ -634,9 +637,8 @@ class Sessions extends EventEmitter {
         }
         if (targetDraft !== '') throw new Error('The selected account opened with a draft already present. Keep the original console open.');
         const marker = `PDK${crypto.randomUUID().replaceAll('-', '')}`;
-        const restoreSequence = stageSession.sequence;
         await this.nativeDraft(stageSession, 'restore', draft + marker);
-        await this.waitForOutputIdle(stageSession, { afterSequence: restoreSequence });
+        await this.waitForOutputIdle(stageSession, { afterSequence: stageSession.sequence });
         const deleteSequence = stageSession.sequence;
         stageSession.terminal.write('\x7f'.repeat(marker.length));
         await this.waitForOutputIdle(stageSession, { afterSequence: deleteSequence });
