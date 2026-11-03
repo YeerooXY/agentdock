@@ -63,6 +63,7 @@
     "modelName": "GPT-6",
     "effort": "high",
     "settingsAt": 1762000000000,
+    "requestedSettings": null,
     "launchId": "l1",
     "accountId": "codex:default",
     "accountLabel": "Codex",

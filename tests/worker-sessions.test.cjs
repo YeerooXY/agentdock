@@ -369,7 +369,7 @@ test('desktop and phone projections publish worker support and deny missing supp
   for (const support of [true, false, undefined]) {
     item.steeringSupported = support;
     const desktop = f.sessions.list().find(session => session.id === item.id);
-    const phone = MobileCompanion.prototype.publicState.call(mobile).sessions.find(session => session.id === item.id);
+    const phone = MobileCompanion.prototype.publicState.call(Object.assign({ extrasState: MobileCompanion.prototype.extrasState, stateV2: MobileCompanion.prototype.stateV2 }, mobile)).sessions.find(session => session.id === item.id);
     assert.equal(desktop.consoleCapabilities.steering, support === true);
     assert.equal(phone.consoleCapabilities.steering, support === true);
     assert.equal(phone.steeringSupported, support === true);

@@ -170,19 +170,24 @@ const stateStore = new StateStore({ policy: testMode ? 'throw' : 'strip',
   onSecret: (slice, paths) => crash.log('WARN', `State slice ${slice} dropped private fields: ${paths.slice(0, 5).join(', ')}`) });
 const stateWriters = Object.fromEntries(Object.entries(SLICES).filter(([slice]) => slice !== 'alerts').map(([slice, { writer }]) => [slice, stateStore.claim(slice, writer)]));
 const desktopState = desktopProjection(stateStore), phoneState = phoneProjection(stateStore);
-// Protocol 2 transports (A4), opt-in: the stateSyncV2 setting, --state-v2 or
-// PADDOCK_STATE_V2=1. Off, the renderer gets dock:state and phones use /v1/events.
+// Protocol 2 is on by default. It turns off with the stateSyncV2 setting set to
+// false or PADDOCK_STATE_V2=0; --state-v2 or PADDOCK_STATE_V2=1 force it on.
+// Off, the renderer gets dock:state and phones use /v1/events.
 const desktopHistory = new ProjectionHistory(desktopState), phoneHistory = new ProjectionHistory(phoneState);
-const stateV2Flag = process.argv.includes('--state-v2') || process.env.PADDOCK_STATE_V2 === '1';
-const stateV2Enabled = () => stateV2Flag || settings?.stateSyncV2 === true;
-let desktopV2 = null;
+const stateV2Off = process.env.PADDOCK_STATE_V2 === '0';
+const stateV2Flag = !stateV2Off && (process.argv.includes('--state-v2') || process.env.PADDOCK_STATE_V2 === '1');
+const stateV2Enabled = () => !stateV2Off && (stateV2Flag || settings?.stateSyncV2 !== false);
+// desktopV2 is the renderer's open subscription. desktopLegacy is set when the
+// renderer asked for full snapshots instead (its subscription failed) or when
+// protocol 2 was turned on while the renderer was already on dock:state.
+let desktopV2 = null, desktopLegacy = false;
 const taskVerifiedAt = new Map();
 function verifyTasks(repo = null) {
   const key = repo || '*', now = Date.now();
   if (!tasks || now - (taskVerifiedAt.get(key) || 0) < 30000) return;
   taskVerifiedAt.set(key, now); void tasks.verifyRepository(repo);
 }
-function endDesktopV2() { desktopV2?.dispose(); desktopV2 = null; }
+function endDesktopV2() { const connection = desktopV2; desktopV2 = null; connection?.dispose(); }
 const stateFailures = new Set();
 function stateFailure(slice, error) {
   const message = `State slice ${slice}: ${error?.message || error}`;
@@ -227,12 +232,14 @@ async function confirmToolCall({ connection, tool, args }) {
   const { response } = await dialog.showMessageBox(window, { type: 'question', buttons: ['Allow once', 'Deny'], defaultId: 1, cancelId: 1, noLink: true, title: 'Allow tool call?', message: `An agent wants to use ${connection}: ${tool}`, detail: preview.length > 1500 ? preview.slice(0, 1500) + '…' : preview });
   return response === 0;
 }
-// A v2 renderer receives store changes instead of full snapshots; v2 phones
-// read the same store, so it is fed even before the window exists.
+// Every publish commits the services to the store; the renderer and v2 phones
+// receive the resulting changes. A full dock:state snapshot is built only for a
+// renderer on the fallback path. With protocol 2 on, a renderer that has not
+// subscribed yet gets nothing here: its hello answers with a reset.
 function publish() {
-  if (desktopV2 && !desktopV2.closed) { syncState(); return; }
-  if (window && !window.isDestroyed()) window.webContents.send('dock:state', snapshot());
-  else if ([...(mobile?.clients || [])].some(client => client.v2)) syncState();
+  const v2Desktop = !!desktopV2 && !desktopV2.closed;
+  if (!v2Desktop && window && !window.isDestroyed() && (desktopLegacy || !stateV2Enabled())) { window.webContents.send('dock:state', snapshot()); return; }
+  syncState();
 }
 function updatePower() { workPower?.update({ enabled: settings?.keepAwakeWhileWorking === true, sessions: sessions?.list() || [], apiBusy }); }
 function persistSettings(next) { atomicJson(path.join(root, 'settings.json'), next); settings = next; updatePower(); }
@@ -699,7 +706,8 @@ app.whenReady().then(() => guardStartup(async () => {
   window.webContents.session.setPermissionCheckHandler(() => false);
   window.on('unresponsive', () => { crash.log('WARN', 'Window unresponsive'); ownerConsoles.freeze(); });
   window.on('responsive', () => crash.log('INFO', 'Window responsive'));
-  window.webContents.on('did-start-loading', () => { ownerConsoles.freeze(); endDesktopV2(); });
+  // A reloaded renderer subscribes again (or asks for the fallback) on its own.
+  window.webContents.on('did-start-loading', () => { ownerConsoles.freeze(); endDesktopV2(); desktopLegacy = false; });
   window.webContents.on('render-process-gone', (_, details) => {
     endDesktopV2();
     crash.log('WARN', `Renderer gone: reason=${details.reason} exitCode=${details.exitCode}`);
@@ -764,8 +772,10 @@ app.whenReady().then(() => guardStartup(async () => {
       const connection = new StateConnection({ history: desktopHistory, view: 'desktop', transport: 'ipc',
         write: value => { if (window && !window.isDestroyed()) window.webContents.send('dock:v2', value); },
         authorized: () => !!window && !window.isDestroyed() && stateV2Enabled(),
-        close: () => { if (desktopV2 === connection) desktopV2 = null; } });
-      desktopV2 = connection;
+        // Closed by the connection itself (not a reload or the off switch): the
+        // renderer keeps working on full snapshots.
+        close: () => { if (desktopV2 === connection) { desktopV2 = null; desktopLegacy = true; crash.log('WARN', 'Desktop state subscription closed; using full snapshots.'); } } });
+      desktopV2 = connection; desktopLegacy = false;
     }
     // Commit current service state first so the welcome batch is fresh.
     if (message?.type === 'hello') syncState();
@@ -774,6 +784,9 @@ app.whenReady().then(() => guardStartup(async () => {
   });
   ipcMain.handle('dock:call', async (event, method, payload) => {
     if (event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame || event.senderFrame.url !== entryUrl) throw new Error('Untrusted client.');
+    // State changes already owed to the window arrive before this call's answer,
+    // as they did with full snapshots.
+    if (desktopV2 && !desktopV2.closed) { await new Promise(resolve => queueMicrotask(resolve)); await desktopV2.whenIdle(); }
     try {
       if (typeof method === 'string' && method.startsWith('mobile.')) {
         let value;
@@ -802,6 +815,13 @@ app.whenReady().then(() => guardStartup(async () => {
       switch (method) {
         case 'state': return { ok: true, value: snapshot() };
         case 'state.protocol': return { ok: true, value: { protocol: 2, v2: stateV2Enabled(), flag: stateV2Flag } };
+        // Renderer fallback: its protocol 2 subscription failed, so publish
+        // full dock:state snapshots again until it reloads.
+        case 'state.legacy': {
+          if (!desktopLegacy) crash.log('WARN', 'Desktop state subscription unavailable; using full snapshots.');
+          endDesktopV2(); desktopLegacy = true;
+          return { ok: true, value: snapshot() };
+        }
         // Display codes stay out of the store; a v2 client reads them here.
         // The phone pairing comparison code comes from mobile.status.
         case 'meshy.auth': { const auth = workbench.concepts.auth || { state: 'unchecked' }; return { ok: true, value: { ...auth } }; }
@@ -1187,7 +1207,10 @@ app.whenReady().then(() => guardStartup(async () => {
           const v2Was = stateV2Enabled();
           persistSettings(next);
           // Turning protocol 2 off returns the renderer to dock:state and phones to v1.
-          if (v2Was && !stateV2Enabled()) { endDesktopV2(); for (const client of mobile.clients) if (client.v2) client.ws.close(1012, 'Reconnect'); } turns.setEnabled(settings.autoSaveResults === true); if (mode === 'hud') window.setAlwaysOnTop(settings.hudAlwaysOnTop); publish(); break;
+          if (v2Was && !stateV2Enabled()) { endDesktopV2(); for (const client of mobile.clients) if (client.v2) client.ws.close(1012, 'Reconnect'); }
+          // Turned back on: this renderer stays on dock:state until it reloads.
+          if (!v2Was && stateV2Enabled()) desktopLegacy = true;
+          turns.setEnabled(settings.autoSaveResults === true); if (mode === 'hud') window.setAlwaysOnTop(settings.hudAlwaysOnTop); publish(); break;
         }
         case 'rates.save': {
           if (!hub.config.profiles.some(x => x.id === payload?.provider)) throw new Error('Choose an API connection.');
