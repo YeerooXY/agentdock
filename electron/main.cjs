@@ -492,17 +492,24 @@ app.whenReady().then(() => guardStartup(async () => {
     }
   });
   projects = new Projects(root); projects.on('changed', publish); workbench.projects = projects;
-  const usageSignIn = accountId => {
+  // Signed in: from the latest usage check, else from the login files the
+  // provider adapter declares, else unknown.
+  const usageSignIn = (accountId, provider = String(accountId).split(':')[0]) => {
     const status = subscriptionUsage?.snapshot().find(check => check.accountId === accountId)?.status;
-    return status === 'sign-in' ? false : status === 'current' ? true : undefined;
+    if (status === 'sign-in') return false;
+    if (status === 'current') return true;
+    const profile = accounts.get(accountId);
+    return accounts.hasCredentials(accountId, profile?.provider || provider) ?? undefined;
   };
   const taskAccounts = {
     getAccounts: () => {
       const workers = tasks?.candidates() || [];
       return [...usageAccounts(), ...workers.filter(w => w.local)].map(choice => {
         const worker = workers.find(w => w.id === choice.id), check = subscriptionUsage?.snapshot().find(s => s.accountId === choice.id);
-        return { ...choice, ...worker, signedIn: worker?.signedIn ?? usageSignIn(choice.id),
-          quotaReader: check?.status || 'unchecked', unavailableReason: worker ? undefined : 'No bounded worker adapter is connected for this CLI.' };
+        const needsSignIn = choice.profile && !choice.loginCompletedAt && !choice.unavailableReason;
+        return { ...choice, ...worker, signedIn: worker?.signedIn ?? usageSignIn(choice.id, choice.provider),
+          quotaReader: check?.status || 'unchecked',
+          unavailableReason: choice.unavailableReason || (needsSignIn ? 'Sign in to this account first: Settings, Agents, then Sign in next to the account.' : worker ? undefined : 'No bounded worker adapter is connected for this CLI.') };
       });
     },
     getLimits: () => limits.map(item => ({ ...item, accountId: limitAccountId(item), usageCheck: subscriptionUsage?.snapshot().find(check => check.accountId === limitAccountId(item)) })),

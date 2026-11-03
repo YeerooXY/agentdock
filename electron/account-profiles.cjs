@@ -116,6 +116,28 @@ class AccountProfiles {
     this.persist();
     return { id, provider: profile.provider, label: profile.label };
   }
+  // Whether the account's folder holds the login files its adapter declares
+  // (login.credentialFiles, optionally with one of login.credentialFields set).
+  // null when the adapter declares none or the folder is unknown.
+  hasCredentials(id, provider) {
+    const login = this.provider(provider)?.login;
+    if (!login?.credentialFiles?.length) return null;
+    let configDir;
+    try { configDir = this.getAccount(id, provider).configDir; } catch { return null; }
+    if (!configDir) return null;
+    return login.credentialFiles.some(file => {
+      try {
+        const credentialPath = path.join(configDir, file);
+        const stat = fs.statSync(credentialPath);
+        if (!stat.isFile() || !stat.size || stat.size > 2_000_000) return false;
+        if (!login.credentialFields?.length) return true;
+        const credentials = JSON.parse(fs.readFileSync(credentialPath, 'utf8').replace(/^﻿/, ''));
+        return credentials && !Array.isArray(credentials) && typeof credentials === 'object'
+          && Object.values(credentials).some(entry => entry && typeof entry === 'object'
+            && login.credentialFields.some(key => typeof entry[key] === 'string' && entry[key].trim()));
+      } catch { return false; }
+    });
+  }
   markLoginCompleted(id, completed) {
     const profile = this.get(id);
     if (!profile) return;

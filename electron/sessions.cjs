@@ -426,19 +426,8 @@ class Sessions extends EventEmitter {
         }, () => { session.loginError = 'Paddock could not save this sign-in. Try again.'; })
           .finally(() => { void this.credentialSwitch.release(saved.provider); this.emit('changed'); });
       } else if (exitCode === 0 && !session.dismissed) {
-        const evidence = adapter.login.credentialFiles;
-        const completed = !evidence?.length || evidence.some(file => {
-          try {
-            const credentialPath = path.join(account.configDir, file);
-            const stat = fs.statSync(credentialPath);
-            if (!stat.isFile() || !stat.size || stat.size > 2_000_000) return false;
-            if (!adapter.login.credentialFields?.length) return true;
-            const credentials = JSON.parse(fs.readFileSync(credentialPath, 'utf8'));
-            return credentials && !Array.isArray(credentials) && typeof credentials === 'object'
-              && Object.values(credentials).some(entry => entry && typeof entry === 'object'
-                && adapter.login.credentialFields.some(key => typeof entry[key] === 'string' && entry[key].trim()));
-          } catch { return false; }
-        });
+        // No declared login files means the exit itself is the only evidence.
+        const completed = this.accounts.hasCredentials(accountId, saved.provider) !== false;
         this.accounts.markLoginCompleted(accountId, completed);
         if (!completed) session.loginError = 'Sign-in was not confirmed. Reopen this account and complete the provider sign-in.';
       }

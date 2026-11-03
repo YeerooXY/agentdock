@@ -114,3 +114,15 @@ test('Gemini login and ordinary launch use the selected profile and restoration 
   calls.at(-1).terminal.exit({ exitCode: 0 });
   assert.ok(accounts.get(pi.id).loginCompletedAt);
 });
+test('sign-in state comes from the login files each adapter declares', t => {
+  const { accounts, home } = fixture(t);
+  const grok = accounts.create('grok', 'Grok Work');
+  assert.equal(accounts.hasCredentials(grok.id, 'grok'), false, 'a new profile is signed out');
+  fs.writeFileSync(path.join(grok.configDir, 'auth.json'), '﻿' + JSON.stringify({ 'https://auth.x.ai::u': { refresh_token: 'r' } }));
+  assert.equal(accounts.hasCredentials(grok.id, 'grok'), true);
+  fs.writeFileSync(path.join(grok.configDir, 'auth.json'), JSON.stringify({ 'https://auth.x.ai::u': { refresh_token: '' } }));
+  assert.equal(accounts.hasCredentials(grok.id, 'grok'), false, 'an empty token is not a sign-in');
+  fs.mkdirSync(path.join(home, '.grok')); fs.writeFileSync(path.join(home, '.grok', 'auth.json'), JSON.stringify({ a: { key: 'k' } }));
+  assert.equal(accounts.hasCredentials('grok:default', 'grok'), true, 'the default account uses the CLI folder');
+  assert.equal(accounts.hasCredentials('kiro:default', 'kiro'), null, 'no declared files means unknown');
+});
