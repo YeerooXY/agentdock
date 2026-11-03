@@ -14,7 +14,7 @@ let app;
   page.on('pageerror', e => errors.push(e.message));
   const call = (method, payload) => page.evaluate(async ([m, p]) => { const r = await window.dock.call(m, p); if (!r.ok) throw Error(r.error); return r.value; }, [method, payload]);
   await page.locator('#first-run[open]').waitFor();
-  const state = await call('state'); assert.equal(state.agents.length, 14);
+  const state = await call('state'); assert.equal(state.agents.length, 13);
   assert.equal(await page.locator('[data-install-agent]:checked').count(), 0);
   assert.equal(await page.locator('#first-run-title').textContent(), 'Set up Paddock.');
   assert.equal(await page.locator('#first-run-hint').textContent(), 'Choose a project folder and default console.');
