@@ -18,7 +18,8 @@
     "dist:mac": "npm run build && PADDOCK_ARCH=arm64 npm run prepare:runtime && electron-builder --mac --arm64 --publish never && PADDOCK_ARCH=x64 npm run prepare:runtime && electron-builder --mac --x64 --publish never && node scripts/checksum.cjs",
     "test:packaged": "node scripts/packaged-smoke.cjs",
     "test:linux": "docker build -q -f scripts/linux/Dockerfile -t paddock-linux . && docker run --rm --shm-size=1g paddock-linux",
-    "health": "node scripts/code-health.cjs"
+    "health": "node scripts/code-health.cjs",
+    "relaunch": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/relaunch.ps1"
   },
   "devDependencies": {
     "@meshy-ai/meshy-mcp-server": "0.6.4",
