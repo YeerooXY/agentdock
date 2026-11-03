@@ -85,9 +85,10 @@ contextBridge.exposeInMainWorld('dock', {
   onState: callback => { const handler = (_, value) => callback(value); ipcRenderer.on('dock:state', handler); return () => ipcRenderer.removeListener('dock:state', handler); },
   onOutput: callback => { const handler = (_, value) => callback(value); ipcRenderer.on('dock:output', handler); return () => ipcRenderer.removeListener('dock:output', handler); },
   onSelect: callback => { const handler = (_, value) => callback(value); ipcRenderer.on('dock:select', handler); return () => ipcRenderer.removeListener('dock:select', handler); },
-  // Protocol 2 (opt-in; see docs/state-protocol.md). send() takes hello,
-  // subscribe, ack, resync or pong; onMessage() receives welcome, changes,
-  // ping and error. While a v2 subscription is open, dock:state stops.
+  // Protocol 2 (on by default; see docs/state-protocol.md). The renderer
+  // subscribes at startup. send() takes hello, subscribe, ack, resync or pong;
+  // onMessage() receives welcome, changes, ping and error. With protocol 2 on,
+  // dock:state is sent only after dock.call('state.legacy') (the fallback).
   state: {
     send: message => ipcRenderer.invoke('dock:v2', message),
     onMessage: callback => { const handler = (_, value) => callback(value); ipcRenderer.on('dock:v2', handler); return () => ipcRenderer.removeListener('dock:v2', handler); },

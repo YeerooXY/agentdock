@@ -126,6 +126,7 @@ class StateConnection {
     this.queues = Object.fromEntries(LANES.map(lane => [lane, []]));
     this.writing = false; this.paused = false; this.poll = null; this.closed = false; this.missed = 0; this.nonce = null;
     this.stats = { batches: 0, resets: 0, chunks: 0, frames: 0, bytes: 0 };
+    this.idleWaiters = [];
     this.unsubscribe = this.projection.subscribe(batch => this.changed(batch));
   }
   get epoch() { return this.projection.epoch; }
@@ -173,7 +174,23 @@ class StateConnection {
     // Acknowledgements of duplicates or an older subscription change nothing.
     if (subscription !== this.subscription || !this.inflight || batch !== this.inflight.batch) return;
     Object.assign(this.baseline, this.inflight.revs); this.inflight = null;
-    this.pump();
+    this.pump(); this.settleIdle();
+  }
+  // Resolves once every change this client is owed has been acknowledged, or
+  // after timeoutMs. The desktop answers a call only after this, so a call's
+  // answer never overtakes a state change sent before it.
+  whenIdle(timeoutMs = 250) {
+    if (this.closed || !this.subscription || (!this.inflight && !this.dirty.size)) return Promise.resolve();
+    return new Promise(resolve => {
+      const timer = this.timers.setTimeout(() => { this.idleWaiters = this.idleWaiters.filter(entry => entry !== waiter); resolve(); }, timeoutMs);
+      const waiter = () => { this.timers.clearTimeout(timer); resolve(); };
+      this.idleWaiters.push(waiter);
+    });
+  }
+  settleIdle() {
+    if (this.inflight || this.dirty.size || !this.idleWaiters.length) return;
+    const waiters = this.idleWaiters; this.idleWaiters = [];
+    for (const waiter of waiters) waiter();
   }
   resync({ subscription, slices }) {
     if (subscription !== this.subscription) return;
@@ -276,6 +293,7 @@ class StateConnection {
     return compressed.length < Buffer.byteLength(text) ? compressed : text;
   }
   close(code = 1000, reason = '') {
+    const waiters = this.idleWaiters || []; this.idleWaiters = []; for (const waiter of waiters) waiter();
     if (this.closed) return;
     this.closed = true; this.unsubscribe();
     if (this.poll) { this.timers.clearTimeout(this.poll); this.poll = null; }
