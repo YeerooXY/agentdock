@@ -1135,6 +1135,11 @@ app.whenReady().then(() => guardStartup(async () => {
           }
           if (typeof payload?.suggestProjects === 'boolean') next.suggestProjects = payload.suggestProjects;
           if (typeof payload?.stateSyncV2 === 'boolean') next.stateSyncV2 = payload.stateSyncV2;
+          if (payload?.maxParallelTasks !== undefined) {
+            const limit = Number(payload.maxParallelTasks);
+            if (!Number.isInteger(limit) || limit < 1 || limit > 10) throw new Error('Choose 1 to 10 tasks at once.');
+            next.maxParallelTasks = limit;
+          }
           if (payload?.explorerWidth !== undefined) {
             next.explorerWidth = validateExplorerWidth(payload.explorerWidth);
           }

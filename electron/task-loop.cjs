@@ -50,6 +50,7 @@ function openCodeLaunch(executable, { model, effort, workFolder, promptFile }) {
   return { ...programLaunch(executable, ['run', '-m', model, ...selected.args, '--dir', workFolder, '--format', 'json', 'Read the attached file and follow it.', '-f', promptFile]), effortDispatch: selected.evidence };
 }
 
+const parallelLimit = settings => { const value = Number(settings?.maxParallelTasks); return Number.isInteger(value) && value >= 1 && value <= 10 ? value : 5; };
 const REFRESHABLE = new Set(['passed', 'needs-you']), REFRESH_LIMIT = 2, MAX_HISTORY = 20, VERIFICATION_AGE = 7 * 24 * 60 * 60_000;
 class ProviderError extends Error {}
 class CheckLaunchError extends Error {}
@@ -213,14 +214,19 @@ class TaskLoop extends EventEmitter {
   }
   // Plan-ready tasks wait for approval and hold no running slot or repository lock.
   occupying(except) { return [...this.jobs.values()].filter(job => job.id !== except && (RUNNING.has(job.state) || this.cancelling.has(job.id))); }
-  checkCapacity(repoKey, except) {
+  // The owner's limit for tasks running at once (Settings, 1 to 10, default 5).
+  maxParallel() { return parallelLimit(this.getSettings()); }
+  // Current-branch tasks share the checkout, so one runs per repository.
+  // Worktree tasks have their own checkout and run side by side up to the limit.
+  checkCapacity(repoKey, except, workflow = 'current') {
     const active = this.occupying(except);
-    if (this.reserved.has(repoKey) || active.some(job => job.repoKey === repoKey)) throw new Error('A task is already running for this repository.');
-    if (this.reserved.size + active.length >= 2) throw new Error('Two tasks are already running. Wait for one to finish.');
+    if (workflow !== 'worktree' && (this.reserved.has(repoKey) || active.some(job => job.repoKey === repoKey && job.workflow !== 'worktree'))) throw new Error('A task is already running on the current branch of this repository. Use a separate worktree to run another.');
+    const limit = this.maxParallel();
+    if (this.reserved.size + active.length >= limit) throw new Error(`${limit === 1 ? 'A task is' : `${limit} tasks are`} already running, the most allowed at once (Settings). Wait for one to finish.`);
   }
   ensureAvailable(job) {
     if (this.closing) throw new Error('Paddock is closing. Resume after reopening.');
-    this.checkCapacity(job.repoKey, job.id);
+    this.checkCapacity(job.repoKey, job.id, job.workflow);
   }
   reviewFindings(reply) { return findings(reply); }
   approvePlan(args) { return this.split.approve(args); }
@@ -304,8 +310,10 @@ class TaskLoop extends EventEmitter {
     } catch { throw new Error('Choose a folder in a Git working tree with a commit.'); }
     if (folderKey(args.repo) !== folderKey(repo)) throw new Error('Select the Git repository root as the project or console folder. Subfolders cannot start tasks.');
     if (this.closing) throw new Error('Paddock is closing. Start the task after reopening.');
-    this.checkCapacity(repoKey);
-    this.reserved.add(repoKey);
+    this.checkCapacity(repoKey, undefined, workflow);
+    // A worktree reservation never blocks the repository's current branch.
+    const reservation = workflow === 'worktree' ? `${repoKey}#worktree#${randomUUID()}` : repoKey;
+    this.reserved.add(reservation);
     try {
       const id = randomUUID(), sourceRevision = (await this.git(repo, ['rev-parse', 'HEAD'])).trim();
       let workFolder = repo, baseline = sourceRevision, baselineUntracked = [], baselineUntrackedState = {}, branch = null;
@@ -325,14 +333,14 @@ class TaskLoop extends EventEmitter {
         repo, repoKey, workFolder, projectId: args.projectId || null, originConsoleId: typeof args.originConsoleId === 'string' ? args.originConsoleId.slice(0, 80) : null, acknowledgedAt: null, dismissedAt: null, supersededBy: null, title: redactText(title), criteria: redactText(criteria), checks: redactText(checks), workflow, branch, sourceRevision, baseline, baselineUntracked, baselineUntrackedState,
         implementer, reviewer, why: { implementer: 'Selected by you.', reviewer: reviewer ? reviewer.accountId === suggestion.suggestion ? `Selected by you. Suggested: ${suggestion.why}` : 'Selected by you.' : 'No review selected.' },
         maxRounds, maxRoundsExplicit: args.maxRounds !== undefined, timeLimitMinutes, startedAt: this.now(), finishedAt: null, state: split ? 'planning' : 'implementing', rounds: [], unresolved: [], log: [], error: '', fingerprint: null, diffStat: '', finalDiff: '', resultId: null,
-        ...(split ? { split: true, planner: implementer, planReviewer: reviewer, planRounds: [], subtasks: [], parallelLimit: 2, activeElapsedMs: 0, integrationHead: sourceRevision } : {}) };
-      this.jobs.set(id, job); this.reserved.delete(repoKey); this.supersedeOlder(job); this.changed(job);
+        ...(split ? { split: true, planner: implementer, planReviewer: reviewer, planRounds: [], subtasks: [], parallelLimit: parallelLimit(this.getSettings()), activeElapsedMs: 0, integrationHead: sourceRevision } : {}) };
+      this.jobs.set(id, job); this.reserved.delete(reservation); this.supersedeOlder(job); this.changed(job);
       if (this.closing) { await this.finish(job, 'interrupted', 'Paddock closed before this task finished.'); return this.view(job); }
       // The command is held separately while running; agents only receive check output.
       if (split) this.startSplit(job, true, checks);
       else this.pending.set(id, this.runTask(job, checks).catch(error => this.finish(job, error instanceof ProviderError ? 'failed' : 'needs-you', error instanceof ProviderError ? redactText(error.message) : repositoryError(error))).finally(() => this.pending.delete(id)));
       return this.view(job);
-    } finally { this.reserved.delete(repoKey); }
+    } finally { this.reserved.delete(reservation); }
   }
   async changes(job, maxDiff = Infinity) {
     if ((job.baselineUntracked || []).some(file => !Object.hasOwn(job.baselineUntrackedState || {}, file))) throw Object.assign(new Error('The baseline hashes for pre-existing untracked files are unavailable.'), { code: 'PADDOCK_BASELINE_MISSING' });
@@ -889,4 +897,4 @@ class TaskLoop extends EventEmitter {
   }
 }
 
-module.exports = { TaskLoop, implementerLaunch, openCodeLaunch, openCodeEvents, checkLaunch, RUNNING, usageText };
+module.exports = { parallelLimit, TaskLoop, implementerLaunch, openCodeLaunch, openCodeEvents, checkLaunch, RUNNING, usageText };

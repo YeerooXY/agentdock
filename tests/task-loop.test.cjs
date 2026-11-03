@@ -424,27 +424,42 @@ test('rejects identical accounts, invalid limits, and folders outside the picker
   assert.equal(f.spawned.length, 0);
 });
 
-test('one task per repository and two total, including concurrent starts', async t => {
-  const f = fixture(t);
+test('one current-branch task per repository and the owner limit in total, including concurrent starts', async t => {
+  const f = fixture(t); f.loop.getSettings = () => ({ maxParallelTasks: 2 });
   const simultaneous = await Promise.allSettled([f.start({ reviewer: null }), f.start({ reviewer: null })]);
   assert.equal(simultaneous.filter(item => item.status === 'fulfilled').length, 1);
   assert.match(simultaneous.find(item => item.status === 'rejected').reason.message, /already running/);
   const secondRepo = path.join(f.temp, 'second'), thirdRepo = path.join(f.temp, 'third'); initRepo(secondRepo); initRepo(thirdRepo);
   f.repositories.push({ path: secondRepo, label: 'Second' }, { path: thirdRepo, label: 'Third' });
   await f.start({ repo: secondRepo });
-  await assert.rejects(f.start({ repo: thirdRepo }), /Two tasks/);
+  await assert.rejects(f.start({ repo: thirdRepo }), /2 tasks are already running/);
+});
+
+test('worktree tasks run side by side up to the limit, default 5', async t => {
+  const f = fixture(t);
+  assert.equal(f.loop.maxParallel(), 5);
+  for (const id of ['a', 'b', 'c', 'd']) f.loop.jobs.set('wt-' + id, { id: 'wt-' + id, state: 'implementing', repoKey: 'repo', workflow: 'worktree' });
+  assert.doesNotThrow(() => f.loop.checkCapacity('repo', undefined, 'worktree'), 'a fifth worktree task fits');
+  assert.doesNotThrow(() => f.loop.checkCapacity('repo', undefined, 'current'), 'worktrees do not lock the current branch');
+  f.loop.jobs.set('cur', { id: 'cur', state: 'implementing', repoKey: 'repo', workflow: 'current' });
+  assert.throws(() => f.loop.checkCapacity('repo', undefined, 'worktree'), /5 tasks are already running/);
+  f.loop.jobs.delete('wt-a');
+  assert.throws(() => f.loop.checkCapacity('repo', undefined, 'current'), /current branch/);
+  assert.doesNotThrow(() => f.loop.checkCapacity('repo', undefined, 'worktree'));
+  f.loop.getSettings = () => ({ maxParallelTasks: 99 }); assert.equal(f.loop.maxParallel(), 5, 'an invalid setting falls back to 5');
+  for (const id of ['wt-b', 'wt-c', 'wt-d', 'cur']) f.loop.jobs.delete(id);
 });
 
 test('plan-ready tasks hold no running slot or repository lock', async t => {
-  const f = fixture(t);
+  const f = fixture(t); f.loop.getSettings = () => ({ maxParallelTasks: 2 });
   f.loop.jobs.set('plan-a', { id: 'plan-a', state: 'plan-ready', repoKey: 'repo-a' });
   f.loop.jobs.set('plan-b', { id: 'plan-b', state: 'plan-ready', repoKey: 'repo-b' });
   assert.doesNotThrow(() => f.loop.checkCapacity('repo-a'), 'a plan-ready task does not lock its repository');
   f.loop.jobs.set('run-c', { id: 'run-c', state: 'implementing', repoKey: 'repo-c' });
   assert.doesNotThrow(() => f.loop.checkCapacity('repo-d'), 'two plan-ready tasks and one running task leave a slot');
-  assert.throws(() => f.loop.checkCapacity('repo-c'), /already running for this repository/);
+  assert.throws(() => f.loop.checkCapacity('repo-c'), /already running on the current branch/);
   f.loop.jobs.set('run-e', { id: 'run-e', state: 'checking', repoKey: 'repo-e' });
-  assert.throws(() => f.loop.checkCapacity('repo-f'), /Two tasks/);
+  assert.throws(() => f.loop.checkCapacity('repo-f'), /2 tasks are already running/);
   assert.doesNotThrow(() => f.loop.ensureAvailable({ id: 'run-e', repoKey: 'repo-e' }), 'a task does not block itself');
   for (const id of ['plan-a', 'plan-b', 'run-c', 'run-e']) f.loop.jobs.delete(id);
   assert.equal(f.loop.reserved.size, 0);
@@ -920,7 +935,7 @@ test('an approved first plan proceeds without a correction', async t => {
 });
 test('approval validates all overrides before applying them and selects the main implementer', async t => {
   const f = fixture(t, [planned(splitPlan()), { hold: true }]); const job = await readyPlan(f);
-  for (const override of [{ parallelLimit: 0 }, { parallelLimit: 5 }, { assignments: { missing: { accountId: codex.id } } }, { assignments: { first: { accountId: 'codex:absent' } } }, { assignments: { first: { accountId: codex.id, model: '-bad' } } }]) await assert.rejects(approvePlan(f, job, override));
+  for (const override of [{ parallelLimit: 0 }, { parallelLimit: 11 }, { assignments: { missing: { accountId: codex.id } } }, { assignments: { first: { accountId: 'codex:absent' } } }, { assignments: { first: { accountId: codex.id, model: '-bad' } } }]) await assert.rejects(approvePlan(f, job, override));
   assert.equal(job.state, 'plan-ready'); assert.equal(f.spawned.length, 1);
   await approvePlan(f, job, { assignments: { first: { accountId: claude.id, model: 'override-model' } }, implementer: { accountId: kiro.id, model: 'main-model' } });
   await until(() => f.spawned.length === 2);

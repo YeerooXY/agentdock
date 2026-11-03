@@ -17,7 +17,7 @@ const { fundingFromLimits } = require('./account-funding.cjs');
 
 const REVIEWERS = Object.keys(names);
 const MAX_DIFF = 150_000, MAX_REPLY = 6000, MAX_FOCUS = 2000, MAX_FILES = 50;
-const MAX_RUNNING = 2, MAX_PER_HOUR = 20, FRESH_MS = 30 * 60_000, FULL_PERCENT = 90;
+const MAX_PER_HOUR = 20, FRESH_MS = 30 * 60_000, FULL_PERCENT = 90;
 
 function git(cwd, args, run = execFile) {
   const safeArgs = args[0] === 'diff' ? ['diff', '--no-textconv', '--no-ext-diff', ...args.slice(1)] : args;
@@ -261,7 +261,8 @@ class Delegation extends EventEmitter {
     if (!caller?.sessionId || !caller.cwd) throw new Error('Start reviews from an open console.');
     const running = [...this.jobs.values()].filter(job => job.state === 'running');
     if (running.some(job => job.callerSessionId === caller.sessionId)) throw new Error('This console already has a review running. Read it with dock/delegation_status.');
-    if (running.length >= MAX_RUNNING) throw new Error('Two reviews are already running. Wait for one to finish.');
+    const limit = require('./task-loop.cjs').parallelLimit(this.getSettings?.());
+    if (running.length >= limit) throw new Error(`${limit === 1 ? 'A review is' : `${limit} reviews are`} already running, the most allowed at once (Settings). Wait for one to finish.`);
     const hourAgo = this.now() - 3_600_000; this.started = this.started.filter(at => at > hourAgo);
     if (this.started.length >= MAX_PER_HOUR) throw new Error('The hourly review limit was reached. Try again later.');
     const focus = String(args.focus || '').slice(0, MAX_FOCUS);

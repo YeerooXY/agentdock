@@ -216,8 +216,8 @@ class SplitTasks {
     if (!job?.split || job.state !== 'plan-ready') throw new Error('Approve a split task with a ready plan.');
     const validated = validatePlan(job.plan);
     if (validated.errors.length) throw new Error(validated.errors.join(' '));
-    const limit = args.parallelLimit ?? 2;
-    if (!Number.isInteger(limit) || limit < 1 || limit > 4) throw new Error('Run 1 to 4 subtasks at once.');
+    const limit = args.parallelLimit ?? job.parallelLimit ?? 2;
+    if (!Number.isInteger(limit) || limit < 1 || limit > 10) throw new Error('Run 1 to 10 subtasks at once.');
     const overrides = args.assignments ?? args.overrides ?? {};
     if (!overrides || typeof overrides !== 'object' || Array.isArray(overrides) || Object.keys(overrides).some(id => !job.subtasks.some(sub => sub.subtaskId === id))) throw new Error('Use assignments for the plan’s subtask ids.');
     const assignments = job.subtasks.map(sub => loop.assignment(Object.hasOwn(overrides, sub.subtaskId) ? overrides[sub.subtaskId] : sub.implementer, 'implementer'));
