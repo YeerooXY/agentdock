@@ -8,12 +8,14 @@ Method on Windows 11: run a free, non-model command with the default environment
 | --- | --- | --- | --- | --- |
 | Kiro 2026.10 | `KIRO_HOME` (config), `KIRO_DATA_DIR` (named in the binary) | `kiro-cli whoami` | Still signed in as the default account with `KIRO_HOME`, `KIRO_DATA_DIR`, `LOCALAPPDATA` or `XDG_DATA_HOME` set to an empty folder | Not in the overridable folders. `KIRO_HOME` moves settings only. |
 | GitHub Copilot 1.0.105 | `COPILOT_HOME` | `account.getQuota` over `--headless --stdio` | Same quota from the default account with an empty `COPILOT_HOME` | Windows Credential Manager or the GitHub CLI login, outside `COPILOT_HOME` |
+| Grok Build | `GROK_HOME` | `auth.json` structure, `cmdkey /list` | The full sign-in (session key and refresh token) is `auth.json` in `GROK_HOME`; no Credential Manager entry. An empty `GROK_HOME` has no `auth.json`. | `GROK_HOME/auth.json`. **Enabled.** |
+| Google Antigravity (agy) | none for sign-in (home folder follows `USERPROFILE`) | `agy models` | Still the default account with `USERPROFILE` and `HOME` set to an empty folder | Credential Manager entry `gemini:antigravity`, one per Windows user. `AGY_ADC_AUTH` is Google Cloud business sign-in, not a consumer plan. |
 | Cursor 2026.10.22 | `CURSOR_CONFIG_DIR`, `CURSOR_DATA_DIR` | `cursor-agent status` | Still "Logged in" as the default account with both set | Windows Credential Manager |
 
-Result: none of the three can hold a second account through a folder. They stay at one account ("One account for now" in the chooser).
+Result: Grok gets extra accounts (its MCP configuration also goes to the account's folder). Kiro, Copilot, Cursor and Antigravity cannot hold a second account through a folder and stay at one account ("One account for now" in the chooser). Grok skills installed by Paddock go to `~/.grok/skills` and are not yet copied into extra Grok accounts.
 
 The remaining route would be a per-account token passed in the environment (`COPILOT_GITHUB_TOKEN`, `CURSOR_AUTH_TOKEN`). The project rules forbid credentials in agent-console environments, so that route needs an owner decision first.
 
-Not yet checked: Qwen, Droid, Cline, OpenCode, Kimi, Grok and Antigravity.
+Not yet checked (CLI not installed on this PC): Qwen, Droid, Cline, OpenCode and Kimi.
 
 Note: `agent` on this PC resolves to Grok's CLI before Cursor's (`.grok/bin` is earlier on PATH). Cursor checks must use `cursor-agent`.

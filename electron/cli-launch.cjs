@@ -93,7 +93,9 @@ function prepareCli(id, { directory, runtime, summary, summaryPath, home = os.ho
     const syntax = id === 'cursor' ? 'cursor' : ['cline', 'antigravity', 'kimi'].includes(id) ? 'inherit' : 'shell';
     // The maintained Kimi Code CLI discovers its user MCP file; the former
     // kimi-cli --mcp-config-file option is no longer supported.
-    const userMcp = id === 'pi' && configDir ? path.join(configDir, 'mcp.json') : path.join(home, id === 'kimi' ? '.kimi-code/mcp.json' : agent.mcp);
+    // Extra accounts keep their MCP configuration in their own folder.
+    const userMcp = id === 'pi' && configDir ? path.join(configDir, 'mcp.json') : id === 'grok' && configDir ? path.join(configDir, 'config.toml')
+      : path.join(home, id === 'kimi' ? '.kimi-code/mcp.json' : agent.mcp);
     saveManagedMcp(userMcp, bridgeConfig(runtime, syntax));
     if (id === 'antigravity') {
       require('./antigravity-session.cjs').prepareAntigravityTracking(home, runtime);

@@ -48,6 +48,19 @@ test('Pi profiles isolate authentication, defaults and session paths without inh
   assert.ok(fs.existsSync(path.join(one.configDir, 'mcp.json')));
   assert.equal(fs.existsSync(path.join(home, '.pi', 'agent', 'mcp.json')), false);
 });
+test('Grok profiles isolate sign-in and MCP configuration without inherited xAI keys', t => {
+  const { accounts, root, home } = fixture(t);
+  const one = accounts.create('grok', 'Grok Work'), two = accounts.create('grok', 'Grok Personal');
+  const env = accounts.environment(one.id, 'grok', { baseEnv: { GROK_HOME: path.join(home, '.grok'), XAI_API_KEY: 'SHARED', GROK_DEPLOYMENT_KEY: 'SHARED', OTHER: 'keep' } });
+  assert.equal(env.GROK_HOME, one.configDir); assert.notEqual(one.configDir, two.configDir);
+  assert.equal(env.XAI_API_KEY, undefined); assert.equal(env.GROK_DEPLOYMENT_KEY, undefined); assert.equal(env.OTHER, 'keep');
+  assert.equal(fs.existsSync(path.join(one.configDir, 'auth.json')), false, 'a new profile starts signed out');
+  assert.equal(accounts.defaultConfigDir('grok'), path.join(home, '.grok'));
+  assert.equal(accounts.environment('grok:default', 'grok', { baseEnv: { XAI_API_KEY: 'mine' } }).XAI_API_KEY, 'mine', 'the default account keeps its own settings');
+  require('../electron/cli-launch.cjs').prepareCli('grok', { directory: root, home, configDir: one.configDir, runtime: { node: process.execPath, tools: path.join(root, 'agent-tools.cjs') }, summary: '', summaryPath: path.join(root, 'context.md') });
+  assert.ok(fs.existsSync(path.join(one.configDir, 'config.toml')));
+  assert.equal(fs.existsSync(path.join(home, '.grok', 'config.toml')), false);
+});
 test('migration keeps saved unavailable providers without silently deleting account records', t => {
   const { root, accounts } = fixture(t);
   const profile = accounts.create('gemini', 'Keep me');
