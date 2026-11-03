@@ -87,6 +87,8 @@ function DismissFailedTask {
 }
 
 Log "Supervisor started for $($config.hours) hours."; Save
+# Lets the console that started the relaunch finish its reply first.
+if ($config.startDelaySeconds) { Start-Sleep -Seconds ([int]$config.startDelaySeconds) }
 # Switch to the new code.
 $state.phase = 'switching'; Save
 StopAll

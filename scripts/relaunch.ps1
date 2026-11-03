@@ -5,13 +5,14 @@
 #   powershell -ExecutionPolicy Bypass -File scripts\relaunch.ps1 -Fallback ede5216 # fallback: this commit
 #   ... -Hours 16      keep Paddock running for this long (default 16; 0 = only switch once)
 #   ... -Fallback      also accepts "none" to skip the fallback copy
+#   ... -DelaySeconds  wait before stopping Paddock (lets an agent finish its reply)
 #
 # Nothing is stopped until the new code has built. The switch itself runs as a
 # Windows scheduled task (scripts\paddock-supervisor.ps1), so it continues after
 # Paddock and the console that started it have closed. Results are written to
 # .build\relaunch\<time>\status.json and supervisor.log; create a file named
 # "stop" there to end supervision early.
-param([string]$Fallback = '', [double]$Hours = 16, [string[]]$DismissTasks = @())
+param([string]$Fallback = '', [double]$Hours = 16, [string[]]$DismissTasks = @(), [int]$DelaySeconds = 0)
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $PSScriptRoot
 $exe = Join-Path $repo 'node_modules\electron\dist\electron.exe'
@@ -47,7 +48,7 @@ $run = Join-Path $runs (Get-Date -Format 'yyyyMMdd-HHmmss'); New-Item -ItemType 
 [ordered]@{
   exe = $exe; appFolder = $repo; rollbackFolder = $(if ($fallbackFolder) { $fallbackFolder } else { $repo }); dataFolder = $data
   mobileEnabled = [bool]$mobile.enabled; mobileHost = [string]$mobile.host; mobilePort = $(if ($mobile.port) { [int]$mobile.port } else { 47831 })
-  hours = $Hours; newCommit = $newCommit; lastGoodFile = $lastGoodFile; dismissTasks = $DismissTasks
+  hours = $Hours; startDelaySeconds = $DelaySeconds; newCommit = $newCommit; lastGoodFile = $lastGoodFile; dismissTasks = $DismissTasks
 } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $run 'config.json') -Encoding utf8
 
 # A scheduled task runs outside Paddock's process tree, in this user's desktop session.
