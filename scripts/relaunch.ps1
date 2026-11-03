@@ -41,6 +41,12 @@ if ($Fallback -and $Fallback -ne 'none') {
 # Build the new code before anything is stopped.
 Push-Location $repo; try { & $node node_modules/vite/bin/vite.js build | Out-Null; if ($LASTEXITCODE) { throw 'The new code did not build. Paddock was left running.' } } finally { Pop-Location }
 foreach ($file in 'electron\main.cjs', 'electron\sessions.cjs', 'electron\mobile.cjs') { & $node --check (Join-Path $repo $file); if ($LASTEXITCODE) { throw "$file has a syntax error. Paddock was left running." } }
+# Start the new code against a copy of the real data first (test mode: no
+# consoles, phone port or credential changes). On 3 November an unreadable data
+# file stopped every start; this catches that before the real app is stopped.
+& $node (Join-Path $PSScriptRoot 'relaunch-preflight.cjs') --app $repo
+if ($LASTEXITCODE) { throw 'The new code did not start against a copy of your data. Paddock was left running.' }
+if ($fallbackFolder) { & $node (Join-Path $PSScriptRoot 'relaunch-preflight.cjs') --app $fallbackFolder; if ($LASTEXITCODE) { Write-Host 'Warning: the fallback copy did not start against your data; it will not help if the new code fails.' } }
 
 $data = Join-Path $env:APPDATA 'Paddock'
 $mobile = try { Get-Content (Join-Path $data 'mobile.json') -Raw | ConvertFrom-Json } catch { $null }

@@ -2,7 +2,7 @@
 
 `npm run relaunch` (or `powershell -ExecutionPolicy Bypass -File scripts\relaunch.ps1`) restarts Paddock from this folder with the latest code and keeps it running.
 
-1. Builds the renderer and syntax-checks the main files. If that fails, Paddock is left running and nothing else happens.
+1. Builds the renderer and syntax-checks the main files, then starts the new code against a copy of the real data in test mode (`scriptselaunch-preflight.cjs`: no consoles, phone port or credential changes). If any of that fails, Paddock is left running and nothing else happens. The fallback copy gets the same check; a failure there is reported as a warning.
 2. Prepares a fallback copy: a detached worktree of a known-good commit in `.build\rollback-<commit>`, sharing `node_modules`. The default is the last version that came up healthy (`.build\relaunch\last-good.txt`); `-Fallback <commit>` picks another, `-Fallback none` skips it.
 3. Starts `scripts\paddock-supervisor.ps1` as a Windows scheduled task, outside Paddock's process tree, so it survives Paddock closing.
 
