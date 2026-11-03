@@ -9,7 +9,7 @@ const { readJson, atomicJson } = require('./storage.cjs');
 // the vercel-labs/skills agent table. ~/.agents/skills is the shared Agent
 // Skills location; the others serve agents that do not read it.
 const targets = [
-  { id: 'agents', dir: ['.agents', 'skills'], agents: ['codex', 'gemini', 'copilot', 'cursor', 'opencode', 'kimi', 'cline', 'pi'], always: true },
+  { id: 'agents', dir: ['.agents', 'skills'], agents: ['codex', 'copilot', 'cursor', 'opencode', 'kimi', 'cline', 'pi'], always: true },
   { id: 'claude', dir: ['.claude', 'skills'], agents: ['claude'] },
   { id: 'kiro', dir: ['.kiro', 'skills'], agents: ['kiro'] },
   { id: 'qwen', dir: ['.qwen', 'skills'], agents: ['qwen'] },

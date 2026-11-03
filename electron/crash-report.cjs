@@ -94,7 +94,7 @@ function detectAgents(root, { locate, findProgram, platform = process.platform, 
   const { byId } = require('./cli-catalog.cjs');
   const { findProgram: defaultFind } = require('./adapters.cjs');
   const setup = Object.assign(Object.create(CliSetup.prototype), { directory: path.join(root, 'agents'), home, platform, localAppData: process.env.LOCALAPPDATA, findProgram: findProgram || defaultFind });
-  return ['claude', 'codex', 'opencode', 'gemini', 'kiro'].flatMap(id => {
+  return ['claude', 'codex', 'opencode', 'kiro'].flatMap(id => {
     const agent = byId.get(id); let executable;
     try { executable = locate ? locate(agent) : setup.locate(agent); } catch {}
     if (platform === 'win32' && executable && !/^(?:[a-z]:[\\/]|\\\\)/i.test(executable)) return [];
@@ -102,7 +102,7 @@ function detectAgents(root, { locate, findProgram, platform = process.platform, 
   });
 }
 function terminalCommand(agent, folder, { platform = process.platform, findProgram = require('./adapters.cjs').findProgram } = {}) {
-  const args = [...(agent.id === 'kiro' ? ['chat'] : agent.id === 'opencode' ? ['--prompt'] : agent.id === 'gemini' ? ['--prompt-interactive'] : []), PROMPT];
+  const args = [...(agent.id === 'kiro' ? ['chat'] : agent.id === 'opencode' ? ['--prompt'] : []), PROMPT];
   if (platform === 'win32') {
     const command = `& ${psQuote(agent.executable)} ${args.map(psQuote).join(' ')}`;
     const encoded = Buffer.from(command, 'utf16le').toString('base64');

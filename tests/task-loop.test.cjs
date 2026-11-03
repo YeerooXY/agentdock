@@ -65,7 +65,6 @@ const edit = cwd => fs.writeFileSync(path.join(cwd, 'app.js'), 'const a = 1;\nco
 
 function nativeEvents(provider, text, failed = false) {
   if (provider === 'cline') return JSON.stringify({ type: 'run_result', finishReason: failed ? 'error' : 'completed', text, aggregateUsage: { inputTokens: 100, outputTokens: 5, cacheReadTokens: 80 } }) + '\n';
-  if (provider === 'gemini') return [{ type: 'message', role: 'assistant', content: text }, { type: 'result', status: failed ? 'error' : 'success', stats: { input_tokens: 100, output_tokens: 5, cached: 80 } }].map(JSON.stringify).join('\n') + '\n';
   if (provider === 'droid') return JSON.stringify({ type: 'result', subtype: failed ? 'error' : 'success', is_error: failed, result: text, usage: { input_tokens: 20, cache_read_input_tokens: 80, cache_creation_input_tokens: 0, output_tokens: 5 } }) + '\n';
   if (provider === 'kimi') return JSON.stringify(failed ? { type: 'error' } : { role: 'assistant', content: text }) + '\n';
   return (provider === 'antigravity' ? [{ event: 'result', result: { status: failed ? 'ERROR' : 'SUCCESS', response: text,
@@ -76,13 +75,12 @@ function nativeEvents(provider, text, failed = false) {
       accountingSnapshot: { modelMetrics: { auto: { usage: { inputTokens: 100, cacheReadTokens: 80, outputTokens: 5 } } } } } },
       { type: 'result', exitCode: failed ? 1 : 0 }]).map(e => JSON.stringify(e)).join('\n') + '\n';
 }
-for (const provider of ['cline', 'gemini', 'droid', 'kimi']) test(`${provider} native adapter integrates both task roles with temporary settings`, async t => {
+for (const provider of ['cline', 'droid', 'kimi']) test(`${provider} native adapter integrates both task roles with temporary settings`, async t => {
   const account = { id: `${provider}:default`, provider, label: provider, executable: `/fake/${provider}.exe`, signedIn: true, funding: 'free' };
   const f = fixture(t, [{ output: nativeEvents(provider, 'Updated app.js.'), edit }, { type: 'check' }, { type: 'review' }], { candidates: () => [account, claude] });
   const built = await f.done(await f.start({ implementer: { accountId: account.id }, maxRounds: 1 }));
   assert.equal(built.state, 'passed');
   if (provider === 'cline') assert.equal(f.spawned[0].options.env.CLINE_SESSION_BACKEND_MODE, 'local');
-  if (provider === 'gemini') assert.ok(f.spawned[0].options.env.GEMINI_CLI_SYSTEM_SETTINGS_PATH);
   f.loop.candidates = () => [codex, account]; f.script.push({ type: 'implement', edit }, { type: 'check' }, { output: nativeEvents(provider, approve) });
   const reviewed = await f.done(await f.start({ reviewer: { accountId: account.id }, maxRounds: 1 }));
   assert.equal(reviewed.state, 'passed'); assert.equal(reviewed.rounds[0].review.verdict, 'approve');

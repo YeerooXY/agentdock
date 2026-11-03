@@ -41,7 +41,7 @@ test('installation failures can be retried without losing completed choices; dup
   assert.equal(setup.jobs.opencode.error, 'Offline'); fail = false; await setup.install(['opencode']);
   assert.equal(setup.jobs.opencode.state, 'installed');
   await assert.rejects(new CliSetup(root, runtime, { testMode: true, detect: () => null }).install(['codex']), /disabled during tests/);
-  await assert.rejects(new CliSetup(root, runtime, { platform: 'win32', build: 19045, detect: () => null }).install(['gemini']), /24H2/);
+  await assert.rejects(new CliSetup(root, runtime, { platform: 'win32', build: 19045, detect: () => null }).install(['kiro']), /Windows 11 or newer/);
 });
 
 test('Kiro per-user binary clears its stale install error and remains outside the managed download inventory', async t => {

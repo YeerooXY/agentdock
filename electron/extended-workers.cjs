@@ -5,10 +5,9 @@ const os = require('node:os');
 const { programLaunch } = require('./platform.cjs');
 const { findProgram } = require('./adapters.cjs');
 
-const names = Object.freeze({ cline: 'Cline', gemini: 'Gemini CLI', kimi: 'Kimi Code', droid: 'Factory Droid', cursor: 'Cursor', qwen: 'Qwen Code' });
+const names = Object.freeze({ cline: 'Cline', kimi: 'Kimi Code', droid: 'Factory Droid', cursor: 'Cursor', qwen: 'Qwen Code' });
 const capabilities = Object.freeze({
   cline: { builder: true, reviewer: true, isolation: 'per-process file-tool guard', retries: 'one consecutive mistake; provider transport retries are native' },
-  gemini: { builder: true, reviewer: true, isolation: 'per-process core tools and admin policy', retries: 'one main request attempt; model availability policy is native' },
   kimi: { builder: true, reviewer: true, isolation: 'explicit agent tool allowlist', retries: 'native retries reported as failure', usage: 'not emitted by print mode' },
   droid: { builder: true, reviewer: true, isolation: 'native only-tools allowlist', retries: 'native transport policy' },
   // Verified 3 November 2026 (Cursor 2026.10.22): a private CURSOR_CONFIG_DIR
@@ -25,24 +24,17 @@ const NATIVE_WORKERS = Object.freeze(Object.keys(capabilities).filter(id => capa
 const count = n => typeof n === 'number' && Number.isFinite(n) && n >= 0 ? n : null;
 const sum = list => list.every(n => count(n) !== null) ? count(list.reduce((a, b) => a + b, 0)) : null;
 const readTools = ['Read', 'Grep', 'Glob', 'LS'];
-const geminiReadTools = ['read_file', 'read_many_files', 'list_directory', 'grep_search', 'glob'];
 const tail = (s, text) => { if (typeof text === 'string') s.text = text.slice(-(s.maxText || 6000)); };
 function privateWrite(folder, name, text) {
   const file = path.join(folder, name); fs.writeFileSync(file, text, { mode: 0o600 }); return file;
 }
 function nativeLaunch(provider, executable, args) {
-  if (process.platform !== 'win32' || !/\.cmd$/i.test(executable) || !['cline', 'gemini'].includes(provider)) return programLaunch(executable, args);
+  if (process.platform !== 'win32' || !/\.cmd$/i.test(executable) || provider !== 'cline') return programLaunch(executable, args);
   // PowerShell's npm shim does not forward piped stdin. Resolve only the known
   // installed package entry, never execute wrapper contents or copy credentials.
   const modules = path.dirname(path.dirname(executable));
-  if (provider === 'cline') {
-    const binary = path.join(modules, '@cline', `cli-windows-${process.arch}`, 'bin', 'cline.exe');
-    if (fs.existsSync(binary)) return { executable: binary, args };
-  } else {
-    const entry = path.join(modules, '@google', 'gemini-cli', 'bundle', 'gemini.js');
-    const node = findProgram('node.exe');
-    if (fs.existsSync(entry) && node) return { executable: node, args: [entry, ...args] };
-  }
+  const binary = path.join(modules, '@cline', `cli-windows-${process.arch}`, 'bin', 'cline.exe');
+  if (fs.existsSync(binary)) return { executable: binary, args };
   throw Error('The native CLI entry could not be resolved for piped worker input. Update this CLI before delegating.');
 }
 function extensionPrompt(provider, folder, brief) {
@@ -132,25 +124,8 @@ function extensionLaunch(provider, executable, { model, review = false, workFold
       env: { CLINE_SESSION_BACKEND_MODE: 'local', CLINE_MCP_SETTINGS_PATH: mcp,
         CLINE_DIR: temp, CLINE_DATA_DIR: path.join(temp, 'data'), CLINE_PROVIDER_SETTINGS_PATH: providers } };
   }
-  if (provider === 'gemini') {
-    // A supplemental admin policy is ignored when central policy files exist.
-    // Do not override an owner's managed settings or claim isolation in that case.
-    const system = process.env.GEMINI_CLI_SYSTEM_SETTINGS_PATH || (process.platform === 'win32' ? 'C:\\ProgramData\\gemini-cli\\settings.json' : process.platform === 'darwin' ? '/Library/Application Support/GeminiCli/settings.json' : '/etc/gemini-cli/settings.json');
-    const policies = path.join(path.dirname(system), 'policies');
-    if (fs.existsSync(system) || (fs.existsSync(policies) && fs.readdirSync(policies).some(f => f.endsWith('.toml'))))
-      throw Error('Gemini has managed policies. Verify a bounded worker policy with those settings before delegating.');
-    const tools = [...geminiReadTools, ...(review ? [] : ['write_file', 'replace'])];
-    const policy = privateWrite(temp, 'worker-policy.toml', ['[[rule]]', 'toolName = "*"', 'decision = "deny"', 'priority = 998',
-      ...tools.flatMap(t => ['[[rule]]', `toolName = "${t}"`, 'decision = "allow"', 'priority = 999'])].join('\n'));
-    const settings = privateWrite(temp, 'settings.json', JSON.stringify({ general: { maxAttempts: 1 },
-      admin: { mcp: { enabled: false }, extensions: { enabled: false }, skills: { enabled: false } },
-      hooksConfig: { enabled: false }, tools: { core: tools, disableLLMCorrection: true }, model: { maxSessionTurns: 12 } }));
-    return { ...nativeLaunch(provider, executable, ['--output-format', 'stream-json', '--approval-mode', review ? 'plan' : 'auto_edit',
-      '--admin-policy', policy, '--prompt', 'Complete the task supplied on standard input.', ...chosen]),
-      env: { GEMINI_CLI_SYSTEM_SETTINGS_PATH: settings } };
-  }
 }
-function extensionInput(provider, brief) { return provider === 'gemini' ? brief : ''; }
+function extensionInput() { return ''; }
 function extensionEvent(provider, state, event) {
   if (!event || typeof event !== 'object') return state;
   const inner = event.type === 'agent_event' ? event.event : event;
@@ -166,13 +141,6 @@ function extensionEvent(provider, state, event) {
     state.complete = true; state.error ||= event.subtype !== 'success' || event.is_error !== false; tail(state, event.result);
     const u = event.usage;
     if (u) state.usage = { inputTokens: sum([u.input_tokens, u.cache_read_input_tokens, u.cache_creation_input_tokens]), outputTokens: count(u.output_tokens), cachedInputTokens: count(u.cache_read_input_tokens) };
-  }
-  if (provider === 'gemini') {
-    if (event.type === 'message' && event.role === 'assistant' && typeof event.content === 'string') tail(state, (event.delta ? state.text : '') + event.content);
-    if (event.type === 'result') {
-      state.complete = true; state.error ||= event.status !== 'success';
-      if (event.stats) state.usage = { inputTokens: count(event.stats.input_tokens), outputTokens: count(event.stats.output_tokens), cachedInputTokens: count(event.stats.cached) };
-    }
   }
   if (provider === 'cursor') {
     if (event.type === 'assistant') tail(state, (event.message?.content || []).filter(c => c?.type === 'text').map(c => c.text).join('') || state.text);
@@ -198,7 +166,6 @@ function extensionFinalize(provider, state, exitCode) {
 }
 function extensionProgress(provider, event) {
   if (provider === 'cline') return event.type === 'run_result' && typeof event.text === 'string' ? [event.text] : [];
-  if (provider === 'gemini') return event.type === 'tool_use' ? ['Using project tool'] : [];
   if (provider === 'cursor') return event.type === 'tool_call' && event.subtype === 'started' ? ['Using project tool'] : [];
   return [];
 }

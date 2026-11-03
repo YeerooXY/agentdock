@@ -30,7 +30,6 @@ flutter:
     - assets/providers/cursor.png
     - assets/providers/opencode.png
     - assets/providers/cline.png
-    - assets/providers/gemini.png
     - assets/providers/antigravity.png
     - assets/providers/kiro.png
     - assets/providers/droid.png

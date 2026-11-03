@@ -63,12 +63,11 @@ test('saved readings seed as stale with their age and are replaced by the first 
 test('providers without a quota or a source are explicit, and Strata is Local', async () => {
   const usage = new SubscriptionUsage({ readers: {} });
   await usage.refresh([{ id: 'opencode:strata', provider: 'opencode' }, { id: 'strata:default', provider: 'strata' }, { id: 'grok:default', provider: 'grok' }, { id: 'cline:default', provider: 'cline' },
-    { id: 'qwen:default', provider: 'qwen' }, { id: 'gemini:default', provider: 'gemini' }, { id: 'droid:default', provider: 'droid' }]);
+    { id: 'qwen:default', provider: 'qwen' }, { id: 'droid:default', provider: 'droid' }]);
   const by = Object.fromEntries(usage.snapshot().map(check => [check.accountId, check]));
   assert.equal(by['opencode:strata'].status, 'no-quota'); assert.equal(by['strata:default'].status, 'no-quota'); assert.match(by['opencode:strata'].message, /Local model/);
   for (const id of ['grok', 'cline', 'qwen']) { assert.equal(by[id + ':default'].status, 'unsupported'); assert.equal(by[id + ':default'].reason, 'no-source'); }
-  for (const id of ['gemini', 'droid']) assert.equal(by[id + ':default'].reason, 'no-reader');
-  assert.match(by['gemini:default'].message, /\/stats model/);
+  assert.equal(by['droid:default'].reason, 'no-reader');
 });
 
 test('the five global-environment CLIs are not-isolated for non-default accounts and never call a reader', async () => {
@@ -93,7 +92,7 @@ test('a reading that names another account is rejected, not relabelled', async (
 
 test('usage help no longer sends Kimi users to a command when a reader exists', () => {
   assert.doesNotMatch(usageHelp('kimi'), /no connected background quota reader/); assert.match(usageHelp('kimi'), /read in the background/);
-  assert.match(usageHelp('droid'), /\/limits in Droid/); assert.match(usageHelp('gemini'), /\/stats model in Gemini CLI/);
+  assert.match(usageHelp('droid'), /\/limits in Droid/);
   assert.match(usageHelp('grok'), /No quota source/); assert.match(usageHelp('strata'), /Local model/);
 });
 

@@ -55,15 +55,7 @@ class AccountProfiles {
     if (!profile || (provider && profile.provider !== provider)) throw new Error('Choose an account for this provider.');
     if (!this.provider(profile.provider)?.namedProfiles) throw new Error('Separate sign-in storage is unavailable for this provider. The saved account has been kept.');
     const configRoot = this.directory(profile.id), isolation = this.provider(profile.provider).isolation;
-    let configDir = configRoot;
-    if (isolation?.homeScoped) {
-      configDir = path.join(configRoot, isolation.defaultSubdir);
-      if (!inside(configRoot, configDir)) throw new Error('Account configuration path is invalid.');
-      fs.mkdirSync(configDir, { recursive: true });
-      const info = fs.lstatSync(configDir), real = fs.realpathSync(configDir);
-      if (!info.isDirectory() || info.isSymbolicLink() || canonical(real) !== canonical(configDir) || !inside(configRoot, real)) throw new Error('Account configuration folder is linked or unavailable.');
-    }
-    return { ...profile, profile: true, configDir, configRoot };
+    return { ...profile, profile: true, configDir: configRoot, configRoot };
   }
   choices(provider) {
     if (!this.provider(provider)) return [];
@@ -152,7 +144,6 @@ class AccountProfiles {
     const isolation = this.provider(provider)?.isolation;
     if (!isolation) return null;
     const configured = envValue(this.env, isolation.env);
-    if (isolation.homeScoped) return path.join(configured && path.isAbsolute(configured) ? configured : this.home, isolation.defaultSubdir);
     if (configured && path.isAbsolute(configured)) return path.resolve(configured);
     return path.join(this.home, isolation.defaultSubdir);
   }
@@ -180,10 +171,8 @@ class AccountProfiles {
       env.CODEX_HOME = account.configDir;
       env.CODEX_SQLITE_HOME = sqlite;
     } else if (account.profile && isolation) {
-      // Gemini receives a home root and appends .gemini itself; Pi uses the directory directly.
-      env[isolation.env] = isolation.homeScoped ? account.configRoot : account.configDir;
+      env[isolation.env] = account.configDir;
     }
-    if (account.profile) Object.assign(env, isolation?.envOverrides || {});
     if (bridge && !login) {
       const editor = bridge.editorCommand;
       env.PADDOCK_DRAFT_URL = bridge.url;

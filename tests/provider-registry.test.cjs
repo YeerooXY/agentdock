@@ -22,7 +22,8 @@ test('usage capability follows the usage reader references', () => {
 
 test('providers without a reader declare why', () => {
   for (const id of ['grok', 'cline', 'qwen']) assert.equal(registry.usageSource(id).state, 'no-source');
-  for (const id of ['gemini', 'droid']) assert.equal(registry.usageSource(id).state, 'no-reader');
+  assert.equal(registry.usageSource('droid').state, 'no-reader');
+  assert.equal(registry.usageSource('gemini'), null, 'Gemini CLI support was removed');
   assert.equal(registry.usageSource('strata').state, 'no-quota');
   assert.equal(registry.sourceForAccount({ id: 'opencode:strata', provider: 'opencode' }).provider, 'strata');
   assert.equal(registry.sourceForAccount({ id: 'opencode:default', provider: 'opencode' }).provider, 'opencode');
@@ -30,7 +31,7 @@ test('providers without a reader declare why', () => {
 });
 
 test('only providers with verified separate sign-in storage are isolated', () => {
-  assert.deepEqual(registry.adapters.filter(a => a.accounts).map(a => a.id).sort(), ['antigravity', 'claude', 'codex', 'gemini', 'grok', 'pi']);
+  assert.deepEqual(registry.adapters.filter(a => a.accounts).map(a => a.id).sort(), ['antigravity', 'claude', 'codex', 'grok', 'pi']);
   for (const id of ['copilot', 'cursor', 'kiro', 'kimi', 'opencode']) assert.equal(registry.usageSource(id).isolated, false);
   assert.equal(registry.usageSource('antigravity').switched, true);
 });

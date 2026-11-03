@@ -13,15 +13,15 @@ test('account registry covers the CLI catalog and rejects unknown and prototype 
   }
 });
 test('nested capability metadata cannot be changed by a caller', () => {
-  const before = registry.getAccountProvider('gemini');
+  const before = registry.getAccountProvider('pi');
   assert.throws(() => before.login.args.push('--wrong-account'), TypeError);
-  assert.throws(() => { before.isolation.envOverrides.GEMINI_FORCE_FILE_STORAGE = 'false'; }, TypeError);
+  assert.throws(() => { before.isolation.clearEnv.push('EXTRA'); }, TypeError);
   registry.listAccountProviders().pop();
   assert.equal(registry.listAccountProviders().length, catalog.length);
 });
 test('profile isolation, usage and conversation resume have independent support', () => {
-  const gemini = registry.getAccountProvider('gemini'), cursor = registry.getAccountProvider('cursor');
-  assert.equal(gemini.namedProfiles, true); assert.equal(gemini.usage, false); assert.equal(gemini.resume, false);
+  const grok = registry.getAccountProvider('grok'), cursor = registry.getAccountProvider('cursor');
+  assert.equal(grok.namedProfiles, true); assert.equal(grok.usage, false); assert.equal(grok.resume, false);
   assert.equal(cursor.namedProfiles, false); assert.equal(cursor.usage, true); assert.ok(cursor.reason);
   assert.equal(registry.supportsNamedProfiles('pi'), true);
 });

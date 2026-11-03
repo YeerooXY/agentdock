@@ -70,8 +70,8 @@ test('safe mode never restores, removes or overwrites the saved workspace', asyn
 });
 test('detects supported agents independently of setup state', t => {
   const root = fixture(t);
-  const found = detectAgents(root, { platform: 'linux', locate: agent => ['codex', 'gemini'].includes(agent.id) ? `/bin/${agent.command}` : null });
-  assert.deepEqual(found.map(item => item.id), ['codex', 'gemini']);
+  const found = detectAgents(root, { platform: 'linux', locate: agent => ['codex', 'kiro'].includes(agent.id) ? `/bin/${agent.command}` : null });
+  assert.deepEqual(found.map(item => item.id), ['codex', 'kiro']);
 });
 test('terminal commands use the fixed prompt and safe platform wrappers', () => {
   const agent = { id: 'codex', executable: 'C:\\Program Files\\Agent & Co\\codex.cmd' };
@@ -88,19 +88,19 @@ test('terminal commands use the fixed prompt and safe platform wrappers', () => 
   const linux = terminalCommand({ id: 'kiro', executable: '/bin/kiro' }, '/tmp/report', { platform: 'linux', findProgram: name => { attempted.push(name); return name === 'konsole' ? '/bin/konsole' : null; } });
   assert.deepEqual(attempted, ['x-terminal-emulator', 'gnome-terminal', 'konsole']);
   assert.deepEqual(linux.args, ['-e', '/bin/kiro', 'chat', PROMPT]);
-  for (const [id, flag] of [['opencode', '--prompt'], ['gemini', '--prompt-interactive']]) {
+  for (const [id, flag] of [['opencode', '--prompt'], ['kiro', 'chat']]) {
     const command = terminalCommand({ id, executable: '/bin/agent' }, '/tmp/report', { platform: 'linux', findProgram: () => '/bin/terminal' });
     assert.deepEqual(command.args.slice(-2), [flag, PROMPT]);
   }
   for (const command of [wt, fallback, mac, linux]) assert.doesNotMatch(JSON.stringify(command), /skip-permissions|dangerously|--auto|--force|--trust-tools|yolo/);
 });
 test('agent choice and missing agent fallback use dialogs without starting real processes', async () => {
-  const opened = [], calls = [], agents = [{ id: 'codex', name: 'Codex', executable: 'codex' }, { id: 'gemini', name: 'Gemini', executable: 'gemini' }];
+  const opened = [], calls = [], agents = [{ id: 'codex', name: 'Codex', executable: 'codex' }, { id: 'kiro', name: 'Kiro', executable: 'kiro-cli' }];
   const dialog = { showMessageBox: async options => { calls.push(options); return { response: 1 }; } };
   const shell = { openPath: async value => opened.push(value), openExternal: async value => opened.push(value) };
   let selected;
   await diagnose('/report', { root: '/data', dialog, shell, findAgents: () => agents, terminal: agent => { selected = agent.id; return { executable: 'mock', args: [], cwd: '/report' }; }, launch: () => { const child = new EventEmitter(); child.unref = () => {}; process.nextTick(() => child.emit('spawn')); return child; } });
-  assert.equal(selected, 'gemini'); assert.deepEqual(calls[0].buttons, ['Codex', 'Gemini', 'Cancel']);
+  assert.equal(selected, 'kiro'); assert.deepEqual(calls[0].buttons, ['Codex', 'Kiro', 'Cancel']);
   await diagnose('/report', { root: '/data', dialog, shell, findAgents: () => [] });
   assert.deepEqual(opened, [ISSUE_URL]);
 });

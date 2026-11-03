@@ -3,7 +3,7 @@
 // CLI catalog, the account capability table and the usage source table, so the
 // facts live in one place. Adapters are data only; usage readers are wired in
 // usage-readers.cjs and must match the `usage.reader` references declared here.
-const ORDER = ['codex', 'claude', 'antigravity', 'copilot', 'opencode', 'cursor', 'grok', 'kiro', 'qwen', 'kimi', 'cline', 'droid', 'pi', 'gemini', 'strata'];
+const ORDER = ['codex', 'claude', 'antigravity', 'copilot', 'opencode', 'cursor', 'grok', 'kiro', 'qwen', 'kimi', 'cline', 'droid', 'pi', 'strata'];
 const METHODS = ['native-rpc', 'native-command', 'screen', 'documented-api', 'undocumented-api', 'local'];
 const UNSUPPORTED_STATES = ['no-reader', 'no-source', 'no-quota'];
 const NO_PROFILE_REASON = 'Separate sign-in storage has not been verified for this provider.';

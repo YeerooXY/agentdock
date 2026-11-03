@@ -80,10 +80,6 @@ function prepareCli(id, { directory, runtime, summary, summaryPath, home = os.ho
     // The native SDK inherits process.env; interpolation is not needed here.
     saveManagedMcp(path.join(home, agent.mcp), bridgeConfig(runtime, 'inherit'));
     env.CLINE_SESSION_BACKEND_MODE = 'local';
-  } else if (id === 'gemini') {
-    // System defaults are administrator-owned policy files in current Gemini.
-    // Use its ordinary user MCP settings; initialization supplies shared context.
-    saveManagedMcp(path.join(configDir || path.join(home, '.gemini'), 'settings.json'), bridgeConfig(runtime));
   } else if (id === 'qwen') {
     fs.writeFileSync(path.join(directory, 'PADDOCK.md'), summary, { mode: 0o600 });
     const settingsFile = path.join(directory, 'cli-settings.json');

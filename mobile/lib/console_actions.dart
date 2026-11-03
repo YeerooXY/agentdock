@@ -318,7 +318,7 @@ class _NewConsoleSheetState extends State<NewConsoleSheet> {
                     : null,
               ),
             ],
-            if (['codex', 'claude', 'opencode', 'gemini'].contains(agent))
+            if (['codex', 'claude', 'opencode'].contains(agent))
               CheckboxListTile(
                 contentPadding: EdgeInsets.zero,
                 title: const Text('Choose model in the live menu'),

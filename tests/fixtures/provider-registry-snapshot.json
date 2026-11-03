@@ -45,10 +45,10 @@
       "docs": "https://docs.github.com/en/copilot/get-started/cli-quickstart",
       "auth": "Use /login with your GitHub account.",
       "model": "--model",
+      "native": true,
       "unrestricted": [
         "--allow-all"
-      ],
-      "native": true
+      ]
     },
     {
       "id": "opencode",
@@ -89,10 +89,10 @@
       "docs": "https://docs.x.ai/build/overview",
       "auth": "Sign in with your xAI account when prompted.",
       "model": "--model",
+      "mcp": ".grok/config.toml",
       "unrestricted": [
         "--always-approve"
-      ],
-      "mcp": ".grok/config.toml"
+      ]
     },
     {
       "id": "kiro",
@@ -178,21 +178,6 @@
       "auth": "Run /login to choose a provider, subscription, API key or local model.",
       "model": "--model",
       "mcp": ".pi/agent/mcp.json"
-    },
-    {
-      "id": "gemini",
-      "name": "Gemini CLI",
-      "command": "gemini",
-      "npm": "@google/gemini-cli",
-      "docs": "https://geminicli.com/docs/get-started/installation/",
-      "auth": "Choose a Google sign-in or another supported Google authentication method when prompted.",
-      "model": "--model",
-      "native": true,
-      "windowsBuild": 26100,
-      "unrestricted": [
-        "--approval-mode",
-        "yolo"
-      ]
     }
   ],
   "providers": [
@@ -209,7 +194,6 @@
     "cline",
     "droid",
     "pi",
-    "gemini",
     "shell",
     "custom"
   ],
@@ -411,37 +395,6 @@
         ]
       },
       "usage": true,
-      "models": false,
-      "resume": false,
-      "reason": ""
-    },
-    {
-      "id": "gemini",
-      "name": "Gemini CLI",
-      "namedProfiles": true,
-      "isolation": {
-        "env": "GEMINI_CLI_HOME",
-        "defaultSubdir": ".gemini",
-        "homeScoped": true,
-        "envOverrides": {
-          "GEMINI_FORCE_FILE_STORAGE": "true",
-          "GEMINI_FORCE_ENCRYPTED_FILE_STORAGE": "true"
-        },
-        "clearEnv": [
-          "GEMINI_CLI_CUSTOM_OAUTH_CREDS",
-          "GOOGLE_GENAI_USE_VERTEXAI",
-          "GOOGLE_GENAI_USE_GCA"
-        ]
-      },
-      "login": {
-        "args": [],
-        "instruction": "Use /auth to sign in to this account, then exit the sign-in console.",
-        "credentialFiles": [
-          "gemini-credentials.json",
-          "oauth_creds.json"
-        ]
-      },
-      "usage": false,
       "models": false,
       "resume": false,
       "reason": ""

@@ -27,26 +27,6 @@ test('maintained Kimi launch uses its discoverable MCP file and preserves existi
   assert.deepEqual(result.env, {});
 });
 
-test('Gemini merges user MCP settings without replacing administrator policy or user preferences', t => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'paddock-gemini-launch-'));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const home = path.join(root, 'home'), directory = path.join(root, 'launch');
-  const file = path.join(home, '.gemini', 'settings.json');
-  fs.mkdirSync(path.dirname(file), { recursive: true }); fs.mkdirSync(directory);
-  const previous = { general: { theme: 'custom' }, mcp: { excluded: ['untrusted-server'] }, mcpServers: { other: { command: 'existing-tool' } } };
-  fs.writeFileSync(file, JSON.stringify(previous));
-  const runtime = { node: process.execPath, tools: path.join(root, 'agent-tools.cjs') };
-  const result = prepareCli('gemini', { directory, runtime, summary: 'Shared instructions', summaryPath: path.join(directory, 'PADDOCK.md'), home, permissions: 'default' });
-  const config = JSON.parse(fs.readFileSync(file, 'utf8'));
-  assert.deepEqual(config.general, previous.general);
-  assert.deepEqual(config.mcp, previous.mcp);
-  assert.deepEqual(config.mcpServers.other, previous.mcpServers.other);
-  assert.equal(config.mcpServers.paddock.env.PADDOCK_BRIDGE_TOKEN, '${PADDOCK_BRIDGE_TOKEN}');
-  assert.deepEqual(result.env, {}, 'Do not supply a user-writable system policy override or redirect login storage');
-  assert.deepEqual(result.args, []);
-  assert.deepEqual(JSON.parse(fs.readFileSync(file + '.paddock-backup', 'utf8')), previous);
-});
-
 test('OpenCode configuration stays valid when environment substitution sees a Windows instructions path', t => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'paddock-opencode-launch-'));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));

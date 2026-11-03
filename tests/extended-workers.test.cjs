@@ -75,13 +75,6 @@ test('Droid cache totals include fresh, read and write tokens and invalid values
   extensionEvent('droid', s, { type: 'result', subtype: 'success', is_error: false, result: 'Done', usage: { input_tokens: -1, output_tokens: Infinity } });
   assert.equal(s.usage.inputTokens, null); assert.equal(s.usage.outputTokens, null); assert.equal(s.usage.cachedInputTokens, null);
 });
-test('Gemini requires a final success, bounds text, and preserves late failures', () => {
-  const s = state(); extensionEvent('gemini', s, { type: 'message', role: 'assistant', content: 'x'.repeat(100), delta: true });
-  assert.equal(s.text.length, 40); assert.equal(s.complete, false);
-  extensionEvent('gemini', s, { type: 'result', status: 'success', stats: { input_tokens: 100, output_tokens: 8, cached: 70 } });
-  assert.equal(s.complete, true); assert.equal(s.usage.inputTokens, 100);
-  extensionEvent('gemini', s, { type: 'error' }); assert.equal(s.error, true);
-});
 test('Kimi only completes after native exit zero; missing output, retries and errors fail', () => {
   for (const code of [1, null]) { const s = state(); extensionEvent('kimi', s, { role: 'assistant', content: 'Done' }); extensionFinalize('kimi', s, code); assert.equal(s.complete, false); assert.equal(s.error, true); }
   const s = state(); extensionEvent('kimi', s, { role: 'assistant', content: 'Done' }); assert.equal(s.complete, false); extensionFinalize('kimi', s, 0); assert.equal(s.complete, true); assert.equal(s.usage, null);

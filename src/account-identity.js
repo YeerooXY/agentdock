@@ -4,7 +4,6 @@ import cursor from '../mobile/assets/providers/cursor.png';
 import opencode from '../mobile/assets/providers/opencode.png';
 import cline from '../mobile/assets/providers/cline.png';
 import claude from '../mobile/assets/providers/claude.png';
-import gemini from '../mobile/assets/providers/gemini.png';
 import antigravity from '../mobile/assets/providers/antigravity.png';
 import kiro from '../mobile/assets/providers/kiro.png';
 import droid from '../mobile/assets/providers/droid.png';
@@ -19,7 +18,6 @@ const identities = {
   openai: ['OpenAI', '#9cbfff', openai],
   claude: ['Claude', '#e6a187', claude],
   anthropic: ['Claude', '#e6a187', claude],
-  gemini: ['Gemini', '#8aafff', gemini],
   antigravity: ['Antigravity', '#90bdff', antigravity],
   copilot: ['Copilot', '#bb9aff'],
   opencode: ['OpenCode', '#c9c8c5', opencode],
