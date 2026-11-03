@@ -4,6 +4,12 @@ const path = require('node:path');
 const { EventEmitter } = require('node:events');
 const { atomicJson, readJson } = require('./storage.cjs');
 const RECENT_MS = 10 * 60_000, HEARTBEAT_MS = 15_000, PERSIST_MS = 2000;
+// After an hour without owner interaction, passive signals (focus, selection,
+// a draft, or a reservation whose activity is unknown) stop holding a lane, so
+// queued work runs while the owner is away. A pending message or owner turn
+// still holds it.
+const AWAY_MS = 60 * 60_000;
+const ACTIVE_FLAGS = ['pendingSubmission', 'ownerTurn'];
 const INTERACTIONS = new Set(['focus', 'click', 'typing', 'paste', 'scroll', 'selection', 'panel-control']);
 const FLAGS = ['focused', 'selection', 'draft', 'pendingSubmission', 'ownerTurn'];
 const validId = value => typeof value === 'string' && value.length > 0 && value.length <= 200;
@@ -49,9 +55,12 @@ class OwnerConsoles extends EventEmitter {
     if (JSON.stringify(prior) === JSON.stringify(record)) return;
     this.records.set(record.consoleKey, record); this.changed();
   }
+  away(record) { return record.lastInteractionAt != null && this.now() - record.lastInteractionAt > AWAY_MS; }
   qualifies(record) {
-    return record.ownerManaged && (FLAGS.some(flag => record[flag]) ||
-      (record.lastInteractionAt !== null && this.now() - record.lastInteractionAt <= RECENT_MS));
+    if (!record.ownerManaged) return false;
+    if (ACTIVE_FLAGS.some(flag => record[flag])) return true;
+    return (!this.away(record) && FLAGS.some(flag => record[flag])) ||
+      (record.lastInteractionAt !== null && this.now() - record.lastInteractionAt <= RECENT_MS);
   }
   checkHeartbeat() {
     if (this.connected && this.now() - this.heartbeatAt > HEARTBEAT_MS) this.freeze();
@@ -111,7 +120,7 @@ class OwnerConsoles extends EventEmitter {
     this.checkHeartbeat();
     const groups = new Set();
     for (const record of this.records.values()) {
-      const reserved = record.activityKnown ? this.qualifies(record) : record.reserved;
+      const reserved = record.activityKnown ? this.qualifies(record) : record.reserved && !this.away(record);
       if (reserved && record.quotaGroupId) groups.add(record.quotaGroupId);
     }
     return groups;
@@ -189,4 +198,4 @@ function ownerCapacity({ quotaGroupId, capacity, active = [], reservations = new
   return turns.length + reserved >= capacity ? 'Reserved for owner' : null;
 }
 
-module.exports = { OwnerConsoles, ownerCapacity, RECENT_MS, HEARTBEAT_MS, PERSIST_MS };
+module.exports = { OwnerConsoles, ownerCapacity, RECENT_MS, HEARTBEAT_MS, PERSIST_MS, AWAY_MS };

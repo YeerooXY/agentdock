@@ -77,6 +77,28 @@ test('freeze and missed heartbeats preserve reservations beyond recency expiry u
   f.register('auto'); f.owners.freeze(); assert.equal(f.owners.isProtected('auto'), true);
 });
 
+test('passive reservations end after an hour away; pending submissions and owner turns still hold the lane', t => {
+  const { AWAY_MS } = require('../electron/owner-consoles.cjs');
+  const f = fixture(t);
+  // A saved reservation whose activity is unknown (restart, stale record) ages out.
+  f.register('stale'); f.touch('stale');
+  const restored = new OwnerConsoles(f.root, { now: f.now });
+  restored.register({ consoleKey: 'stale', launchId: 'new-launch', projectId: 'project-b', accountId: 'codex:a' });
+  assert.deepEqual([...restored.reservations()], ['codex:a']);
+  f.advance(AWAY_MS + 1);
+  assert.equal(restored.reservations().size, 0, 'an hour later the lane is free');
+  assert.equal(restored.isProtected('stale'), true, 'protection is unchanged');
+  // A focused console the owner left an hour ago no longer reserves; an owner turn does.
+  f.register('focused'); f.touch('focused');
+  const record = f.owners.records.get('focused');
+  f.owners.updateFlags(record, { focused: true }); record.reserved = f.owners.qualifies(record);
+  assert.equal(f.owners.reservations().has('codex:a'), true);
+  f.advance(AWAY_MS + 1);
+  assert.equal(f.owners.qualifies(record), false);
+  f.owners.updateFlags(record, { ownerTurn: true });
+  assert.equal(f.owners.qualifies(record), true);
+});
+
 test('reconnection validates all identities and cannot promote or refresh recency', t => {
   const f = fixture(t); f.register('auto');
   f.owners.freeze();
