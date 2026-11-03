@@ -46,8 +46,12 @@ function validate(adapter, file) {
   if (accounts !== null) {
     check(plain(accounts), id, 'accounts must be an object or null');
     check(catalog !== null, id, 'accounts need a CLI');
-    only(accounts, ['isolation', 'login', 'models', 'resume'], id, 'accounts');
-    check(plain(accounts.isolation) && text(accounts.isolation.env) && text(accounts.isolation.defaultSubdir), id, 'isolation needs env and defaultSubdir');
+    only(accounts, ['isolation', 'switch', 'login', 'models', 'resume'], id, 'accounts');
+    // An account is separated either by its own folder (isolation) or by
+    // switching one fixed system credential (switch), never both.
+    check((accounts.isolation === undefined) !== (accounts.switch === undefined), id, 'accounts need isolation or switch');
+    if (accounts.isolation !== undefined) check(plain(accounts.isolation) && text(accounts.isolation.env) && text(accounts.isolation.defaultSubdir), id, 'isolation needs env and defaultSubdir');
+    else check(plain(accounts.switch) && text(accounts.switch.target), id, 'switch needs a credential target');
     check(plain(accounts.login) && Array.isArray(accounts.login.args), id, 'login needs args');
     check(typeof accounts.models === 'boolean' && typeof accounts.resume === 'boolean', id, 'models and resume must be booleans');
   }
@@ -97,7 +101,7 @@ function deriveCapabilities(adapters) {
     const { accounts, usage } = adapter, profiles = accounts !== null;
     return [adapter.id, deepFreeze(copy({
       id: adapter.id, name: adapter.catalog.name, namedProfiles: profiles,
-      isolation: profiles ? accounts.isolation : null, login: profiles ? accounts.login : null,
+      isolation: profiles ? accounts.isolation || null : null, ...(accounts?.switch ? { switch: accounts.switch } : {}), login: profiles ? accounts.login : null,
       // The usage flag follows the reader reference, never a second list.
       usage: usage.reader !== null, models: profiles ? accounts.models : false, resume: profiles ? accounts.resume : false,
       reason: profiles ? '' : NO_PROFILE_REASON
@@ -111,7 +115,7 @@ function deriveUsageSources(adapters) {
   for (const { id, usage, accounts } of adapters) {
     sources[id] = deepFreeze({ provider: id, reader: usage.reader !== null, state: usage.reader !== null ? 'reader' : usage.state,
       // Extra accounts are only safe once the CLI's separate sign-in storage is verified.
-      isolated: accounts !== null,
+      isolated: accounts !== null, ...(accounts?.switch ? { switched: true } : {}),
       method: usage.method || null, precision: usage.precision || null, source: usage.source || null, nativeHint: usage.nativeHint || null, accountIds: [...(usage.accountIds || [])] });
   }
   return deepFreeze(sources);

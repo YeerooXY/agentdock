@@ -14,9 +14,9 @@
 const { usageSource } = require('./providers/index.cjs');
 
 const STALE_AFTER_MS = 5 * 60_000;
-const STATUSES = ['current', 'refreshing', 'stale', 'sign-in', 'not-installed', 'timeout', 'unavailable', 'unsupported', 'no-quota', 'not-isolated', 'limited'];
+const STATUSES = ['current', 'refreshing', 'stale', 'sign-in', 'not-installed', 'timeout', 'unavailable', 'unsupported', 'no-quota', 'not-isolated', 'limited', 'inactive'];
 // A failed check keeps its cached reading visible, marked stale.
-const FAILURES = new Set(['sign-in', 'not-installed', 'timeout', 'unavailable', 'unsupported', 'limited']);
+const FAILURES = new Set(['sign-in', 'not-installed', 'timeout', 'unavailable', 'unsupported', 'limited', 'inactive']);
 
 const finite = value => typeof value === 'number' && Number.isFinite(value);
 const percent = value => finite(value) && value >= 0 && value <= 100 ? value : null;

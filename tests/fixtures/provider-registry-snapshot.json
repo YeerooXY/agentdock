@@ -256,13 +256,19 @@
     {
       "id": "antigravity",
       "name": "Google Antigravity",
-      "namedProfiles": false,
+      "namedProfiles": true,
       "isolation": null,
-      "login": null,
+      "switch": {
+        "target": "gemini:antigravity"
+      },
+      "login": {
+        "args": [],
+        "instruction": "Sign in with the Google account you want to add, then close the sign-in console."
+      },
       "usage": true,
       "models": false,
       "resume": false,
-      "reason": "Separate sign-in storage has not been verified for this provider."
+      "reason": ""
     },
     {
       "id": "copilot",

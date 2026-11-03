@@ -30,8 +30,9 @@ test('providers without a reader declare why', () => {
 });
 
 test('only providers with verified separate sign-in storage are isolated', () => {
-  assert.deepEqual(registry.adapters.filter(a => a.accounts).map(a => a.id).sort(), ['claude', 'codex', 'gemini', 'grok', 'pi']);
-  for (const id of ['copilot', 'cursor', 'antigravity', 'kiro', 'kimi', 'opencode']) assert.equal(registry.usageSource(id).isolated, false);
+  assert.deepEqual(registry.adapters.filter(a => a.accounts).map(a => a.id).sort(), ['antigravity', 'claude', 'codex', 'gemini', 'grok', 'pi']);
+  for (const id of ['copilot', 'cursor', 'kiro', 'kimi', 'opencode']) assert.equal(registry.usageSource(id).isolated, false);
+  assert.equal(registry.usageSource('antigravity').switched, true);
 });
 
 test('adapter schema rejects malformed adapters', () => {

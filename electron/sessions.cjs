@@ -68,6 +68,7 @@ class Sessions extends EventEmitter {
     this.nativeCodex = dependencies.nativeCodex || nativeCodex;
     this.codexScrollback = dependencies.codexScrollback || (() => true);
     this.hub = dependencies.hub;
+    this.credentialSwitch = dependencies.credentialSwitch || null;
     this.studyContext = dependencies.studyContext || studyContext;
     this.projects = dependencies.projects;
     this.ssh = dependencies.ssh;
@@ -206,6 +207,8 @@ class Sessions extends EventEmitter {
     if (!stage && this.items.has(id)) throw new Error('This console is already open.');
     const selectedAccountId = cliAgents.has(raw.provider) ? accountId || defaultId(raw.provider) : null;
     const account = selectedAccountId && this.accounts ? this.accounts.getAccount(selectedAccountId, raw.provider) : null;
+    // One-at-a-time CLIs (Antigravity) sign in to the chosen account first.
+    if (selectedAccountId && this.credentialSwitch?.handles(raw.provider)) await this.credentialSwitch.activate(raw.provider, selectedAccountId, { except: sessionId });
     const sessionsRoot = path.join(this.root, 'sessions');
     try { fs.mkdirSync(sessionsRoot); } catch (error) { if (error.code !== 'EEXIST') throw error; }
     ensureOwnedDirectory(this.root, sessionsRoot);
@@ -374,6 +377,7 @@ class Sessions extends EventEmitter {
         session.state = 'error'; session.restoreError = 'The saved conversation could not be reopened. Check the console output, then try again.';
       }
       if (session.purpose === 'login' && this.accounts) this.accounts.markLoginCompleted(session.accountId, exitCode === 0);
+      void this.credentialSwitch?.release(session.provider);
       this.emit('changed');
     });
     if (!stage) this.emit('changed');
@@ -392,6 +396,10 @@ class Sessions extends EventEmitter {
     if (!adapter?.namedProfiles || !adapter.login) throw new Error('Sign-in for a separate account is unavailable for this provider.');
     const id = crypto.randomUUID(), launchId = crypto.randomUUID(), executable = saved.provider === 'codex' ? this.nativeCodex() : saved.provider === 'claude' ? (this.claude?.path || this.findProgram('claude')) : (this.cliSetup?.executable(saved.provider) || this.findProgram(cliAgents.get(saved.provider)?.command));
     if (!executable) throw new Error(`${adapter.name} was not found. Install it, then restart Paddock.`);
+    const switched = !!this.credentialSwitch?.handles(saved.provider);
+    // A new account signs in with the CLI signed out; the saved sign-in of the
+    // previous account is kept by Paddock.
+    if (switched) await this.credentialSwitch.activate(saved.provider, accountId);
     const account = this.accounts.getAccount(accountId, saved.provider), env = this.accounts.environment(accountId, saved.provider, { baseEnv: terminalEnvironment(), login: true });
     Object.assign(env, { PADDOCK_ACCOUNT_ID: accountId });
     let command = executable, args = [...adapter.login.args];
@@ -411,7 +419,13 @@ class Sessions extends EventEmitter {
     terminal.onExit(({ exitCode }) => {
       session.alive = false; session.state = 'ended'; session.exitCode = exitCode; session.updatedAt = Date.now();
       if (this.loginAccounts.get(accountId) === session) this.loginAccounts.delete(accountId);
-      if (exitCode === 0 && !session.dismissed) {
+      if (switched) {
+        void this.credentialSwitch.completeLogin(saved.provider, accountId).then(result => {
+          this.accounts.markLoginCompleted(accountId, result.completed);
+          if (!result.completed) session.loginError = result.duplicate ? 'This Google account is already added in Paddock. Sign in with a different account.' : 'Sign-in was not confirmed. Reopen this account and complete the provider sign-in.';
+        }, () => { session.loginError = 'Paddock could not save this sign-in. Try again.'; })
+          .finally(() => { void this.credentialSwitch.release(saved.provider); this.emit('changed'); });
+      } else if (exitCode === 0 && !session.dismissed) {
         const evidence = adapter.login.credentialFiles;
         const completed = !evidence?.length || evidence.some(file => {
           try {

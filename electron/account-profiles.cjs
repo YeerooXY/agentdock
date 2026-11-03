@@ -44,7 +44,7 @@ class AccountProfiles {
   }
   get(id) { return this.profiles.find(x => x.id === id) || null; }
   provider(id) { return this.registry.getAccountProvider(id); }
-  providers() { return this.registry.listAccountProviders().map(({ isolation, login, ...publicFields }) => ({ ...publicFields, loginInstruction: login?.instruction || '' })); }
+  providers() { return this.registry.listAccountProviders().map(({ isolation, switch: switched, login, ...publicFields }) => ({ ...publicFields, ...(switched ? { oneAtATime: true } : {}), loginInstruction: login?.instruction || '' })); }
   allChoices() {
     return [...this.registry.listAccountProviders().flatMap(x => this.choices(x.id)),
       ...this.list().filter(x => !this.provider(x.provider)).map(x => ({ ...x, profile: true, unavailableReason: 'Provider adapter is unavailable. This account has been kept.' }))];
@@ -56,7 +56,7 @@ class AccountProfiles {
     if (!this.provider(profile.provider)?.namedProfiles) throw new Error('Separate sign-in storage is unavailable for this provider. The saved account has been kept.');
     const configRoot = this.directory(profile.id), isolation = this.provider(profile.provider).isolation;
     let configDir = configRoot;
-    if (isolation.homeScoped) {
+    if (isolation?.homeScoped) {
       configDir = path.join(configRoot, isolation.defaultSubdir);
       if (!inside(configRoot, configDir)) throw new Error('Account configuration path is invalid.');
       fs.mkdirSync(configDir, { recursive: true });
@@ -143,7 +143,7 @@ class AccountProfiles {
       if (login && normalized.startsWith('paddock_')) delete env[key];
       if (['paddock_draft_url', 'paddock_draft_token', 'paddock_draft_session', 'paddock_draft_launch', 'paddock_draft_roots', 'paddock_draft_provider', 'paddock_real_editor', 'paddock_bridge_url', 'paddock_bridge_token'].includes(normalized)) delete env[key];
       if (account.profile && [...this.registry.listAccountProviders().flatMap(x => x.isolation ? [x.isolation.env.toLowerCase()] : []), 'codex_sqlite_home'].includes(normalized)) delete env[key];
-      if (account.profile && (isolation.clearEnv || []).some(name => name.toLowerCase() === normalized)) delete env[key];
+      if (account.profile && (isolation?.clearEnv || []).some(name => name.toLowerCase() === normalized)) delete env[key];
       if (account.profile && (/(?:_API_KEY|_AUTH_TOKEN|_ACCESS_TOKEN|_OAUTH_TOKEN)$/i.test(key) || /^(?:GH_TOKEN|GITHUB_TOKEN|COPILOT_GITHUB_TOKEN|GOOGLE_APPLICATION_CREDENTIALS|CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE|GEMINI_CLI_CUSTOM_OAUTH_CREDS)$/i.test(key))) delete env[key];
       if (account.profile && ['codex_access_token', 'codex_api_key', 'openai_api_key', 'openai_base_url', 'codex_base_url', 'anthropic_api_key', 'anthropic_auth_token', 'claude_code_oauth_token', 'anthropic_base_url', 'claude_code_use_bedrock', 'claude_code_use_vertex', 'claude_code_use_foundry'].includes(normalized)) delete env[key];
       if (bridge && !login && ['visual', 'editor'].includes(normalized)) delete env[key];
@@ -157,11 +157,11 @@ class AccountProfiles {
       }
       env.CODEX_HOME = account.configDir;
       env.CODEX_SQLITE_HOME = sqlite;
-    } else if (account.profile) {
+    } else if (account.profile && isolation) {
       // Gemini receives a home root and appends .gemini itself; Pi uses the directory directly.
       env[isolation.env] = isolation.homeScoped ? account.configRoot : account.configDir;
     }
-    if (account.profile) Object.assign(env, isolation.envOverrides || {});
+    if (account.profile) Object.assign(env, isolation?.envOverrides || {});
     if (bridge && !login) {
       const editor = bridge.editorCommand;
       env.PADDOCK_DRAFT_URL = bridge.url;

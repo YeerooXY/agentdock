@@ -279,7 +279,7 @@ function pageHeading(eyebrow, title, description, action = '') {
 const USAGE_STATUS = {
   refreshing: 'Checking', stale: 'Stale', 'sign-in': 'Sign in needed', 'missing-key': 'Add key', 'not-installed': 'Not installed',
   unsupported: 'Unsupported', limited: 'Try later', timeout: 'Timed out', unavailable: 'Unavailable',
-  'not-isolated': 'Not isolated', 'no-quota': 'No quota'
+  'not-isolated': 'Not isolated', 'no-quota': 'No quota', inactive: 'Other account open'
 };
 const STALE_WHY = { 'check-failed': 'The last check failed.', 'no-observation': 'No reading time.', 'reset-passed': 'A reset time has passed.', old: 'Older than five minutes.' };
 function usageStatusLabel(check) {
@@ -324,7 +324,7 @@ function usageRow(account, check, fallback) {
   const message = check?.message || (provider === 'opencode' ? 'Add an OpenCode key in Settings to check account limits.' : 'Refresh to check account usage.');
   const shown = windows.slice(0, 4), more = windows.slice(4);
   const observedAt = check?.observedAt || readings[0]?.observedAt;
-  const reason = stale ? [STALE_WHY[check.staleReason], check.failure ? `${USAGE_STATUS[check.failure] || check.failure}.` : ''].filter(Boolean).join(' ') : '';
+  const reason = stale ? check.failure === 'inactive' ? check.message : [STALE_WHY[check.staleReason], check.failure ? `${USAGE_STATUS[check.failure] || check.failure}.` : ''].filter(Boolean).join(' ') : '';
   const name = account.label && account.label !== display && !/^Default\s/i.test(account.label) ? account.label : display;
   // A used-up allowance blurs its limits and shows when the next one returns.
   const spent = windows.filter(w => !w.unlimited && remainingPercent(w.usedPercent) === 0);

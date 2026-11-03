@@ -59,6 +59,7 @@ const { isLocal } = require('./web-preview.cjs');
 const filePreview = require('./file-preview.cjs');
 const { userDataPath } = require('./user-data.cjs');
 const { AccountProfiles, defaultId } = require('./account-profiles.cjs');
+const { CredentialSwitch } = require('./credential-switch.cjs');
 const { DraftBridge } = require('./draft-bridge.cjs');
 const { accountIdForLimit } = require('./account-switching-policy.cjs');
 const { SubscriptionUsage, readClaudeModels, usageEnvironment, stopUsageReaders } = require('./subscription-usage.cjs');
@@ -87,7 +88,7 @@ if (secondInstance) app.quit();
 let window, tray, vault, sessions, workspace, projects, messageUsage, updates, account, root, settings, ledger, notifications, hub, integrations, mcpCatalog, workbench, cliSetup, skillPacks, turns, mobile, workPower, ssh, screenshots, accounts, draftBridge;
 let codePanel, worktrees, messageQueue, prompts, tasks;
 let ownerConsoles, capacityReservations;
-let mode = 'dashboard', quitting = false, refreshing = false, lastRefresh = 0, apiBusy = false, subscriptionUsage, usageRefresh;
+let mode = 'dashboard', quitting = false, refreshing = false, lastRefresh = 0, apiBusy = false, subscriptionUsage, usageRefresh, credentialSwitch;
 let modeTarget = null, modeTask, modeSequence = 0, transitioning = false;
 let dashboardRestore = null;
 let trayHidden = false, windowDrag = null, hiddenBounds = null;
@@ -438,6 +439,10 @@ app.whenReady().then(() => guardStartup(async () => {
   await startupStep('preparing the data folder', () => { root = app.getPath('userData'); fs.mkdirSync(root, { recursive: true }); root = require('./platform.cjs').realRoot(root); });
   crash.step = 'loading saved data'; crash.log('INFO', crash.step);
   accounts = new AccountProfiles(root);
+  // CLIs with one fixed system credential (Antigravity) switch accounts instead of separating folders.
+  credentialSwitch = new CredentialSwitch(root, { safeStorage,
+    providers: Object.fromEntries(require('./provider-account-capabilities.cjs').listAccountProviders().filter(item => item.switch).map(item => [item.id, { target: item.switch.target, name: item.name }])),
+    inUse: (provider, except = null) => [...(sessions?.items.values() || []), ...(sessions?.pendingStages?.values() || [])].filter(item => item.alive && item.provider === provider && item.id !== except).map(item => item.accountId || `${provider}:default`) });
   worktrees = new Worktrees(root);
   prompts = new PromptLibrary(root);
   draftBridge = new DraftBridge(); await startupStep('Draft bridge', () => draftBridge.start(), { optional: true });
@@ -454,7 +459,7 @@ app.whenReady().then(() => guardStartup(async () => {
   const usageDirectory = path.join(root, 'usage-reader'); fs.mkdirSync(usageDirectory, { recursive: true });
   subscriptionUsage = new SubscriptionUsage({
     readers: buildUsageReaders({
-      executable: id => cliSetup.executable(id), accounts, usageDirectory,
+      executable: id => cliSetup.executable(id), accounts, usageDirectory, credentialSwitch,
       getOpenCodeKey: () => { const entry = vault.list().find(item => item.id.toLowerCase() === 'opencode' || item.label.toLowerCase() === 'opencode'); return entry ? vault.get(entry.id) : null; },
       codex: async choice => {
         const reader = getCodexAccount(choice.id), readings = await reader.refresh();
@@ -591,7 +596,7 @@ app.whenReady().then(() => guardStartup(async () => {
       env: accounts.environment(accountId, 'claude', { baseEnv: process.env }) });
     return [];
   };
-  sessions = new Sessions(root, { ssh, hub, claude, runtime, cliSetup, projects, accounts, draftBridge, grid: settings.grid, codexScrollback: () => settings.codexScrollback !== false,
+  sessions = new Sessions(root, { ssh, hub, claude, runtime, cliSetup, projects, accounts, credentialSwitch, draftBridge, grid: settings.grid, codexScrollback: () => settings.codexScrollback !== false,
     getModels: modelChoices,
     isBusy: id => !!turns?.active.has(id), getThreadModel: (accountId, threadId) => getCodexAccount(accountId).threadModel(threadId), onLayout: ({ grid, plan }) => {
     const slotNames = { ...settings.slotNames };
@@ -937,6 +942,7 @@ app.whenReady().then(() => guardStartup(async () => {
             message: `Remove ${profile.label}?`, detail: 'Paddock deletes this account\'s sign-in and settings folder. Chats stored with the provider are not affected.' });
           if (response !== 1) break;
           codexAccounts.get(profile.id)?.stop(); codexAccounts.delete(profile.id);
+          await credentialSwitch.remove(profile.provider, profile.id);
           accounts.remove(profile.id);
           limits = limits.filter(item => limitAccountId(item) !== profile.id);
           try { atomicJson(path.join(root, 'limits.json'), limits); } catch (error) { storageError = error.message; }

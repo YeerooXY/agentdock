@@ -21,7 +21,20 @@ module.exports = {
     ],
     mcp: '.gemini/config/mcp_config.json'
   },
-  accounts: null,
+  // Antigravity keeps its sign-in in one Windows credential ("gemini:antigravity"),
+  // so extra accounts switch that credential instead of using a folder. One
+  // account is signed in at a time. See docs/account-isolation-2026-11-03.md.
+  accounts: {
+    switch: {
+      target: 'gemini:antigravity'
+    },
+    login: {
+      args: [],
+      instruction: 'Sign in with the Google account you want to add, then close the sign-in console.'
+    },
+    models: false,
+    resume: false
+  },
   usage: {
     reader: 'antigravity',
     method: 'screen',

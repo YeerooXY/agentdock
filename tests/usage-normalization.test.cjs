@@ -71,9 +71,9 @@ test('providers without a quota or a source are explicit, and Strata is Local', 
   assert.match(by['gemini:default'].message, /\/stats model/);
 });
 
-test('the six global-environment CLIs are not-isolated for non-default accounts and never call a reader', async () => {
+test('the five global-environment CLIs are not-isolated for non-default accounts and never call a reader', async () => {
   const calls = [], readers = {};
-  const six = ['copilot', 'cursor', 'antigravity', 'kiro', 'kimi', 'opencode'];
+  const six = ['copilot', 'cursor', 'kiro', 'kimi', 'opencode'];
   for (const provider of six) readers[provider] = async a => { calls.push(a.id); return row(provider, a.id, 100); };
   const usage = new SubscriptionUsage({ now: () => 100, readers });
   await usage.refresh(six.flatMap(provider => [{ id: provider + ':default', provider }, { id: provider + ':second', provider }]));
@@ -125,6 +125,7 @@ test('every reader receives the selected account environment, without inherited 
 test('reader functions refuse another account of an unverified CLI even if called directly', async () => {
   const { seen, readers } = readerHarness();
   for (const provider of ['copilot', 'cursor', 'antigravity', 'kiro', 'kimi', 'opencode']) {
+    // Antigravity switches accounts; without the switch it refuses the same way.
     await assert.rejects(readers[provider]({ id: provider + ':second', provider }), error => error.code === 'not-isolated');
     assert.equal(seen[provider], undefined);
   }

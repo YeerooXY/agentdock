@@ -14,7 +14,7 @@ const { readCursorUsage } = require('./cursor-usage.cjs');
 const { readPiUsage } = require('./pi-usage.cjs');
 const { usageSource, usageProviders } = require('./providers/index.cjs');
 
-function buildUsageReaders({ executable, accounts, usageDirectory, getOpenCodeKey = () => null, codex, env = process.env, impl = {} }) {
+function buildUsageReaders({ executable, accounts, usageDirectory, getOpenCodeKey = () => null, codex, credentialSwitch = null, env = process.env, impl = {} }) {
   const read = { readClaudeUsage, readCopilotUsage, readKiroUsage, readKimiUsage, readOpenCodeUsage, readAntigravityUsage, readCursorUsage, readPiUsage, ...impl };
   const common = (choice, provider) => {
     if (choice.provider !== provider) throw new UsageError('unavailable', 'This account belongs to a different provider.');
@@ -23,10 +23,25 @@ function buildUsageReaders({ executable, accounts, usageDirectory, getOpenCodeKe
       throw new UsageError('not-isolated', 'Separate sign-in storage is not verified for this CLI. Only its default account is checked.');
     return { accountId: choice.id, env: usageEnvironment(accounts.environment(choice.id, provider, { baseEnv: env })) };
   };
+  // A one-at-a-time CLI is read after switching to the account, and only while
+  // no console of another account is open. It then returns to its default account.
+  const switched = async (choice, provider, reader) => {
+    if (!credentialSwitch?.handles(provider)) {
+      // Without switching, the credential holds whichever account is signed in.
+      if (choice.id !== `${provider}:default`) throw new UsageError('not-isolated', 'Account switching is unavailable, so only the default account is checked.');
+      return reader();
+    }
+    try { return await credentialSwitch.withAccount(provider, choice.id, reader); }
+    catch (error) {
+      if (error instanceof UsageError) throw error;
+      if (error.code === 'switch-busy') throw new UsageError('inactive', 'Another account of this CLI is open in a console. Showing the last reading.');
+      throw new UsageError('unavailable', error.message);
+    }
+  };
   const sync = {
     codex: choice => codex(choice),
     claude: choice => read.readClaudeUsage({ executable: executable('claude'), cwd: usageDirectory, ...common(choice, 'claude') }),
-    antigravity: choice => read.readAntigravityUsage({ executable: executable('antigravity'), cwd: usageDirectory, ...common(choice, 'antigravity') }),
+    antigravity: choice => switched(choice, 'antigravity', () => read.readAntigravityUsage({ executable: executable('antigravity'), cwd: usageDirectory, ...common(choice, 'antigravity') })),
     copilot: choice => read.readCopilotUsage({ executable: copilotExecutable(executable('copilot')), cwd: usageDirectory, ...common(choice, 'copilot') }),
     cursor: choice => read.readCursorUsage({ executable: executable('cursor'), cwd: usageDirectory, ...common(choice, 'cursor') }),
     pi: choice => {
