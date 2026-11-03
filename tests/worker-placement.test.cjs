@@ -69,8 +69,8 @@ test('mobile state exposes per-console worker and owner capabilities', () => {
   const { MobileCompanion } = require('../electron/mobile.cjs');
   const sessions = { grid: { columns: 2, rows: 2 }, ownerConsoles: { records: new Map([['worker', { ownerManaged: true }]]) },
     list: () => [{ id: '1', consoleKey: 'worker', taskId: 'task' }, { id: '2', consoleKey: 'owner' }] };
-  const state = MobileCompanion.prototype.publicState.call({ config: { host: '127.0.0.1', port: 1 }, name: 'Test', sessions,
-    results: { unreadGroups: () => [], list: () => [] }, liveAlerts: [] });
+  const state = MobileCompanion.prototype.publicState.call(Object.assign({ extrasState: MobileCompanion.prototype.extrasState, stateV2: MobileCompanion.prototype.stateV2 }, { config: { host: '127.0.0.1', port: 1 }, name: 'Test', sessions,
+    results: { unreadGroups: () => [], list: () => [] }, liveAlerts: [] }));
   assert.deepEqual(state.sessions[0].consoleCapabilities, { worker: true, ownerManaged: true, close: false, switch: false, setup: false, manage: false, queue: false });
   assert.equal(state.sessions[1].consoleCapabilities.close, true);
 });

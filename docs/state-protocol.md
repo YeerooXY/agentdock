@@ -91,15 +91,23 @@ Messages reject unknown fields.
 
 Slices hold allowlisted DTOs only. Credential values, OAuth material, pairing tokens and comparison codes, device-flow user codes, private keys, resolved environments and authorization headers never enter a slice. The store checks field names against `SECRET_KEY` (`slices.json` has the pattern): tests reject such writes; the app drops the fields and logs the slice and path. The phone pairing comparison code and the Meshy device code reach the desktop only through the legacy adapter's live overlay. A v2 desktop client reads them with an explicit call.
 
-## Legacy adapter (until A5)
+## Legacy adapter
 
-`electron/main.cjs` reads the services, splits today's snapshot into slices (`slicesFromLegacy`), writes each through its writer handle and rebuilds the snapshot from the desktop view (`legacySnapshot`). In test mode, a mismatch between the rebuilt and direct snapshot fails the call. The `tasks` slice is written from TaskLoop's `changed` events instead of the publish-time read.
+`electron/main.cjs` reads the services, splits today's snapshot into slices (`slicesFromLegacy`) and writes each through its writer handle on every publish. The full snapshot is rebuilt from the desktop view (`legacySnapshot`) only for `dock.call('state')`, `state.legacy` and a renderer on the `dock:state` fallback. In test mode, a mismatch between the rebuilt and direct snapshot fails the call. The `tasks` slice is written from TaskLoop's `changed` events instead of the publish-time read.
 
-## Transport (A4, opt-in)
+The renderer rebuilds the same snapshot from its v2 slices with `snapshotFromSlices` in `src/state-client.js`. The phone rebuilds its v1 `state` map from phone slices and `extras` with `legacyState` in `mobile/lib/state_client.dart` (`phoneLegacyState` in `projections.cjs` is the Node reference). `tests/state-parity.test.cjs` replays recorded store mutations and checks both against the legacy payloads after every step, including resync, resume after a lost batch and a restart.
+
+## Transport
 
 Code: `electron/state-sync.cjs` (`ProjectionHistory`, `StateConnection`, `chunkFrames`, `reassembleChunk`). Fixture: `tests/fixtures/state/transport.json` (chunk cases and limits; regenerate with `node tests/fixtures/state/generate-transport.cjs`).
 
-Protocol 2 is off by default. It turns on with the `stateSyncV2` setting (`dock.call('settings', {stateSyncV2: true})`), the `--state-v2` flag or `PADDOCK_STATE_V2=1`. Off, the renderer gets `dock:state` and phones use `/v1/events`, as before. Turning the setting off closes v2 phone sockets (1012) and returns the renderer to `dock:state`.
+Protocol 2 is on by default. It turns off with the `stateSyncV2` setting set to false (`dock.call('settings', {stateSyncV2: false})`) or `PADDOCK_STATE_V2=0`; `PADDOCK_STATE_V2=0` wins over everything. `--state-v2` and `PADDOCK_STATE_V2=1` force it on even when the setting is false. Off, the renderer gets `dock:state` and phones use `/v1/events`. Turning the setting off closes v2 phone sockets (1012) and returns the renderer to `dock:state`. Turning it back on leaves the open renderer on `dock:state` until it reloads; phones move to `/v2/events` on their next connection.
+
+Fallbacks:
+
+- Desktop: if `window.dock.state` is missing or a send fails (for example protocol 2 is off), the renderer logs once to the console, calls `dock.call('state.legacy')` and then lives on `dock:state`. The main process logs the switch once. A renderer reload starts with protocol 2 again.
+- Phone: the app opens `/v2/events` first. HTTP 404 means an older PC or protocol 2 off; the app uses `/v1/events` for that PC until the user reconnects or a v1 `state` frame lists `state.v2`. The PC keeps serving `/v1/events` for older phone builds.
+- Both clients answer `reconnect` with `hello{lastRev: null}` on the same connection. After three failures in a row the phone closes the socket and reconnects normally; the desktop falls back to `dock:state`.
 
 ### Server behaviour
 
@@ -135,7 +143,9 @@ v1 `state` frames are not sent on `/v2/events`. Phone `capabilities` stay in `ex
 
 ### Desktop IPC
 
-`window.dock.state.send(message)` sends `hello`, `subscribe`, `ack`, `resync` or `pong`; `window.dock.state.onMessage(callback)` receives `welcome`, `changes` and `error`. It throws when protocol 2 is off; `dock.call('state.protocol')` returns `{protocol: 2, v2, flag}`. While a v2 subscription is open, `dock:state` stops; a reload or renderer crash closes it and `dock:state` resumes. Subscribe to `sessions` and `panels`: the preload reads them to keep console identities for owner activity.
+`window.dock.state.send(message)` sends `hello`, `subscribe`, `ack`, `resync` or `pong`; `window.dock.state.onMessage(callback)` receives `welcome`, `changes` and `error`. It throws when protocol 2 is off; `dock.call('state.protocol')` returns `{protocol: 2, v2, flag}`. The renderer subscribes to every desktop slice except `alerts` at startup (`connectStateV2` in `src/state-client.js`). With protocol 2 on, the main process sends no `dock:state` snapshots on publish: the first `changes` batch after `hello` is the initial reset. `dock:state` is sent only when protocol 2 is off, after `dock.call('state.legacy')` or when the connection closed itself. A reload or renderer crash closes the subscription; the reloaded renderer subscribes again. Subscribe to `sessions` and `panels`: the preload reads them to keep console identities for owner activity.
+
+The phone opens `/v2/events` with `hello` for `shell, sessions, queues, prompts, projects, tasks, usage, results`. Phone sessions carry `requestedSettings` and the full `remote` fields (`hostId, name, label, host, folder, tmux`); queue entries carry `id, text, createdAt, ownerRequested, at, state, error`, so the rebuilt map matches v1.
 
 Codes kept out of the store are explicit reads: `dock.call('mobile.status')` returns the phone status with `pendingPairing.code`, and `dock.call('meshy.auth')` returns `{state, code?, url?, error?}`. Call them when `mobileStatus.pendingPairing` or `imageJobs.meshyAuth.state === 'waiting'` appears or changes.
 
@@ -143,4 +153,4 @@ Codes kept out of the store are explicit reads: `dock.call('mobile.status')` ret
 
 Desktop `tasks` items carry `acknowledgedAt`, `dismissedAt` and `supersededBy`; dismissed tasks leave the slice. Desktop `results` items carry `outcome` (`{type: 'task', verdict, outcome, changedFiles, checks, unresolved, usage}`) when a task wrote one. Phone tasks (`phone-task.json`) add `acknowledgedAt`, `dismissedAt` and `supersededBy`. The phone `results` slice stays `{unread, count}`; outcomes are read with `results.list` and `results.preview`. IPC: `tasks.acknowledge {id}` returns the task view, `tasks.dismiss {id}` returns true and refuses running tasks.
 
-Not yet: v2 as the default, removal of full-snapshot publishing (A5), and IPC application pings.
+Not yet: IPC application pings, and slices for the fields that still travel in phone `extras`.

@@ -49,7 +49,7 @@ import './workspace-glass.css';
 import './usage-glass.css';
 import { escapeHtml } from './html-escape.js';
 import { patchChildren } from './core/dom.js';
-import { createStateClient } from './state-client.js';
+import { createStateClient, connectStateV2 } from './state-client.js';
 
 const $ = selector => document.querySelector(selector);
 const escape = escapeHtml;
@@ -1297,7 +1297,16 @@ window.dock.onNotice?.(item => {
   if (item.destination === 'phone-pairing') { phone.open({ pair: true }); return; }
   workbench.openNotice(item).catch(error => toast(error.message, true));
 });
+// State protocol 2 is the default: the main process sends slice changes and
+// the snapshot is rebuilt here. Full dock:state snapshots stay the fallback
+// (protocol 2 turned off, an older preload, or a failed subscription).
 window.dock.onState(receive);
+if (window.dock.state?.send && window.dock.state?.onMessage) {
+  connectStateV2({ transport: window.dock.state, read: method => call(method), onSnapshot: receive, onFallback: error => {
+    console.warn(`State updates use full snapshots: ${error.message}`);
+    window.dock.call('state.legacy').then(result => { if (result?.ok && result.value) receive(result.value); }, () => {});
+  } });
+}
 
 function launchDefaultsFields() {
   const form = $('#console-defaults-form'); if (!form) return;

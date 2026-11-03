@@ -287,22 +287,32 @@ class MobileCompanion extends EventEmitter {
     else if (!current) this.streams.set(id, new TerminalStream(s));
     const stream = this.streams.get(id); stream.resize(s.cols, s.rows); return stream;
   }
+  // The v1 `state` payload for /v1/events and the `state` request. v2 phones
+  // get the slices from the store and only these extra fields (extrasState).
   publicState() {
+    const extras = this.extrasState();
+    const { connection, previews, projects, imageJobs, imageJobsRunning, capabilities, alerts, unreadResults, resultVersion } = extras;
+    return { connection, previews, projects, imageJobs, imageJobsRunning, capabilities, capacity: (this.sessions.grid?.columns || 3) * (this.sessions.grid?.rows || 3), sessions: this.sessions.list().filter(x => !x.dismissed).map(item => mobileSession(item, this.sessions)), queues: this.queue?.snapshot() || {}, prompts: this.prompts?.list() || [], alerts, unreadResults, resultVersion };
+  }
+  extrasState() {
     const localUrl = `https://${this.config.host}:${this.config.port}`;
     const connection = { url: localUrl };
     connection.name = this.name;
-    return { connection, previews: (this.sessions.codePanels?.() || []).filter(p => p.kind === 'web').map(({ id, name, url, state, phoneAllowed }) => ({ id, name, url, state, phoneAllowed: phoneAllowed === true })), projects: (typeof this.sessions.projects?.list === 'function' ? this.sessions.projects.list() || [] : []).filter(x => x.status !== 'archived').map(({ id, name, color }) => ({ id, name, ...(color ? { color } : {}) })), imageJobs: this.concepts ? imageJobs(this.concepts, this.redactImageText) : [], imageJobsRunning: !!this.concepts?.items.some(x => ['submitting', 'waiting', 'downloading'].includes(x.state)), capabilities: [...(this.concepts ? ['image.jobs'] : []), ...(this.toolsStatus ? ['tools.status'] : []), ...(typeof this.getUsageTurns === 'function' ? ['usage.turns'] : []), ...(mobileProjects.available(this.sessions.projects) ? ['projects.read'] : []), 'code.read', 'results.thumbnails', 'results.actions', 'console.agents', ...(this.worktrees && this.endMobileSession ? ['console.worktree'] : []), 'console.files', 'console.close', 'console.projects', 'console.models', ...(typeof this.sessions.switchSettings === 'function' ? ['console.settings'] : []), 'console.ssh', 'console.manage', 'console.switch', 'console.setup', 'alerts.direct', 'console.attachments', ...(this.queue ? ['console.queue'] : []), ...(this.prompts ? ['prompts', 'prompts.edit'] : []), ...(this.sessions.workerBridge ? ['worker.submit', 'worker.stop'] : []), ...(this.stateSync && this.stateSync.enabled?.() !== false ? ['state.v2'] : [])], capacity: (this.sessions.grid?.columns || 3) * (this.sessions.grid?.rows || 3), sessions: this.sessions.list().filter(x => !x.dismissed).map(item => mobileSession(item, this.sessions)), queues: this.queue?.snapshot() || {}, prompts: this.prompts?.list() || [], alerts: this.liveAlerts, unreadResults: this.results.unreadGroups(), resultVersion: digest(this.results.list().map(x => x.id + ':' + x.seenAt + ':' + x.changeCount).join(',')).slice(0, 16) };
+    return { connection, previews: (this.sessions.codePanels?.() || []).filter(p => p.kind === 'web').map(({ id, name, url, state, phoneAllowed }) => ({ id, name, url, state, phoneAllowed: phoneAllowed === true })), projects: (typeof this.sessions.projects?.list === 'function' ? this.sessions.projects.list() || [] : []).filter(x => x.status !== 'archived').map(({ id, name, color }) => ({ id, name, ...(color ? { color } : {}) })), imageJobs: this.concepts ? imageJobs(this.concepts, this.redactImageText) : [], imageJobsRunning: !!this.concepts?.items.some(x => ['submitting', 'waiting', 'downloading'].includes(x.state)), capabilities: [...(this.concepts ? ['image.jobs'] : []), ...(this.toolsStatus ? ['tools.status'] : []), ...(typeof this.getUsageTurns === 'function' ? ['usage.turns'] : []), ...(mobileProjects.available(this.sessions.projects) ? ['projects.read'] : []), 'code.read', 'results.thumbnails', 'results.actions', 'console.agents', ...(this.worktrees && this.endMobileSession ? ['console.worktree'] : []), 'console.files', 'console.close', 'console.projects', 'console.models', ...(typeof this.sessions.switchSettings === 'function' ? ['console.settings'] : []), 'console.ssh', 'console.manage', 'console.switch', 'console.setup', 'alerts.direct', 'console.attachments', ...(this.queue ? ['console.queue'] : []), ...(this.prompts ? ['prompts', 'prompts.edit'] : []), ...(this.sessions.workerBridge ? ['worker.submit', 'worker.stop'] : []), ...(this.stateV2() ? ['state.v2'] : [])], alerts: this.liveAlerts, unreadResults: this.results.unreadGroups(), resultVersion: digest(this.results.list().map(x => x.id + ':' + x.seenAt + ':' + x.changeCount).join(',')).slice(0, 16) };
   }
   scheduleState() {
     if (!this.server || this.stateTimer) return;
     this.stateTimer = setTimeout(() => {
-      this.stateTimer = null; const state = this.publicState();
-      for (const client of this.clients) client.v2 ? this.sendExtras(client, state) : this.send(client, { type: 'state', state });
+      this.stateTimer = null;
+      const clients = [...this.clients];
+      // The full v1 payload is built only while a v1 phone is connected.
+      const extras = clients.some(client => client.v2) ? this.extrasState() : null, state = clients.some(client => !client.v2) ? this.publicState() : null;
+      for (const client of clients) client.v2 ? this.sendExtras(client, extras) : this.send(client, { type: 'state', state });
     }, 150);
   }
   // Slices reach v2 phones through their StateConnection; the remaining
   // snapshot fields travel in `extras`, sent only when they change.
-  sendExtras(client, state = this.publicState()) {
+  sendExtras(client, state = this.extrasState()) {
     const value = Object.fromEntries(EXTRA_FIELDS.map(key => [key, state[key]]));
     const text = JSON.stringify(value);
     if (text === client.extras) return;

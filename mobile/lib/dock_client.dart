@@ -16,6 +16,8 @@ import 'agent_selection.dart';
 import 'agent_menu.dart';
 import 'console_theme.dart';
 import 'dock_style.dart';
+import 'state_client.dart';
+import 'state_protocol.dart';
 
 class ConsoleScreen {
   final Terminal terminal = Terminal(maxLines: 3000);
@@ -243,6 +245,14 @@ class DockClient extends ChangeNotifier {
   final Map<String, Completer<dynamic>> pending = {};
   WebSocket? socket;
   HttpClient? transport;
+  // State protocol 2 (/v2/events). The cache stays across reconnects to the
+  // same PC so a resume sends only what changed; PCs that answer 404 (older
+  // builds, or protocol 2 turned off) use /v1/events.
+  bool socketV2 = false;
+  final StateClient v2State = StateClient();
+  Map<String, dynamic> _v2Extras = {};
+  final Set<String> _v2Refused = {};
+  int _v2Retries = 0;
   PairingRequest? _pairingRequest;
   String pairingCode = '';
   bool _disposed = false;
@@ -520,6 +530,8 @@ class DockClient extends ChangeNotifier {
     screens.clear();
     selected = _selections[activePC] ?? '';
     state = {'sessions': <dynamic>[], 'unreadResults': 0};
+    v2State.clear();
+    _v2Extras = {};
     received = sent = attempts = 0;
     inputError = '';
     status = pc == null ? 'Pair your PC to begin.' : 'Connecting…';
@@ -587,6 +599,7 @@ class DockClient extends ChangeNotifier {
   Future<void> reconnect() async {
     if (pairing == null || !foreground) return;
     disconnectTransport();
+    _v2Refused.clear();
     foreground = true;
     attempts = 0;
     await connect();
@@ -714,20 +727,37 @@ class DockClient extends ChangeNotifier {
       }
       final client = pinned({...config, 'url': endpoint});
       transport = client;
+      final pin = config['pin'] as String? ?? '';
+      Future<WebSocket> open(String route) => WebSocket.connect(
+        Uri.parse('$endpoint$route').replace(scheme: 'wss').toString(),
+        headers: {
+          HttpHeaders.authorizationHeader: 'Bearer ${config['token']}',
+        },
+        customClient: client,
+        compression: CompressionOptions.compressionOff,
+      ).timeout(routeTimeout(config, endpoint));
       try {
-        final ws = await WebSocket.connect(
-          Uri.parse('$endpoint/v1/events').replace(scheme: 'wss').toString(),
-          headers: {
-            HttpHeaders.authorizationHeader: 'Bearer ${config['token']}',
-          },
-          customClient: client,
-          compression: CompressionOptions.compressionOff,
-        ).timeout(routeTimeout(config, endpoint));
+        WebSocket ws;
+        var v2 = !_v2Refused.contains(pin);
+        if (v2) {
+          try {
+            ws = await open('/v2/events');
+          } on WebSocketException catch (error) {
+            // Older PCs, or protocol 2 turned off: the authenticated phone gets 404.
+            if (error.httpStatusCode != 404) rethrow;
+            _v2Refused.add(pin);
+            v2 = false;
+            ws = await open('/v1/events');
+          }
+        } else {
+          ws = await open('/v1/events');
+        }
         if (current != generation || !connectionAllowed) {
           await ws.close();
           client.close(force: true);
           throw StateError('Connection paused.');
         }
+        socketV2 = v2;
         // Detect a dead Wi-Fi/mobile route even when no terminal data is sent.
         ws.pingInterval = Duration(seconds: foreground ? 15 : 60);
         return ws;
@@ -770,6 +800,10 @@ class DockClient extends ChangeNotifier {
         onError: (_) => disconnected(current),
         cancelOnError: true,
       );
+      if (socketV2) {
+        _v2Retries = 0;
+        _sendFrame(v2State.hello());
+      }
       if (selected.isNotEmpty && streaming) await subscribe();
       unawaited(syncPhoneName());
       unawaited(syncAlertMode().catchError((_) {}));
@@ -790,6 +824,7 @@ class DockClient extends ChangeNotifier {
     connecting = false;
     socket?.close();
     socket = null;
+    socketV2 = false;
     transport?.close(force: true);
     for (final entry in pending.values) {
       if (!entry.isCompleted) {
@@ -845,7 +880,32 @@ class DockClient extends ChangeNotifier {
           ? utf8.encode(raw).length
           : (raw as List<int>).length;
       final text = decodeFrame(raw);
-      final data = jsonDecode(text) as Map<String, dynamic>;
+      var data = jsonDecode(text) as Map<String, dynamic>;
+      if (socketV2) {
+        // Protocol 2 frames share the socket with replies and terminal output.
+        if (data['type'] == 'chunk') {
+          Map<String, dynamic>? complete;
+          try {
+            complete = v2State.addChunk(data);
+          } on ProtocolError {
+            _v2Recover();
+            return;
+          }
+          if (complete == null) return;
+          data = complete;
+        }
+        if (const {'welcome', 'changes', 'ping', 'error'}.contains(data['type'])) {
+          _receiveV2(data);
+          return;
+        }
+        if (data['type'] == 'extras') {
+          final value = data['value'];
+          _v2Extras = value is Map ? Map<String, dynamic>.from(value) : {};
+          if (v2State.ready) applyState(v2State.legacyState(_v2Extras));
+          notifyListeners();
+          return;
+        }
+      }
       if (data['type'] == 'reply') {
         final done = pending.remove(data['id']);
         if (done != null && !done.isCompleted) {
@@ -856,8 +916,28 @@ class DockClient extends ChangeNotifier {
           }
         }
       } else if (data['type'] == 'state') {
+        applyState(data['state'] as Map<String, dynamic>);
+      } else if (data['type'] == 'terminal') {
+        final structural = _receiveTerminal(data);
+        if (structural == null) return;
+        terminalStructural = structural;
+      }
+      if (data['type'] == 'terminal') {
+        terminalSignal(data['id'] as String).fire();
+        if (terminalStructural) notifyListeners();
+      } else {
+        notifyListeners();
+      }
+    } catch (_) {
+      status = 'The PC sent an unreadable update. Reconnecting…';
+      socket?.close();
+    }
+  }
+
+  /// Applies a v1-shaped state map: a v1 `state` frame, or the map rebuilt
+  /// from protocol 2 slices and extras.
+  void applyState(Map<String, dynamic> nextState) {
         final previous = {for (final s in sessions) s['id']: s['state']};
-        final nextState = data['state'] as Map<String, dynamic>;
         final nextSessions = (nextState['sessions'] as List? ?? [])
             .whereType<Map>()
             .cast<Map<String, dynamic>>()
@@ -971,12 +1051,21 @@ class DockClient extends ChangeNotifier {
           selected = sessions.isEmpty ? '' : sessions.first['id'] as String;
           if (selected.isNotEmpty && streaming) subscribe().catchError((_) {});
         }
-      } else if (data['type'] == 'terminal') {
+        if (!socketV2 &&
+            (state['capabilities'] as List? ?? []).contains('state.v2')) {
+          // The PC turned protocol 2 on: use it on the next connection.
+          _v2Refused.remove(activePC);
+        }
+  }
+
+  /// Writes one terminal frame. Returns whether the screen was replaced, or
+  /// null when the console is unknown.
+  bool? _receiveTerminal(Map<String, dynamic> data) {
         final id = data['id'] as String;
-        if (!sessions.any((s) => s['id'] == id)) return;
+        if (!sessions.any((s) => s['id'] == id)) return null;
         // xterm.dart does not implement RIS (ESC c). A checkpoint needs a
         // fresh parser and buffers, including modes and partial escape input.
-        terminalStructural = data['reset'] == true || !screens.containsKey(id);
+        final terminalStructural = data['reset'] == true || !screens.containsKey(id);
         final view = data['reset'] == true
             ? (screens[id] = makeScreen(id))
             : screens.putIfAbsent(id, () => makeScreen(id));
@@ -1025,17 +1114,53 @@ class DockClient extends ChangeNotifier {
         } finally {
           view.receiving = false;
         }
-      }
-      if (data['type'] == 'terminal') {
-        terminalSignal(data['id'] as String).fire();
-        if (terminalStructural) notifyListeners();
-      } else {
-        notifyListeners();
-      }
-    } catch (_) {
-      status = 'The PC sent an unreadable update. Reconnecting…';
-      socket?.close();
+        return terminalStructural;
+  }
+
+  void _sendFrame(Map<String, dynamic> message) {
+    final ws = socket;
+    if (ws == null) return;
+    final data = jsonEncode(message);
+    sent += utf8.encode(data).length;
+    ws.add(data);
+  }
+
+  /// One protocol 2 message: apply it, answer it, and rebuild the state map
+  /// once every slice has arrived.
+  void _receiveV2(Map<String, dynamic> message) {
+    final reply = v2State.receive(message);
+    for (final frame in reply.send) {
+      _sendFrame(frame);
     }
+    switch (reply.outcome) {
+      case Outcome.applied:
+        _v2Retries = 0;
+        if (v2State.ready) {
+          applyState(v2State.legacyState(_v2Extras));
+          notifyListeners();
+        }
+      case Outcome.reconnect:
+        _v2Recover();
+      case Outcome.error:
+        // The PC lost this subscription; subscribe again from the cache.
+        if (++_v2Retries > 3) {
+          socket?.close();
+        } else {
+          _sendFrame(v2State.hello());
+        }
+      default:
+        break;
+    }
+  }
+
+  /// A batch could not be applied: ask for a fresh subscription on this
+  /// socket. Repeated failures close the socket and reconnect normally.
+  void _v2Recover() {
+    if (++_v2Retries > 3) {
+      socket?.close();
+      return;
+    }
+    _sendFrame(v2State.hello(resume: false));
   }
 
   ConsoleScreen makeScreen(String id) {
@@ -1062,7 +1187,12 @@ class DockClient extends ChangeNotifier {
     final id = '${DateTime.now().microsecondsSinceEpoch}-${serial++}',
         completer = Completer<dynamic>();
     pending[id] = completer;
-    final data = jsonEncode({'id': id, 'method': method, 'payload': payload});
+    final data = jsonEncode({
+      if (socketV2) 'type': 'request',
+      'id': id,
+      'method': method,
+      'payload': payload,
+    });
     sent += utf8.encode(data).length;
     socket!.add(data);
     try {
@@ -1340,6 +1470,7 @@ class DockClient extends ChangeNotifier {
     retry?.cancel();
     socket?.close();
     socket = null;
+    socketV2 = false;
     transport?.close(force: true);
     connected = false;
     connecting = false;
@@ -1387,6 +1518,7 @@ class DockClient extends ChangeNotifier {
     transport?.close(force: true);
     drafts.removeListener(notifyListeners);
     drafts.dispose();
+    v2State.dispose();
     connectionSignal.dispose();
     appearanceSignal.dispose();
     selectionSignal.dispose();

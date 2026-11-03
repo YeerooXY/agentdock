@@ -24,9 +24,10 @@ function phoneSession(item) {
   return {
     id: item.id, slot: item.slot ?? null, name: item.name || '', provider: item.provider || '', alive: !!item.alive, state: item.state || null,
     cols: item.cols ?? null, rows: item.rows ?? null, consoleKey: item.consoleKey || null, projectId: item.projectId || null,
-    remote: item.remote ? pick(item.remote, ['hostId', 'name', 'label', 'host']) : null,
+    remote: item.remote ? pick(item.remote, ['hostId', 'name', 'label', 'host', 'folder', 'tmux']) : null,
     updatedAt: item.updatedAt ?? null, providerSessionId: item.providerSessionId || null,
     model: item.modelId || item.model || null, modelName: item.model || null, effort: item.effort || null, settingsAt: item.settingsAt || null,
+    requestedSettings: item.requestedSettings && typeof item.requestedSettings === 'object' ? pick(item.requestedSettings, ['model', 'resolvedModel', 'effort', 'at', 'status']) : null,
     launchId: item.launchId || null, accountId: item.accountId || null, accountLabel: item.accountLabel || null,
     switchTargets: (item.switchTargets || []).map(target => pick(target, ['id', 'label', 'ready'])),
     switching: !!item.switching, purpose: item.purpose || 'agent', taskId: item.taskId || null, sliceId: item.sliceId || null,
@@ -79,7 +80,7 @@ const PHONE = Object.freeze({
   sessions: { ...PHONE_SLICES.sessions, build: state => mapCollection(state.sessions, phoneSession, item => !item.dismissed) },
   queues: { ...PHONE_SLICES.queues, build: state => {
     const out = {};
-    for (const [id, queue] of Object.entries(state.queues || {})) out[id] = { paused: !!queue?.paused, entries: (queue?.entries || []).map(entry => pick(entry, ['id', 'text', 'at', 'state', 'error'])) };
+    for (const [id, queue] of Object.entries(state.queues || {})) out[id] = { paused: !!queue?.paused, entries: (queue?.entries || []).map(entry => pick(entry, ['id', 'text', 'createdAt', 'ownerRequested', 'at', 'state', 'error'])) };
     return out;
   } },
   prompts: { ...PHONE_SLICES.prompts, build: state => mapCollection(state.prompts, phonePrompt) },
@@ -132,9 +133,18 @@ const phoneProjection = store => new Projection(store, 'phone', PHONE);
 // Today's desktop snapshot is split into slice values (grouped by writer) and
 // rebuilt from the store. Display codes that must not enter a slice travel in
 // `ephemeral`, read live from their service, and are merged back here only.
+// Device codes never enter the store. A short one-way reference does, so a new
+// code with the same status is still a change and clients fetch the new code.
 function withoutCode(value) {
   if (!value || typeof value !== 'object' || !('code' in value)) return value;
-  const { code, ...rest } = value; return rest;
+  const { code, ...rest } = value;
+  return typeof code === 'string' ? { ...rest, codeRef: require('node:crypto').createHash('sha256').update(code).digest('hex').slice(0, 12) } : rest;
+}
+// The legacy shape: the reference removed, the fetched code (if any) restored.
+function withCode(value, code) {
+  if (!value || typeof value !== 'object') return value;
+  const { codeRef, ...rest } = value;
+  return code !== undefined ? { ...rest, code } : rest;
 }
 function ephemeralFromLegacy(raw) {
   return { pairingCode: raw?.mobile?.pendingPairing?.code ?? undefined, meshyCode: raw?.workbench?.meshyAuth?.code ?? undefined };
@@ -182,8 +192,8 @@ function legacySnapshot(state, ephemeral = {}) {
   const shell = state.shell || {}, usage = state.usage || {}, history = state.usageHistory || {}, tools = state.tools || {}, images = state.imageJobs;
   const list = slice => fromCollection(state[slice]);
   let mobile = state.mobileStatus ?? undefined;
-  if (mobile?.pendingPairing && ephemeral.pairingCode !== undefined) mobile = { ...mobile, pendingPairing: { ...mobile.pendingPairing, code: ephemeral.pairingCode } };
-  const meshyAuth = images?.meshyAuth && ephemeral.meshyCode !== undefined ? { ...images.meshyAuth, code: ephemeral.meshyCode } : images?.meshyAuth;
+  if (mobile?.pendingPairing) mobile = { ...mobile, pendingPairing: withCode(mobile.pendingPairing, ephemeral.pairingCode) };
+  const meshyAuth = withCode(images?.meshyAuth, ephemeral.meshyCode);
   return {
     platform: shell.platform, mode: shell.mode, transitioning: shell.transitioning, trayHidden: shell.trayHidden,
     sessions: list('sessions'), codePanels: list('panels'), queues: state.queues ?? {}, prompts: list('prompts'), codeRevision: state.panels?.meta?.codeRevision ?? 0,
@@ -203,5 +213,14 @@ function legacySnapshot(state, ephemeral = {}) {
   };
 }
 
+// The v1 phone payload rebuilt from phone slices and the `extras` frame. The
+// phone app does the same in mobile/lib/state_client.dart (legacyState) so its
+// pages keep reading one map. v2-only slices (tasks, usage, results) are added.
+function phoneLegacyState(values, extras = {}) {
+  const list = slice => fromCollection(values[slice]);
+  return { ...extras, capacity: values.shell?.capacity ?? 9, sessions: list('sessions'), queues: values.queues ?? {}, prompts: list('prompts'),
+    tasks: list('tasks'), usage: list('usage') };
+}
+
 module.exports = { PHONE, DESKTOP, Projection, desktopProjection, phoneProjection, phoneSession, phoneTask, phoneProject, phoneUsageAccounts,
-  slicesFromLegacy, legacySnapshot, ephemeralFromLegacy };
+  slicesFromLegacy, legacySnapshot, ephemeralFromLegacy, phoneLegacyState };
