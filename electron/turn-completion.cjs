@@ -53,7 +53,9 @@ class TurnCompletion {
     const tasks = wb.getTasks?.();
     for (const id of turn.taskIds || []) {
       const job = tasks?.jobs?.get(id);
-      if (!job || !['passed', 'accepted'].includes(job.state) || (job.state !== 'accepted' && job.unresolved?.length) || job.reportError || !job.resultId) throw new Error(`Task ${id} is unfinished or needs attention. Inspect dock/task_status before completing this turn.`);
+      // A task closed with a reason (dock/close_task or the Tasks page) is resolved.
+      if (job?.dismissedAt && !require('./task-plan.cjs').ACTIVE.has(job.state)) continue;
+      if (!job || !['passed', 'accepted'].includes(job.state) || (job.state !== 'accepted' && job.unresolved?.length) || job.reportError || !job.resultId) throw new Error(`Task ${id} is unfinished or needs attention. Inspect dock/task_status; close a failed or replaced task with dock/close_task before completing this turn.`);
     }
     if (turn.completionInvalidated) throw new Error('This turn changed after its completion check. Repeat dock/finish_turn with the current outcome.');
     return record;

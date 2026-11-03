@@ -263,10 +263,13 @@ class TaskLoop extends EventEmitter {
     return this.view(job);
   }
   // Dismiss hides a finished task from the list and attention counts. Its saved report stays in Results.
-  dismiss(id) {
+  dismiss(id, { reason = null, by = 'owner' } = {}) {
     const job = this.jobs.get(String(id)); if (!job) throw new Error('Task not found.');
     if (RUNNING.has(job.state) || this.cancelling.has(job.id)) throw new Error('Stop the task before dismissing it.');
-    job.dismissedAt = this.now(); job.acknowledgedAt ||= job.dismissedAt; this.persist(job);
+    job.dismissedAt = this.now(); job.acknowledgedAt ||= job.dismissedAt;
+    if (reason) job.dismissReason = String(reason).slice(0, 300);
+    job.dismissedBy = by === 'agent' ? 'agent' : 'owner';
+    this.persist(job);
     return true;
   }
   async status(id, repo) {

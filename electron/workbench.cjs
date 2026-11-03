@@ -24,6 +24,7 @@ const nativeTools = [
   ['local_assist', 'Run one bounded text request on the configured local Strata server: extract facts, draft a component, critique supplied text or propose creative compositions. No tools, file edits, automatic retries or cloud fallback. Supply only relevant text (up to 24000 characters). Default 2048 output tokens, reasoning none, 90-second deadline. Reuse requestId only for the same request in this turn; the last 128 requests are deduplicated until app restart. Output requires caller verification. No Tasks or Results entry is created; usage goes to the API ledger.', localAssistSchema],
   ['task_candidates', 'List available task accounts, funding types, allowance freshness, suggested assignments and project folders. Any connected console can use these task tools. A saved local Strata connection appears as opencode:strata with model strata/local; its server must be running. Local accounts need no cloud sign-in. Discover accounts before start_task.', schema({ title: string, criteria: string, size: { enum: ['small','medium','large'] } })],
   ['task_status', 'Read task progress, checks, review findings and changes. Use the id returned by start_task and the same repo (defaults to the calling console folder). Wait for the task to finish before editing its files; inspect its diff and verification before accepting its work.', schema({ id: string, repo: string }, ['id'])],
+  ['close_task', 'Close a task this console started once it has stopped: it leaves the Tasks list and attention counts, and its report stays in Results. Use after task_status for a failed, superseded or replaced task, with a short reason the owner can read. A running task must stop first.', schema({ id: string, reason: { type: 'string', minLength: 1, maxLength: 300 }, repo: string }, ['id', 'reason'])],
   ['start_task', 'Start an agent task. Use title and criteria to describe the goal and acceptance criteria. repo defaults to the calling console folder. Progress shows on the Tasks page, where a split plan may need the user\'s approval before work starts. Use task_candidates for each account’s supported effort settings. Choose installed account IDs; split tasks can use configured routing defaults. Checks run in the task folder. workflow defaults to current; a separate worktree requires the user\'s request. Agents may use subscription or API credits.', schema({ title: { type: 'string', minLength: 1, maxLength: 200 }, criteria: { type: 'string', minLength: 1, maxLength: 12000 }, repo: string, implementer: taskAgent, planner: taskAgent, reviewer: { anyOf: [taskAgent, { type: 'null' }] }, split: { type: 'boolean' }, checks: { type: 'string', maxLength: 4000 }, workflow: { enum: ['current','worktree'] }, maxRounds: { type: 'integer', minimum: 1, maximum: 5 }, timeLimitMinutes: { type: 'integer', minimum: 5, maximum: 120 } }, ['title','criteria'])],
   ['download_tool_repository', 'Download an authorized public GitHub tool repository into Paddock’s managed downloads folder and record its location for manual cleanup at uninstall. Does not build, install or run its code. Do not use this for user projects.', schema({ source: { type: 'string', maxLength: 500 }, name: { type: 'string', minLength: 1, maxLength: 120 } }, ['source'])],
   ['downloaded_tools', 'Read Paddock’s recorded tool downloads and their manual-cleanup list path. Arbitrary Git commands outside the managed helper are not tracked.', schema({})],
@@ -95,6 +96,16 @@ class Workbench {
         const tasks = this.getTasks?.();
         if (!tasks) throw new Error('Tasks are unavailable.');
         return tasks.status(args.id, args.repo ?? session?.cwd ?? context.project ?? this.getProject());
+      }
+      case 'dock/close_task': {
+        const tasks = this.getTasks?.();
+        if (!tasks) throw new Error('Tasks are unavailable.');
+        // An agent closes only tasks its own console started; others stay with the owner.
+        const job = await tasks.status(args.id, args.repo ?? session?.cwd ?? context.project ?? this.getProject());
+        if (!session?.id || job.originConsoleId !== session.id) throw new Error('Only the console that started this task can close it. The owner can close it on the Tasks page.');
+        tasks.dismiss(args.id, { reason: args.reason, by: 'agent' });
+        this.completion.invalidate(owner);
+        return { id: args.id, closed: true };
       }
       case 'dock/start_task': {
         const tasks = this.getTasks?.();

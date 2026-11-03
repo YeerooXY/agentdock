@@ -216,6 +216,22 @@ test('agents discover Strata, start an implementation and read its status over t
   assert.equal((await invoke('dock/task_status', { id: 'local-task' })).isError, true);
 });
 
+test('agents close only the stopped tasks their own console started, with a reason', async t => {
+  const { root, project } = fixture(t), dismissed = [];
+  const sessions = { items: new Map([['live', { id: 'live', alive: true, cwd: project }], ['other', { id: 'other', alive: true, cwd: project }]]) };
+  const tasks = {
+    status: async id => ({ id, state: 'needs-you', originConsoleId: 'live' }),
+    dismiss: (id, options) => { dismissed.push({ id, ...options }); return true; }
+  };
+  const workbench = new Workbench(root, {}, { nativeImage: {} }, { testMode: true, onChange() {}, getSessions: () => sessions, getProject: () => project, getTasks: () => tasks });
+  const hub = new SharedHub(root, { list: () => [] }, { workbench }); await hub.start(); t.after(() => hub.close());
+  const call = async (owner, args) => { const grant = hub.grant(owner); return (await fetch(grant.PADDOCK_BRIDGE_URL, { method: 'POST', headers: { Authorization: 'Bearer ' + grant.PADDOCK_BRIDGE_TOKEN }, body: JSON.stringify({ name: 'dock_call', arguments: { tool: 'dock/close_task', arguments: args } }) })).json(); };
+  assert.equal((await call('live', { id: 'job' })).isError, true, 'a reason is required');
+  assert.equal((await call('other', { id: 'job', reason: 'Not mine' })).isError, true, 'another console cannot close it');
+  assert.deepEqual(JSON.parse((await call('live', { id: 'job', reason: 'Worker made no changes; done directly.' })).content[0].text), { id: 'job', closed: true });
+  assert.deepEqual(dismissed, [{ id: 'job', reason: 'Worker made no changes; done directly.', by: 'agent' }]);
+});
+
 test('Dock bridge validates native tool schemas and scopes file access to the calling console', async t => {
   const {root,project}=fixture(t); const outside=path.join(root,'private.txt'); fs.writeFileSync(outside,'DO_NOT_COPY');
   const file=path.join(project,'verification.txt'); fs.writeFileSync(file,'A real test report');

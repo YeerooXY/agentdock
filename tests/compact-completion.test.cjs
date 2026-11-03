@@ -101,6 +101,14 @@ test('delegated tasks carry the linked project and block completion until fresh 
   Object.assign(f.jobs.get('worker'), { state: 'accepted', unresolved: ['User accepted the remaining layout issue.'] });
   await f.complete(); assert.deepEqual(f.wb.completion.read(f.wb.completion.turn('owner')).tasks[0].acceptedIssues, ['User accepted the remaining layout issue.']);
 });
+test('a failed task closed with a reason no longer blocks completion; a running one still does', async t => {
+  const f = fixture(t); await f.context(); await f.context({ detail: 'project' });
+  await f.call('start_task', { title: 'Implement footer', criteria: 'Links work.', implementer: { accountId: 'mock' } });
+  Object.assign(f.jobs.get('worker'), { state: 'implementing', dismissedAt: 5 });
+  await assert.rejects(f.complete(), /unfinished or needs attention/);
+  Object.assign(f.jobs.get('worker'), { state: 'needs-you', dismissedAt: 6, dismissReason: 'Worker made no changes.' });
+  await f.complete();
+});
 test('workers receive project decisions and references without accumulated history', t => {
   const f = fixture(t); f.projects.decide(f.project.id, { action: 'add', text: 'Use the selected glass theme' });
   const brief = taskGuidance({}, { title: 'Footer' }, {}, f.projects.brief(f.project.id, true));
