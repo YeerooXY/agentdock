@@ -86,7 +86,7 @@ async function fixture(t, { model = 'gpt-5.2-codex', failResumeTarget = false, f
       child.once('exit', code => {
         if (code === 0) this.draft = fs.readFileSync(file, 'utf8');
         onEditorExit?.(this, code);
-        setImmediate(() => this.emitData(' '));
+        setImmediate(() => this.emitData(this.draft || ' '));
       });
     }
     kill() { this.emitExit(0); }
