@@ -61,7 +61,7 @@ function linkDependencies(repo, workFolder) {
     return true;
   } catch { return false; }
 }
-const parallelLimit = settings => { const value = Number(settings?.maxParallelTasks); return Number.isInteger(value) && value >= 1 && value <= 10 ? value : 5; };
+const { getScheduler, parallelLimit } = require('./scheduler.cjs');
 const REFRESHABLE = new Set(['passed', 'needs-you']), REFRESH_LIMIT = 2, MAX_HISTORY = 20, VERIFICATION_AGE = 7 * 24 * 60 * 60_000;
 class ProviderError extends Error {}
 class CheckLaunchError extends Error {}
@@ -121,13 +121,14 @@ class TaskLoop extends EventEmitter {
   constructor(root, { candidates = () => [], prepareAccount = async () => {}, releaseAccount = () => {}, getAccounts = null, repositories = () => [], getLimits = () => [], getSettings = () => ({}), getProfiles = () => [], getInstructions = () => '', environment = () => ({}), saveResult, admission, spawnProcess = spawn, run = execFile, now = Date.now, killProcess = killTree, platform = process.platform, stopTimeoutMs = 2000, processStartedAt = PROCESS_STARTED_AT, isProcessAlive = processAlive } = {}) {
     super();
     Object.assign(this, { root, candidates, repositories, getLimits, getSettings, getProfiles, getInstructions, environment, saveResult, spawnProcess, run, now, killProcess, platform, stopTimeoutMs, processStartedAt, isProcessAlive });
-    this.admission = admission;
+    this.admission = admission || getScheduler(root, { getSettings: () => this.getSettings() });
+    this.admission.attach?.(root); this.admission.getSettings = () => this.getSettings();
     // One-at-a-time CLIs (Antigravity) sign in to the assigned account first.
     this.prepareAccount = prepareAccount; this.releaseAccount = releaseAccount;
     this.getAccounts = getAccounts;
     this.dir = path.join(root, 'tasks'); this.jobs = new Map(); this.children = new Map(); this.cancellers = new Map(); this.pending = new Map(); this.refreshing = new Map(); this.refreshedAt = new Map(); this.reserved = new Set(); this.records = new Map();
     this.generations = new Map(); this.storageErrors = new Map(); this.verifyTimer = null; this.fileCache = new Map(); this.cancelling = new Set(); this.cancellations = new Map();
-    this.split = new SplitTasks(this); this.providerSlots = 0; this.providerQueue = []; this.unconfirmed = new Map();
+    this.split = new SplitTasks(this); this.unconfirmed = new Map();
     fs.mkdirSync(this.dir, { recursive: true });
     for (const file of fs.readdirSync(this.dir).filter(file => /^[\w-]+\.json$/.test(file))) {
       // One damaged task record must not stop Paddock from starting: it is
@@ -236,8 +237,6 @@ class TaskLoop extends EventEmitter {
   checkCapacity(repoKey, except, workflow = 'current') {
     const active = this.occupying(except);
     if (workflow !== 'worktree' && (this.reserved.has(repoKey) || active.some(job => job.repoKey === repoKey && job.workflow !== 'worktree'))) throw new Error('A task is already running on the current branch of this repository. Use a separate worktree to run another.');
-    const limit = this.maxParallel();
-    if (this.reserved.size + active.length >= limit) throw new Error(`${limit === 1 ? 'A task is' : `${limit} tasks are`} already running, the most allowed at once (Settings). Wait for one to finish.`);
   }
   ensureAvailable(job) {
     if (this.closing) throw new Error('Paddock is closing. Resume after reopening.');
@@ -613,38 +612,38 @@ class TaskLoop extends EventEmitter {
     } catch (error) { throw error instanceof ProviderError ? error : new ProviderError(`${step.label} could not complete the request.`); }
     finally { release?.(); if (prepared) { try { this.releaseAccount(step.accountId, step.provider); } catch {} } try { fs.unlinkSync(outFile); } catch {} if (tempDir) fs.rmSync(tempDir, { recursive: true, force: true }); }
   }
-  acquireProvider(job, step) {
-    if (this.admission && step) return this.admission.acquire({ id: job.id, taskId: job.parentId || job.id,
-      projectId: job.projectId, accountId: step.accountId, model: step.model, workerId: step.workerId, quotaGroupId: step.quotaGroupId,
+  queued(job, reason, position) {
+    if (reason) { job.queueReason = reason; job.queuePosition = position; }
+    else { delete job.queueReason; delete job.queuePosition; }
+    this.changed(job);
+  }
+  acquireProvider(job, step = {}) {
+    return this.admission.acquire({ id: job.id, taskId: job.parentId || job.id,
+      projectId: job.projectId, accountId: step.accountId, accountLabel: step.label,
+      model: step.model, workerId: step.workerId, quotaGroupId: step.quotaGroupId,
       consoleKey: job.workerSession?.consoleKey,
-      local: step.local === true, capacity: step.concurrency, automatic: !step.ownerSteering,
-      onQueued: reason => { if (reason) job.queueReason = reason; else delete job.queueReason; this.changed(job); }
+      local: step.local === true || step.model === STRATA_MODEL, capacity: step.concurrency, automatic: !step.ownerSteering,
+      onQueued: (reason, position) => this.queued(job, reason, position)
     }).then(release => {
       if (!release) return null;
       return () => { const lingering = this.unconfirmed.get(job.id); if (lingering) lingering.once('close', release); else release(); };
     });
-    return new Promise(resolve => {
-      const grant = () => {
-        this.providerSlots++;
-        let released = false;
-        resolve(() => {
-          if (released) return; released = true;
-          const free = () => { this.providerSlots--; this.providerQueue.shift()?.grant(); };
-          const lingering = this.unconfirmed.get(job.id);
-          if (lingering) lingering.once('close', free); else free();
-        });
-      };
-      if (this.providerSlots < 4) grant(); else this.providerQueue.push({ job, grant, cancel: () => resolve(() => {}) });
-    });
   }
   cancelProviderQueue(job) {
-    this.admission?.cancel(item => item.id === job.id || item.taskId === job.id);
-    this.providerQueue = this.providerQueue.filter(item => {
-      if (item.job.id !== job.id && item.job.parentId !== job.id) return true;
-      item.cancel(); return false;
-    });
+    this.admission.cancel(item => item.id === job.id || item.taskId === job.id);
   }
-  process(job, launch, { environment, brief = '', provider, check = false, step, timeoutMs, worker = false } = {}) {
+  async process(job, launch, options = {}) {
+    if (!options.check) return this.runProcess(job, launch, options);
+    const release = await this.admission.acquire({ id: `${job.id}:checks`, taskId: job.parentId || job.id, kind: 'checks',
+      onQueued: (reason, position) => this.queued(job, reason, position) });
+    if (!release) return { code: null, output: '', timedOut: false };
+    try {
+      if (!RUNNING.has(job.state)) return { code: null, output: '', timedOut: false };
+      return await this.runProcess(job, launch, options);
+    }
+    finally { const lingering = this.unconfirmed.get(job.id); if (lingering) lingering.once('close', release); else release(); }
+  }
+  runProcess(job, launch, { environment, brief = '', provider, check = false, step, timeoutMs, worker = false } = {}) {
     return new Promise((resolve, reject) => {
       let child, finished = false, stdout = '', output = '', pending = '', summary = '', providerError = false, deadlineHit = false, exitSeen = false, stopping, timer, progressTimer;
       const openCode = { text: '', length: false, usage: null, maxText: step?.role === 'planner' ? 64000 : 6000 };
@@ -915,4 +914,4 @@ class TaskLoop extends EventEmitter {
   }
 }
 
-module.exports = { linkDependencies, parallelLimit, TaskLoop, implementerLaunch, openCodeLaunch, openCodeEvents, checkLaunch, RUNNING, usageText };
+module.exports = { linkDependencies, TaskLoop, implementerLaunch, openCodeLaunch, openCodeEvents, checkLaunch, RUNNING, usageText };

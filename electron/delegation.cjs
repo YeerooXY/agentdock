@@ -240,16 +240,17 @@ function killTree(child) {
 }
 
 class Delegation extends EventEmitter {
-  constructor(root, { getSettings, candidates, getLimits, environment, prepareAccount = async () => {}, releaseAccount = () => {}, saveResult, openPanel, panelOpen = () => false, spawnProcess = spawn, run = execFile, now = Date.now, testMode = false } = {}) {
+  constructor(root, { admission, getSettings, candidates, getLimits, environment, prepareAccount = async () => {}, releaseAccount = () => {}, saveResult, openPanel, panelOpen = () => false, spawnProcess = spawn, run = execFile, now = Date.now, testMode = false } = {}) {
     super();
     Object.assign(this, { getSettings, candidates, getLimits, environment, prepareAccount, releaseAccount, saveResult, openPanel, panelOpen, spawnProcess, run, now, testMode });
+    this.admission = admission || require('./scheduler.cjs').getScheduler(root, { getSettings });
     this.dir = path.join(root, 'delegations'); this.jobs = new Map(); this.children = new Map(); this.finishers = new Map(); this.started = [];
   }
   snapshot() {
     return [...this.jobs.values()].sort((a, b) => b.startedAt - a.startedAt)
       .map(job => ({ job, open: !!job.panelId && this.panelOpen(job.panelId) }))
       .filter(({ job, open }, index) => job.state === 'running' || index < 20 || open)
-      .map(({ job: { id, state, reviewer, why, consoleName, startedAt, finishedAt, verdict, error, resultId, log, panelId, noFreeSlot }, open }) => ({ id, state, reviewer, why, consoleName, startedAt, finishedAt, verdict, error, resultId, log: state === 'running' || open ? [...(log || [])] : [], panelId, noFreeSlot }));
+      .map(({ job: { id, state, reviewer, why, consoleName, startedAt, finishedAt, verdict, error, resultId, log, panelId, noFreeSlot, queueReason, queuePosition }, open }) => ({ id, state, reviewer, why, consoleName, startedAt, finishedAt, verdict, error, resultId, log: state === 'running' || open ? [...(log || [])] : [], panelId, noFreeSlot, queueReason, queuePosition }));
   }
   allowed() {
     const settings = this.getSettings() || {};
@@ -261,8 +262,6 @@ class Delegation extends EventEmitter {
     if (!caller?.sessionId || !caller.cwd) throw new Error('Start reviews from an open console.');
     const running = [...this.jobs.values()].filter(job => job.state === 'running');
     if (running.some(job => job.callerSessionId === caller.sessionId)) throw new Error('This console already has a review running. Read it with dock/delegation_status.');
-    const limit = require('./task-loop.cjs').parallelLimit(this.getSettings?.());
-    if (running.length >= limit) throw new Error(`${limit === 1 ? 'A review is' : `${limit} reviews are`} already running, the most allowed at once (Settings). Wait for one to finish.`);
     const hourAgo = this.now() - 3_600_000; this.started = this.started.filter(at => at > hourAgo);
     if (this.started.length >= MAX_PER_HOUR) throw new Error('The hourly review limit was reached. Try again later.');
     const focus = String(args.focus || '').slice(0, MAX_FOCUS);
@@ -286,10 +285,11 @@ class Delegation extends EventEmitter {
   }
   async run_(job, { brief, outFile, folder }) {
     const settings = this.getSettings() || {}, provider = job.reviewer.provider;
-    let stream, progressTimer;
+    let stream, progressTimer, release, processClosed = false;
     const finish = (patch) => {
       if (job.state !== 'running') return;
-      stream?.end();
+      stream?.end(); this.admission.cancel(item => item.id === job.id);
+      if (child && !processClosed) child.once('close', () => release?.()); else release?.();
       Object.assign(job, patch, { finishedAt: this.now() }); clearTimeout(timer); clearTimeout(progressTimer); this.children.delete(job.id); this.finishers.delete(job.id);
       appendLog(job, patch.state === 'done' ? `Verdict: ${job.verdict}` : patch.state === 'stopped' ? 'Stopped' : 'Failed');
       this.emit('changed');
@@ -297,18 +297,23 @@ class Delegation extends EventEmitter {
       try { fs.rmSync(folder, { recursive: true, force: true }); } catch {}
       this.record(job).finally(() => { for (const wake of job.waiters.splice(0)) wake(); this.emit('changed'); });
     };
-    const timer = setTimeout(() => { if (child) killTree(child); finish({ state: 'failed', error: 'The review timed out after 10 minutes.' }); }, (settings.delegationTimeoutMinutes || 10) * 60_000);
+    let timer;
+    const startTimer = () => setTimeout(() => { if (child) killTree(child); finish({ state: 'failed', error: 'The review timed out after 10 minutes.' }); }, (settings.delegationTimeoutMinutes || 10) * 60_000);
     let child, stdout = '', stderr = '', prepared = false;
     const stdoutDecoder = new StringDecoder('utf8');
     this.finishers.set(job.id, patch => { finish(patch); if (child) killTree(child); });
     try {
+      release = await this.admission.acquire({ id: job.id, kind: 'review', accountId: job.reviewer.accountId, accountLabel: job.reviewer.label,
+        onQueued: (reason, position) => { job.queueReason = reason; job.queuePosition = position; this.emit('changed'); } });
+      if (!release || job.state !== 'running') { release?.(); return; }
+      timer = startTimer();
       const candidate = this.candidates().find(c => c.id === job.reviewer.accountId), executable = candidate?.executable;
       if (!executable) throw new Error(`${names[provider]} is no longer installed.`);
       const promptFile = workerPrompt(provider, folder, brief);
       const launch = reviewerLaunch(provider, executable, { outFile, model: settings.delegationModels?.[provider] || candidate?.model, effort: job.reviewer.effort, workFolder: job.cwd || job.context?.project, promptFile });
       job.reviewer.effortDispatch = launch.effortDispatch;
       await this.prepareAccount(job.reviewer.accountId, provider); prepared = true;
-      if (job.state !== 'running') return;
+      if (job.state !== 'running') { this.releaseAccount(job.reviewer.accountId, provider); return; }
       const env = this.environment(job.reviewer.accountId, provider);
       const write = progressLog({ brief: brief + '\n' + job.focus, environment: env, append: line => { appendLog(job, line); } });
       stream = progressStream(provider, write);
@@ -323,8 +328,9 @@ class Delegation extends EventEmitter {
       if (!progressTimer) progressTimer = setTimeout(() => { progressTimer = null; this.emit('changed'); }, 100);
     });
     child.stderr?.on('data', chunk => { if (stderr.length < 20_000) stderr += chunk; });
-    child.once('error', () => finish({ state: 'failed', error: `${names[provider]} could not start.` }));
+    child.once('error', () => { processClosed = true; finish({ state: 'failed', error: `${names[provider]} could not start.` }); });
     child.once('close', code => {
+      processClosed = true;
       if (job.state !== 'running') return;
       stdout += stdoutDecoder.end();
       try {
@@ -351,7 +357,7 @@ class Delegation extends EventEmitter {
     const wait = Math.min(Math.max(Number(waitSeconds) || 0, 0), 45);
     if (job.state === 'running' && wait) await new Promise(resolve => { const timer = setTimeout(resolve, wait * 1000); job.waiters.push(() => { clearTimeout(timer); resolve(); }); });
     const out = { id: job.id, state: job.state, reviewer: job.reviewer.label, why: job.why, elapsedSeconds: Math.round(((job.finishedAt || this.now()) - job.startedAt) / 1000) };
-    if (job.state === 'running') return { ...out, next: 'Call dock/delegation_status again with waitSeconds to keep waiting.' };
+    if (job.state === 'running') return { ...out, queueReason: job.queueReason, queuePosition: job.queuePosition, next: 'Call dock/delegation_status again with waitSeconds to keep waiting.' };
     if (job.state === 'failed' || job.state === 'stopped') return { ...out, error: job.error };
     return { ...out, verdict: job.verdict, review: job.text.length > MAX_REPLY ? job.text.slice(0, MAX_REPLY) + '\n[shortened; the full review is in Results]' : job.text, usage: job.usage, resultId: job.resultId };
   }

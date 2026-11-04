@@ -422,7 +422,7 @@ test('rejects identical accounts, invalid limits, and folders outside the picker
   assert.equal(f.spawned.length, 0);
 });
 
-test('one current-branch task per repository and the owner limit in total, including concurrent starts', async t => {
+test('one current-branch task per repository and excess provider work queues, including concurrent starts', async t => {
   const f = fixture(t); f.loop.getSettings = () => ({ maxParallelTasks: 2 });
   const simultaneous = await Promise.allSettled([f.start({ reviewer: null }), f.start({ reviewer: null })]);
   assert.equal(simultaneous.filter(item => item.status === 'fulfilled').length, 1);
@@ -430,17 +430,19 @@ test('one current-branch task per repository and the owner limit in total, inclu
   const secondRepo = path.join(f.temp, 'second'), thirdRepo = path.join(f.temp, 'third'); initRepo(secondRepo); initRepo(thirdRepo);
   f.repositories.push({ path: secondRepo, label: 'Second' }, { path: thirdRepo, label: 'Third' });
   await f.start({ repo: secondRepo });
-  await assert.rejects(f.start({ repo: thirdRepo }), /2 tasks are already running/);
+  const third = await f.start({ repo: thirdRepo });
+  await until(() => f.loop.admission.pending.some(item => item.taskId === third.id));
+  assert.equal(f.loop.jobs.get(third.id).queueReason, 'Waiting for Codex');
 });
 
-test('worktree tasks run side by side up to the limit, default 5', async t => {
+test('worktree tasks can queue beyond the scheduler limit, default 5', async t => {
   const f = fixture(t);
   assert.equal(f.loop.maxParallel(), 5);
   for (const id of ['a', 'b', 'c', 'd']) f.loop.jobs.set('wt-' + id, { id: 'wt-' + id, state: 'implementing', repoKey: 'repo', workflow: 'worktree' });
   assert.doesNotThrow(() => f.loop.checkCapacity('repo', undefined, 'worktree'), 'a fifth worktree task fits');
   assert.doesNotThrow(() => f.loop.checkCapacity('repo', undefined, 'current'), 'worktrees do not lock the current branch');
   f.loop.jobs.set('cur', { id: 'cur', state: 'implementing', repoKey: 'repo', workflow: 'current' });
-  assert.throws(() => f.loop.checkCapacity('repo', undefined, 'worktree'), /5 tasks are already running/);
+  assert.doesNotThrow(() => f.loop.checkCapacity('repo', undefined, 'worktree'));
   f.loop.jobs.delete('wt-a');
   assert.throws(() => f.loop.checkCapacity('repo', undefined, 'current'), /current branch/);
   assert.doesNotThrow(() => f.loop.checkCapacity('repo', undefined, 'worktree'));
@@ -457,7 +459,7 @@ test('plan-ready tasks hold no running slot or repository lock', async t => {
   assert.doesNotThrow(() => f.loop.checkCapacity('repo-d'), 'two plan-ready tasks and one running task leave a slot');
   assert.throws(() => f.loop.checkCapacity('repo-c'), /already running on the current branch/);
   f.loop.jobs.set('run-e', { id: 'run-e', state: 'checking', repoKey: 'repo-e' });
-  assert.throws(() => f.loop.checkCapacity('repo-f'), /2 tasks are already running/);
+  assert.doesNotThrow(() => f.loop.checkCapacity('repo-f'));
   assert.doesNotThrow(() => f.loop.ensureAvailable({ id: 'run-e', repoKey: 'repo-e' }), 'a task does not block itself');
   for (const id of ['plan-a', 'plan-b', 'run-c', 'run-e']) f.loop.jobs.delete(id);
   assert.equal(f.loop.reserved.size, 0);
@@ -838,6 +840,8 @@ test('a checks timeout retains output through close and cannot pass on a zero ex
   const f = fixture(t, [{ hold: true }], { killProcess: child => { child.killed = true; } });
   const job = { id: 'check-timeout', workFolder: f.repo, state: 'checking', log: [] }, step = { startedAt: Date.now() };
   const pending = f.loop.process(job, { executable: '/fake/checks', args: [] }, { environment: {}, check: true, step, timeoutMs: 5 });
+  // Checks are admitted by the scheduler first, so the process starts a moment later.
+  for (let i = 0; i < 100 && !f.spawned.length; i++) await new Promise(resolve => setTimeout(resolve, 5));
   const child = f.spawned[0].child;
   try {
     await new Promise(resolve => setTimeout(resolve, 25)); assert.equal(child.killed, true);
@@ -984,6 +988,7 @@ test('ownership violations become fix findings and then needs-you without a merg
 test('parallel scheduling respects the limit and dependencies', async t => {
   const value = splitPlan(); value.subtasks.push({ id: 'third', title: 'Third module', criteria: 'Use first.js.', owns: ['third.js'], dependsOn: ['first'], size: 'small' });
   const f = fixture(t, [planned(value), { hold: true }, { hold: true }, { hold: true }]); const job = await readyPlan(f);
+  f.loop.admission.workers = () => [{ id: 'codex-test', accountId: codex.id, model: 'test-model', quotaGroupId: codex.id, concurrency: 2 }];
   await approvePlan(f, job, { parallelLimit: 2 }); await until(() => f.spawned.length === 3);
   assert.equal(job.subtasks[2].state, 'queued');
   const finish = (invocation, file) => { fs.writeFileSync(path.join(invocation.options.cwd, file), file + '\n'); invocation.child.emit('close', 0); };
@@ -1024,13 +1029,14 @@ test('Stop keeps split worktrees; startup interrupts children and Resume skips m
   assert.ok(recovered.subtasks.every(sub => fs.existsSync(sub.workFolder)));
   assert.equal(recovered.subtasks[0].state, 'merged'); assert.equal(f.spawned[3].child.killed, true);
 });
-test('four provider slots are shared across tasks and cancelled queued work never starts', async t => {
+test('scheduler provider slots are shared across tasks and cancelled queued work never starts', async t => {
   const f = fixture(t); const releases = [];
-  for (let i = 0; i < 4; i++) releases.push(await f.loop.acquireProvider({ id: `slot-${i}` }));
-  assert.equal(f.loop.providerSlots, 4);
-  let entered = false; const waiting = f.loop.acquireProvider({ id: 'queued', parentId: 'parent' }).then(release => { entered = true; release(); });
+  for (let i = 0; i < 5; i++) releases.push(await f.loop.acquireProvider({ id: `slot-${i}` }));
+  assert.equal(f.loop.admission.active.size, 5);
+  let entered = false; const waiting = f.loop.acquireProvider({ id: 'queued', parentId: 'parent' }).then(release => { entered = Boolean(release); release?.(); });
   await Promise.resolve(); assert.equal(entered, false); f.loop.cancelProviderQueue({ id: 'parent' }); await waiting;
-  assert.equal(f.loop.providerSlots, 4); releases.forEach(release => release()); assert.equal(f.loop.providerSlots, 0); assert.equal(f.spawned.length, 0);
+  assert.equal(entered, false); assert.equal(f.loop.admission.active.size, 5);
+  releases.forEach(release => release()); assert.equal(f.loop.admission.active.size, 0); assert.equal(f.spawned.length, 0);
 });
 
 test('OpenCode planners retain full plans with read-only permissions and reported costs', async t => {
@@ -1043,6 +1049,7 @@ test('OpenCode planners retain full plans with read-only permissions and reporte
 });
 test('Stop kills every parallel subtask and keeps every worktree', async t => {
   const f = fixture(t, [planned(splitPlan()), { hold: true }, { hold: true }]); const job = await readyPlan(f);
+  f.loop.admission.workers = () => [{ id: 'codex-test', accountId: codex.id, model: 'test-model', quotaGroupId: codex.id, concurrency: 2 }];
   await approvePlan(f, job, { parallelLimit: 2 }); await until(() => f.spawned.length === 3);
   await f.loop.stop(job.id); await f.done(job);
   assert.equal(job.state, 'stopped'); assert.ok(f.spawned.slice(1).every(invocation => invocation.child.killed));
