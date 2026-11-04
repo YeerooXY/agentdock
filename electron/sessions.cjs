@@ -8,6 +8,7 @@ const { atomicJson, readJson } = require('./storage.cjs');
 const { planLayout, planOpening, planGrid, gridSize, occupied } = require('./console-layout.cjs');
 const { providers, byId: cliAgents } = require('./cli-catalog.cjs');
 const { prepareCli } = require('./cli-launch.cjs');
+const { settingsAdapter } = require('./provider-settings.cjs');
 const { cachedAntigravityConversation } = require('./antigravity-session.cjs');
 const { prepareCodexSession } = require('./codex-session.cjs');
 const { copyConversation, findConversation } = require('./account-history.cjs');
@@ -95,7 +96,7 @@ class Sessions extends EventEmitter {
   list() { return [...this.items.values()].filter(item => !isPanel(item)).map(item => ({
     ...publicSession(item),
     consoleCapabilities: consoleCapabilities(item, this.ownerConsoles, !!this.workerBridge),
-      ...(this.accounts && !item.taskId && ['codex', 'claude'].includes(item.provider) && !['login', 'setup'].includes(item.purpose) ? {
+      ...(this.accounts && !item.taskId && settingsAdapter(item.provider).switchMethod === 'resume' && !['login', 'setup'].includes(item.purpose) ? {
       switchTargets: this.accounts.choices(item.provider).filter(x => x.id !== item.accountId).map(({ id, label, loginCompletedAt }) => ({ id, label, ready: id.endsWith(':default') || !!loginCompletedAt }))
     } : {})
   })).sort((a, b) => a.slot - b.slot); }
@@ -194,8 +195,8 @@ class Sessions extends EventEmitter {
     if (resumeId != null && !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(resumeId)) throw new Error('The saved conversation ID is invalid.');
     const selectedPermissions = raw.permissions ?? 'default';
     if (!['default', 'unrestricted'].includes(selectedPermissions)) throw new Error('Choose a supported agent permission mode.');
-    const permissions = ['codex', 'claude'].includes(raw.provider) || cliAgents.get(raw.provider)?.unrestricted ? selectedPermissions : 'system';
-    const model = ['codex', 'claude'].includes(raw.provider) || cliAgents.get(raw.provider)?.model ? String(raw.model ?? '').trim() : '';
+    const permissions = settingsAdapter(raw.provider).native || cliAgents.get(raw.provider)?.unrestricted ? selectedPermissions : 'system';
+    const model = settingsAdapter(raw.provider).native || cliAgents.get(raw.provider)?.model ? String(raw.model ?? '').trim() : '';
     if (resumeEffort !== null && !/^(none|minimal|low|medium|high|xhigh|max|ultra)$/.test(resumeEffort)) throw new Error('Choose a supported effort level.');
     if (model && !/^[a-zA-Z0-9][a-zA-Z0-9._:/\[\]@+-]{0,199}$/.test(model)) throw new Error('Enter a model name or alias, up to 200 characters.');
     const cwd = String(raw.cwd || '');
@@ -233,62 +234,22 @@ class Sessions extends EventEmitter {
     const mcpConfig = path.join(dir, 'mcp.json');
     if (purpose === 'agent' && this.hub && node) atomicJson(mcpConfig, { mcpServers: { paddock: { type: 'stdio', command: isWsl ? wslPath(node) : node, args: [bridgeHelper], env: { PADDOCK_BRIDGE_URL: '${PADDOCK_BRIDGE_URL}', PADDOCK_BRIDGE_TOKEN: '${PADDOCK_BRIDGE_TOKEN}', ...(isWsl ? { WSLENV: 'PADDOCK_BRIDGE_URL:PADDOCK_BRIDGE_TOKEN' } : {}) } } } });
     let { executable, args } = shellLaunch(), cliEnv = {};
-    if (raw.provider === 'codex') {
-      executable = this.nativeCodex();
-      if (!executable) throw new Error('Codex CLI was not found. Install it, then restart Paddock.');
-      args = [...(resumeId ? ['--no-daemon', 'resume', resumeId, '--cd', cwd] : ['--no-daemon'])];
-      // Inline mode keeps the console's scrollback and text selection.
-      if (this.codexScrollback()) args.push('--no-alt-screen');
-      if (purpose === 'agent') {
-        if (!node) throw new Error('Node.js is needed for completion notifications.');
-        args.push('-c', `notify=${JSON.stringify([node, helper, 'codex-notify'])}`);
-      }
-      if (account?.profile) args.push('-c', `sqlite_home=${JSON.stringify(path.join(account.configDir, 'sqlite'))}`);
-      if (!resumeId && model) args.push('--model', model);
-      if (resumeId && resumeModel) args.push('--model', resumeModel);
-      if (resumeEffort !== null) args.push('-c', `model_reasoning_effort=${JSON.stringify(resumeEffort)}`);
-      if (this.hub && purpose === 'agent') {
-        const context = JSON.stringify(summary).length < 22000 ? summary : `Before doing any work, call the paddock dock_context tool to load the shared user instructions and tool summary. The same instructions are in ${summaryPath}. Refresh them at the start of each task. Use dock_tools to discover tools and dock_call to invoke them.`;
-        const values = { developer_instructions: context, 'mcp_servers.paddock.command': node, 'mcp_servers.paddock.args': [bridgeHelper], 'mcp_servers.paddock.env_vars': ['PADDOCK_BRIDGE_URL', 'PADDOCK_BRIDGE_TOKEN'], 'mcp_servers.paddock.tool_timeout_sec': 150,
-          'mcp_servers.paddock.default_tools_approval_mode': 'approve' };
-        for (const [key, value] of Object.entries(values)) args.push('-c', `${key}=${JSON.stringify(value)}`);
-      }
-      if (permissions === 'unrestricted') args.push('--dangerously-bypass-approvals-and-sandbox');
-    } else if (raw.provider === 'claude') {
-      const claude = claudeInstall?.path;
-      if (!claude) throw new Error('Claude Code was not found. Install it, then restart Paddock.');
-      if (purpose === 'agent' && !node) throw new Error('Node.js is needed for Claude tracking.');
-      const command = mode => isWsl ? `${shQuote(wslPath(node))} ${shQuote(helper)} ${mode}` : `"${node.replaceAll('\\', '/')}" "${helper.replaceAll('\\', '/')}" ${mode}`;
-      const claudeArgs = [];
-      if (purpose === 'agent') {
-        const hooks = {};
-        for (const type of ['SessionStart', 'UserPromptSubmit', 'Stop', 'PermissionRequest', 'Notification', 'StopFailure', 'SessionEnd']) hooks[type] = [{ hooks: [{ type: 'command', command: command(type), timeout: 15 }] }];
-        const settings = path.join(dir, 'claude-settings.json');
-        atomicJson(settings, { hooks, statusLine: { type: 'command', command: command('statusline') } });
-        claudeArgs.push('--settings', isWsl ? wslPath(settings) : settings);
-      }
-      if (!resumeId && model) claudeArgs.push('--model', model);
-      if (resumeId && resumeModel) claudeArgs.push('--model', resumeModel);
-      if (resumeEffort !== null) claudeArgs.push('--effort', resumeEffort);
-      if (resumeId) claudeArgs.push('--resume', resumePath || resumeId);
-      if (this.hub && purpose === 'agent') claudeArgs.push('--append-system-prompt-file', isWsl ? wslPath(summaryPath) : summaryPath, '--mcp-config', isWsl ? wslPath(mcpConfig) : mcpConfig);
-      if (permissions === 'unrestricted') claudeArgs.push('--dangerously-skip-permissions');
-      if (discussion) claudeArgs.push('--', discussion);
-      if (isWsl) { executable = 'wsl.exe'; args = ['-d', claudeInstall.distro, '--cd', cwd, '--exec', claude, ...claudeArgs]; }
-      else ({ executable, args } = programLaunch(claude, claudeArgs));
-    } else if (cliAgents.has(raw.provider)) {
-      const agent = cliAgents.get(raw.provider);
-      const program = this.cliSetup?.executable(raw.provider) || this.findProgram(agent.command);
-      if (!program) throw new Error(`${agent.name} was not found. Open Settings → Set up agents to install it.`);
-      const prepared = this.hub ? prepareCli(raw.provider, { directory: dir, runtime: { ...this.runtime, node, tools: bridgeHelper }, summary, summaryPath, home: this.agentHome, configDir: account?.profile ? account.configDir : null, model, permissions, profiles: this.hub.config?.profiles || [] }) : { args: [...(agent.args || []), ...(model && agent.model ? [agent.model, model] : [])], env: {} };
-      if (raw.provider === 'antigravity' && resumeId) prepared.args.push('--conversation', resumeId);
-      cliEnv = prepared.env;
-      ({ executable, args } = programLaunch(program, prepared.args, { bypass: true }));
-    } else if (raw.provider === 'custom') {
-      if (typeof raw.command !== 'string' || !raw.command.trim() || raw.command.length > 4000 || raw.command.includes('\0')) throw new Error('Enter the command you want this console to run.');
-      const command = this.hub ? raw.command.replaceAll('{instructions}', quote(summaryPath)).replaceAll('{mcp_config}', quote(mcpConfig)) : raw.command;
-      ({ executable, args } = customLaunch(command));
-    }
+    const adapterCtx = {
+      purpose, model, resumeId, resumePath, resumeModel, resumeEffort,
+      permissions, account, node, helper, summary, summaryPath,
+      mcpConfig, dir, cwd, isWsl, claudeInstall, discussion,
+      hub: !!this.hub, codexScrollback: () => this.codexScrollback(),
+      nativeCodex: () => this.nativeCodex(), programLaunch, prepareCli,
+      cliAgents, agentHome: this.agentHome, cliSetup: this.cliSetup,
+      findProgram: n => this.findProgram(n), runtime: this.runtime,
+      bridgeHelper, atomicJson, shQuote, wslPath, quote, customLaunch, shellLaunch,
+      provider: raw.provider, command: raw.command,
+      profiles: this.hub?.config?.profiles || []
+    };
+    const launched = settingsAdapter(raw.provider).launchArgs(adapterCtx);
+    executable = launched.executable;
+    args = launched.args;
+    cliEnv = launched.env;
     const baseEnv = terminalEnvironment();
     const editorCommand = envValue(baseEnv, 'VISUAL') || envValue(baseEnv, 'EDITOR') || '';
     const editorRoots = raw.provider === 'codex' && account?.configDir ? [path.join(account.configDir, 'editor')] : [];
@@ -301,7 +262,7 @@ class Sessions extends EventEmitter {
       editorRoots.push(path.join(launchTemp, 'claude'));
     }
     let bridge = null;
-    if (['codex', 'claude'].includes(raw.provider) && purpose === 'agent' && node && this.draftBridge && !isWsl) {
+    if (settingsAdapter(raw.provider).switchMethod === 'resume' && purpose === 'agent' && node && this.draftBridge && !isWsl) {
       try { bridge = this.draftBridge.register(id, launchId, { node, helper: this.runtime?.draftEditor || path.join(__dirname, 'draft-editor.cjs'), editorCommand, editorRoots, provider: raw.provider }); }
       catch { bridge = null; }
     }
@@ -409,7 +370,7 @@ class Sessions extends EventEmitter {
       if (config && path.isAbsolute(config)) env.CLAUDE_CONFIG_DIR = wslPath(config);
       env.WSLENV = [...new Set([...(env.WSLENV || '').split(':').filter(Boolean), 'CLAUDE_CONFIG_DIR/p', 'PADDOCK_ACCOUNT_ID'])].join(':');
       command = 'wsl.exe'; args = ['-d', install.distro, '--cd', cwd, '--exec', executable, ...args];
-    } else if (!['codex', 'claude'].includes(saved.provider)) ({ executable: command, args } = programLaunch(command, args, { bypass: true }));
+    } else if (!settingsAdapter(saved.provider).native) ({ executable: command, args } = programLaunch(command, args, { bypass: true }));
     const terminal = this.pty.spawn(command, args, { name: 'xterm-256color', cols: 110, rows: 30, cwd, env, useConpty: true });
     this.commitLayout(opening.plan, opening.grid);
     for (const [oldId, old] of this.items) if (old.slot === opening.slot && !old.alive) this.items.delete(oldId);
@@ -562,14 +523,14 @@ class Sessions extends EventEmitter {
   async switchSettings({ id, launchId, model, effort, confirmConversationReload } = {}) {
     if (confirmConversationReload !== true) throw new Error('Confirm reloading the saved conversation before applying these settings.');
     const source = this.items.get(id);
-    if (source?.remote || source?.taskId || !['codex', 'claude'].includes(source?.provider)) throw new Error('Model switching is unavailable for this console.');
+    if (source?.remote || source?.taskId || settingsAdapter(source?.provider).switchMethod !== 'resume') throw new Error('Model switching is unavailable for this console.');
     return this.switchAccount({ id, launchId, targetAccountId: source.accountId }, { model, effort });
   }
   async switchAccount({ id, launchId, targetAccountId } = {}, settingsSelection = null) {
     ordinaryConsole(this.items.get(id));
     const source = this.items.get(id);
     if (!source?.alive || source.dismissed || source.purpose !== 'agent' || source.launchId !== launchId) throw new Error('This console has changed. Select it again before switching.');
-    if (!['codex', 'claude'].includes(source.provider) || !this.accounts) throw new Error('Account switching is unavailable for this console.');
+    if (settingsAdapter(source.provider).switchMethod !== 'resume' || !this.accounts) throw new Error('Account switching is unavailable for this console.');
     if (this.switchOperations.has(id)) throw new Error('An account switch is already in progress.');
     if (settingsSelection && !['open', 'ready', 'idle'].includes(source.state)) throw new Error('Wait until this chat is idle before applying settings.');
     if (source.switching || ['active', 'attention'].includes(source.state) || this.isBusy(id)) throw new Error('Finish the current task before switching accounts.');
@@ -586,7 +547,7 @@ class Sessions extends EventEmitter {
         if (this.items.get(id) !== source || !source.alive || source.dismissed || source.launchId !== launchId) throw new Error('This console changed. Reopen the model choices.');
         const draft = await this.captureNativeDraft(source);
         if (source.provider === 'claude' && hasClaudeEditorContext(draft)) {
-          throw new Error('Turn off “Show last response in external editor” in Claude Code before switching. The current console and draft are still running.');
+          throw new Error('Turn off "Show last response in external editor" in Claude Code before switching. The current console and draft are still running.');
         }
         const currentSource = this.items.get(id);
         if (currentSource !== source || !source.alive || source.dismissed || !source.switching || source.launchId !== launchId || this.isBusy(id) || ['active', 'attention'].includes(source.state)) throw new Error('The console changed while Paddock was checking it. The original console is still running.');
@@ -622,7 +583,7 @@ class Sessions extends EventEmitter {
         }
         const targetDraft = await this.captureNativeDraft(stageSession);
         if (source.provider === 'claude' && hasClaudeEditorContext(targetDraft)) {
-          throw new Error('Turn off “Show last response in external editor” in Claude Code before switching. Keep the original console open.');
+          throw new Error('Turn off "Show last response in external editor" in Claude Code before switching. Keep the original console open.');
         }
         if (targetDraft !== '') throw new Error('The selected account opened with a draft already present. Keep the original console open.');
         const marker = `PDK${crypto.randomUUID().replaceAll('-', '')}`;
@@ -654,7 +615,7 @@ class Sessions extends EventEmitter {
       } catch (error) {
         const stageSession = stageLaunchId && this.pendingStages.get(stageLaunchId);
         if (stageSession && source.provider === 'codex' && hasCodexFolderTrustPrompt(stageSession.buffer) && this.items.get(id) === source && source.alive && !source.dismissed) {
-          error = new Error(`${target.label} needs to trust this project folder before it can resume here. Select “Set up ${target.label}” in this console's account menu. Paddock kept this console and its draft open.`);
+          error = new Error(`${target.label} needs to trust this project folder before it can resume here. Select "Set up ${target.label}" in this console's account menu. Paddock kept this console and its draft open.`);
           this.emit('changed');
         }
         if (stageSession) {
