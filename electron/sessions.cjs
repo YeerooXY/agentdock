@@ -446,22 +446,30 @@ class Sessions extends EventEmitter {
     return pending;
   }
   validateSwitchDraft(text, provider) { return validateDraftText(text, provider); }
+  async removeNativeDraftMarker(session, marker, { timeout = 15000 } = {}) {
+    const deadline = Date.now() + timeout;
+    // An editor acknowledgement precedes its exit. Background terminal output
+    // can arrive before the CLI imports the file, so sequence/quiet alone is
+    // insufficient. The unique suffix must actually appear before deletion.
+    // ANSI styling and terminal line wrapping may split the ASCII suffix.
+    while (!plainTerminalText(session.buffer).replace(/\s/g, '').includes(marker)) {
+      if (!session.alive) throw new Error('The CLI closed while Paddock checked the draft. Keep this console open.');
+      if (Date.now() >= deadline) throw new Error('The CLI did not display the draft verification marker. Keep the original console open.');
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+    await this.waitForOutputIdle(session);
+    const deleteSequence = session.sequence;
+    session.terminal.write('\x7f'.repeat(marker.length));
+    await this.waitForOutputIdle(session, { afterSequence: deleteSequence });
+  }
   async captureNativeDraft(session, { dismissCodexStatusPopup = false } = {}) {
     if (!session.draftSupported || !this.draftBridge) throw new Error('Paddock could not verify the CLI composer draft. Keep the current console open.');
     const captureOnce = async () => {
       await this.waitForOutputIdle(session);
       const marker = `PDK${crypto.randomUUID().replaceAll('-', '')}`;
       const text = await this.nativeDraft(session, 'capture', marker);
-      // The editor helper reports before it exits; the CLI redraws its composer
-      // with the marker only afterwards. Wait for that redraw, not for quiet
-      // output from before it, or the deletes arrive first and the marker stays.
-      const editorClosedSequence = session.sequence;
       this.validateSwitchDraft(text, session.provider);
-      await this.waitForOutputIdle(session, { afterSequence: editorClosedSequence });
-      if (!session.alive) throw new Error('The CLI closed while Paddock checked the draft. Keep this console open and restore the draft before closing it.');
-      const deleteSequence = session.sequence;
-      session.terminal.write('\x7f'.repeat(marker.length));
-      await this.waitForOutputIdle(session, { afterSequence: deleteSequence });
+      await this.removeNativeDraftMarker(session, marker);
       // Removing the capture suffix reopens Codex's slash-command completion
       // popup when the controlled local command is /status. Dismiss only that
       // verified command state so the next acknowledged editor capture works.
@@ -590,10 +598,7 @@ class Sessions extends EventEmitter {
         if (targetDraft !== '') throw new Error('The selected account opened with a draft already present. Keep the original console open.');
         const marker = `PDK${crypto.randomUUID().replaceAll('-', '')}`;
         await this.nativeDraft(stageSession, 'restore', draft + marker);
-        await this.waitForOutputIdle(stageSession, { afterSequence: stageSession.sequence });
-        const deleteSequence = stageSession.sequence;
-        stageSession.terminal.write('\x7f'.repeat(marker.length));
-        await this.waitForOutputIdle(stageSession, { afterSequence: deleteSequence });
+        await this.removeNativeDraftMarker(stageSession, marker);
         const restored = await this.captureNativeDraft(stageSession);
         if (restored !== draft) throw new Error('The selected account could not confirm the exact unsent draft. Keep the original console open.');
         if (this.items.get(id) !== source || !source.alive || source.dismissed || !source.switching || source.launchId !== launchId || this.isBusy(id) || ['active', 'attention'].includes(source.state)) throw new Error('The console changed while Paddock was switching accounts. The original console is still running.');
