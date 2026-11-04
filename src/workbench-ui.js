@@ -110,7 +110,7 @@ export function workbenchUI({ call, getState, getPage, renderPage, escape: e, to
     dialog.classList.remove('image-gallery');
     imageResize.disconnect();
     const code = batch(id).find(x => x.kind === 'code');
-    show(`<h2>${e(item.title)}</h2><div class="result-detail-meta"><span>${e(consoleName(item))} · ${e(item.status.replaceAll('-', ' '))} · Saved ${date(item.at)}${item.updatedAt ? ` · Updated ${date(item.updatedAt)}` : ''}</span>${code && code.id !== id ? button('preview','Code changes',code.id,'secondary') : ''}</div><div id="result-preview" aria-live="polite">Loading…</div><div class="wb-toolbar">${button('export','Export',id,'secondary')}${button('delete-one','Delete saved copy',id,'subtle danger')}</div>`, wideResults.matches && getPage() === 'results');
+    show(`<h2>${e(item.title)}</h2><div class="result-detail-meta"><span>${e(consoleName(item))}, ${e(item.status.replaceAll('-', ' '))}. Saved ${date(item.at)}${item.updatedAt ? `. Updated ${date(item.updatedAt)}` : ''}</span>${code && code.id !== id ? button('preview','Code changes',code.id,'secondary') : ''}</div><div id="result-preview" aria-live="polite">Loading…</div><div class="wb-toolbar">${button('export','Export',id,'secondary')}${button('delete-one','Delete saved copy',id,'subtle danger')}</div>`, wideResults.matches && getPage() === 'results');
     const heading = dialog.querySelector('h2'); heading.tabIndex = -1;
     if (!refreshing) heading.focus({ preventScroll: true });
     else if (focused) [...dialog.querySelectorAll('[data-wb]')].find(node => node.dataset.wb === focused)?.focus({ preventScroll: true });
@@ -143,7 +143,7 @@ export function workbenchUI({ call, getState, getPage, renderPage, escape: e, to
     detail = { type: 'result', id, entry: null }; imageZoom = 'fit'; imagePan = { x: 0, y: 0 }; imageDrag = null;
     const code = batch(id).find(x => x.kind === 'code');
     dialog.classList.add('image-gallery');
-    show(`<div id="result-preview" class="image-stage" tabindex="0" aria-label="Image viewer" aria-live="polite">Loading…</div><div id="image-navigation"></div><details class="image-details"><summary>Details</summary><div class="image-details-content"><h2>${e(item.title)}</h2><div class="result-detail-meta">${e(consoleName(item))} · ${e(item.status.replaceAll('-', ' '))} · ${date(item.at)}</div><div class="wb-toolbar">${code && code.id !== id ? button('preview','Code changes',code.id,'secondary') : ''}${button('export','Export',id,'secondary')}${button('delete-one','Delete saved copy',id,'subtle danger')}</div></div></details>`, false);
+    show(`<div id="result-preview" class="image-stage" tabindex="0" aria-label="Image viewer" aria-live="polite">Loading…</div><div id="image-navigation"></div><details class="image-details"><summary>Details</summary><div class="image-details-content"><h2>${e(item.title)}</h2><div class="result-detail-meta">${e(consoleName(item))}, ${e(item.status.replaceAll('-', ' '))}. ${date(item.at)}</div><div class="wb-toolbar">${code && code.id !== id ? button('preview','Code changes',code.id,'secondary') : ''}${button('export','Export',id,'secondary')}${button('delete-one','Delete saved copy',id,'subtle danger')}</div></div></details>`, false);
     updateImageNavigation(id);
     dialog.querySelector('.image-filmstrip').open = stripOpen;
     dialog.querySelector('.image-details').open = detailsOpen;
@@ -169,7 +169,7 @@ export function workbenchUI({ call, getState, getPage, renderPage, escape: e, to
       if (!current()) return;
       item.seenAt ||= Date.now();
       const thumb = dialog.querySelector('.result-filmstrip [aria-current=true]');
-      if (thumb) { const index = imageItems(id).findIndex(x => x.id === id); thumb.setAttribute('aria-label', `${index + 1}. ${item.title}, viewed`); thumb.querySelector('span').textContent = `${index + 1} · Viewed`; }
+      if (thumb) { const index = imageItems(id).findIndex(x => x.id === id); thumb.setAttribute('aria-label', `${index + 1}. ${item.title}, viewed`); thumb.querySelector('span').textContent = `${index + 1}. Viewed`; }
     } catch (error) {
       if (!current()) return;
       stage.innerHTML = `<div class="image-error"><p role="alert">Image unavailable.</p>${button('retry-image','Retry',id,'secondary')}</div>`;
@@ -180,8 +180,8 @@ export function workbenchUI({ call, getState, getPage, renderPage, escape: e, to
     const node = dialog.querySelector('#image-navigation'); if (!node) return;
     const images = imageItems(id), index = images.findIndex(x => x.id === id);
     imageOrder = images.map(x => x.id);
-    dialog.querySelector('.wb-dialog-top').insertAdjacentHTML('afterbegin', `<span role="status">${index+1} / ${images.length} · ${e(images[index]?.title || '')}</span>`);
-    node.innerHTML = `<div class="result-image-pager"><button class="secondary" data-wb="previous-image" data-id="${e(images[index-1]?.id || '')}" aria-label="Previous picture" ${index <= 0 ? 'disabled' : ''}>Previous</button><button class="secondary" data-wb="next-image" data-id="${e(images[index+1]?.id || '')}" aria-label="Next picture" ${index >= images.length-1 ? 'disabled' : ''}>Next</button><button class="secondary" data-wb="image-fit" aria-pressed="true">Fit</button><button class="secondary" data-wb="image-actual" aria-pressed="false">100%</button></div><details class="image-filmstrip"><summary>Pictures</summary><nav class="result-filmstrip" aria-label="Pictures in this turn">${images.map((x,i) => `<button data-wb="gallery-image" data-id="${x.id}" aria-current="${id === x.id ? 'true' : 'false'}" aria-label="${i+1}. ${e(x.title)}, ${x.seenAt ? 'viewed' : 'not viewed'}"><img data-result-image="${x.id}" alt=""><span>${i+1}${x.seenAt ? ' · Viewed' : ''}</span></button>`).join('')}</nav></details>`;
+    dialog.querySelector('.wb-dialog-top').insertAdjacentHTML('afterbegin', `<span role="status">${index+1} / ${images.length}: ${e(images[index]?.title || '')}</span>`);
+    node.innerHTML = `<div class="result-image-pager"><button class="secondary" data-wb="previous-image" data-id="${e(images[index-1]?.id || '')}" aria-label="Previous picture" ${index <= 0 ? 'disabled' : ''}>Previous</button><button class="secondary" data-wb="next-image" data-id="${e(images[index+1]?.id || '')}" aria-label="Next picture" ${index >= images.length-1 ? 'disabled' : ''}>Next</button><button class="secondary" data-wb="image-fit" aria-pressed="true">Fit</button><button class="secondary" data-wb="image-actual" aria-pressed="false">100%</button></div><details class="image-filmstrip"><summary>Pictures</summary><nav class="result-filmstrip" aria-label="Pictures in this turn">${images.map((x,i) => `<button data-wb="gallery-image" data-id="${x.id}" aria-current="${id === x.id ? 'true' : 'false'}" aria-label="${i+1}. ${e(x.title)}, ${x.seenAt ? 'viewed' : 'not viewed'}"><img data-result-image="${x.id}" alt=""><span>${i+1}${x.seenAt ? '. Viewed' : ''}</span></button>`).join('')}</nav></details>`;
     loadImages(node);
     const strip = node.querySelector('.result-filmstrip'), current = node.querySelector('[aria-current=true]');
     if (strip && current) strip.scrollLeft = current.offsetLeft - strip.offsetLeft - (strip.clientWidth-current.clientWidth)/2;
