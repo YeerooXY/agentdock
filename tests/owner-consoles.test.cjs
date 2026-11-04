@@ -181,7 +181,7 @@ test('admission resolves shared quota groups from worker definitions across laun
   const first = await f.admission.acquire({ id: 'first', accountId: 'codex:a', automatic: true });
   const second = f.admission.acquire({ id: 'second', accountId: 'opencode:a', automatic: true });
   assert.equal(f.admission.pending[0].quotaGroupId, 'shared');
-  assert.equal(f.admission.pending[0].reason, 'Waiting for capacity');
+  assert.equal(f.admission.pending[0].reason, 'Waiting for opencode:a');
   first(); (await second)();
 });
 
@@ -253,7 +253,7 @@ test('two-project console priority puts focus before selection and drafts, and o
   assert.deepEqual(started, ['worker', 'selection', 'other-owner', 'draft', 'recent', 'old', 'background']);
 });
 
-test('pending submissions age within their tier and equal-time requests rotate projects', async t => {
+test('pending submissions age within their tier and equal-time requests keep queue order', async t => {
   const f = fixture(t);
   const blocker = await f.request('block');
   const started = [], promises = [];
@@ -263,14 +263,14 @@ test('pending submissions age within their tier and equal-time requests rotate p
   f.advance(1);
   promises.push(f.request('older-tier-later', { projectId: 'c' }).then(release => { started.push('later'); release(); }));
   blocker(); await Promise.all(promises);
-  assert.deepEqual(started, ['a1', 'b1', 'a2', 'b2', 'a3', 'later']);
+  assert.deepEqual(started, ['a1', 'a2', 'a3', 'b1', 'b2', 'later']);
 });
 
 test('owner interaction wins pending admission, a frozen draft keeps it queued, and cancellation spawns nothing', async t => {
   const f = fixture(t); f.register('worker');
   const blocker = await f.request('block');
   let started = false;
-  const queued = f.request('queued', { onQueued: reason => { if (reason) assert.match(reason, /capacity|Reserved/); } }).then(release => { started = !!release; });
+  const queued = f.request('queued', { onQueued: reason => { if (reason) assert.match(reason, /Waiting for|Reserved/); } }).then(release => { started = !!release; });
   f.touch('worker', 'typing', { draft: true }); blocker();
   f.owners.freeze(); f.advance(RECENT_MS * 2); f.admission.drain();
   await Promise.resolve(); assert.equal(started, false);

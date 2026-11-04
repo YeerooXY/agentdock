@@ -1,6 +1,7 @@
 'use strict';
 const { randomUUID, createHash } = require('node:crypto');
 const { strataConfig } = require('./local-models.cjs');
+const { getScheduler } = require('./scheduler.cjs');
 const { normalizeUsage } = require('./domain.cjs');
 
 const purposes = Object.freeze({
@@ -21,9 +22,9 @@ const localAssistSchema = { type: 'object', additionalProperties: false, require
 // Cache the last 128 requests for this app process so an immediate tool retry
 // joins the same request. A failed or incomplete request is never auto-retried.
 class LocalAssist {
-  constructor({ getProfiles = () => [], fetcher = fetch, onEntry = () => {}, testMode = false } = {}) {
+  constructor({ root, admission, getProfiles = () => [], fetcher = fetch, onEntry = () => {}, testMode = false } = {}) {
     Object.assign(this, { getProfiles, fetcher, onEntry, testMode });
-    this.requests = new Map(); this.busy = false;
+    this.requests = new Map(); this.admission = admission || getScheduler(root);
   }
   async run(args, context = {}) {
     if (this.testMode) throw Error('Local inference is disabled in app test mode.');
@@ -41,12 +42,17 @@ class LocalAssist {
       if (previous.digest !== digest) throw Error('This requestId already has different input. Use a new ID for new work.');
       return previous.promise;
     }
-    if (this.busy) throw Error('The local helper is busy. Wait for its current request; no request was queued.');
-    this.busy = true;
-    const promise = this.execute({ ...args, maxOutput, reasoning }, baseURL, context).finally(() => { this.busy = false; });
+    const promise = this.admitted({ ...args, maxOutput, reasoning }, baseURL, context);
     this.requests.set(key, { digest, promise });
     if (this.requests.size > 128) this.requests.delete(this.requests.keys().next().value);
     return promise;
+  }
+  async admitted(args, baseURL, context) {
+    const release = await this.admission.acquire({ id: randomUUID(), kind: 'local-assist', local: true, accountId: 'strata',
+      projectId: context.projectId, taskId: context.taskId, onQueued: context.onQueued });
+    if (!release) throw Error('Local request cancelled.');
+    try { return await this.execute(args, baseURL, context); }
+    finally { release(); }
   }
   async execute(args, baseURL, context) {
     const entry = { id: randomUUID(), messageId: randomUUID(), step: 1, at: Date.now(), provider: 'strata', model: '',

@@ -3,7 +3,7 @@
 // Headless ladder routing. The caller owns dispatch and supplies a fresh snapshot
 // of active work, including owner work; this module never opens or stops consoles.
 const { modelFamily } = require('./task-routing.cjs');
-const { ownerCapacity } = require('./owner-consoles.cjs');
+const { admissionReason, resourceProfile } = require('./scheduler.cjs');
 const FRESH_MS = 30 * 60_000;
 const LEVELS = new Set(['L1', 'L2', 'L3']);
 const STRATA_URL = 'http://127.0.0.1:8080/v1';
@@ -87,15 +87,12 @@ function routeWorker({ workers, role = 'builder', level, builderFamily, limits =
     const accountIds = [...new Set(group.map(w => w.accountId))];
     const usage = worker.local ? { status: 'machine', left: null, blocked: false, windows: [] } : groupHeadroom(limits, accountIds, now);
     const occupied = active.filter(turn => turn.quotaGroupId === worker.quotaGroupId).length;
-    const capacity = Math.min(...availableGroup.map(w => w.concurrency), ...(availableGroup.some(w => w.local) ? [1] : []));
+    const capacity = resourceProfile({ workerId: worker.id }, workers).capacity;
     const allowance = usage.status === 'fresh' || usage.status === 'machine' ? capacity : Math.min(capacity, ...availableGroup.map(w => w.unknownAllowance));
-    if (usage.blocked || occupied >= allowance) continue;
-    const reservation = ownerCapacity({ quotaGroupId: worker.quotaGroupId, capacity: allowance, active, reservations, automatic });
-    const localReserved = automatic && worker.local && owners?.snapshot().some(record => record.local && reservations.has(record.quotaGroupId));
-    if (reservation === 'Reserved for owner' || localReserved) { ownerReserved = true; continue; }
+    if (usage.blocked || allowance === 0) continue;
+    const reservation = admissionReason({ ...worker, capacity: allowance, automatic }, active.map(turn => ({ ...turn, local: turn.local === true || workers.some(w => w.id === turn.workerId && w.local) })), { limit: Infinity, reservations, owners });
+    if (reservation === 'Reserved for owner') ownerReserved = true;
     if (reservation) continue;
-    // The machine-wide local-model limit applies across quota groups.
-    if (worker.local && active.some(turn => turn.local === true || workers.some(w => w.id === turn.workerId && w.local))) continue;
     available.push({ worker, usage, occupied, capacity: allowance });
   }
   if (!available.length) return { worker: null, reason: ownerReserved ? 'Reserved for owner' : 'Waiting for capacity' };
