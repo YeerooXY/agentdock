@@ -83,13 +83,15 @@ void main() {
     expect(find.text('Close'), findsNothing);
   });
 
-  testWidgets('the main screen chip counts tasks that need you and opens the page', (tester) async {
+  testWidgets('the top bar Tasks icon counts tasks that need you and opens the page', (tester) async {
     final client = dock([task('a', 'needs-you'), task('b', 'passed'), task('c', 'failed', acknowledged: 9)]);
     addTearDown(client.dispose);
     await tester.pumpWidget(DockApp(client: client));
     await tester.pumpAndSettle();
-    expect(find.text('Tasks: 1 need you'), findsOneWidget);
-    await tester.tap(find.text('Tasks: 1 need you'));
+    // A top-bar icon with a badge, not a row of its own.
+    expect(find.byTooltip('Tasks: 1 need you'), findsOneWidget);
+    expect(find.text('1'), findsWidgets);
+    await tester.tap(find.byTooltip('Tasks: 1 need you'));
     await tester.pumpAndSettle();
     expect(find.byType(TasksPage), findsOneWidget);
   });

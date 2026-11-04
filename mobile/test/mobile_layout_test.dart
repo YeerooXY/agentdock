@@ -30,7 +30,7 @@ void main() {
           (icon.image as AssetImage).assetName,
           AgentIdentity.logo(provider),
         );
-        expect(find.text('Model unknown'), findsNothing);
+        expect(find.text('Model'), findsNothing);
         expect(find.byType(TextField), findsNothing);
         expect(find.byTooltip('Agent commands'), findsNothing);
         expect(find.text('Enter'), findsNothing);
@@ -51,11 +51,11 @@ void main() {
       await enterChat(tester);
       await tester.enterText(find.byType(TextField), 'Draft belongs here');
       await tester.pump();
-      expect(find.text('Model unknown'), findsOneWidget);
+      expect(find.text('Model'), findsOneWidget);
       await tester.tap(find.byTooltip('Collapse chat'));
       await tester.pumpAndSettle();
       expect(find.byType(TextField), findsNothing);
-      expect(find.text('Model unknown'), findsNothing);
+      expect(find.text('Model'), findsNothing);
       expect(tester.testTextInput.isVisible, false);
       await tester.drag(
         find.byKey(const ValueKey('terminal-reading-scroll')),

@@ -878,6 +878,20 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
                   ),
                 ),
           actions: [
+            // Tasks sit in the bar, not a row of their own, so the console keeps its height.
+            if (c.connected && visibleTasks(c.state['tasks']).isNotEmpty)
+              Builder(builder: (context) {
+                final attention = tasksNeedingAttention(c.state['tasks']);
+                return IconButton(
+                  tooltip: attention > 0 ? 'Tasks: $attention need you' : 'Tasks',
+                  onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => TasksPage(client: c))),
+                  icon: Badge(
+                    isLabelVisible: attention > 0,
+                    label: Text('$attention'),
+                    child: Icon(attention > 0 ? Icons.assignment_late_outlined : Icons.assignment_outlined, color: blue),
+                  ),
+                );
+              }),
             PopupMenuButton<String>(
               tooltip: 'More options',
               icon: Icon(Icons.more_vert, color: pink),
@@ -1113,24 +1127,6 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
                     ),
                   ),
                 ),
-              if (c.connected && visibleTasks(c.state['tasks']).isNotEmpty)
-                Builder(builder: (context) {
-                  final attention = tasksNeedingAttention(c.state['tasks']);
-                  return Align(
-                    alignment: Alignment.centerRight,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: ActionChip(
-                        avatar: Icon(attention > 0 ? Icons.assignment_late_outlined : Icons.assignment_outlined, size: 18),
-                        label: Text(attention > 0 ? 'Tasks: $attention need you' : 'Tasks'),
-                        onPressed: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(builder: (_) => TasksPage(client: c)),
-                        ),
-                      ),
-                    ),
-                  );
-                }),
               Expanded(
                 child: page == 0
                     ? consoleWorkspace(current)
@@ -1869,35 +1865,53 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
                       final selection = c.agentSelection(
                         session['id'] as String,
                       );
-                      return Wrap(
+                      // Model and effort share one line so the console keeps its
+                      // height. They appear only where the PC can apply a change
+                      // (switchMethod 'resume'); older PCs omit the field.
+                      final method = session['switchMethod'] as String? ??
+                          (['claude', 'codex'].contains(provider) ? 'resume' : 'none');
+                      if (method != 'resume') return const SizedBox.shrink();
+                      final compact = TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 6),
+                        minimumSize: const Size(0, 40),
+                        visualDensity: VisualDensity.compact,
+                      );
+                      return Row(
                     children: [
-                      TextButton.icon(
-                        onPressed: c.connected && !sending
-                            ? () => liveControls('Model')
-                            : null,
-                        icon: const Icon(Icons.tune, size: 18),
-                        label: Text(
-                          selection.model == null
-                              ? 'Model unknown'
-                              : '${modelLabel(selection.model!)}${selection.pending ? ' (selected)' : ''}',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+                      Flexible(
+                        child: TextButton.icon(
+                          style: compact,
+                          onPressed: c.connected && !sending
+                              ? () => liveControls('Model')
+                              : null,
+                          icon: const Icon(Icons.tune, size: 16),
+                          label: Text(
+                            selection.model == null
+                                ? 'Model'
+                                : '${modelLabel(selection.model!)}${selection.pending ? ' (selected)' : ''}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
                       ),
-                      if (['claude', 'codex'].contains(provider))
-                        TextButton.icon(
+                      Flexible(
+                        child: TextButton.icon(
+                          style: compact,
                           onPressed: c.connected && !sending
                               ? () => liveControls('Effort')
                               : null,
-                          icon: const Icon(Icons.speed, size: 18),
+                          icon: const Icon(Icons.speed, size: 16),
                           label: Text(
                             selection.effort == null
                                 ? selection.pending
-                                      ? 'Agent default (selected)'
-                                      : 'Effort unknown'
+                                      ? 'Default (selected)'
+                                      : 'Effort'
                                 : '${effortLabel(selection.effort!)}${selection.pending ? ' (selected)' : ''}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
+                      ),
                     ],
                   );
                     },

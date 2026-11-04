@@ -244,13 +244,30 @@ void main() {
     expect(created['agent'], 'claude');
   });
 
+  testWidgets('model and effort controls follow the console switch method', (tester) async {
+    final c = FakeDock();
+    addTearDown(c.dispose);
+    final session = (c.state['sessions'] as List).first as Map;
+    session['switchMethod'] = 'none';
+    await tester.pumpWidget(DockApp(client: c));
+    await enterChat(tester);
+    await tester.pumpAndSettle();
+    expect(find.text('Model'), findsNothing, reason: 'the PC cannot apply a change for this console');
+    expect(find.text('Effort'), findsNothing);
+    session['switchMethod'] = 'resume';
+    c.notifyListeners();
+    await tester.pumpAndSettle();
+    expect(find.text('Model'), findsOneWidget);
+    expect(find.text('Effort'), findsOneWidget);
+  });
+
   testWidgets('live controls refuse keys after reconnect', (tester) async {
     final c = FakeDock();
     addTearDown(c.dispose);
     await tester.pumpWidget(DockApp(client: c));
     await enterChat(tester);
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Model unknown'));
+    await tester.tap(find.text('Model'));
     await tester.pumpAndSettle();
     c.generation++;
     c.notifyListeners();
@@ -276,7 +293,7 @@ void main() {
     await tester.pumpWidget(DockApp(client: c));
     await enterChat(tester);
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Model unknown'));
+    await tester.tap(find.text('Model'));
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
     await tester.pumpAndSettle();
