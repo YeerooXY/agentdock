@@ -110,7 +110,9 @@ void main() {
         find.byType(TextField).last,
         'Keep this phone draft',
       );
-      await tester.tap(find.text('test-model-a'));
+      await tester.tap(find.byTooltip('Model and effort'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Model: test-model-a'));
       await tester.pumpAndSettle();
       expect(find.byType(LiveAgentControls), findsOneWidget);
       await effort(tester);

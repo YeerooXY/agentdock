@@ -1858,8 +1858,8 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
             padding: const EdgeInsets.symmetric(horizontal: 10),
             child: Row(
               children: [
-                Expanded(
-                  child: ListenableBuilder(
+                const Spacer(),
+                ListenableBuilder(
                     listenable: c.terminalSignal(session['id'] as String),
                     builder: (context, _) {
                       final selection = c.agentSelection(
@@ -1871,52 +1871,28 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
                       final method = session['switchMethod'] as String? ??
                           (['claude', 'codex'].contains(provider) ? 'resume' : 'none');
                       if (method != 'resume') return const SizedBox.shrink();
-                      final compact = TextButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(horizontal: 6),
-                        minimumSize: const Size(0, 40),
-                        visualDensity: VisualDensity.compact,
+                      final model = selection.model == null
+                          ? 'Model: unknown'
+                          : 'Model: ${modelLabel(selection.model!)}${selection.pending ? ' (selected)' : ''}';
+                      final effort = selection.effort == null
+                          ? selection.pending
+                                ? 'Effort: default (selected)'
+                                : 'Effort: unknown'
+                          : 'Effort: ${effortLabel(selection.effort!)}${selection.pending ? ' (selected)' : ''}';
+                      // One icon instead of two labelled rows; the menu names
+                      // the current model and effort.
+                      return PopupMenuButton<String>(
+                        tooltip: 'Model and effort',
+                        enabled: c.connected && !sending,
+                        icon: Icon(Icons.tune, color: blue),
+                        onSelected: liveControls,
+                        itemBuilder: (_) => [
+                          PopupMenuItem(value: 'Model', child: Text(model)),
+                          PopupMenuItem(value: 'Effort', child: Text(effort)),
+                        ],
                       );
-                      return Row(
-                    children: [
-                      Flexible(
-                        child: TextButton.icon(
-                          style: compact,
-                          onPressed: c.connected && !sending
-                              ? () => liveControls('Model')
-                              : null,
-                          icon: const Icon(Icons.tune, size: 16),
-                          label: Text(
-                            selection.model == null
-                                ? 'Model'
-                                : '${modelLabel(selection.model!)}${selection.pending ? ' (selected)' : ''}',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ),
-                      Flexible(
-                        child: TextButton.icon(
-                          style: compact,
-                          onPressed: c.connected && !sending
-                              ? () => liveControls('Effort')
-                              : null,
-                          icon: const Icon(Icons.speed, size: 16),
-                          label: Text(
-                            selection.effort == null
-                                ? selection.pending
-                                      ? 'Default (selected)'
-                                      : 'Effort'
-                                : '${effortLabel(selection.effort!)}${selection.pending ? ' (selected)' : ''}',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ),
-                    ],
-                  );
                     },
                   ),
-                ),
                 if ((c.state['capabilities'] as List? ?? []).contains(
                       'console.queue',
                     ) &&
@@ -2035,7 +2011,10 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
                           vertical: 12,
                         ),
                         isDense: true,
-                        suffixIcon: PopupMenuButton<String>(
+                        suffixIcon: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            PopupMenuButton<String>(
                           tooltip: 'Attach',
                           icon: Icon(Icons.add, color: blue),
                           enabled:
@@ -2057,23 +2036,29 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
                               ),
                           ],
                         ),
+                            // Inside the field, so the composer uses the full width.
+                            Padding(
+                              padding: const EdgeInsets.only(right: 6),
+                              child: DockSendButton(
+                                compact: true,
+                                onPressed:
+                                    c.connected &&
+                                        !sending &&
+                                        composer.text.trim().isNotEmpty &&
+                                        (session['taskId'] == null ||
+                                            (session['consoleCapabilities']
+                                                    as Map?)?['steering'] ==
+                                                true)
+                                    ? send
+                                    : null,
+                                sending: sending,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
-                ),
-                const SizedBox(width: 8),
-                DockSendButton(
-                  onPressed:
-                      c.connected &&
-                          !sending &&
-                          composer.text.trim().isNotEmpty &&
-                          (session['taskId'] == null ||
-                              (session['consoleCapabilities']
-                                      as Map?)?['steering'] ==
-                                  true)
-                      ? send
-                      : null,
-                  sending: sending,
                 ),
               ],
             ),

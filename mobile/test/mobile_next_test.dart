@@ -252,13 +252,15 @@ void main() {
     await tester.pumpWidget(DockApp(client: c));
     await enterChat(tester);
     await tester.pumpAndSettle();
-    expect(find.text('Model'), findsNothing, reason: 'the PC cannot apply a change for this console');
-    expect(find.text('Effort'), findsNothing);
+    expect(find.byTooltip('Model and effort'), findsNothing, reason: 'the PC cannot apply a change for this console');
     session['switchMethod'] = 'resume';
     c.notifyListeners();
     await tester.pumpAndSettle();
-    expect(find.text('Model'), findsOneWidget);
-    expect(find.text('Effort'), findsOneWidget);
+    expect(find.byTooltip('Model and effort'), findsOneWidget);
+    await tester.tap(find.byTooltip('Model and effort'));
+    await tester.pumpAndSettle();
+    expect(find.text('Model: unknown'), findsOneWidget);
+    expect(find.text('Effort: unknown'), findsOneWidget);
   });
 
   testWidgets('live controls refuse keys after reconnect', (tester) async {
@@ -267,7 +269,9 @@ void main() {
     await tester.pumpWidget(DockApp(client: c));
     await enterChat(tester);
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Model'));
+    await tester.tap(find.byTooltip('Model and effort'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Model: unknown'));
     await tester.pumpAndSettle();
     c.generation++;
     c.notifyListeners();
@@ -293,7 +297,9 @@ void main() {
     await tester.pumpWidget(DockApp(client: c));
     await enterChat(tester);
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Model'));
+    await tester.tap(find.byTooltip('Model and effort'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Model: unknown'));
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
     await tester.pumpAndSettle();

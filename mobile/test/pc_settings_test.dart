@@ -253,7 +253,7 @@ void main() {
     );
   });
 
-  testWidgets('console bottom row shows the confirmed model and effort', (
+  testWidgets('the model and effort menu shows the confirmed model and effort', (
     tester,
   ) async {
     final c = FakeDock();
@@ -262,13 +262,19 @@ void main() {
     await tester.pumpWidget(DockApp(client: c));
     await enterChat(tester);
     await tester.pumpAndSettle();
-    expect(find.text('6.1 Sol'), findsOneWidget);
-    expect(find.text('Medium'), findsOneWidget);
+    await tester.tap(find.byTooltip('Model and effort'));
+    await tester.pumpAndSettle();
+    expect(find.text('Model: 6.1 Sol'), findsOneWidget);
+    expect(find.text('Effort: Medium'), findsOneWidget);
+    await tester.tapAt(const Offset(5, 5));
+    await tester.pumpAndSettle();
     c.state['sessions'][0]['effort'] = 'max';
     c.notifyListeners();
     await tester.pumpAndSettle();
-    expect(find.text('6.1 Sol'), findsOneWidget);
-    expect(find.text('Max'), findsOneWidget);
+    await tester.tap(find.byTooltip('Model and effort'));
+    await tester.pumpAndSettle();
+    expect(find.text('Model: 6.1 Sol'), findsOneWidget);
+    expect(find.text('Effort: Max'), findsOneWidget);
     expect(c.inputs, isEmpty);
   });
 }
