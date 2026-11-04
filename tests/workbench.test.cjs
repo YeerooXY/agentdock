@@ -232,6 +232,26 @@ test('agents close only the stopped tasks their own console started, with a reas
   assert.deepEqual(dismissed, [{ id: 'job', reason: 'Worker made no changes; done directly.', by: 'agent' }]);
 });
 
+test('closing a queued task stops it first; a live worker console still needs the owner', async t => {
+  const { root, project } = fixture(t), stopped = [], running = new Set(['queued', 'busy']);
+  const workers = [];
+  const sessions = { items: new Map([['live', { id: 'live', alive: true, cwd: project }]]), list: () => workers };
+  const tasks = {
+    status: async id => ({ id, state: 'implementing', originConsoleId: 'live' }),
+    dismiss: id => { if (running.has(id)) throw new Error('Stop the task before dismissing it.'); return true; },
+    stop: async id => { stopped.push(id); running.delete(id); }
+  };
+  const workbench = new Workbench(root, {}, { nativeImage: {} }, { testMode: true, onChange() {}, getSessions: () => sessions, getProject: () => project, getTasks: () => tasks });
+  const hub = new SharedHub(root, { list: () => [] }, { workbench }); await hub.start(); t.after(() => hub.close());
+  const call = async args => { const grant = hub.grant('live'); return (await fetch(grant.PADDOCK_BRIDGE_URL, { method: 'POST', headers: { Authorization: 'Bearer ' + grant.PADDOCK_BRIDGE_TOKEN }, body: JSON.stringify({ name: 'dock_call', arguments: { tool: 'dock/close_task', arguments: args } }) })).json(); };
+  assert.deepEqual(JSON.parse((await call({ id: 'queued', reason: 'Done directly.' })).content[0].text), { id: 'queued', closed: true });
+  workers.push({ taskId: 'busy', processAlive: true });
+  const refused = await call({ id: 'busy', reason: 'Done directly.' });
+  assert.equal(refused.isError, true);
+  assert.match(refused.content[0].text, /owner stops it/);
+  assert.deepEqual(stopped, ['queued'], 'a live worker is never stopped by an agent');
+});
+
 test('Dock bridge validates native tool schemas and scopes file access to the calling console', async t => {
   const {root,project}=fixture(t); const outside=path.join(root,'private.txt'); fs.writeFileSync(outside,'DO_NOT_COPY');
   const file=path.join(project,'verification.txt'); fs.writeFileSync(file,'A real test report');
