@@ -9,7 +9,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 
 const PROVIDERS = ['codex', 'claude', 'antigravity', 'copilot', 'opencode', 'cursor', 'grok', 'kiro', 'qwen', 'kimi', 'cline', 'droid', 'pi', 'gemini', 'strata'];
-const SOURCES = [['electron', /\.cjs$/], ['src', /\.(js|css)$/], ['mobile/lib', /\.dart$/]];
+const SOURCES = [['electron', /\.(cjs|mjs)$/], ['src', /\.(js|css)$/], ['mobile/lib', /\.dart$/]];
 const SKIP = new Set(['node_modules', 'dist', '.build', 'release', 'tests', 'test']);
 const WINDOW = 8, LONG_FUNCTION = 80, LARGE_FILE = 1000;
 
@@ -72,7 +72,7 @@ function measure(root) {
     const relative = path.relative(root, file).split(path.sep).join('/');
     const text = fs.readFileSync(file, 'utf8'), lines = text.split(/\r?\n/);
     report.files.push({ file: relative, lines: lines.length });
-    if (/\.(cjs|js)$/.test(file)) for (const fn of functions(lines)) report.functions.push({ file: relative, ...fn });
+    if (/\.(cjs|mjs|js)$/.test(file)) for (const fn of functions(lines)) report.functions.push({ file: relative, ...fn });
     if (!/\.css$/.test(file)) for (const block of windows(lines)) {
       if (!seen.has(block.hash)) seen.set(block.hash, { preview: block.preview, places: [] });
       seen.get(block.hash).places.push(`${relative}:${block.line}`);
