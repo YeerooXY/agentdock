@@ -9,6 +9,7 @@ import 'dock_style.dart';
 import 'pair_page.dart';
 import 'results_page.dart';
 import 'image_jobs_page.dart';
+import 'tasks_page.dart';
 import 'projects_page.dart';
 import 'settings_page.dart';
 import 'update_panel.dart';
@@ -1112,6 +1113,24 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
                     ),
                   ),
                 ),
+              if (c.connected && visibleTasks(c.state['tasks']).isNotEmpty)
+                Builder(builder: (context) {
+                  final attention = tasksNeedingAttention(c.state['tasks']);
+                  return Align(
+                    alignment: Alignment.centerRight,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: ActionChip(
+                        avatar: Icon(attention > 0 ? Icons.assignment_late_outlined : Icons.assignment_outlined, size: 18),
+                        label: Text(attention > 0 ? 'Tasks: $attention need you' : 'Tasks'),
+                        onPressed: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => TasksPage(client: c)),
+                        ),
+                      ),
+                    ),
+                  );
+                }),
               Expanded(
                 child: page == 0
                     ? consoleWorkspace(current)
