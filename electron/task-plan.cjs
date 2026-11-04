@@ -216,8 +216,7 @@ class SplitTasks {
     if (!job?.split || job.state !== 'plan-ready') throw new Error('Approve a split task with a ready plan.');
     const validated = validatePlan(job.plan);
     if (validated.errors.length) throw new Error(validated.errors.join(' '));
-    const limit = args.parallelLimit ?? job.parallelLimit ?? 2;
-    if (!Number.isInteger(limit) || limit < 1 || limit > 10) throw new Error('Run 1 to 10 subtasks at once.');
+    const limit = require('./scheduler.cjs').subtaskLimit(args, job, loop.getSettings());
     const overrides = args.assignments ?? args.overrides ?? {};
     if (!overrides || typeof overrides !== 'object' || Array.isArray(overrides) || Object.keys(overrides).some(id => !job.subtasks.some(sub => sub.subtaskId === id))) throw new Error('Use assignments for the plan’s subtask ids.');
     const assignments = job.subtasks.map(sub => loop.assignment(Object.hasOwn(overrides, sub.subtaskId) ? overrides[sub.subtaskId] : sub.implementer, 'implementer'));
@@ -329,7 +328,13 @@ class SplitTasks {
   }
   async buildSubtask(job, sub, command) {
     const loop = this.loop, started = loop.now(); sub.runStartedAt = started;
+    let release;
     try {
+      release = await loop.admission.acquire({ id: `${sub.id}:subtask`, taskId: job.id, kind: 'subtask', taskCapacity: job.parallelLimit,
+        onQueued: (reason, position) => { sub.queueReason = reason; sub.queuePosition = position; loop.changed(sub); } });
+      if (!release || !ACTIVE.has(job.state)) return;
+      if (job.subtasks?.some(other => other !== sub && ['needs-you', 'failed', 'interrupted', 'stopped'].includes(other.state))) { sub.state = 'queued'; return; }
+      sub.state = 'implementing'; loop.changed(sub);
       if (!sub.workFolder) {
         // Short folder names: Windows Git fails with "'$GIT_DIR' too big" on long worktree paths.
         sub.workFolder = path.join(loop.root, 'task-worktrees', `${job.id.slice(0, 8)}-${sub.subtaskId}`); sub.branch = `${job.branch}-${sub.subtaskId}`;
@@ -348,7 +353,7 @@ class SplitTasks {
       sub.resumeRounds = false;
       if ((sub.committed || sub.state === 'passed') && ACTIVE.has(job.state)) await this.merge(job, sub);
     } catch (error) { sub.state = 'needs-you'; sub.error = redactText(error.message); sub.unresolved = [...new Set([...(sub.unresolved || []), sub.error])]; }
-    finally { if (sub.runStartedAt) sub.elapsedMs = (sub.elapsedMs || 0) + loop.now() - sub.runStartedAt; delete sub.runStartedAt; loop.changed(sub); }
+    finally { release?.(); if (sub.runStartedAt) sub.elapsedMs = (sub.elapsedMs || 0) + loop.now() - sub.runStartedAt; delete sub.runStartedAt; loop.changed(sub); }
   }
   async recoverMerges(job) {
     const loop = this.loop;
@@ -371,9 +376,7 @@ class SplitTasks {
     while (ACTIVE.has(job.state)) {
       const failed = job.subtasks.some(sub => ['needs-you', 'failed', 'interrupted', 'stopped'].includes(sub.state));
       if (!failed) for (const sub of readySubtasks(job.subtasks)) {
-        if (pending.size >= job.parallelLimit) break;
         if (this.running.has(sub.id)) continue;
-        sub.state = 'implementing'; loop.changed(sub);
         const running = this.buildSubtask(job, sub, command).finally(() => { pending.delete(sub.id); this.running.delete(sub.id); });
         pending.set(sub.id, running); this.running.set(sub.id, running);
       }

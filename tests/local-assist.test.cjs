@@ -37,13 +37,15 @@ test('same request reuses its answer; changing input under that ID fails; anothe
   assert.equal(f.calls.length, 2); assert.equal(f.entries.length, 1);
   await f.assistant.run(args, { turnId: 'b' }); assert.equal(f.calls.length, 4);
 });
-test('busy helper joins an identical request and rejects a different request without queuing it', async () => {
+test('busy helper joins an identical request and queues a different request', async () => {
   let release;
   const gate = new Promise(resolve => { release = resolve; });
   const f = fixture({ fetcher: async url => { await gate; return { ok: true, json: async () => url.endsWith('/models') ? { data: [{ id: 'local' }] } : { choices: [{ finish_reason: 'stop', message: { content: 'Done' } }] } }; } });
   const first = f.assistant.run(args), same = f.assistant.run(args);
-  await assert.rejects(f.assistant.run({ ...args, requestId: 'two' }), /busy/);
-  release(); assert.deepEqual(await first, await same); assert.equal(f.calls.length, 2);
+  let reason;
+  const second = f.assistant.run({ ...args, requestId: 'two' }, { onQueued: value => { reason = value; } });
+  await Promise.resolve(); assert.equal(f.calls.length, 1); assert.equal(reason, 'Waiting for Strata');
+  release(); assert.deepEqual(await first, await same); await second; assert.equal(f.calls.length, 4);
 });
 test('offline local server makes no inference request, has unknown usage and never falls back', async () => {
   const f = fixture({ fetcher: async () => { throw Error('private server details'); } });
