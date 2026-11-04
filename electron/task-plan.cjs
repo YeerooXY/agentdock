@@ -80,14 +80,8 @@ function validatePlan(value) {
     visiting.delete(id); visited.add(id);
   }
   for (const id of dependencies.keys()) visit(id);
-  function depends(id, target, seen = new Set()) {
-    if (seen.has(id)) return false; seen.add(id);
-    return (dependencies.get(id) || []).some(dep => dep === target || depends(dep, target, seen));
-  }
-  for (let i = 0; i < subtasks.length; i++) for (let j = i + 1; j < subtasks.length; j++) {
-    const a = subtasks[i], b = subtasks[j];
-    if (Array.isArray(a?.owns) && Array.isArray(b?.owns) && a.owns.some(left => typeof left === 'string' && b.owns.some(right => typeof right === 'string' && overlap(left, right))) && !depends(a.id, b.id) && !depends(b.id, a.id)) errors.push(`${a.id} and ${b.id}: ownership can overlap; order them by dependency.`);
-  }
+  // Dependencies describe data flow. Scheduler file leases serialize ownership
+  // overlap even when neither subtask depends on the other's output.
   return { errors, plan: errors.length ? null : { contracts: value.contracts, subtasks: subtasks.map(({ id, title, criteria, owns, dependsOn, size, difficulty, complexity }) => {
     const derivedDifficulty = difficulty ?? legacySizeMap[size];
     const derivedComplexity = complexity ?? legacySizeMap[size];
@@ -108,7 +102,7 @@ function planPrompt(job, feedback = []) {
     `Task: ${job.title}\nAcceptance criteria:\n${job.criteria}`,
     'Return one fenced ```json block with {"contracts":"shared interfaces, data shapes, timings and wording", "subtasks":[{"id":"short-id","title":"title","criteria":"acceptance criteria","owns":["src/foo/**"],"dependsOn":[],"difficulty":"1-5","complexity":"1-5"}]}.',
     'Rate difficulty and complexity relative to the other subtasks. Do not estimate hours.',
-    'Use 2–8 subtasks, unique ids matching [a-z0-9-]{1,32}, 1–30 relative ownership globs per subtask, criteria up to 4,000 characters each and contracts up to 12,000 characters. No .., absolute or .git paths. Dependencies must exist and be acyclic. Overlapping ownership must be ordered by dependency. Cover all task criteria. Contracts must agree across every subtask.',
+    'Use 2 to 8 subtasks, unique ids matching [a-z0-9-]{1,32}, 1 to 30 relative ownership globs per subtask, criteria up to 4,000 characters each and contracts up to 12,000 characters. No .., absolute or .git paths. Dependencies must exist and be acyclic. Overlapping ownership runs in sequence through file leases. Cover all task criteria. Contracts must agree across every subtask.',
     feedback.length ? `Repair the plan using these exact validation errors or confirmed review findings:\n${feedback.join('\n')}\nPrevious plan:\n${job.plan ? JSON.stringify(job.plan) : job.planAnswer || '(invalid JSON)'}` : ''
   ].filter(Boolean).join('\n\n');
 }
@@ -116,7 +110,7 @@ function planReviewPrompt(job) {
   return ['Review only the task criteria, contracts and plan below. Do not read repository files or edit anything.',
     `Task: ${job.title}\nAcceptance criteria:\n${job.criteria}`, `Contracts and subtasks:\n${JSON.stringify(job.plan, null, 2)}`,
     'Find confirmed contradictions between subtasks (timings, units, limits, names), uncovered task criteria, wording belonging to another product area, and ownership that forces subtasks to edit the same files.',
-    'Reply with VERDICT: approve | changes-requested, then FINDINGS: and at most 12 findings. Use - subtask-id:1 — high|medium|low — the problem — the fix. Write - none when there are none.'
+    'Reply with VERDICT: approve | changes-requested, then FINDINGS: and at most 12 findings. Use - subtask-id:1 - high|medium|low - the problem - the fix. Write - none when there are none.'
   ].join('\n\n');
 }
 function contractPrompt(job) {
@@ -331,6 +325,7 @@ class SplitTasks {
     let release;
     try {
       release = await loop.admission.acquire({ id: `${sub.id}:subtask`, taskId: job.id, kind: 'subtask', taskCapacity: job.parallelLimit,
+        repository: job.repoKey || job.repo, owns: sub.owns,
         onQueued: (reason, position) => { sub.queueReason = reason; sub.queuePosition = position; loop.changed(sub); } });
       if (!release || !ACTIVE.has(job.state)) return;
       if (job.subtasks?.some(other => other !== sub && ['needs-you', 'failed', 'interrupted', 'stopped'].includes(other.state))) { sub.state = 'queued'; return; }
@@ -353,7 +348,12 @@ class SplitTasks {
       sub.resumeRounds = false;
       if ((sub.committed || sub.state === 'passed') && ACTIVE.has(job.state)) await this.merge(job, sub);
     } catch (error) { sub.state = 'needs-you'; sub.error = redactText(error.message); sub.unresolved = [...new Set([...(sub.unresolved || []), sub.error])]; }
-    finally { release?.(); if (sub.runStartedAt) sub.elapsedMs = (sub.elapsedMs || 0) + loop.now() - sub.runStartedAt; delete sub.runStartedAt; loop.changed(sub); }
+    finally {
+      const lingering = loop.unconfirmed.get(sub.id);
+      if (lingering && release) lingering.once('close', release); else release?.();
+      if (sub.runStartedAt) sub.elapsedMs = (sub.elapsedMs || 0) + loop.now() - sub.runStartedAt;
+      delete sub.runStartedAt; loop.changed(sub);
+    }
   }
   async recoverMerges(job) {
     const loop = this.loop;

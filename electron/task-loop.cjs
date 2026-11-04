@@ -62,6 +62,7 @@ function linkDependencies(repo, workFolder) {
   } catch { return false; }
 }
 const { getScheduler, parallelLimit } = require('./scheduler.cjs');
+const { MergeBack } = require('./merge-back.cjs');
 const REFRESHABLE = new Set(['passed', 'needs-you']), REFRESH_LIMIT = 2, MAX_HISTORY = 20, VERIFICATION_AGE = 7 * 24 * 60 * 60_000;
 class ProviderError extends Error {}
 class CheckLaunchError extends Error {}
@@ -123,6 +124,7 @@ class TaskLoop extends EventEmitter {
     Object.assign(this, { root, candidates, repositories, getLimits, getSettings, getProfiles, getInstructions, environment, saveResult, spawnProcess, run, now, killProcess, platform, stopTimeoutMs, processStartedAt, isProcessAlive });
     this.admission = admission || getScheduler(root, { getSettings: () => this.getSettings() });
     this.admission.attach?.(root); this.admission.getSettings = () => this.getSettings();
+    this.mergeBack = new MergeBack(root, { admission: this.admission, checks: task => this.mergeChecks(task) });
     // One-at-a-time CLIs (Antigravity) sign in to the assigned account first.
     this.prepareAccount = prepareAccount; this.releaseAccount = releaseAccount;
     this.getAccounts = getAccounts;
@@ -161,6 +163,10 @@ class TaskLoop extends EventEmitter {
           .then(() => { if (!this.closing) { job.rebuildReport = false; this.changed(job); return this.record(job); } }).finally(() => this.pending.delete(job.id));
         this.pending.set(job.id, recovered);
       } else if (migrated) this.persist(job);
+    }
+    for (const intent of this.mergeBack.snapshot().filter(item => item.state === 'interrupted')) {
+      const job = this.jobs.get(intent.taskId);
+      if (job) { job.mergeBack = intent; job.error = intent.error; job.state = 'needs-you'; this.persist(job); }
     }
   }
   choices(implementerId, { title = '', criteria = '', size, split = false } = {}) {
@@ -306,7 +312,7 @@ class TaskLoop extends EventEmitter {
     if (args.split !== undefined && typeof args.split !== 'boolean') throw new Error('Split into subtasks must be on or off.');
     const boundedWorker = [args.implementer?.accountId, args.planner?.accountId].some(id => id === 'opencode:strata' || isNativeWorker(id?.split(':')[0]));
     const split = args.split === true, workflow = split ? 'worktree' : args.workflow ?? 'current', maxRounds = args.maxRounds ?? (boundedWorker ? 1 : 3), timeLimitMinutes = args.timeLimitMinutes ?? 30;
-    if (split && checks !== redactText(checks)) throw new Error('Use a checks command that can be saved without private text. Read credentials from the environment.');
+    if ((split || workflow === 'worktree') && checks !== redactText(checks)) throw new Error('Use a checks command that can be saved without private text. Read credentials from the environment.');
     if (!['current', 'worktree'].includes(workflow)) throw new Error('Choose Current branch or Separate worktree.');
     if (!Number.isInteger(maxRounds) || maxRounds < 1 || maxRounds > 5) throw new Error('Use 1 to 5 rounds.');
     if (!Number.isInteger(timeLimitMinutes) || timeLimitMinutes < 5 || timeLimitMinutes > 120) throw new Error('Use a time limit of 5 to 120 minutes.');
@@ -330,6 +336,8 @@ class TaskLoop extends EventEmitter {
     this.reserved.add(reservation);
     try {
       const id = randomUUID(), sourceRevision = (await this.git(repo, ['rev-parse', 'HEAD'])).trim();
+      const targetBranch = workflow === 'worktree' ? (await this.git(repo, ['branch', '--show-current'])).trim() : null;
+      if (workflow === 'worktree' && !targetBranch) throw Error('Choose a named target branch before starting a worktree task.');
       let workFolder = repo, baseline = sourceRevision, baselineUntracked = [], baselineUntrackedState = {}, branch = null;
       if (workflow === 'worktree') {
         workFolder = path.join(this.root, 'task-worktrees', id); branch = `paddock/task-${id.slice(0, 8)}`;
@@ -345,7 +353,7 @@ class TaskLoop extends EventEmitter {
       }
       const suggestion = this.choices(implementer.accountId);
       const job = { id, schemaVersion: TASK_SCHEMA_VERSION, attemptSchemaVersion: ATTEMPT_SCHEMA_VERSION, steeringSchemaVersion: STEERING_SCHEMA_VERSION, eventSequence: 0, steeringSequence: 0,
-        repo, repoKey, workFolder, projectId: args.projectId || null, originConsoleId: typeof args.originConsoleId === 'string' ? args.originConsoleId.slice(0, 80) : null, acknowledgedAt: null, dismissedAt: null, supersededBy: null, title: redactText(title), criteria: redactText(criteria), checks: redactText(checks), workflow, branch, sourceRevision, baseline, baselineUntracked, baselineUntrackedState,
+        repo, repoKey, workFolder, targetBranch, projectId: args.projectId || null, originConsoleId: typeof args.originConsoleId === 'string' ? args.originConsoleId.slice(0, 80) : null, acknowledgedAt: null, dismissedAt: null, supersededBy: null, title: redactText(title), criteria: redactText(criteria), checks: redactText(checks), workflow, branch, sourceRevision, baseline, baselineUntracked, baselineUntrackedState,
         implementer, reviewer, why: { implementer: 'Selected by you.', reviewer: reviewer ? reviewer.accountId === suggestion.suggestion ? `Selected by you. Suggested: ${suggestion.why}` : 'Selected by you.' : 'No review selected.' },
         maxRounds, maxRoundsExplicit: args.maxRounds !== undefined, timeLimitMinutes, startedAt: this.now(), finishedAt: null, state: split ? 'planning' : 'implementing', rounds: [], unresolved: [], log: [], error: '', fingerprint: null, diffStat: '', finalDiff: '', resultId: null,
         ...(split ? { split: true, planner: implementer, planReviewer: reviewer, planRounds: [], subtasks: [], parallelLimit: parallelLimit(this.getSettings()), activeElapsedMs: 0, integrationHead: sourceRevision } : {}) };
@@ -422,7 +430,13 @@ class TaskLoop extends EventEmitter {
   async runTask(job, command, { verifyFirst = false, additionalRounds = false, manageTime = true } = {}) {
     const timer = manageTime ? setTimeout(() => this.deadline(job), job.timeLimitMinutes * 60_000) : null;
     timer?.unref?.();
+    let checkout;
     try {
+      if (job.workflow !== 'worktree' && job.repo) {
+        checkout = await this.admission.acquire({ id: `${job.id}:checkout`, taskId: job.id, kind: 'checkout', repository: job.repoKey || job.repo, checkout: true,
+          onQueued: (reason, position) => this.queued(job, reason, position) });
+        if (!checkout || !RUNNING.has(job.state)) return;
+      }
       const first = job.rounds.length + 1, last = additionalRounds ? job.rounds.length + job.maxRounds : job.maxRounds;
       for (let number = first; number <= last && RUNNING.has(job.state); number++) {
         if (this.now() >= (job.deadlineAt ?? job.startedAt + job.timeLimitMinutes * 60_000)) return await this.finish(job, 'needs-you', 'The task reached its time limit.');
@@ -500,7 +514,11 @@ class TaskLoop extends EventEmitter {
       if (RUNNING.has(job.state)) await this.finish(job, 'needs-you', 'The task used its remaining rounds.');
     } catch (error) {
       if (RUNNING.has(job.state)) await this.finish(job, error instanceof ProviderError ? 'failed' : 'needs-you', error instanceof ProviderError ? redactText(error.message) : repositoryError(error));
-    } finally { clearTimeout(timer); }
+    } finally {
+      clearTimeout(timer);
+      const lingering = this.unconfirmed.get(job.id);
+      if (lingering && checkout) lingering.once('close', checkout); else checkout?.();
+    }
   }
   checkEnvironment() {
     return usageEnvironment(process.env);
@@ -885,9 +903,30 @@ class TaskLoop extends EventEmitter {
     await this.cancellations.get(job.id); await this.pending.get(job.id);
     if (await this.refresh(job.id) === false) throw new Error('Verification could not be refreshed. Try Accept again.');
     if (!['passed', 'needs-you'].includes(job.state)) throw new Error('Accept a task after it has passed or needs your review.');
+    if (job.workflow === 'worktree') {
+      try {
+        job.mergeBack = await this.mergeBack.accept(job);
+        if (job.mergeBack.state !== 'completed') throw Error(job.mergeBack.error);
+      } catch (error) {
+        job.mergeBack = this.mergeBack.snapshot().filter(intent => intent.taskId === job.id).at(-1);
+        job.error = redactText(error.message); job.state = 'needs-you'; this.changed(job); await this.record(job); throw error;
+      }
+    }
     job.freezeEpoch = (job.freezeEpoch || 0) + 1;
     job.state = 'accepted'; job.acceptedAt = this.now(); this.changed(job); await this.record(job);
     return this.view(job);
+  }
+  async mergeChecks(task) {
+    if (!task.checks) return { code: 0 };
+    const release = await this.admission.acquire({ kind: 'checks', taskId: task.id });
+    if (!release) return { code: null };
+    try {
+      linkDependencies(task.repo, task.workFolder);
+      const launch = checkLaunch(task.checks, this.platform);
+      return await new Promise(resolve => this.run(launch.executable, launch.args,
+        { cwd: task.workFolder, env: this.checkEnvironment(), windowsHide: true, timeout: 15 * 60_000, maxBuffer: 4 * 1024 * 1024 },
+        (error, stdout, stderr) => resolve({ code: error ? error.code ?? null : 0, timedOut: !!error?.killed, output: redactText(`${stdout || ''}${stderr || ''}`) })));
+    } finally { release(); }
   }
   report(job) {
     const usage = taskUsage(job);
@@ -896,6 +935,7 @@ class TaskLoop extends EventEmitter {
     return [`# ${job.title}`, '', `Status: ${job.state}`, `Repository: ${job.repo}`, `Work folder: ${job.workFolder}`, `Workflow: ${job.workflow}${job.branch ? ` (${job.branch})` : ''}`, `Source revision: ${job.sourceRevision}`, `Baseline: ${job.baseline}`, `Checks command: ${job.checks || 'Not set'}`, `Rounds: ${job.rounds.length}/${job.maxRounds}. Time limit: ${job.timeLimitMinutes} minutes.`, '', ...totals, usage.note, '', '## Acceptance criteria', job.criteria,
       '', `Implementer: ${job.implementer.label} / ${job.implementer.model || 'CLI default'}. ${job.why.implementer}`, `Reviewer: ${job.reviewer ? `${job.reviewer.label} / ${job.reviewer.model || 'CLI default'}` : 'No review'}. ${job.why.reviewer}`, '',
       ...planReport(job, usageText),
+      ...(job.mergeBack ? ['', '## Merge-back', `State: ${job.mergeBack.state}`, `Target: ${job.mergeBack.target}`, `Base: ${job.mergeBack.base}`, `Head: ${job.mergeBack.head}`, `Merged commit: ${job.mergeBack.merged || 'Not created'}`, job.mergeBack.error || '', job.mergeBack.checks?.output || ''] : []),
       ...job.rounds.flatMap(round => [`## Round ${round.number}`, `Elapsed: ${Math.round((round.elapsedMs || 0) / 1000)}s`, ...[['Implement', round.implement], ['Checks', round.check], ['Review', round.review]].flatMap(([name, step]) => !step ? [`${name}: not run`] : [
         `${name}: ${step.state}${step.label ? `; ${step.label} / ${step.model || 'CLI default'}` : ''}; ${Math.round((step.elapsedMs || 0) / 1000)}s${name === 'Checks' ? `; exit ${step.exitCode ?? 'not reported'}${step.failureClass ? `; ${step.failureClass}` : ''}` : `; usage: ${usageText(step.usage)}`}`,
         step.summary || '', step.output ? `\n~~~text\n${step.output}\n~~~` : '', step.verdict ? `Verdict: ${step.verdict}` : '', ...(step.findings || [])
