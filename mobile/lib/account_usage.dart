@@ -69,6 +69,71 @@ String localUsageDate(BuildContext context, DateTime value) {
   return '${labels.formatShortDate(value)} at $time';
 }
 
+// Same rules as the desktop Usage page (src/app.js): durations read "1d 13h",
+// "5h 1m" or "12m" with no zero units; time until a reset rounds up and time
+// since a reading rounds down.
+String usageSpan(Duration value, {bool roundUp = true}) {
+  final ms = value.inMilliseconds;
+  final minutes = (roundUp ? (ms / 60000).ceil() : (ms / 60000).floor()).clamp(1, 1 << 30);
+  final d = minutes ~/ 1440, h = (minutes % 1440) ~/ 60, m = minutes % 60;
+  if (d > 0) return h > 0 ? '${d}d ${h}h' : '${d}d';
+  if (h > 0) return m > 0 ? '${h}h ${m}m' : '${h}h';
+  return '${m}m';
+}
+
+String usageAge(DateTime observed, DateTime now) {
+  final age = now.difference(observed);
+  return age.inSeconds < 60 ? 'just now' : '${usageSpan(age, roundUp: false)} ago';
+}
+
+String usageResetText(Map<dynamic, dynamic> window, DateTime now) {
+  if (window['unlimited'] == true) return 'No limit';
+  final reset = usageDate(window['resetsAt']);
+  if (reset != null) return reset.isAfter(now) ? 'Resets in ${usageSpan(reset.difference(now))}' : 'Reset passed, refresh needed';
+  if (window['resetLabel'] is String && (window['resetLabel'] as String).isNotEmpty) return window['resetLabel'] as String;
+  final minutes = window['minutes'];
+  if (minutes is num && minutes > 0) return 'Resets in ${usageSpan(Duration(minutes: minutes.toInt()))}';
+  return 'Reset time unknown';
+}
+
+/// Tightest limit first; limits without a known value last.
+List<Map<dynamic, dynamic>> sortedUsageWindows(List<Map<dynamic, dynamic>> windows) {
+  double rank(Map<dynamic, dynamic> w) {
+    final used = usagePercent(w['usedPercent']);
+    return w['unlimited'] == true || used == null ? 101 : 100 - used;
+  }
+  return [...windows]..sort((a, b) => rank(a).compareTo(rank(b)));
+}
+
+const _usageStatus = {
+  'sign-in': 'Sign in needed', 'missing-key': 'Add key', 'not-installed': 'Not installed',
+  'unsupported': 'Unsupported', 'limited': 'Try later', 'timeout': 'Timed out', 'unavailable': 'Unavailable',
+  'not-isolated': 'Not isolated', 'no-quota': 'No quota', 'inactive': 'Other account open', 'stale': 'Stale',
+};
+const _staleWhy = {
+  'check-failed': 'The last check failed.', 'no-observation': 'No reading time.',
+  'reset-passed': 'A reset time has passed.', 'old': 'Older than five minutes.',
+};
+
+/// The status chip text, or '' when current. Status comes from the PC.
+String usageStatusLabel(Map<dynamic, dynamic> check) {
+  final status = '${check['status'] ?? ''}';
+  if (check.isEmpty) return 'Not checked';
+  if (status == 'current' || status == 'refreshing') return '';
+  if (status == 'unsupported' && check['reason'] == 'no-source') return 'No quota source';
+  return _usageStatus[status] ?? 'Not checked';
+}
+
+/// Why a stale reading is shown; the PC's own message for an open other account.
+String usageStaleReason(Map<dynamic, dynamic> check) {
+  if (check['stale'] != true) return '';
+  if (check['failure'] == 'inactive') return '${check['message'] ?? ''}';
+  return [
+    _staleWhy['${check['staleReason']}'] ?? '',
+    if (check['failure'] != null) '${_usageStatus['${check['failure']}'] ?? check['failure']}.',
+  ].where((part) => part.isNotEmpty).join(' ');
+}
+
 class AccountUsageCard extends StatelessWidget {
   final Map<dynamic, dynamic> account;
   const AccountUsageCard({super.key, required this.account});
@@ -78,38 +143,19 @@ class AccountUsageCard extends StatelessWidget {
     final provider = '${account['provider'] ?? ''}';
     final accent = accountColor(provider);
     final now = DateTime.now(), observed = usageDate(account['observedAt']);
-    final age = observed == null ? null : now.difference(observed);
     final check = account['usageCheck'] is Map
         ? account['usageCheck'] as Map
         : const {};
-    final windows =
-        (account['windows'] is List ? account['windows'] as List : [])
-            .whereType<Map>()
-            .toList();
-    final stale =
-        observed != null &&
-        (age!.isNegative ||
-            age > const Duration(minutes: 5) ||
-            windows.any(
-              (w) => usageDate(w['resetsAt'])?.isBefore(now) == true,
-            ) ||
-            (check.isNotEmpty &&
-                !['current', 'refreshing'].contains(check['status'])));
-    final status = check['status'] == 'refreshing'
-        ? 'Checking'
-        : observed != null
-        ? stale
-              ? 'Cached'
-              : 'Current'
-        : const {
-                'sign-in': 'Sign in',
-                'not-installed': 'Not installed',
-                'unsupported': 'Unavailable',
-                'limited': 'Try later',
-                'timeout': 'Timed out',
-                'unavailable': 'Unavailable',
-              }[check['status']] ??
-              'Not checked';
+    final windows = sortedUsageWindows(
+      (account['windows'] is List ? account['windows'] as List : [])
+          .whereType<Map>()
+          .toList(),
+    );
+    final checking = check['checking'] == true || check['status'] == 'refreshing';
+    final status = usageStatusLabel(check);
+    final reason = usageStaleReason(check);
+    final stale = check['stale'] == true;
+    final checked = usageDate(check['checkedAt']);
     return DockFrame(
       background: Color.alphaBlend(
         accent.withValues(alpha: .04),
@@ -120,28 +166,34 @@ class AccountUsageCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // One fixed line above the name, so the card keeps its height
+            // while a check runs.
+            Text(
+              checking
+                  ? 'Checking now'
+                  : observed != null
+                  ? 'Last refreshed: ${usageAge(observed, now)}'
+                  : checked != null
+                  ? 'Last checked: ${usageAge(checked, now)}'
+                  : 'Not checked yet',
+              style: const TextStyle(fontSize: 12, color: muted),
+            ),
+            const SizedBox(height: 6),
             AccountProviderHeader(
               provider: provider,
               name:
                   '${account['accountLabel'] ?? account['name'] ?? account['provider'] ?? 'Account'}',
             ),
-            const SizedBox(height: 4),
-            Text(
-              status,
-              style: TextStyle(fontSize: 12, color: stale ? pink : muted),
-            ),
-            Text(
-              observed == null
-                  ? 'Last update unknown'
-                  : stale
-                  ? 'Stale · Updated ${localUsageDate(context, observed)}'
-                  : age!.isNegative
-                  ? 'Check PC clock · ${localUsageDate(context, observed)}'
-                  : age.inMinutes < 1
-                  ? 'Updated just now'
-                  : 'Updated ${age.inMinutes} min ago',
-              style: TextStyle(fontSize: 12, color: stale ? pink : muted),
-            ),
+            if (status.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Text(
+                  status,
+                  style: TextStyle(fontSize: 12, color: stale ? pink : muted, fontWeight: FontWeight.w600),
+                ),
+              ),
+            if (reason.isNotEmpty)
+              Text(reason, style: const TextStyle(fontSize: 12, color: muted)),
             if (windows.isEmpty)
               Padding(
                 padding: const EdgeInsets.only(top: 16),
@@ -183,7 +235,6 @@ class UsageWindow extends StatelessWidget {
     final used = usagePercent(window['usedPercent']);
     final remaining = used == null ? null : 100 - used;
     final label = '${window['label'] ?? windowLabel(window['minutes'])}';
-    final reset = usageDate(window['resetsAt']);
     final unlimited = window['unlimited'] == true;
     final amount = unlimited
         ? 'Unlimited'
@@ -241,15 +292,8 @@ class UsageWindow extends StatelessWidget {
             ),
           ),
         const SizedBox(height: 8),
-        if (!unlimited || reset != null)
-          Text(
-            window['resetLabel'] is String
-                ? window['resetLabel'] as String
-                : reset == null
-                ? 'Reset time unavailable'
-                : reset.isBefore(DateTime.now())
-                ? 'Reset time passed · refresh to check'
-                : 'Resets ${localUsageDate(context, reset)}',
+        Text(
+            usageResetText(window, DateTime.now()),
             style: const TextStyle(fontSize: 12, color: muted, height: 1.4),
           ),
       ],

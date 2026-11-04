@@ -89,7 +89,7 @@ void main() {
       };
       await showUsage(tester, client);
       expect(client.payloads.first['refresh'], true);
-      expect(find.text('Checking'), findsOneWidget);
+      expect(find.text('Checking now'), findsOneWidget);
       client.usage = {
         'refreshing': false,
         'accounts': [
@@ -108,7 +108,7 @@ void main() {
       await tester.pump(const Duration(seconds: 1));
       await tester.pumpAndSettle();
       expect(client.payloads.last['refresh'], isNull);
-      expect(find.text('Sign in'), findsOneWidget);
+      expect(find.text('Sign in needed'), findsOneWidget);
       expect(
         find.text('Sign in through this CLI, then refresh.'),
         findsOneWidget,
@@ -186,8 +186,8 @@ void main() {
       expect(find.text('Weekly'), findsOneWidget);
       expect(find.text('62% left'), findsOneWidget);
       expect(find.text('Unknown% left'), findsNothing);
-      expect(find.textContaining('Stale · Updated'), findsOneWidget);
-      expect(find.text('Reset time unavailable'), findsOneWidget);
+      expect(find.textContaining('Last refreshed: '), findsOneWidget);
+      expect(find.textContaining('Resets in'), findsWidgets);
       final bars = tester
           .widgetList<FractionallySizedBox>(
             find.byKey(const ValueKey('usage-bar')),
@@ -359,6 +359,36 @@ void main() {
       ),
     );
     expect(find.text('0% left'), findsOneWidget);
-    expect(find.text('Reset time passed · refresh to check'), findsOneWidget);
+    expect(find.text('Reset passed, refresh needed'), findsOneWidget);
+  });
+
+  test('usage wording follows the desktop rules', () {
+    final now = DateTime.fromMillisecondsSinceEpoch(1700000000000);
+    expect(usageSpan(const Duration(hours: 37, minutes: 5)), '1d 13h');
+    expect(usageSpan(const Duration(hours: 5, minutes: 1)), '5h 1m');
+    expect(usageSpan(const Duration(hours: 2)), '2h');
+    expect(usageSpan(const Duration(seconds: 30)), '1m');
+    expect(usageAge(now.subtract(const Duration(hours: 3, minutes: 1)), now), '3h 1m ago');
+    expect(usageAge(now.subtract(const Duration(seconds: 20)), now), 'just now');
+    expect(usageResetText({'unlimited': true}, now), 'No limit');
+    expect(usageResetText({'resetsAt': 1700000000000 + 90 * 60000}, now), 'Resets in 1h 30m');
+    expect(usageResetText({'resetsAt': 1690000000000}, now), 'Reset passed, refresh needed');
+    expect(usageResetText({'resetLabel': 'Resets on 2026-12-01'}, now), 'Resets on 2026-12-01');
+    expect(usageResetText({'minutes': 300}, now), 'Resets in 5h');
+    expect(usageResetText({}, now), 'Reset time unknown');
+    final sorted = sortedUsageWindows([
+      {'label': 'Weekly', 'usedPercent': 40},
+      {'label': 'Unknown'},
+      {'label': '5-hour', 'usedPercent': 90},
+    ]);
+    expect(sorted.map((w) => w['label']), ['5-hour', 'Weekly', 'Unknown']);
+    expect(usageStatusLabel({}), 'Not checked');
+    expect(usageStatusLabel({'status': 'current'}), '');
+    expect(usageStatusLabel({'status': 'not-isolated'}), 'Not isolated');
+    expect(usageStatusLabel({'status': 'unsupported', 'reason': 'no-source'}), 'No quota source');
+    expect(usageStatusLabel({'status': 'stale', 'failure': 'inactive'}), 'Stale');
+    expect(usageStaleReason({'stale': true, 'staleReason': 'old'}), 'Older than five minutes.');
+    expect(usageStaleReason({'stale': true, 'failure': 'inactive', 'message': 'Another account is open.'}), 'Another account is open.');
+    expect(usageStaleReason({'stale': true, 'staleReason': 'check-failed', 'failure': 'timeout'}), 'The last check failed. Timed out.');
   });
 }
