@@ -39,8 +39,8 @@ function StopAll {
     & (Join-Path $env:SystemRoot 'System32\taskkill.exe') /PID $p.ProcessId /T /F 2>&1 | Out-Null
   }
   # Give Windows time to release the old process. Never abort here.
-  for ($i = 0; $i -lt 30 -and (MainProcesses).Count; $i++) { Start-Sleep -Seconds 2 }
-  if ((MainProcesses).Count) { Log 'An old Paddock process is still visible; continuing anyway.' }
+  for ($i = 0; $i -lt 30 -and @(MainProcesses).Count; $i++) { Start-Sleep -Seconds 2 }
+  if (@(MainProcesses).Count) { Log 'An old Paddock process is still visible; continuing anyway.' }
 }
 function Launch {
   Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
@@ -90,7 +90,7 @@ $state.phase = 'switching'; Save
 StopAll
 for ($attempt = 1; $attempt -le 4; $attempt++) {
   if ($attempt -eq 3 -and $state.mode -eq 'new') { $state.mode = 'rollback'; Log 'New code did not become ready twice; switching to the rollback copy.'; StopAll }
-  if (-not (MainProcesses).Count) { Launch }
+  if (-not @(MainProcesses).Count) { Launch }
   if (WaitHealthy 150) {
     $state.lastHealthyAt = (Get-Date).ToString('o'); Log "Healthy ($($state.mode) copy)."
     # A healthy new copy becomes the fallback for the next relaunch.
@@ -107,11 +107,11 @@ $recentCrashes = New-Object System.Collections.ArrayList; $failedInRow = 0
 while ((Get-Date) -lt [datetime]$state.until) {
   if (Test-Path -LiteralPath (Join-Path $Root 'stop')) { Log 'Stop file found; ending supervision.'; break }
   Start-Sleep -Seconds 60
-  if ((MainProcesses).Count) { $state.lastHealthyAt = (Get-Date).ToString('o'); $failedInRow = 0; Save; continue }
+  if (@(MainProcesses).Count) { $state.lastHealthyAt = (Get-Date).ToString('o'); $failedInRow = 0; Save; continue }
   # One empty process query is not proof: on 3 November a single miss started
   # a second copy while Paddock was running. Confirm after ten seconds.
   Start-Sleep -Seconds 10
-  if ((MainProcesses).Count) { Log 'A process check missed Paddock once; it is running.'; continue }
+  if (@(MainProcesses).Count) { Log 'A process check missed Paddock once; it is running.'; continue }
   # After five failed starts in a row, try every ten minutes instead of every minute.
   if ($failedInRow -ge 5 -and $state.lastLaunchAt -and ((Get-Date) - [datetime]$state.lastLaunchAt).TotalMinutes -lt 10) { continue }
   Log 'Paddock is not running; relaunching.'
