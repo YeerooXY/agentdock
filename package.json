@@ -1,7 +1,7 @@
 {
   "name": "paddock",
   "productName": "Paddock",
-  "version": "0.6.0-preview.34",
+  "version": "0.6.0-preview.35",
   "private": true,
   "description": "A local desktop home for agent sessions, usage and API calls.",
   "main": "electron/main.cjs",
