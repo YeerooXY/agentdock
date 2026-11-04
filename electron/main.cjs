@@ -558,12 +558,16 @@ app.whenReady().then(() => guardStartup(async () => {
   }
   ownerConsoles = new OwnerConsoles(root);
   ownerConsoles.on('persistence-error', () => { storageError = 'Console protection could not be saved.'; publish(); });
-  capacityReservations = new CapacityReservations(ownerConsoles, {
+  // One scheduler admits every execution path: tasks, subtasks, checks, reviews
+  // and local assist (electron/scheduler.cjs).
+  capacityReservations = new CapacityReservations(ownerConsoles, { root, getSettings: () => settings,
     workers: () => registryFromRouting({ routing: settings.routing, candidates: testMode ? [] : taskAccounts.candidates() }),
     active: () => [...(sessions?.items.values() || [])]
     .filter(item => item.alive && item.state === 'active' && !item.remote && !item.kind && !item.taskId)
     .map(item => ({ quotaGroupId: ownerConsoles.records.get(item.consoleKey)?.quotaGroupId || item.accountId || `${item.provider}:default`,
       local: ownerConsoles.records.get(item.consoleKey)?.local === true, owner: ownerConsoles.records.get(item.consoleKey)?.ownerTurn === true })) });
+  workbench.delegation.admission = capacityReservations;
+  workbench.localAssist.admission = capacityReservations;
   const strataReadiness = new StrataReadiness({ getProfiles: () => hub?.config.profiles || [], onChange: publish });
   tasks = new TaskLoop(root, { ...taskAccounts, admission: capacityReservations, getSettings: () => settings, getProfiles: () => hub?.config.profiles || [], candidates: () => {
     if (testMode) return [];
