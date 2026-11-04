@@ -67,6 +67,7 @@
     "launchId": "l1",
     "accountId": "codex:default",
     "accountLabel": "Codex",
+    "switchMethod": "none",
     "switchTargets": [
       {
         "id": "codex:work",
