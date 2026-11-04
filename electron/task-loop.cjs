@@ -50,6 +50,17 @@ function openCodeLaunch(executable, { model, effort, workFolder, promptFile }) {
   return { ...programLaunch(executable, ['run', '-m', model, ...selected.args, '--dir', workFolder, '--format', 'json', 'Read the attached file and follow it.', '-f', promptFile]), effortDispatch: selected.evidence };
 }
 
+// A new worktree has no installed packages, so its build and checks fail
+// ('vite' is not recognized). Link the repository's ignored node_modules into it:
+// a junction on Windows, a directory link elsewhere. Git ignores the link.
+function linkDependencies(repo, workFolder) {
+  const source = path.join(repo, 'node_modules'), target = path.join(workFolder, 'node_modules');
+  try {
+    if (!fs.existsSync(source) || fs.existsSync(target)) return false;
+    fs.symlinkSync(source, target, process.platform === 'win32' ? 'junction' : 'dir');
+    return true;
+  } catch { return false; }
+}
 const parallelLimit = settings => { const value = Number(settings?.maxParallelTasks); return Number.isInteger(value) && value >= 1 && value <= 10 ? value : 5; };
 const REFRESHABLE = new Set(['passed', 'needs-you']), REFRESH_LIMIT = 2, MAX_HISTORY = 20, VERIFICATION_AGE = 7 * 24 * 60 * 60_000;
 class ProviderError extends Error {}
@@ -107,10 +118,12 @@ function killAndWait(child, kill, timeoutMs) {
 }
 
 class TaskLoop extends EventEmitter {
-  constructor(root, { candidates = () => [], getAccounts = null, repositories = () => [], getLimits = () => [], getSettings = () => ({}), getProfiles = () => [], getInstructions = () => '', environment = () => ({}), saveResult, admission, spawnProcess = spawn, run = execFile, now = Date.now, killProcess = killTree, platform = process.platform, stopTimeoutMs = 2000, processStartedAt = PROCESS_STARTED_AT, isProcessAlive = processAlive } = {}) {
+  constructor(root, { candidates = () => [], prepareAccount = async () => {}, releaseAccount = () => {}, getAccounts = null, repositories = () => [], getLimits = () => [], getSettings = () => ({}), getProfiles = () => [], getInstructions = () => '', environment = () => ({}), saveResult, admission, spawnProcess = spawn, run = execFile, now = Date.now, killProcess = killTree, platform = process.platform, stopTimeoutMs = 2000, processStartedAt = PROCESS_STARTED_AT, isProcessAlive = processAlive } = {}) {
     super();
     Object.assign(this, { root, candidates, repositories, getLimits, getSettings, getProfiles, getInstructions, environment, saveResult, spawnProcess, run, now, killProcess, platform, stopTimeoutMs, processStartedAt, isProcessAlive });
     this.admission = admission;
+    // One-at-a-time CLIs (Antigravity) sign in to the assigned account first.
+    this.prepareAccount = prepareAccount; this.releaseAccount = releaseAccount;
     this.getAccounts = getAccounts;
     this.dir = path.join(root, 'tasks'); this.jobs = new Map(); this.children = new Map(); this.cancellers = new Map(); this.pending = new Map(); this.refreshing = new Map(); this.refreshedAt = new Map(); this.reserved = new Set(); this.records = new Map();
     this.generations = new Map(); this.storageErrors = new Map(); this.verifyTimer = null; this.fileCache = new Map(); this.cancelling = new Set(); this.cancellations = new Map();
@@ -323,6 +336,7 @@ class TaskLoop extends EventEmitter {
         workFolder = path.join(this.root, 'task-worktrees', id); branch = `paddock/task-${id.slice(0, 8)}`;
         fs.mkdirSync(path.dirname(workFolder), { recursive: true });
         await this.git(repo, ['worktree', 'add', workFolder, '-b', branch, sourceRevision]);
+        linkDependencies(repo, workFolder);
       } else {
         baselineUntracked = (await this.git(repo, ['ls-files', '-z', '--others', '--exclude-standard'])).split('\0').filter(Boolean);
         const states = [];
@@ -514,7 +528,7 @@ class TaskLoop extends EventEmitter {
   }
   async providerTurn(job, step, brief, review) {
     const outFile = path.join(this.dir, `${job.id}.reply.md`);
-    let tempDir, release;
+    let tempDir, release, prepared = false;
     try {
       release = await this.acquireProvider(job, step);
       if (!release || !RUNNING.has(job.state)) return {};
@@ -523,6 +537,8 @@ class TaskLoop extends EventEmitter {
       if (instructions) brief = `Shared task guidance:\n${instructions}\n\n${brief}`;
       const choice = this.candidates().find(choice => choice.id === step.accountId);
       if (!choice?.executable) throw new ProviderError(`${step.label} is no longer installed or signed in.`);
+      try { await this.prepareAccount(step.accountId, step.provider); prepared = true; }
+      catch (error) { throw new ProviderError(error.message); }
       const env = { ...this.environment(step.accountId, step.provider) };
       let launch, before;
       if (step.provider === 'opencode') {
@@ -559,7 +575,7 @@ class TaskLoop extends EventEmitter {
         if (step.provider === 'pi' && result.native?.failureReason) throw new ProviderError(result.native.failureReason);
         // Pi output includes generated code and briefs. Words such as "author"
         // or "authentication" there do not establish an authentication error.
-        const hint = step.provider !== 'pi' && /log ?in|sign ?in|auth|credential/i.test(result.stdout + result.output) ? ` Sign in to ${step.label} in a console first.` : '';
+        const hint = step.provider !== 'pi' && /not (?:logged|signed) in|please (?:log|sign) ?in|please run \/login|run \/login to|(?:log|sign)[ -]?in (?:is )?required|unauthori[sz]ed|authentication (?:failed|required|expired)|session (?:has )?expired|invalid (?:api key|credentials)/i.test(result.stdout + result.output) ? ` Sign in to ${step.label} in a console first.` : '';
         throw new ProviderError(`${step.label} ${result.code ? `exited with code ${result.code}` : 'could not finish the request'}.${hint}`);
       }
       const summaryReply = summary => {
@@ -595,7 +611,7 @@ class TaskLoop extends EventEmitter {
       if (step.provider === 'kiro') return summaryReply(tail(redactText(result.stdout, env).trim(), 4000) || 'No summary reported.');
       return summaryReply(result.summary || 'No summary reported.');
     } catch (error) { throw error instanceof ProviderError ? error : new ProviderError(`${step.label} could not complete the request.`); }
-    finally { release?.(); try { fs.unlinkSync(outFile); } catch {} if (tempDir) fs.rmSync(tempDir, { recursive: true, force: true }); }
+    finally { release?.(); if (prepared) { try { this.releaseAccount(step.accountId, step.provider); } catch {} } try { fs.unlinkSync(outFile); } catch {} if (tempDir) fs.rmSync(tempDir, { recursive: true, force: true }); }
   }
   acquireProvider(job, step) {
     if (this.admission && step) return this.admission.acquire({ id: job.id, taskId: job.parentId || job.id,
@@ -899,4 +915,4 @@ class TaskLoop extends EventEmitter {
   }
 }
 
-module.exports = { parallelLimit, TaskLoop, implementerLaunch, openCodeLaunch, openCodeEvents, checkLaunch, RUNNING, usageText };
+module.exports = { linkDependencies, parallelLimit, TaskLoop, implementerLaunch, openCodeLaunch, openCodeEvents, checkLaunch, RUNNING, usageText };

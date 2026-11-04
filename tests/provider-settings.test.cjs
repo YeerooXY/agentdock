@@ -241,7 +241,7 @@ test('Claude resume with resumePath and effort', () => {
   }
 });
 
-test('Claude WSL resume wraps in wsl.exe', () => {
+test('Claude WSL resume wraps in wsl.exe', { skip: process.platform !== 'win32' && 'WSL launches exist only on Windows' }, () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pdk-claude-test-'));
   try {
     const resumeId = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';

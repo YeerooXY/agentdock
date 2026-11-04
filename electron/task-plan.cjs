@@ -339,6 +339,7 @@ class SplitTasks {
       if (!fs.existsSync(sub.workFolder)) {
         let existing = false; try { await loop.git(job.repo, ['rev-parse', '--verify', `refs/heads/${sub.branch}`]); existing = true; } catch {}
         await loop.git(job.repo, existing ? ['worktree', 'add', sub.workFolder, sub.branch] : ['worktree', 'add', sub.workFolder, '-b', sub.branch, sub.baseline]);
+        require('./task-loop.cjs').linkDependencies(job.repo, sub.workFolder);
       }
       if (!ACTIVE.has(job.state)) return;
       Object.assign(sub, { repo: job.repo, workflow: 'worktree', contracts: job.plan.contracts, maxRounds: sub.implementer?.model === 'strata/local' && job.maxRoundsExplicit === false ? 1 : job.maxRounds, timeLimitMinutes: job.timeLimitMinutes, deadlineAt: job.deadlineAt, startedAt: sub.startedAt || started, baselineUntracked: [], baselineUntrackedState: {} });

@@ -240,9 +240,9 @@ function killTree(child) {
 }
 
 class Delegation extends EventEmitter {
-  constructor(root, { getSettings, candidates, getLimits, environment, saveResult, openPanel, panelOpen = () => false, spawnProcess = spawn, run = execFile, now = Date.now, testMode = false } = {}) {
+  constructor(root, { getSettings, candidates, getLimits, environment, prepareAccount = async () => {}, releaseAccount = () => {}, saveResult, openPanel, panelOpen = () => false, spawnProcess = spawn, run = execFile, now = Date.now, testMode = false } = {}) {
     super();
-    Object.assign(this, { getSettings, candidates, getLimits, environment, saveResult, openPanel, panelOpen, spawnProcess, run, now, testMode });
+    Object.assign(this, { getSettings, candidates, getLimits, environment, prepareAccount, releaseAccount, saveResult, openPanel, panelOpen, spawnProcess, run, now, testMode });
     this.dir = path.join(root, 'delegations'); this.jobs = new Map(); this.children = new Map(); this.finishers = new Map(); this.started = [];
   }
   snapshot() {
@@ -284,7 +284,7 @@ class Delegation extends EventEmitter {
     this.run_(job, { brief, outFile, folder });
     return this.status(id);
   }
-  run_(job, { brief, outFile, folder }) {
+  async run_(job, { brief, outFile, folder }) {
     const settings = this.getSettings() || {}, provider = job.reviewer.provider;
     let stream, progressTimer;
     const finish = (patch) => {
@@ -293,11 +293,12 @@ class Delegation extends EventEmitter {
       Object.assign(job, patch, { finishedAt: this.now() }); clearTimeout(timer); clearTimeout(progressTimer); this.children.delete(job.id); this.finishers.delete(job.id);
       appendLog(job, patch.state === 'done' ? `Verdict: ${job.verdict}` : patch.state === 'stopped' ? 'Stopped' : 'Failed');
       this.emit('changed');
+      if (prepared) { try { this.releaseAccount(job.reviewer.accountId, provider); } catch {} }
       try { fs.rmSync(folder, { recursive: true, force: true }); } catch {}
       this.record(job).finally(() => { for (const wake of job.waiters.splice(0)) wake(); this.emit('changed'); });
     };
     const timer = setTimeout(() => { if (child) killTree(child); finish({ state: 'failed', error: 'The review timed out after 10 minutes.' }); }, (settings.delegationTimeoutMinutes || 10) * 60_000);
-    let child, stdout = '', stderr = '';
+    let child, stdout = '', stderr = '', prepared = false;
     const stdoutDecoder = new StringDecoder('utf8');
     this.finishers.set(job.id, patch => { finish(patch); if (child) killTree(child); });
     try {
@@ -306,6 +307,8 @@ class Delegation extends EventEmitter {
       const promptFile = workerPrompt(provider, folder, brief);
       const launch = reviewerLaunch(provider, executable, { outFile, model: settings.delegationModels?.[provider] || candidate?.model, effort: job.reviewer.effort, workFolder: job.cwd || job.context?.project, promptFile });
       job.reviewer.effortDispatch = launch.effortDispatch;
+      await this.prepareAccount(job.reviewer.accountId, provider); prepared = true;
+      if (job.state !== 'running') return;
       const env = this.environment(job.reviewer.accountId, provider);
       const write = progressLog({ brief: brief + '\n' + job.focus, environment: env, append: line => { appendLog(job, line); } });
       stream = progressStream(provider, write);
@@ -329,7 +332,7 @@ class Delegation extends EventEmitter {
         const reply = parseReply(provider, stdout, outFile);
         finish({ state: 'done', ...reply });
       } catch (error) {
-        const hint = /log ?in|sign ?in|auth|credential/i.test(stdout + stderr) ? ` Sign in to ${names[provider]} in a console first.` : '';
+        const hint = /not (?:logged|signed) in|please (?:log|sign) ?in|please run \/login|run \/login to|(?:log|sign)[ -]?in (?:is )?required|unauthori[sz]ed|authentication (?:failed|required|expired)|session (?:has )?expired|invalid (?:api key|credentials)/i.test(stdout + stderr) ? ` Sign in to ${names[provider]} in a console first.` : '';
         finish({ state: 'failed', error: (code ? `${names[provider]} exited with code ${code}. ` : '') + error.message + hint });
       }
     });

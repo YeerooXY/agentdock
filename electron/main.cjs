@@ -449,7 +449,11 @@ app.whenReady().then(() => guardStartup(async () => {
   // CLIs with one fixed system credential (Antigravity) switch accounts instead of separating folders.
   credentialSwitch = new CredentialSwitch(root, { safeStorage,
     providers: Object.fromEntries(require('./provider-account-capabilities.cjs').listAccountProviders().filter(item => item.switch).map(item => [item.id, { target: item.switch.target, name: item.name }])),
-    inUse: (provider, except = null) => [...(sessions?.items.values() || []), ...(sessions?.pendingStages?.values() || [])].filter(item => item.alive && item.provider === provider && item.id !== except).map(item => item.accountId || `${provider}:default`) });
+    inUse: (provider, except = null) => [
+      ...[...(sessions?.items.values() || []), ...(sessions?.pendingStages?.values() || [])].filter(item => item.alive && item.provider === provider && item.id !== except).map(item => item.accountId || `${provider}:default`),
+      // Running task workers and reviews hold their account too.
+      ...[...(tasks?.jobs.values() || [])].filter(job => require('./task-plan.cjs').ACTIVE.has(job.state)).flatMap(job => [job.implementer, job.reviewer, job.planner]).filter(step => step?.provider === provider).map(step => step.accountId),
+      ...[...(workbench?.delegation?.jobs?.values?.() || [])].filter(job => job.state === 'running' && job.reviewer?.provider === provider).map(job => job.reviewer.accountId)] });
   worktrees = new Worktrees(root);
   prompts = new PromptLibrary(root);
   draftBridge = new DraftBridge(); await startupStep('Draft bridge', () => draftBridge.start(), { optional: true });
@@ -541,6 +545,8 @@ app.whenReady().then(() => guardStartup(async () => {
           ...(provider === 'cline' && !choice.profile ? clineRoute() || {} : {}) })) : [];
     }),
     environment: (id, provider) => usageEnvironment(accounts.environment(id, provider, { baseEnv: process.env })),
+    prepareAccount: (id, provider) => credentialSwitch.activate(provider, id),
+    releaseAccount: (id, provider) => { void credentialSwitch.release(provider); },
     saveResult: async (raw, context) => workbench.results.add(raw, await resultGitContext({}, context || {}, workbench.results.root))
   };
   workbench.delegation = new Delegation(root, { ...taskAccounts, testMode, getSettings: () => settings,
