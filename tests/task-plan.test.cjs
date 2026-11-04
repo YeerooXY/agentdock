@@ -50,12 +50,12 @@ test('rejects unsafe and malformed globs', () => {
   for (const glob of ['../app.js', 'src/../app.js', 'file..js', '/tmp/x', 'C:/x', 'C:\\x', '\\\\server\\share', '.git/config', 'src/.GiT/**', 'src//x', './x', '', 'src/[', 'src/{x', '!src/**']) assert.match(errors(plan(sub('one', [glob]), sub('two'))), /relative globs/, glob);
   for (const owns of [[], Array(31).fill('src/one/**')]) assert.match(errors(plan(sub('one', owns), sub('two'))), /1 to 30/);
 });
-test('requires ordering for conservative ownership overlap, including transitive ordering', () => {
-  assert.match(errors(plan(sub('one', ['src/**']), sub('two', ['src/two.js']))), /ownership can overlap/);
+test('accepts overlapping ownership for scheduler file leases with optional data dependencies', () => {
+  assert.equal(errors(plan(sub('one', ['src/**']), sub('two', ['src/two.js']))), '');
   assert.equal(errors(plan(sub('one', ['src/**']), sub('two', ['src/two.js'], ['one']))), '');
   assert.equal(errors(plan(sub('one', ['src/**']), sub('middle', ['tests/middle.cjs'], ['one']), sub('two', ['src/two.js'], ['middle']))), '');
-  assert.match(errors(plan(sub('one', ['**/*.js']), sub('two', ['tests/*.cjs']))), /overlap/);
-  assert.match(errors(plan(sub('one', ['SRC/one.js']), sub('two', ['src/one.js']))), /overlap/);
+  assert.equal(errors(plan(sub('one', ['**/*.js']), sub('two', ['tests/*.cjs']))), '');
+  assert.equal(errors(plan(sub('one', ['SRC/one.js']), sub('two', ['src/one.js']))), '');
 });
 test('enforces plan size limits', () => {
   assert.match(errors(plan(sub('one'))), /2 to 8/);

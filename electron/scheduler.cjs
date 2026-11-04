@@ -23,19 +23,32 @@ function resourceProfile(request, workers = []) {
   return { ...request, quotaGroupId, capacity: Math.min(request.capacity ?? match?.concurrency ?? 1, ...group.map(w => w.concurrency)), local: request.local === true || match?.local === true };
 }
 function admissionReason(item, active, { limit = 5, reservations = new Set(), owners = emptyOwners, resourcePressure = false } = {}) {
+  const locked = lockReason(item, active);
+  if (locked) return locked;
+  if (item.kind === 'checkout' || item.kind === 'merge-back') return null;
   if (item.automatic !== false && resourcePressure) return 'Owner resource pressure';
   if (item.kind === 'subtask') {
     const used = active.filter(turn => turn.kind === 'subtask' && turn.taskId === item.taskId).length;
     return used >= item.taskCapacity ? `Waiting for a free slot (${used} of ${item.taskCapacity} in use)` : null;
   }
   if (item.kind === 'checks') return active.some(turn => turn.kind === 'checks' || turn.kind === 'docker') ? 'Waiting for checks' : null;
-  const models = active.filter(turn => !['checks', 'docker', 'subtask'].includes(turn.kind));
+  const models = active.filter(turn => !['checks', 'docker', 'subtask', 'checkout', 'merge-back'].includes(turn.kind));
   if (models.length >= limit) return `Waiting for a free slot (${models.length} of ${limit} in use)`;
   if (item.local && item.automatic !== false && owners.snapshot().some(record => record.local && reservations.has(record.quotaGroupId))) return 'Reserved for owner';
   if (item.local && models.some(turn => turn.local)) return 'Waiting for Strata';
   if (!item.quotaGroupId) return null;
   const reason = ownerCapacity({ quotaGroupId: item.quotaGroupId, capacity: item.capacity ?? 1, active: models, reservations, automatic: item.automatic !== false });
   return reason === 'Waiting for capacity' ? `Waiting for ${item.accountLabel || item.accountId || item.quotaGroupId || 'account'}` : reason;
+}
+
+const repositoryKey = value => value ? path.resolve(value).replaceAll('\\', '/').toLowerCase() : null;
+function lockReason(item, active) {
+  const peers = active.filter(turn => repositoryKey(turn.repository) === repositoryKey(item.repository));
+  if (!item.repository) return null;
+  if (item.checkout && peers.some(turn => turn.checkout)) return 'Waiting for checkout';
+  if (item.kind === 'merge-back' && peers.some(turn => turn.kind === 'merge-back' && turn.target === item.target)) return 'Waiting for merge';
+  if (item.owns?.length && peers.some(turn => turn.owns?.some(left => item.owns.some(right => require('./task-plan.cjs').overlap(left, right))))) return 'Waiting for files';
+  return null;
 }
 
 class Scheduler extends EventEmitter {
@@ -70,7 +83,7 @@ class Scheduler extends EventEmitter {
     const item = { ...this.profile(request), id: request.id || randomUUID(), requestedAt: request.automatic === false ? record?.pendingAt ?? this.now() : this.now() };
     if (this.active.has(item.id) || this.pending.some(entry => entry.id === item.id)) return Promise.reject(Error('This request already has an admission slot.'));
     if (!Number.isInteger(item.capacity) || item.capacity < 1) return Promise.reject(Error('Enter a positive concurrency allowance.'));
-    const metadata = Object.fromEntries(['kind', 'taskId', 'projectId', 'accountId', 'accountLabel', 'model', 'workerId', 'quotaGroupId', 'capacity', 'local', 'automatic', 'consoleKey', 'taskCapacity'].filter(key => item[key] !== undefined).map(key => [key, item[key]]));
+    const metadata = Object.fromEntries(['kind', 'taskId', 'projectId', 'accountId', 'accountLabel', 'model', 'workerId', 'quotaGroupId', 'capacity', 'local', 'automatic', 'consoleKey', 'taskCapacity', 'repository', 'checkout', 'owns', 'target'].filter(key => item[key] !== undefined).map(key => [key, item[key]]));
     this.jobs.set(item.id, { id: item.id, request: metadata, state: 'queued', requestedAt: item.requestedAt, lease: null, queuePosition: 0, reason: null });
     return new Promise((resolve, reject) => {
       item.resolve = resolve; this.pending.push(item);

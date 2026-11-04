@@ -34,6 +34,52 @@ test('global contention queues in order with position and releases each lease on
   assert.equal(scheduler.active.size, 1, 'an old release cannot release a new lease for the same job'); reused();
 });
 
+test('checkout leases are exclusive, independent of model capacity and recovered after a crash', async t => {
+  const { root, scheduler } = fixture(t);
+  const repository = path.join(root, 'repository');
+  const first = await scheduler.acquire(request('checkout-a', { kind: 'checkout', repository, checkout: true }));
+  const second = scheduler.acquire(request('checkout-b', { kind: 'checkout', repository, checkout: true }));
+  const worktree = await scheduler.acquire(request('worktree', { repository }));
+  assert.equal(scheduler.pending[0].reason, 'Waiting for checkout');
+  first(); const next = await second; first(); assert.ok(scheduler.active.has('checkout-b'));
+  const saved = fs.readFileSync(scheduler.file, 'utf8'); next(); worktree();
+  fs.writeFileSync(scheduler.file, saved);
+  const restored = new Scheduler(root); t.after(() => restored.dispose());
+  assert.equal(restored.jobs.get('checkout-b').state, 'interrupted');
+  const fresh = await restored.acquire(request('fresh-checkout', { kind: 'checkout', repository, checkout: true })); fresh();
+});
+
+test('overlapping file leases wait while disjoint subtask files run together', async t => {
+  const { root, scheduler } = fixture(t);
+  const sub = (id, owns) => request(id, { kind: 'subtask', taskId: 'parent', taskCapacity: 3, repository: root, owns });
+  const a = await scheduler.acquire(sub('one', ['src/shared/**']));
+  const waiting = scheduler.acquire(sub('two', ['src/shared/file.js']));
+  const b = await scheduler.acquire(sub('three', ['tests/other.cjs']));
+  assert.equal(scheduler.pending[0].reason, 'Waiting for files'); assert.equal(scheduler.active.size, 2);
+  a(); const c = await waiting; a(); assert.equal(scheduler.active.size, 2); b(); c();
+});
+
+test('merge lanes allow independent target branches', async t => {
+  const { root, scheduler } = fixture(t);
+  const first = await scheduler.acquire(request('merge-main', { kind: 'merge-back', repository: root, target: 'main' }));
+  const next = await scheduler.acquire(request('merge-release', { kind: 'merge-back', repository: root, target: 'release' }));
+  assert.equal(scheduler.active.size, 2); first(); next();
+});
+
+test('a lingering subtask process keeps its file lease until confirmed closed', async t => {
+  const { root, scheduler } = fixture(t);
+  const loop = new TaskLoop(root, { admission: scheduler }); loop.changed = () => {};
+  const child = new EventEmitter();
+  const parent = { id: 'parent', repo: root, state: 'building', parallelLimit: 2, plan: { contracts: '' } };
+  const sub = { id: 'lingering', workFolder: root, owns: ['shared.js'], implementer: {} };
+  loop.split.assertBranch = async () => {};
+  loop.runTask = async () => { sub.state = 'needs-you'; loop.unconfirmed.set(sub.id, child); };
+  await loop.split.buildSubtask(parent, sub, '');
+  const waiting = scheduler.acquire(request('next-file', { kind: 'subtask', taskId: 'parent', taskCapacity: 2, repository: root, owns: ['shared.js'] }));
+  assert.equal(scheduler.pending[0].reason, 'Waiting for files');
+  child.emit('close'); (await waiting)(); assert.equal(scheduler.active.size, 0);
+});
+
 test('account quota groups span launchers and unrelated accounts can run', async t => {
   const workers = () => [{ id: 'a', accountId: 'codex:a', quotaGroupId: 'shared', concurrency: 2 },
     { id: 'b', accountId: 'opencode:a', quotaGroupId: 'shared', concurrency: 1 }];
