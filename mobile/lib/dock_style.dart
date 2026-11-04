@@ -53,12 +53,14 @@ class DockFrame extends StatelessWidget {
 class DockSendButton extends StatelessWidget {
   final VoidCallback? onPressed;
   final bool sending;
-  const DockSendButton({super.key, this.onPressed, this.sending = false});
+  /// Smaller button that fits inside the composer field.
+  final bool compact;
+  const DockSendButton({super.key, this.onPressed, this.sending = false, this.compact = false});
 
   @override
   Widget build(BuildContext context) => DecoratedBox(
     decoration: BoxDecoration(
-      borderRadius: BorderRadius.circular(14),
+      borderRadius: BorderRadius.circular(compact ? 10 : 14),
       gradient: onPressed != null || sending ? dockGradient : null,
       color: const Color(0xff292637),
     ),
@@ -68,8 +70,10 @@ class DockSendButton extends StatelessWidget {
       style: IconButton.styleFrom(
         foregroundColor: ink,
         disabledForegroundColor: muted,
-        minimumSize: const Size(48, 48),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        minimumSize: compact ? const Size(36, 36) : const Size(48, 48),
+        fixedSize: compact ? const Size(36, 36) : null,
+        padding: compact ? EdgeInsets.zero : null,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(compact ? 10 : 14)),
       ),
       icon: sending
           ? const SizedBox(
@@ -77,7 +81,7 @@ class DockSendButton extends StatelessWidget {
               height: 20,
               child: CircularProgressIndicator(strokeWidth: 2, color: ink),
             )
-          : const Icon(Icons.arrow_upward),
+          : Icon(Icons.arrow_upward, size: compact ? 20 : 24),
     ),
   );
 }

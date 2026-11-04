@@ -65,7 +65,7 @@ let app;
   await app.evaluate(({ BrowserWindow }, snapshot) => BrowserWindow.getAllWindows()[0].webContents.send('dock:state', snapshot), outcomeUpdate);
   await page.waitForFunction(() => document.querySelector('.task-result-outcome')?.textContent === 'Pushed outcome.');
   assert.equal(await page.locator('.task-result-verdict').textContent(), 'Passed');
-  assert.equal(await page.locator('.task-list .task-card-summary').textContent(), 'Pushed outcome.');
+  assert.equal(await page.locator('.task-list .task-card-summary', { hasText: 'Pushed outcome' }).count(), 1, 'the fixture task card shows the pushed outcome');
   assert.equal(await page.locator('.task-result').textContent().then(text => text.includes('tool_call') || text.includes('hidden')), false, 'Tool markup stays out of result summaries and open items');
   await page.locator('[data-task-details="result-details"] > summary').focus();
   updatedOutcome.verdict = 'needs-decision';

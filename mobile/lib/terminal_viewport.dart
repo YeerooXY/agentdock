@@ -36,7 +36,7 @@ class TerminalViewport extends StatefulWidget {
 }
 
 class _TerminalViewportState extends State<TerminalViewport> {
-  static const _style = TerminalStyle(fontSize: 14, height: 1.3);
+  static const _style = TerminalStyle(fontSize: 12, height: 1.3);
   static const _padding = EdgeInsets.all(8);
   final _scroll = ScrollController();
   var _view = GlobalKey<TerminalViewState>();
