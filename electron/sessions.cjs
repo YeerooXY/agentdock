@@ -96,6 +96,8 @@ class Sessions extends EventEmitter {
   list() { return [...this.items.values()].filter(item => !isPanel(item)).map(item => ({
     ...publicSession(item),
     consoleCapabilities: consoleCapabilities(item, this.ownerConsoles, !!this.workerBridge),
+    // How model and effort changes apply: 'resume' reopens the chat with new flags, 'none' is not supported.
+    switchMethod: item.remote || item.taskId ? 'none' : settingsAdapter(item.provider).switchMethod,
       ...(this.accounts && !item.taskId && settingsAdapter(item.provider).switchMethod === 'resume' && !['login', 'setup'].includes(item.purpose) ? {
       switchTargets: this.accounts.choices(item.provider).filter(x => x.id !== item.accountId).map(({ id, label, loginCompletedAt }) => ({ id, label, ready: id.endsWith(':default') || !!loginCompletedAt }))
     } : {})
