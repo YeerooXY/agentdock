@@ -1,4 +1,3 @@
-import './task-loop.css';
 
 export function taskLoopUI({ call, getState, getPage, escape: e, renderPage, toast, openResult }) {
   let choices = null, selected = '', detailStamp = '', listStamp = '', announcement = '', request = 0, bucket = '';

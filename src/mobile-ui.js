@@ -1,4 +1,3 @@
-import './mobile.css';
 export function mobileUI({ call, getState, escape: e, icon, toast, navigate }) {
   const dialog = document.createElement('dialog'); dialog.className = 'mobile-setup'; dialog.setAttribute('aria-labelledby', 'mobile-title'); document.body.append(dialog);
   let invite = null, step = 0, busy = false, deviceStamp = '', networkStamp = '', checkId = 0, draft = null, current = null;

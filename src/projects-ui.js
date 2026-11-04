@@ -1,4 +1,3 @@
-import './projects.css';
 import { projectColor, projectDot } from './project-colors.js';
 import { projectActivity, attentionLabel } from './project-activity.js';
 import { projectPlanUI, milestoneLines, parseMilestones, waitingProposal } from './project-plan-ui';

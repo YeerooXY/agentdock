@@ -1,4 +1,3 @@
-import './workbench.css';
 import { projectKey, projectLabel, resultFolders, resultGroupKey, resultGroups, resultRevision, revisionLabel, turnRevisions, resultChatKey, resultTurnTitle } from './results-model';
 import { projectColor } from './project-colors.js';
 import { imageGeometry } from './image-viewer-geometry.js';

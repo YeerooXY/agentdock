@@ -1,4 +1,3 @@
-import './worker-composer.css';
 // Keep the composer node in place through output and task status updates.
 export function workerComposer({ call, escape: e, toast }) {
   const drafts = new Map();
