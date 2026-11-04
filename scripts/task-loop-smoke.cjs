@@ -1,6 +1,7 @@
 'use strict';
 const { _electron: electron } = require('playwright');
 const { openPage } = require('./ui-navigation.cjs');
+const { Results } = require('../electron/results.cjs');
 const assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const root = path.resolve(__dirname, '..'), parent = path.join(root, 'test-data');
@@ -15,7 +16,13 @@ const account = { accountId: 'codex:default', provider: 'codex', label: 'Codex',
 const job = { id, repo: project, workFolder: project, repoKey: project, title: 'Fixture task', criteria: 'Return 2.', checks: 'fixture-checks', workflow: 'current', branch: null, sourceRevision: revision, baseline: revision, baselineUntracked: [], baselineUntrackedState: {},
   implementer: account, reviewer: null, why: { implementer: 'Selected by you.', reviewer: 'No review selected.' }, maxRounds: 3, timeLimitMinutes: 30, startedAt: now, finishedAt: now, state: 'needs-you',
   rounds: [{ number: 1, startedAt: now, elapsedMs: 1200, implement: { ...account, startedAt: now, elapsedMs: 600, state: 'done', usage: null, summary: 'Updated app.js.' }, check: { state: 'failed', outcome: 'failed', elapsedMs: 600, exitCode: 1, output: 'Expected 2.', startedAt: now }, review: { state: 'not-set', elapsedMs: 0, findings: [] } }],
-  unresolved: ['Checks failed (exit 1).'], log: [], error: '', fingerprint: null, diffStat: 'app.js | 1 +', finalDiff: '+const value = 2;', resultId: null };
+  unresolved: ['Checks failed (exit 1).'], changedFiles: ['app.js'], log: [], error: '', fingerprint: null, diffStat: 'app.js | 1 +', finalDiff: '+const value = 2;', resultId: null };
+const outcome = { type: 'task', taskId: id, projectId: null, originConsoleId: null, verdict: 'failed-checks',
+  outcome: 'One file changed. Checks failed. <tool_call>{"name":"hidden"}</tool_call>',
+  changedFiles: { count: 1, top: ['app.js'] }, checks: { status: 'failed', summary: 'Checks failed (exit 1).' },
+  unresolved: ['<tool_call>hidden</tool_call>Review the failed check.'], usage: null };
+const saved = new Results(profile).add({ text: '# Fixture task\n\nStatus: needs-you', ext: '.md', title: job.title, kind: 'report', status: 'needs-review', summary: 'Fixture task outcome.', outcome }, { trusted: true, project, consoleName: 'Tasks', consoleKey: `task-${id}` });
+job.resultId = saved.id;
 fs.writeFileSync(path.join(profile, 'tasks', id + '.json'), JSON.stringify(job));
 const splitId = '00000000-0000-4000-8000-000000000006', buildingId = '00000000-0000-4000-8000-000000000007';
 const plan = { contracts: 'Use milliseconds. Label the page Classes.', subtasks: [
@@ -24,7 +31,7 @@ const plan = { contracts: 'Use milliseconds. Label the page Classes.', subtasks:
 ] };
 function splitFixture(taskId, state) {
   return { ...structuredClone(job), id: taskId, title: state === 'plan-ready' ? 'Split fixture' : 'Building fixture', startedAt: now - (state === 'plan-ready' ? 1000 : 2000), state, split: true, workflow: 'worktree', planner: account, plan, parallelLimit: 2,
-    rounds: [], unresolved: [], planRounds: [], planReview: { state: 'not-set', findings: [] }, approvedAt: state === 'building' ? now : null,
+    rounds: [], unresolved: [], resultId: null, planRounds: [], planReview: { state: 'not-set', findings: [] }, approvedAt: state === 'building' ? now : null,
     subtasks: plan.subtasks.map(sub => ({ ...sub, id: `${taskId}-${sub.id}`, subtaskId: sub.id, parentId: taskId, state: state === 'building' && sub.id === 'first' ? 'implementing' : 'queued',
       implementer: account, assignmentReason: 'Small task. Codex: first available choice; usage unknown.', rounds: [], unresolved: [], elapsedMs: 0, finalDiff: '+module change', log: [] })) };
 }
@@ -42,19 +49,46 @@ let app;
   await openPage(page, 'tasks'); await page.locator('#task-detail-title').waitFor();
   assert.equal(await page.locator('#task-detail-title').textContent(), 'Fixture task');
   assert.equal(await page.locator('.task-list [aria-current=true]').count(), 1);
+  assert.equal(await page.locator('.task-result-verdict').textContent(), 'Failed');
+  assert.equal(await page.locator('.task-result-outcome').textContent(), 'One file changed. Checks failed.');
+  assert.equal(await page.locator('.task-result-files code').textContent(), 'app.js');
+  assert.ok((await page.locator('.task-result').textContent()).includes('Checks failed (exit 1).'));
+  assert.ok((await page.locator('.task-result-open').textContent()).includes('Review the failed check.'));
+  assert.equal(await page.locator('[data-task-details="result-details"]').getAttribute('open'), null, 'Technical log starts behind Details');
 
   assert.equal(await page.locator('[data-task-action="new"], #task-form').count(), 0, 'Tasks are started by agents');
   const populated = await call('state'), empty = structuredClone(populated); empty.tasks = [];
+  const outcomeUpdate = structuredClone(populated), updatedOutcome = outcomeUpdate.workbench.results.find(item => item.id === job.resultId).outcome;
+  updatedOutcome.verdict = 'ready';
+  updatedOutcome.outcome = 'Pushed outcome. <tool_call>hidden</tool_call>';
+  updatedOutcome.unresolved = ['<tool_call>hidden</tool_call>Open item from the outcome.'];
+  await app.evaluate(({ BrowserWindow }, snapshot) => BrowserWindow.getAllWindows()[0].webContents.send('dock:state', snapshot), outcomeUpdate);
+  await page.waitForFunction(() => document.querySelector('.task-result-outcome')?.textContent === 'Pushed outcome.');
+  assert.equal(await page.locator('.task-result-verdict').textContent(), 'Passed');
+  assert.equal(await page.locator('.task-list .task-card-summary').textContent(), 'Pushed outcome.');
+  assert.equal(await page.locator('.task-result').textContent().then(text => text.includes('tool_call') || text.includes('hidden')), false, 'Tool markup stays out of result summaries and open items');
+  await page.locator('[data-task-details="result-details"] > summary').focus();
+  updatedOutcome.verdict = 'needs-decision';
+  await app.evaluate(({ BrowserWindow }, snapshot) => BrowserWindow.getAllWindows()[0].webContents.send('dock:state', snapshot), outcomeUpdate);
+  await page.waitForFunction(() => document.querySelector('.task-result-verdict')?.textContent === 'Needs you');
+  assert.equal(await page.evaluate(() => document.activeElement.parentElement?.dataset.taskDetails), 'result-details', 'Outcome-only updates preserve disclosure focus');
   await app.evaluate(({ BrowserWindow }, snapshot) => BrowserWindow.getAllWindows()[0].webContents.send('dock:state', snapshot), empty);
   await page.getByText('No active tasks. Start a task from a console.', { exact: true }).waitFor();
   assert.equal(await page.locator('.task-layout').isVisible(), false);
   await app.evaluate(({ BrowserWindow }, snapshot) => BrowserWindow.getAllWindows()[0].webContents.send('dock:state', snapshot), populated);
   await page.locator('#task-detail-title').waitFor();
+  const resultDetails = page.locator('[data-task-details="result-details"] > summary');
+  await resultDetails.focus(); await page.keyboard.press('Space');
+  assert.equal(await page.locator('[data-task-details="result-details"]').getAttribute('open'), '');
   const summary = page.locator('[data-task-details="check-1"] > summary');
   await summary.focus(); await page.keyboard.press('Space');
   assert.equal(await page.locator('[data-task-details="check-1"]').getAttribute('open'), '');
   assert.equal(await page.getByLabel('Round 1 check output', { exact: true }).textContent(), 'Expected 2.');
-  assert.equal(await page.evaluate(() => document.querySelector('.task-page').scrollWidth <= document.querySelector('.task-page').clientWidth + 1), true, 'The Tasks page fits at 984 px');
+  for (const width of [984, 390]) {
+    await page.setViewportSize({ width, height: 820 });
+    assert.equal(await page.locator('.task-page').evaluate(node => node.scrollWidth <= node.clientWidth + 1), true, `Result card fits at ${width}px`);
+  }
+  await page.setViewportSize({ width: 984, height: 820 });
 
   await page.evaluate(() => {
     window.taskStatusRegion = document.querySelector('#task-announcement'); window.taskAnnouncements = [];
@@ -81,18 +115,33 @@ let app;
   await sendState('checking', 'Checking app.js');
   assert.equal(await page.evaluate(() => window.taskAnnouncements.length), announcements, 'Progress does not repeat a status announcement');
   await sendState('reviewing'); assert.equal(await page.evaluate(() => document.activeElement.dataset.taskAction), 'stop');
-  await sendState('passed'); assert.equal(await page.evaluate(() => document.activeElement.id), 'task-detail-title');
+  await sendState('passed'); assert.equal(await page.evaluate(() => document.activeElement.dataset.taskAction), 'accept', 'A removed Stop action hands focus to Accept');
   await sendState('needs-you');
   const announced = await page.evaluate(() => window.taskAnnouncements);
   for (const state of ['Implementing', 'Checking', 'Reviewing', 'Passed', 'Needs you']) assert.ok(announced.includes(`Fixture task: ${state}.`));
 
-  await page.getByRole('button', { name: 'Accept with issues', exact: true }).focus(); await page.keyboard.press('Enter');
-  await page.waitForFunction(() => document.querySelector('#task-announcement').textContent === 'Fixture task: Accepted.');
-  await page.getByRole('button', { name: 'Open report', exact: true }).focus(); await page.keyboard.press('Enter');
+  const accept = page.getByRole('button', { name: 'Accept with issues', exact: true });
+  await accept.focus(); await page.keyboard.press('Tab');
+  assert.equal(await page.evaluate(() => document.activeElement.dataset.taskAction), 'seen');
+  await page.keyboard.press('Shift+Tab');
+  assert.equal(await page.evaluate(() => document.activeElement.dataset.taskAction), 'accept');
+  await page.keyboard.press('Enter');
+  await page.waitForFunction(() => document.querySelector('#task-announcement').textContent === 'Fixture task: Accepted.' && document.activeElement?.dataset.taskAction === 'seen', null, { timeout: 15000 });
+  assert.equal(await page.evaluate(() => document.activeElement.dataset.taskAction), 'seen', 'A removed Accept action hands focus to Mark as seen');
+  const acceptedDetails = page.locator('[data-task-details="result-details"] > summary');
+  if (await page.locator('[data-task-details="result-details"]').getAttribute('open') === null) { await acceptedDetails.focus(); await page.keyboard.press('Space'); }
+  await page.getByRole('button', { name: 'Open markdown report', exact: true }).focus(); await page.keyboard.press('Enter');
   await page.locator('.wb-dialog[open] #result-preview').waitFor();
   await page.waitForFunction(() => document.querySelector('.wb-dialog[open] #result-preview')?.textContent.includes('Status: accepted'));
   await page.keyboard.press('Escape');
   await page.locator('.wb-dialog[open]').waitFor({ state: 'hidden' });
+  await page.getByRole('button', { name: 'Mark as seen', exact: true }).focus(); await page.keyboard.press('Space');
+  await page.waitForFunction(() => document.querySelector('[data-task-action="seen"]')?.disabled === true);
+  assert.equal(await page.evaluate(() => document.activeElement.dataset.taskAction), 'close', 'Disabling Mark as seen hands focus to Close');
+  await page.keyboard.press('Enter');
+  await page.waitForFunction(() => !document.querySelector('.task-result'));
+  assert.equal(await page.evaluate(() => document.activeElement.dataset.taskAction), 'filter', 'Closing the last result moves focus to the view filter');
+  assert.equal(await page.evaluate(() => document.activeElement.dataset.id), 'history');
   await page.locator('[data-task-action=filter][data-id=active]').click();
   await page.locator(`[data-task-action=select][data-id="${splitId}"]`).focus(); await page.keyboard.press('Enter');
   await page.waitForFunction(() => document.querySelector('#task-detail-title')?.textContent === 'Split fixture');
@@ -132,7 +181,7 @@ let app;
   await page.setViewportSize({ width: 984, height: 820 });
   assert.equal(await page.locator('.task-page').evaluate(node => node.scrollWidth <= node.clientWidth + 1), true);
   assert.deepEqual(errors, []);
-  console.log('PASS Tasks and split plans: keyboard controls, approval validation, restart recovery, persistent live region, focus, 984px/phone layouts and Results. No provider requests.');
+  console.log('PASS Task outcome cards and split plans: pushed updates, keyboard controls, focus succession, acknowledge, dismiss, approval validation, restart recovery, 984px/phone layouts and markdown reports. No provider requests.');
 })().catch(error => { console.error(error); process.exitCode = 1; }).finally(async () => {
   if (app) await app.close().catch(() => {});
   assert.equal(path.dirname(fs.realpathSync(work)), fs.realpathSync(parent)); fs.rmSync(work, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });

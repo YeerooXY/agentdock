@@ -190,7 +190,6 @@ export function projectsUI({ call, getState, escape: e, icon, toast, renderPage,
     const card = [...document.querySelectorAll('.project-card')].find(x => x.dataset.projectId === id);
     if (card) { card.tabIndex = -1; card.focus({ preventScroll: true }); card.scrollIntoView({ block: 'nearest' }); }
   }
-  setInterval(() => { if (document.visibilityState === 'visible' && document.querySelector('#project-cards')) refreshCards(); }, 60000);
   document.addEventListener('click', event => {
     const target = event.target.closest('[data-project-result]');
     if (target) openResult(target.dataset.projectResult).catch(error => toast(error.message, true));
