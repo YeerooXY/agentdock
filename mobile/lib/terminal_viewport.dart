@@ -7,6 +7,9 @@ import 'terminal_reading.dart';
 import 'console_drafts.dart';
 
 /// Changes only the phone's rendering. The PC owns the terminal's cell grid.
+/// The largest text scale a terminal uses, whatever the system text size.
+const double maxTerminalScale = 1.15;
+
 class TerminalViewport extends StatefulWidget {
   final Terminal terminal;
   final int columns;
@@ -175,7 +178,12 @@ class _TerminalViewportState extends State<TerminalViewport> {
                       available / (cols * _cellWidth(TextScaler.noScaling)),
                     ),
                   )
-                : MediaQuery.textScalerOf(context);
+                // Terminal text follows the app text size up to 1.15x. Large
+                // system text otherwise leaves about 25 columns and the
+                // agent's output wraps on every line.
+                : TextScaler.linear(
+                    min(MediaQuery.textScalerOf(context).scale(1), maxTerminalScale),
+                  );
             final width = widget.fitWidth
                 ? constraints.maxWidth
                 : max(
