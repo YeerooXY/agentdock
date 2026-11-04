@@ -164,9 +164,9 @@ class TaskWorker {
 
 class Task {
   final String id, title, state;
-  final String? parentId, projectId, workflow, resultId;
+  final String? parentId, projectId, workflow, resultId, supersededBy;
   final bool split;
-  final int? startedAt, finishedAt;
+  final int? startedAt, finishedAt, acknowledgedAt, dismissedAt;
   final int round, maxRounds, unresolved;
   final String error;
   final TaskWorker? implementer, reviewer;
@@ -178,6 +178,9 @@ class Task {
     this.projectId,
     this.workflow,
     this.resultId,
+    this.supersededBy,
+    this.acknowledgedAt,
+    this.dismissedAt,
     this.split = false,
     this.startedAt,
     this.finishedAt,
@@ -196,6 +199,9 @@ class Task {
     projectId: _str(j['projectId']),
     workflow: _str(j['workflow']),
     resultId: _str(j['resultId']),
+    supersededBy: _str(j['supersededBy']),
+    acknowledgedAt: _int(j['acknowledgedAt']),
+    dismissedAt: _int(j['dismissedAt']),
     split: _bool(j['split']),
     startedAt: _int(j['startedAt']),
     finishedAt: _int(j['finishedAt']),

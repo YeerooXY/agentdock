@@ -61,8 +61,9 @@ const STATE_MESSAGES = new Set(['hello', 'subscribe', 'ack', 'resync', 'pong']);
 // Phone fields that are not slices yet. v2 phones get them in `extras` frames.
 const EXTRA_FIELDS = ['connection', 'previews', 'projects', 'imageJobs', 'imageJobsRunning', 'capabilities', 'alerts', 'unreadResults', 'resultVersion'];
 class MobileCompanion extends EventEmitter {
-  constructor(root, safeStorage, { sessions, results, alerts, queue, prompts, getUsage, getUsageTurns, refreshUsage, getDefaults, getModels, getSettings, toolsStatus = false, getKey, codePanel, networkScript, program, network, worktrees, endMobileSession, concepts, redactImageText, testMode = false, isTailnet = isTailscale, stateSync = null } = {}) {
+  constructor(root, safeStorage, { sessions, results, alerts, queue, prompts, getUsage, getUsageTurns, refreshUsage, getDefaults, getModels, getSettings, toolsStatus = false, getKey, codePanel, networkScript, program, network, worktrees, endMobileSession, concepts, redactImageText, testMode = false, isTailnet = isTailscale, stateSync = null, getTasks = null } = {}) {
     super(); this.file = path.join(root, 'mobile.json'); this.crypto = safeStorage;
+    this.getTasks = getTasks;
     this.queue = queue; this.prompts = prompts; this.worktrees = worktrees; this.endMobileSession = endMobileSession; this.concepts = concepts; this.redactImageText = redactImageText;
     this.sessions = sessions; this.results = results; this.getUsage = getUsage; this.getDefaults = getDefaults; this.testMode = testMode;
     this.preview = new MobilePreview(sessions);
@@ -298,7 +299,7 @@ class MobileCompanion extends EventEmitter {
     const localUrl = `https://${this.config.host}:${this.config.port}`;
     const connection = { url: localUrl };
     connection.name = this.name;
-    return { connection, previews: (this.sessions.codePanels?.() || []).filter(p => p.kind === 'web').map(({ id, name, url, state, phoneAllowed }) => ({ id, name, url, state, phoneAllowed: phoneAllowed === true })), projects: (typeof this.sessions.projects?.list === 'function' ? this.sessions.projects.list() || [] : []).filter(x => x.status !== 'archived').map(({ id, name, color }) => ({ id, name, ...(color ? { color } : {}) })), imageJobs: this.concepts ? imageJobs(this.concepts, this.redactImageText) : [], imageJobsRunning: !!this.concepts?.items.some(x => ['submitting', 'waiting', 'downloading'].includes(x.state)), capabilities: [...(this.concepts ? ['image.jobs'] : []), ...(this.toolsStatus ? ['tools.status'] : []), ...(typeof this.getUsageTurns === 'function' ? ['usage.turns'] : []), ...(mobileProjects.available(this.sessions.projects) ? ['projects.read'] : []), 'code.read', 'results.thumbnails', 'results.actions', 'console.agents', ...(this.worktrees && this.endMobileSession ? ['console.worktree'] : []), 'console.files', 'console.close', 'console.projects', 'console.models', ...(typeof this.sessions.switchSettings === 'function' ? ['console.settings'] : []), 'console.ssh', 'console.manage', 'console.switch', 'console.setup', 'alerts.direct', 'console.attachments', ...(this.queue ? ['console.queue'] : []), ...(this.prompts ? ['prompts', 'prompts.edit'] : []), ...(this.sessions.workerBridge ? ['worker.submit', 'worker.stop'] : []), ...(this.stateV2() ? ['state.v2'] : [])], alerts: this.liveAlerts, unreadResults: this.results.unreadGroups(), resultVersion: digest(this.results.list().map(x => x.id + ':' + x.seenAt + ':' + x.changeCount).join(',')).slice(0, 16) };
+    return { connection, previews: (this.sessions.codePanels?.() || []).filter(p => p.kind === 'web').map(({ id, name, url, state, phoneAllowed }) => ({ id, name, url, state, phoneAllowed: phoneAllowed === true })), projects: (typeof this.sessions.projects?.list === 'function' ? this.sessions.projects.list() || [] : []).filter(x => x.status !== 'archived').map(({ id, name, color }) => ({ id, name, ...(color ? { color } : {}) })), imageJobs: this.concepts ? imageJobs(this.concepts, this.redactImageText) : [], imageJobsRunning: !!this.concepts?.items.some(x => ['submitting', 'waiting', 'downloading'].includes(x.state)), capabilities: [...(this.concepts ? ['image.jobs'] : []), ...(this.toolsStatus ? ['tools.status'] : []), ...(typeof this.getUsageTurns === 'function' ? ['usage.turns'] : []), ...(mobileProjects.available(this.sessions.projects) ? ['projects.read'] : []), 'code.read', 'results.thumbnails', 'results.actions', 'console.agents', ...(this.worktrees && this.endMobileSession ? ['console.worktree'] : []), 'console.files', 'console.close', 'console.projects', 'console.models', ...(typeof this.sessions.switchSettings === 'function' ? ['console.settings'] : []), 'console.ssh', 'console.manage', 'console.switch', 'console.setup', 'alerts.direct', 'console.attachments', ...(this.queue ? ['console.queue'] : []), ...(this.prompts ? ['prompts', 'prompts.edit'] : []), ...(this.sessions.workerBridge ? ['worker.submit', 'worker.stop'] : []), ...(this.stateV2() ? ['state.v2'] : []), ...(typeof this.getTasks === 'function' ? ['tasks.actions'] : [])], alerts: this.liveAlerts, unreadResults: this.results.unreadGroups(), resultVersion: digest(this.results.list().map(x => x.id + ':' + x.seenAt + ':' + x.changeCount).join(',')).slice(0, 16) };
   }
   scheduleState() {
     if (!this.server || this.stateTimer) return;
@@ -573,6 +574,16 @@ class MobileCompanion extends EventEmitter {
         return value;
       }
       case 'results.seen': return this.results.markSeen(payload.ids);
+      // Delegated tasks: mark as seen, or close a stopped task with a reason.
+      case 'tasks.seen': case 'tasks.close': {
+        const tasks = typeof this.getTasks === 'function' ? this.getTasks() : null;
+        if (!tasks) throw new Error('Tasks are unavailable on this PC.');
+        if (typeof payload.id !== 'string' || !tasks.jobs?.has(payload.id)) throw new Error('Task not found.');
+        if (method === 'tasks.seen') { tasks.acknowledge(payload.id); return true; }
+        const reason = typeof payload.reason === 'string' ? payload.reason.trim() : '';
+        if (!reason || reason.length > 300) throw new Error('Enter a reason up to 300 characters.');
+        return tasks.dismiss(payload.id, { reason, by: 'owner' });
+      }
       case 'results.delete': return this.results.remove(payload.ids);
       case 'usage.turns':
         if (typeof this.getUsageTurns !== 'function') throw new Error('Turn usage is unavailable on this host.');

@@ -971,3 +971,17 @@ test('heartbeat pings phones and terminates a socket after about two minutes of 
   assert.equal(silent.ws.pings, 8, 'eight pings go unanswered');
   assert.equal(silent.ws.terminated, true, 'the next tick drops the half-open socket');
 });
+
+test('phones mark tasks as seen and close stopped tasks with a reason, and only known tasks', async t => {
+  const f = await fixture(t), paired = await f.pair(), c = client(f, paired.data.token);
+  t.after(() => c.ws.terminate()); await once(c.ws, 'open');
+  const done = [];
+  f.m.getTasks = () => ({ jobs: new Map([['t1', {}]]), acknowledge: id => { done.push(['seen', id]); }, dismiss: (id, options) => { done.push(['close', id, options]); return true; } });
+  assert.equal(await c.call('tasks.seen', { id: 't1' }), true);
+  await assert.rejects(c.call('tasks.seen', { id: 'missing' }), /Task not found/);
+  await assert.rejects(c.call('tasks.close', { id: 't1', reason: '  ' }), /reason/);
+  assert.equal(await c.call('tasks.close', { id: 't1', reason: 'Replaced by a newer task' }), true);
+  assert.deepEqual(done, [['seen', 't1'], ['close', 't1', { reason: 'Replaced by a newer task', by: 'owner' }]]);
+  f.m.getTasks = null;
+  await assert.rejects(c.call('tasks.seen', { id: 't1' }), /unavailable/);
+});
