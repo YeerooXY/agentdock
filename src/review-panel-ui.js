@@ -1,4 +1,3 @@
-import './review-panel.css';
 
 export function reviewPanelUI({ call, getState, escape: e, icon, resizeHandles, toast, openResult }) {
   const list = value => Array.isArray(value) ? value : [];
