@@ -161,7 +161,6 @@
       "npm": "droid",
       "docs": "https://docs.factory.com/droid-cli/quickstart",
       "auth": "Sign in with Factory when prompted.",
-      "model": "--model",
       "mcp": ".factory/mcp.json",
       "unrestricted": [
         "--auto",

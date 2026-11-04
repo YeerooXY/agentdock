@@ -1,0 +1,126 @@
+{
+  "at": "2026-11-04T09:01:24.098Z",
+  "rows": [
+    {
+      "provider": "codex",
+      "installed": true,
+      "flags": [],
+      "missing": [],
+      "helpBytes": 5942
+    },
+    {
+      "provider": "claude",
+      "installed": true,
+      "flags": [],
+      "missing": [],
+      "helpBytes": 22336
+    },
+    {
+      "provider": "antigravity",
+      "installed": true,
+      "flags": [
+        "--dangerously-skip-permissions"
+      ],
+      "missing": [],
+      "helpBytes": 3323
+    },
+    {
+      "provider": "copilot",
+      "installed": true,
+      "flags": [
+        "--model",
+        "--allow-all"
+      ],
+      "missing": [],
+      "helpBytes": 14578
+    },
+    {
+      "provider": "opencode",
+      "installed": true,
+      "flags": [
+        "--model",
+        "--auto"
+      ],
+      "missing": [],
+      "helpBytes": 4118
+    },
+    {
+      "provider": "cursor",
+      "installed": true,
+      "flags": [
+        "--model",
+        "--force"
+      ],
+      "missing": [],
+      "helpBytes": 5767
+    },
+    {
+      "provider": "grok",
+      "installed": true,
+      "flags": [
+        "--model",
+        "--always-approve"
+      ],
+      "missing": [],
+      "helpBytes": 5161
+    },
+    {
+      "provider": "kiro",
+      "installed": true,
+      "flags": [
+        "--model",
+        "--trust-tools"
+      ],
+      "missing": [],
+      "helpBytes": 5996
+    },
+    {
+      "provider": "qwen",
+      "installed": true,
+      "flags": [
+        "--model",
+        "--approval-mode"
+      ],
+      "missing": [],
+      "helpBytes": 12545
+    },
+    {
+      "provider": "kimi",
+      "installed": true,
+      "flags": [
+        "--model",
+        "--yolo"
+      ],
+      "missing": [],
+      "helpBytes": 3655
+    },
+    {
+      "provider": "cline",
+      "installed": true,
+      "flags": [
+        "--model",
+        "--auto-approve"
+      ],
+      "missing": [],
+      "helpBytes": 3993
+    },
+    {
+      "provider": "droid",
+      "installed": true,
+      "flags": [
+        "--auto"
+      ],
+      "missing": [],
+      "helpBytes": 2733
+    },
+    {
+      "provider": "pi",
+      "installed": true,
+      "flags": [
+        "--model"
+      ],
+      "missing": [],
+      "helpBytes": 10705
+    }
+  ]
+}
