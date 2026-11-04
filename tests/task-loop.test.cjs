@@ -1165,3 +1165,34 @@ test('a damaged task record is set aside and the other tasks still load', t => {
   assert.equal(restored.jobs.has('bom-task'), true, 'a byte order mark does not hide a task');
   assert.ok(fs.readdirSync(tasks).some(name => name.startsWith('broken-task.json.') && name.endsWith('.corrupt')), 'the damaged file is kept for inspection');
 });
+
+test('a task worktree gets the repository packages linked, never copied or committed', t => {
+  const { linkDependencies } = require('../electron/task-loop.cjs');
+  const root = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'paddock-deps-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const repo = path.join(root, 'repo'), work = path.join(root, 'work');
+  fs.mkdirSync(path.join(repo, 'node_modules', 'vite'), { recursive: true }); fs.writeFileSync(path.join(repo, 'node_modules', 'vite', 'index.js'), '1');
+  fs.mkdirSync(work);
+  assert.equal(linkDependencies(repo, work), true);
+  assert.equal(fs.readFileSync(path.join(work, 'node_modules', 'vite', 'index.js'), 'utf8'), '1');
+  assert.equal(fs.lstatSync(path.join(work, 'node_modules')).isSymbolicLink(), true, 'a link, not a copy');
+  assert.equal(linkDependencies(repo, work), false, 'an existing folder is left alone');
+  assert.equal(linkDependencies(path.join(root, 'none'), path.join(root, 'other')), false, 'no packages, no link');
+});
+
+test('each worker turn signs in to its assigned account first and releases it after', async t => {
+  const calls = [];
+  const f = fixture(t, [{ type: 'implement', edit, inspect: () => calls.push('spawn implementer') }, { type: 'check' }, { type: 'review', inspect: () => calls.push('spawn reviewer') }], {
+    prepareAccount: async (id, provider) => { calls.push(`prepare ${provider}`); },
+    releaseAccount: (id, provider) => { calls.push(`release ${provider}`); } });
+  assert.equal((await f.done(await f.start())).state, 'passed');
+  assert.deepEqual(calls, ['prepare codex', 'spawn implementer', 'release codex', 'prepare claude', 'spawn reviewer', 'release claude']);
+});
+
+test('a refused account switch fails the worker with that reason and starts nothing', async t => {
+  const f = fixture(t, [], { prepareAccount: async () => { throw new Error('Close the open Antigravity consoles of the other account first.'); } });
+  const job = await f.done(await f.start({ reviewer: null }));
+  assert.notEqual(job.state, 'passed');
+  assert.match(JSON.stringify(job), /Close the open Antigravity consoles of the other account first/);
+  assert.equal(f.spawned.length, 0);
+});
