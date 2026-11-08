@@ -189,7 +189,7 @@ function renderPage() {
   settings.mount();
 }
 
-function receive(next) {
+function receive(next, knownSlices) {
   next = { ...next, sessions: Array.isArray(next.sessions) ? next.sessions : [], codePanels: Array.isArray(next.codePanels) ? next.codePanels : [], delegations: Array.isArray(next.delegations) ? next.delegations : [] };
   ++stateReceiveVersion;
   const sessionEffects = [];
@@ -217,10 +217,10 @@ function receive(next) {
     grid.syncExpanded();
   }
   if (view.selectedId && !panelsOpen(view.selectedId)) view.selectedId = null;
-  const changedSlices = store.setLegacy(next);
+  const changedSlices = store.setLegacy(next, knownSlices);
   state = next;
   notices.render();
-  applyTheme(state, { settingsOpen: isSettingsPage(view.page), appearance, lightingChanged: lights.changed });
+  if (!knownSlices || knownSlices.includes('preferences')) applyTheme(state, { settingsOpen: isSettingsPage(view.page), appearance, lightingChanged: lights.changed });
   // Only F11 fullscreen hides the title bar; expanding a console keeps it.
   if (document.body.classList.contains('is-fullscreen') && state.mode !== 'fullscreen') bareFullscreen = false;
   document.body.classList.toggle('is-fullscreen', state.mode === 'fullscreen');
@@ -263,7 +263,8 @@ function receive(next) {
   syncIntegrationJobs(state);
   tools.afterReceive();
   if (hudMode && !chooser.gestureActive() && !chooser.isOpen() && !document.body.classList.contains('window-dragging')) hud.render();
-  else if (['overview', 'consoles', 'usage', 'agent-settings'].includes(view.page) && (changedSlices.length || !['usage', 'agent-settings'].includes(view.page))) renderPage();
+  else if (['overview', 'consoles', 'usage', 'agent-settings'].includes(view.page) &&
+    (knownSlices ? (view.page === 'consoles' ? changedSlices.some(slice => ['sessions', 'panels', 'preferences', 'projects', 'accounts', 'agents', 'shell', 'queues', 'prompts', 'delegations'].includes(slice)) : changedSlices.length > 0) : (changedSlices.length || !['usage', 'agent-settings'].includes(view.page)))) renderPage();
   for (const [id, effect] of sessionEffects) {
     const panel = state.mode === 'hud'
       ? [...document.querySelectorAll('.hud-console[data-session]')].find(item => item.dataset.session === id)

@@ -97,6 +97,8 @@ Slices hold allowlisted DTOs only. Credential values, OAuth material, pairing to
 
 The renderer rebuilds the same snapshot from its v2 slices with `snapshotFromSlices` in `src/state-client.js`. The phone rebuilds its v1 `state` map from phone slices and `extras` with `legacyState` in `mobile/lib/state_client.dart` (`phoneLegacyState` in `projections.cjs` is the Node reference). `tests/state-parity.test.cjs` replays recorded store mutations and checks both against the legacy payloads after every step, including resync, resume after a lost batch and a restart.
 
+The v2 renderer also carries the changed protocol slice names alongside the rebuilt snapshot. Its current app consumer uses them to skip broad legacy comparisons and unrelated console-grid rendering. Preferences still refresh the theme; session, panel, shell, project, account, agent, queue, prompt and delegation changes refresh the console grid. Protocol names such as `preferences` and `panels` differ from legacy keys such as `settings` and `codePanels`. Full legacy snapshots and explicit live-code overlays retain the comparison fallback. Snapshot cloning remains in place so views cannot mutate cached protocol slices.
+
 ## Transport
 
 Code: `electron/state-sync.cjs` (`ProjectionHistory`, `StateConnection`, `chunkFrames`, `reassembleChunk`). Fixture: `tests/fixtures/state/transport.json` (chunk cases and limits; regenerate with `node tests/fixtures/state/generate-transport.cjs`).

@@ -116,6 +116,16 @@ test('the renderer subscribes to every desktop slice the snapshot reads', async 
   assert.ok(jsonEqual(S.snapshotFromSlices(clone(env.desktop.state()), J.ephemeralFromLegacy(base())), J.legacySnapshot(env.desktop.state(), J.ephemeralFromLegacy(base()))));
 });
 
+test('protocol changes pass known slices without reserializing broad legacy state', async () => {
+  const S = await loadClient(), client = S.createStateClient();
+  client.setLegacy({ sessions: [{ id: 'one' }], usageHistory: Array.from({ length: 100 }, (_, id) => ({ id })) });
+  const original = JSON.stringify;
+  JSON.stringify = () => { throw new Error('unexpected deep comparison'); };
+  try { assert.deepEqual(client.setLegacy({ sessions: [{ id: 'two' }], usageHistory: [{ id: 0 }] }, ['sessions']), ['sessions']); }
+  finally { JSON.stringify = original; }
+  assert.equal(client.get().sessions[0].id, 'two');
+});
+
 test('desktop: v2 changes rebuild the legacy snapshot after every recorded publish', async () => {
   const S = await loadClient();
   const env = environment('epoch-a');

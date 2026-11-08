@@ -42,6 +42,12 @@ The Tasks detail shows round timelines, output tails, findings, elapsed time, us
 
 IPC methods are `tasks.start`, `tasks.stop`, `tasks.accept`, `tasks.list` and `tasks.candidates`. Only the trusted main renderer exposes them; agent tools cannot start tasks or alter their commands. The published state includes `tasks`. Task diff reads disable fsmonitor and text conversion drivers; report metadata reads disable fsmonitor.
 
+## Owner activity and retained history
+
+Completed tasks remain available for reports, explicit status reads and recovery. The Tasks snapshot publishes running tasks and at most 20 completed tasks; the main-process job map currently retains older records too. Dismissing a task hides it without deleting its execution history. Archive loading is not yet lazy, so the displayed-history limit is not a memory-retention limit.
+
+Repeated typing that changes only the exact activity timestamp no longer emits the owner registry's synchronous `changed` event. It uses the existing two-second persistence batch, avoiding scheduler drain and retained-job reconciliation on those keys. Ownership, focus replacement, demand flags and reservations still use the immediate durable path. If a critical save fails, the next interaction retries that path immediately. This removes history scans from ordinary typing without deleting reports or weakening owner protection.
+
 ## Split tasks
 
 Ask the agent to use `split: true` to create a read-only plan before building. The planner defaults to the large-task routing choice. A plan contains shared contracts and 2–8 subtasks with criteria, owned file globs, dependencies and sizes. Paddock validates paths, cycles and overlapping ownership, allows one validation repair, and runs at most two plan review rounds. **No review** displays **Plan not reviewed**. The states are `planning`, `reviewing-plan` and `plan-ready`.

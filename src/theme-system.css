@@ -58,7 +58,6 @@ body[data-lighting=spectrum] :is(#sidebar,#content,.settings-overlay,#consoles-p
 .theme-wave { inset:0; z-index:0; clip-path:var(--frame-shape); overflow:hidden }
 .theme-wave::before { content:''; position:absolute; top:0; bottom:0; left:calc(-1 * var(--panel-x,0px) - var(--wave-len)); width:calc(100vw + var(--wave-len) * 2); background:repeating-linear-gradient(90deg,var(--frame-a) 0,color-mix(in srgb,var(--frame-b) 85%,#000) calc(var(--wave-len) * .5),var(--frame-a) var(--wave-len)) }
 .theme-wave::after { content:none; position:absolute; left:calc(-1 * var(--panel-x,0px) - var(--wave-len)); bottom:-3px; width:calc(100vw + var(--wave-len) * 2); height:12px; opacity:.9; background:radial-gradient(circle at 3px 50%,#fff 0 1px,#ffffffa8 2px,transparent 6px) 0 0/var(--wave-len) 12px repeat-x; pointer-events:none }
-[data-frame=gamer]>:where(.console-skin)>.theme-wave::before { background:repeating-linear-gradient(90deg,#ff577f 0,#ffcd56 calc(var(--wave-len) * .17),#45ed98 calc(var(--wave-len) * .34),#00e5ff calc(var(--wave-len) * .5),#7b7bff calc(var(--wave-len) * .67),#ff5db4 calc(var(--wave-len) * .84),#ff577f var(--wave-len)) }
 .theme-halo { inset:-1px; border-radius:12px; box-shadow:0 0 6px var(--frame-a),0 0 22px color-mix(in srgb,var(--frame-b) 70%,transparent) }
 [data-frame=void]>:where(.console-skin)>.theme-halo { box-shadow:0 0 14px color-mix(in srgb,var(--frame-a) 45%,transparent) }
 body[data-lighting=wave] .theme-wave { opacity:1 }
@@ -68,7 +67,7 @@ body[data-opening-motion=off] [data-frame=gamer]>.console-skin>.theme-wave::afte
 body[data-lighting=wave] .theme-halo { opacity:.22 }
 @keyframes light-wave { from { transform:translateX(0) } to { transform:translateX(var(--wave-len)) } }
 body[data-lighting=breathe] .theme-wave,body[data-lighting=breathe] .theme-halo { animation:light-breathe calc(4s * var(--light-speed)) ease-in-out infinite }
-@keyframes light-breathe { 0%,100% { opacity:.05 } 50% { opacity:.95 } }
+@keyframes light-breathe { 0%,100% { opacity:.3 } 50% { opacity:.55 } }
 body[data-lighting=spectrum] .theme-wave { opacity:1 }
 body[data-lighting=spectrum] .theme-wave::before { background:linear-gradient(90deg,var(--frame-a),var(--frame-b)); left:0; width:100% }
 body[data-lighting=spectrum] .theme-halo { opacity:.35 }
@@ -80,7 +79,6 @@ body[data-lighting=breathe] .lit :is(.theme-wave,.theme-halo) { animation-name:l
 /* The sidebar edge joins the same wave. */
 .sidebar-edge { position:absolute; top:0; right:-1px; bottom:0; width:2px; overflow:hidden; pointer-events:none; opacity:0 }
 .sidebar-edge::before { content:''; position:absolute; top:0; bottom:0; left:calc(-1 * var(--panel-x,0px) - var(--wave-len)); width:calc(100vw + var(--wave-len) * 2); background:repeating-linear-gradient(90deg,var(--accent-blue) 0,color-mix(in srgb,var(--accent-pink) 85%,#000) calc(var(--wave-len) * .5),var(--accent-blue) var(--wave-len)) }
-body[data-trim=gamer] .sidebar-edge::before { background:repeating-linear-gradient(90deg,#ff577f 0,#ffcd56 calc(var(--wave-len) * .17),#45ed98 calc(var(--wave-len) * .34),#00e5ff calc(var(--wave-len) * .5),#7b7bff calc(var(--wave-len) * .67),#ff5db4 calc(var(--wave-len) * .84),#ff577f var(--wave-len)) }
 body[data-lighting=wave] .sidebar-edge { opacity:.9 }
 body[data-lighting=wave] .sidebar-edge::before { animation:light-wave calc(5s * var(--light-speed)) linear infinite }
 body[data-lighting=breathe] .sidebar-edge { animation:light-breathe calc(4s * var(--light-speed)) ease-in-out infinite }

@@ -73,10 +73,13 @@ class OwnerConsoles extends EventEmitter {
   interaction(consoleKey, launchId, kind, { trusted = false, ...flags } = {}) {
     if (!trusted || !INTERACTIONS.has(kind)) return false;
     const record = this.current(consoleKey, launchId);
+    const focusChanged = flags.focused === true && [...this.records.values()].some(other => other !== record && other.focused);
     if (flags.focused === true) for (const other of this.records.values()) if (other !== record) other.focused = false;
+    const criticalBefore = [record.ownerManaged, record.reserved, ...FLAGS.map(flag => record[flag])];
     record.ownerManaged = true; record.lastInteractionAt = this.now();
     this.updateFlags(record, flags); record.reserved = this.qualifies(record);
-    this.changed(); return true;
+    const criticalAfter = [record.ownerManaged, record.reserved, ...FLAGS.map(flag => record[flag])];
+    this.changed({ recencyOnly: !focusChanged && criticalBefore.every((value, index) => value === criticalAfter[index]) }); return true;
   }
   updateFlags(record, flags) {
     for (const flag of FLAGS) if (typeof flags[flag] === 'boolean') record[flag] = flags[flag];
@@ -161,7 +164,19 @@ class OwnerConsoles extends EventEmitter {
     sessions.on('changed', sync); sync();
     return () => { sessions.removeListener('changed', sync); delete sessions.ownerConsoles; };
   }
-  changed() {
+  changed({ recencyOnly = false } = {}) {
+    // Typing still updates the exact scheduling timestamp, while persistence
+    // stays on the existing batch and listeners avoid retained-job scans.
+    if (recencyOnly && this.lastCritical !== undefined) {
+      if (!this.disposed && !this.persistTimer) {
+        this.persistTimer = this.schedule(() => {
+          this.persistTimer = null;
+          try { this.flush(); } catch { this.emit('persistence-error'); }
+        }, Math.max(0, PERSIST_MS - (this.now() - (this.lastPersistAt ?? this.now()))));
+        this.persistTimer?.unref?.();
+      }
+      return;
+    }
     const saved = { version: 1, consoles: [...this.records.values()] }, serialized = JSON.stringify(saved);
     // Ownership, demand flags and identity changes are durable immediately.
     // Only recency-only updates wait; scheduling always reads the exact time.
@@ -183,6 +198,7 @@ class OwnerConsoles extends EventEmitter {
     this.persistTimer = null;
     const saved = { version: 1, consoles: [...this.records.values()] }, serialized = JSON.stringify(saved);
     if (serialized === this.lastSaved) return;
+    this.lastCritical = undefined;
     this.write(this.file, saved); this.lastSaved = serialized; this.lastPersistAt = this.now();
     this.lastCritical = JSON.stringify(saved.consoles.map(record => ({ ...record, lastInteractionAt: null })));
   }

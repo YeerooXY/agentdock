@@ -35,7 +35,8 @@ export function createStateClient() {
     get: () => state,
     revision: slice => revisions[slice] || 0,
     // Replace everything with a snapshot. Returns the slices whose value changed.
-    setLegacy(next) {
+    setLegacy(next, knownSlices) {
+      if (knownSlices) { commit(next, knownSlices); return knownSlices; }
       const keys = new Set([...Object.keys(state || {}), ...Object.keys(next || {})]);
       const slices = [...keys].filter(key => !equal(state?.[key], next?.[key]));
       commit(next, slices);
@@ -157,7 +158,7 @@ export function connectStateV2({ transport, read = async () => null, onSnapshot,
   const ready = () => slices.every(slice => slice in client.revs);
   // Views get their own copy, as with dock:state, so a view that edits its
   // state object cannot change the cached slices.
-  const emit = () => { if (!stopped && ready()) onSnapshot(structuredClone(snapshotFromSlices(client.values, codes))); };
+  const emit = changedSlices => { if (!stopped && ready()) onSnapshot(structuredClone(snapshotFromSlices(client.values, codes)), changedSlices); };
   const fail = error => {
     if (stopped) return;
     stop();
@@ -197,7 +198,7 @@ export function connectStateV2({ transport, read = async () => null, onSnapshot,
       case 'applied':
         retries = 0;
         send({ type: 'ack', subscription: client.subscription, batch: result.batch });
-        refreshCodes(); emit(); return;
+        refreshCodes(); emit(result.state.lastChanged || message.changes.map(change => change.slice)); return;
       case 'duplicate': send({ type: 'ack', subscription: client.subscription, batch: result.batch }); return;
       case 'resync': send({ type: 'resync', subscription: client.subscription, slices: result.slices }); return;
       case 'pong': send({ type: 'pong', nonce: result.nonce }); return;

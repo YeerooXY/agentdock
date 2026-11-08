@@ -51,7 +51,7 @@ export function consoleGrid({ getState, view, clearExpanded, appearance, termina
           expand.setAttribute('aria-keyshortcuts', '');
           expand.setAttribute('aria-expanded', 'false');
           expand.title = panel.classList.contains('review-panel') ? label : 'Expand console';
-          expand.innerHTML = icon('expand');
+          if (expand.dataset.iconState !== 'expand') { expand.innerHTML = icon('expand'); expand.dataset.iconState = 'expand'; }
         }
       }
     }
@@ -110,7 +110,7 @@ export function consoleGrid({ getState, view, clearExpanded, appearance, termina
         panel.classList.toggle('console-expanded', isExpanded); panel.setAttribute('aria-label', `${kind} panel`);
         panels.reviewPanels().mount(session, panel.querySelector('.review-panel-body'));
         const context = session.kind === 'review' ? ` ${String(session.slot).padStart(2, '0')}` : '';
-        const expand = panel.querySelector('[data-action="toggle-console"]'); expand.innerHTML = icon(isExpanded ? 'grid' : 'expand'); expand.setAttribute('aria-label', isExpanded ? `Restore ${kind} panel${context} to grid` : `Expand ${kind} panel${context}`); expand.setAttribute('aria-expanded', String(isExpanded));
+        const expand = panel.querySelector('[data-action="toggle-console"]'), iconState = isExpanded ? 'grid' : 'expand'; if (expand.dataset.iconState !== iconState) { expand.innerHTML = icon(iconState); expand.dataset.iconState = iconState; } expand.setAttribute('aria-label', isExpanded ? `Restore ${kind} panel${context} to grid` : `Expand ${kind} panel${context}`); expand.setAttribute('aria-expanded', String(isExpanded));
         panel.querySelectorAll('.console-grip,.console-resize').forEach(handle => { handle.disabled = !!expanded; });
         continue;
       }
@@ -146,7 +146,8 @@ export function consoleGrid({ getState, view, clearExpanded, appearance, termina
       expand.setAttribute('aria-label', `${isExpandedNow ? 'Restore console ' + slot + ' to the grid (Ctrl+Shift+Enter)' : 'Expand console ' + slot}`);
       expand.setAttribute('aria-keyshortcuts', isExpandedNow ? 'Control+Shift+Enter' : '');
       expand.title = isExpandedNow ? 'Restore console, Ctrl+Shift+Enter' : 'Expand console';
-      expand.innerHTML = icon(isExpandedNow ? 'grid' : 'expand');
+      const iconState = isExpandedNow ? 'grid' : 'expand';
+      if (expand.dataset.iconState !== iconState) { expand.innerHTML = icon(iconState); expand.dataset.iconState = iconState; }
       expand.setAttribute('aria-expanded', String(isExpandedNow));
       const grip = panel.querySelector('.console-grip');
       grip.draggable = !expanded;

@@ -58,6 +58,31 @@ void main() {
     expect(c.terminalSignal('one').count, greaterThanOrEqualTo(21));
   });
 
+  testWidgets(
+    'typing preserves the draft without rebuilding DockHome',
+    (tester) async {
+      tester.view.physicalSize = const Size(393, 852);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final c = FakeDock();
+      addTearDown(c.dispose);
+      await tester.pumpWidget(DockApp(client: c));
+      await tester.pump();
+      await tester.tap(find.byKey(const ValueKey('enter-chat')));
+      await tester.pumpAndSettle();
+      final shell = BuildCounts.of('shell');
+      await tester.enterText(find.byType(TextField).last, 'abc');
+      await tester.pump();
+      expect(BuildCounts.of('shell'), shell);
+      expect(c.drafts.get('["","one"]'), 'abc');
+      expect(
+        tester.widget<TextField>(find.byType(TextField).last).controller!.text,
+        'abc',
+      );
+    },
+  );
+
   testWidgets('Projects does not rebuild on terminal output', (tester) async {
     tester.view.physicalSize = const Size(393, 852);
     tester.view.devicePixelRatio = 1;

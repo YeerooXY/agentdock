@@ -20,7 +20,9 @@ function sprite(color, soft) {
   fill.addColorStop(0, '#ffffff'); fill.addColorStop(soft ? .12 : .18, color);
   fill.addColorStop(soft ? .45 : .32, color + '55'); fill.addColorStop(1, color + '00');
   g.fillStyle = fill; g.fillRect(0, 0, size, size);
-  sprites.set(key, canvas); return canvas;
+  sprites.set(key, canvas);
+  if (sprites.size > 32) sprites.delete(sprites.keys().next().value);
+  return canvas;
 }
 const hex = value => {
   const v = String(value || '').trim();
@@ -189,7 +191,7 @@ function rebalance() {
 }
 function tick(now) {
   frame = 0;
-  if (paused() || level === 0) return;
+  if (!skies.size || paused() || level === 0) return;
   if (now - last >= 42) {
     const dt = Math.min(.1, (now - last) / 1000); last = now;
     rebalance();
@@ -203,7 +205,7 @@ function tick(now) {
 function wake() { if (!frame && skies.size && level > 0 && !paused()) { last = performance.now(); frame = requestAnimationFrame(tick); } }
 function still() { rebalance(); for (const sky of skies) if (sky.canvas.isConnected && visible(sky)) sky.draw(performance.now(), 0); }
 function syncMotion() {
-  if (paused() || level === 0) { cancelAnimationFrame(frame); frame = 0; }
+  if (paused() || level === 0) { cancelAnimationFrame(frame); frame = 0; rebalance(); }
   else wake();
 }
 

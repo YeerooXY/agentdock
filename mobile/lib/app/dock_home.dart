@@ -75,7 +75,7 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
       releaseInput: releaseInput,
       onConsolePage: () => onConsolePage,
     );
-    changes = Listenable.merge([c, composer, attachments]);
+    changes = Listenable.merge([c, attachments]);
     c.addListener(syncProjectAccess);
     attachments.watchScreenshots(() {
       Future<void>.delayed(const Duration(seconds: 2), () async {
@@ -352,7 +352,11 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
                 ImageJobsChip(client: c),
               Expanded(
                 child: page == HomePages.console
-                    ? workspace(current, tablet, overviewShown)
+                    ? AnimatedBuilder(
+                        animation: composer,
+                        builder: (context, _) =>
+                            workspace(current, tablet, overviewShown),
+                      )
                     : page == HomePages.projects
                     ? ProjectsPage(
                         client: c,

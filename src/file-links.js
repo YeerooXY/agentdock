@@ -50,6 +50,15 @@ export function findWebLinks(term, y) {
   return links;
 }
 
+export function webLinkHandler(openWeb) {
+  return { activate(_event, value) {
+    try {
+      const url = new URL(value);
+      if (['http:', 'https:'].includes(url.protocol) && url.hostname) openWeb(value);
+    } catch { /* ignore malformed OSC 8 targets */ }
+  } };
+}
+
 export function fileLinks(term, open, openWeb) {
   term.registerLinkProvider({ provideLinks(y, callback) {
     const links = findPaths(term, y).map(link => ({ range: link.range, text: link.value, decorations: { underline: true, pointerCursor: true }, activate: event => { if (!event || event.button === 0) open(link.value); } }));
