@@ -7,6 +7,24 @@ const vm = require('node:vm');
 const { OwnerConsoles, ownerCapacity, RECENT_MS, HEARTBEAT_MS, PERSIST_MS } = require('../electron/owner-consoles.cjs');
 const { atomicJson } = require('../electron/storage.cjs');
 const { CapacityReservations } = require('../electron/capacity-reservations.cjs');
+
+test('a failed critical save is retried immediately on the next identical interaction', t => {
+  let fail = false;
+  const f = fixture(t, { write(file, value) {
+    if (fail) throw new Error('disk unavailable');
+    atomicJson(file, value);
+  } });
+  f.register('owner', { ownerCreated: true });
+  fail = true;
+  assert.throws(() => f.touch('owner', 'typing', { pendingSubmission: true }), /disk unavailable/);
+  fail = false;
+  f.touch('owner', 'typing', { pendingSubmission: true });
+  const saved = JSON.parse(fs.readFileSync(f.owners.file, 'utf8')).consoles[0];
+  assert.equal(saved.pendingSubmission, true);
+  assert.equal(saved.pendingAt, f.now());
+  assert.equal(saved.reserved, true);
+  assert.equal(f.owners.persistTimer, null);
+});
 const { workerRegistry, routeWorker } = require('../electron/worker-registry.cjs');
 const { TaskLoop } = require('../electron/task-loop.cjs');
 const { Sessions } = require('../electron/sessions.cjs');
@@ -39,6 +57,21 @@ test('trusted interactions promote workers; output, hover, protocol and programm
     f.owners.release('auto', 'auto-launch');
   }
   assert.throws(() => f.owners.interaction('auto', 'old', 'typing', { trusted: true }), /console changed/);
+});
+
+test('recency-only typing skips synchronous listeners and waits for the existing persistence batch', t => {
+  let writes = 0, pending;
+  const f = fixture(t, { write: () => { writes++; }, schedule: fn => (pending = fn, 1), cancel: () => {} });
+  f.register('owner', { ownerCreated: true });
+  let changes = 0; f.owners.on('changed', () => changes++);
+  f.touch('owner', 'typing'); // First interaction promotes the console immediately.
+  const afterPromotion = { writes, changes };
+  f.advance(1);
+  f.touch('owner', 'typing');
+  assert.equal(f.owners.records.get('owner').lastInteractionAt, f.now());
+  assert.deepEqual({ writes, changes }, afterPromotion);
+  pending();
+  assert.equal(writes, afterPromotion.writes + 1);
 });
 
 test('owner-created consoles stay protected for their lifetime and completed workers retain promotion', t => {

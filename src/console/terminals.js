@@ -4,7 +4,7 @@ import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { terminalTheme } from '../console-themes.js';
 import { terminalOutput } from '../terminal-output.js';
-import { fileLinks } from '../file-links.js';
+import { fileLinks, webLinkHandler } from '../file-links.js';
 import { playConsoleStateEffect } from '../console-effects.js';
 import { escapeHtml as escape } from '../html-escape.js';
 import { isOpenConsole } from './panels.js';
@@ -98,9 +98,10 @@ export function consoleTerminals({ call, toast, getState, view, openFile, acknow
     let record = terminals.get(session.id);
     if (!record) {
       const id = session.id, node = document.createElement('div');
+      const openWeb = value => call('open.link', value).catch(error => toast(error.message, true));
       node.className = 'terminal-instance'; node.dataset.terminalId = id; host.append(node);
       const themeId = state.settings.slotTrims?.[session.slot] || state.settings.trimStyle || 'classic';
-      const term = new Terminal({ cols: session.cols || 110, rows: session.rows || 30, fontFamily: 'Cascadia Code, Consolas, monospace', fontSize: textSize(session.id, compact), lineHeight: 1.22, cursorBlink: !!state.settings.cursorBlink, scrollback: 3000, allowTransparency: true, disableStdin: !!session.switching, theme: terminalTheme(themeId) });
+      const term = new Terminal({ cols: session.cols || 110, rows: session.rows || 30, fontFamily: 'Cascadia Code, Consolas, monospace', fontSize: textSize(session.id, compact), lineHeight: 1.22, cursorBlink: !!state.settings.cursorBlink, scrollback: 3000, allowTransparency: true, disableStdin: !!session.switching, theme: terminalTheme(themeId), linkHandler: webLinkHandler(openWeb) });
       const fit = new FitAddon(); term.loadAddon(fit); term.open(node);
       record = { id, term, fit, node, compact, themeId, loading: true, queued: [], follow: true, scrollAnchor: null, launchId: session.launchId || null, writeChain: Promise.resolve() }; terminals.set(id, record);
       record.output = terminalOutput((data, done) => queueTerminalWrite(record, data).then(() => { keepFollowing(record); done?.(); }), onWrite);
@@ -127,7 +128,7 @@ export function consoleTerminals({ call, toast, getState, view, openFile, acknow
         }));
       }, { passive: true, capture: true });
       term.onData(data => { if (!session.taskId) call('session.input', { id, data }).catch(error => toast(error.message, true)); });
-      fileLinks(term, value => openFile(id, value), value => call('open.link', value).catch(error => toast(error.message, true)));
+      fileLinks(term, value => openFile(id, value), openWeb);
       // Ctrl+V in a local agent console also pastes clipboard images as a file path.
       term.attachCustomKeyEventHandler(e => {
         if (e.type === 'keydown' && (e.ctrlKey || e.metaKey) && !e.altKey && e.code === 'KeyC' && (term.hasSelection() || e.shiftKey)) {
