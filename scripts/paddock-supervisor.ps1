@@ -36,7 +36,9 @@ function PhoneReady([int]$processId) {
 function StopAll {
   foreach ($p in MainProcesses) {
     Log "Stopping Paddock process $($p.ProcessId)."
-    & (Join-Path $env:SystemRoot 'System32\taskkill.exe') /PID $p.ProcessId /T /F 2>&1 | Out-Null
+    # Console helpers must stay hidden even when this supervisor has no console.
+    $stopProcess = Start-Process -FilePath (Join-Path $env:SystemRoot 'System32\taskkill.exe') -ArgumentList @('/PID', [string]$p.ProcessId, '/T', '/F') -WindowStyle Hidden -Wait -PassThru
+    Log "Stop request returned $($stopProcess.ExitCode)."
   }
   # Give Windows time to release the old process. Never abort here.
   for ($i = 0; $i -lt 30 -and @(MainProcesses).Count; $i++) { Start-Sleep -Seconds 2 }
@@ -85,6 +87,10 @@ function ReportStartupErrors([datetime]$since) {
 Log "Supervisor started for $($config.hours) hours."; Save
 # Lets the console that started the relaunch finish its reply first.
 if ($config.startDelaySeconds) { Start-Sleep -Seconds ([int]$config.startDelaySeconds) }
+# A delayed task or a sleeping PC must not execute an old restart hours later.
+if ($config.requestedAt -and (Get-Date) -gt ([datetime]$config.requestedAt).AddSeconds([Math]::Max(0, [int]$config.startDelaySeconds) + 120)) {
+  $state.phase = 'expired'; Save; Log 'Restart request expired; left the running app untouched.'; exit 0
+}
 # Switch to the new code.
 $state.phase = 'switching'; Save
 StopAll

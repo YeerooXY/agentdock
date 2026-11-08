@@ -83,6 +83,16 @@ void main() {
     Map<String, dynamic> out(String name) =>
         Map<String, dynamic>.from(_load('dto/$name.json')['output'] as Map);
 
+    test('weekly-exhausted window retains its inapplicable state from the phone projection', () {
+      final u = UsageAccount.fromJson(out('phone-usage-disabled'));
+      expect(u.windows.first.usedPercent, 100);
+      expect(u.windows.first.notApplicable, isFalse);
+      expect(u.windows.last.notApplicable, isTrue);
+      expect(u.windows.last.usedPercent, isNull);
+      expect(u.windows.last.resetsAt, isNull);
+      expect(u.windows.last.resetLabel, 'Weekly limit reached');
+    });
+
     test('session', () {
       final s = Session.fromJson(out('phone-session'));
       expect([s.id, s.slot, s.provider, s.state, s.cols, s.rows], ['s1', 2, 'codex', 'active', 120, 30]);

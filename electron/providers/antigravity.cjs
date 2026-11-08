@@ -1,6 +1,8 @@
 'use strict';
 module.exports = {
   id: 'antigravity',
+  settings: { strategy: 'cli', resumeFlag: '--conversation' },
+  session: { identityEvents: 'tagged-uuid', persistConversation: true },
   catalog: {
     name: 'Google Antigravity',
     command: 'agy',

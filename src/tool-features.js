@@ -67,11 +67,16 @@ export function skillPackCards(state, e) {
   const { packs = [], busy = false } = state.skills || {};
   if (!packs.length) return '';
   const size = bytes => bytes >= 1048576 ? `${(bytes / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
-  return `<section class="skill-packs surface"><div class="section-label"><h2>Skill packs <span class="optional">optional</span></h2><button type="button" class="subtle" data-skill-refresh ${busy ? 'disabled' : ''}>Check again</button></div><p class="field-hint">Installing copies a pack into each installed agent's skills folder. Agents load it only when a task matches. Uninstall removes the files Paddock added and keeps any you changed.</p>${packs.map(pack => {
+  const renderPack = pack => {
     const installable = pack.targets.some(t => ['not-installed', 'outdated'].includes(t.state)), removable = pack.targets.some(t => ['installed', 'outdated', 'modified'].includes(t.state));
-    const label = !pack.targets.some(t => t.state !== 'not-installed') ? 'Install' : 'Update';
-    return `<article class="skill-pack" data-skill-pack="${e(pack.id)}"><div class="skill-pack-heading"><div><h3>${e(pack.name)}</h3><small>${pack.source === 'local' ? 'Local · this PC only' : 'Included with Paddock'} · ${size(pack.size)}</small></div><div class="button-row">${installable ? `<button type="button" class="secondary" data-skill-install="${e(pack.id)}" ${busy || pack.error ? 'disabled' : ''}>${label}</button>` : ''}${removable ? `<button type="button" class="subtle danger" data-skill-uninstall="${e(pack.id)}" ${busy ? 'disabled' : ''}>Uninstall</button>` : ''}</div></div><p>${e(pack.description)}</p>${pack.error ? `<p class="form-error">${e(pack.error)}</p>` : ''}<details><summary>Folders</summary><ul class="skill-targets">${pack.targets.map(t => `<li data-state="${e(t.state)}"><span class="mono">${e(t.path)}</span><small>${e(t.agents.join(', ') || 'Agents that read the shared folder')} · ${e(skillStates[t.state] || t.state)}</small></li>`).join('')}</ul></details></article>`;
-  }).join('')}</section>`;
+    const label = pack.downloadable ? 'Download and install' : !pack.targets.some(t => t.state !== 'not-installed') ? 'Install' : 'Update';
+    return `<article class="skill-pack" data-skill-pack="${e(pack.id)}"><div class="skill-pack-heading"><div><h4>${e(pack.name)}</h4><small>${pack.source === 'catalog' ? 'Optional download' : pack.source === 'local' ? 'Local to this PC' : 'Included with Paddock'} ${pack.size ? size(pack.size) : ''}</small></div><div class="button-row">${installable ? `<button type="button" class="secondary" data-skill-install="${e(pack.id)}" ${busy || pack.error ? 'disabled' : ''}>${label}</button>` : ''}${removable ? `<button type="button" class="subtle danger" data-skill-uninstall="${e(pack.id)}" ${busy ? 'disabled' : ''}>Uninstall</button>` : ''}</div></div><p>${e(pack.description)}</p>${removable ? `<label class="check"><input type="checkbox" data-skill-automatic="${e(pack.id)}" ${pack.automatic ? 'checked' : ''} ${busy || pack.error ? 'disabled' : ''}> Use automatically</label>${pack.automatic && !pack.entryPath ? '<p class="field-hint">Automatic use needs an unchanged installed copy. Check Folders below.</p>' : ''}` : ''}${pack.setup ? `<details data-skill-details="setup"><summary>Setup details</summary><p>${e(pack.setup)}</p>${pack.upstream ? `<p class="mono">${e(pack.upstream)}</p>` : ''}</details>` : ''}${pack.error ? `<p class="form-error">${e(pack.error)}</p>` : ''}<details data-skill-details="folders"><summary>Folders</summary><ul class="skill-targets">${pack.targets.map(t => `<li data-state="${e(t.state)}"><span class="mono">${e(t.path)}</span><small>${e(t.agents.join(', ') || 'Agents that read the shared folder')} ${e(skillStates[t.state] || t.state)}</small></li>`).join('')}</ul></details></article>`;
+  };
+  const groups = [['engineering', 'Engineering skills'], ['study', 'Study skills'], ['other', 'Other skills']].map(([id, title]) => {
+    const items = packs.filter(pack => (pack.group || 'other') === id);
+    return items.length ? `<section aria-label="${title}"><h3>${title}</h3>${items.map(renderPack).join('')}</section>` : '';
+  }).join('');
+  return `<section class="skill-packs surface"><div class="section-label"><h2>Skill packs <span class="optional">optional</span></h2><button type="button" class="subtle" data-skill-refresh ${busy ? 'disabled' : ''}>Check again</button></div><p class="field-hint">Installing copies a pack into each installed agent's skills folder. Agents load it only when a task matches. Uninstall removes the files Paddock added and keeps any you changed.</p>${groups}</section>`;
 }
 
 export function creativeToolCards(state, e) {
@@ -93,28 +98,52 @@ export function toolFeatures({ call, getState, navigate, render, toast, escape: 
   document.body.append(dialog);
   // The Instructions page is not re-rendered on state updates, so the pack list
   // refreshes itself and keeps open folder lists and keyboard focus.
-  function refreshSkillPacks(focusId) {
+  function refreshSkillPacks(focusId, focusControl, skills) {
     const current = document.querySelector('.skill-packs'); if (!current) return;
-    const open = new Set([...current.querySelectorAll('.skill-pack details[open]')].map(x => x.closest('[data-skill-pack]').dataset.skillPack));
-    const template = document.createElement('template'); template.innerHTML = skillPackCards(getState(), e);
+    const restoreFocus = current.contains(document.activeElement) || document.activeElement === document.body;
+    const focusedPack = document.activeElement.closest?.('[data-skill-pack]')?.dataset.skillPack;
+    if (!focusId) focusId = focusedPack;
+    if (!focusControl && document.activeElement.hasAttribute?.('data-skill-automatic')) focusControl = 'automatic';
+    const open = new Set([...current.querySelectorAll('.skill-pack details[open]')].map(x => [x.closest('[data-skill-pack]').dataset.skillPack, x.dataset.skillDetails]));
+    const template = document.createElement('template'); template.innerHTML = skillPackCards(skills ? { ...getState(), skills } : getState(), e);
     const next = template.content.querySelector('.skill-packs'); if (!next) return;
-    for (const id of open) next.querySelector(`[data-skill-pack="${id}"] details`)?.setAttribute('open', '');
+    for (const [id, detail] of open) next.querySelector(`[data-skill-pack="${id}"] [data-skill-details="${detail}"]`)?.setAttribute('open', '');
     current.replaceWith(next);
-    if (focusId) next.querySelector(`[data-skill-pack="${focusId}"] .button-row button`)?.focus({ preventScroll: true });
+    if (restoreFocus) (next.querySelector(`[data-skill-pack="${focusId}"] ${focusControl === 'automatic' ? '[data-skill-automatic]:not(:disabled)' : '.button-row button:not(:disabled)'}`) || next.querySelector(`[data-skill-pack="${focusId}"] .button-row button:not(:disabled)`) || next.querySelector('[data-skill-refresh]:not(:disabled)'))?.focus({ preventScroll: true });
     const preview = document.querySelector('.summary-preview pre'); if (preview) preview.textContent = getState().shared.summary;
   }
+  document.addEventListener('change', async event => {
+    const input = event.target.closest?.('[data-skill-automatic]'); if (!input) return;
+    const id = input.dataset.skillAutomatic;
+    if (input.getAttribute('aria-disabled') === 'true') { input.checked = !input.checked; return; }
+    input.setAttribute('aria-disabled', 'true');
+    try {
+      const results = await call('skills.automatic', { id, automatic: input.checked });
+      const problems = results.filter(item => ['skipped', 'failed', 'kept'].includes(item.state));
+      if (problems.length) toast(problems.map(item => item.reason).join(' ') + ' Preserved copies may still be loaded by native agents.', true);
+    }
+    catch (error) { toast(error.message, true); }
+    finally {
+      try { refreshSkillPacks(id, 'automatic', { packs: await call('skills.refresh'), busy: false }); }
+      catch { input.removeAttribute('aria-disabled'); refreshSkillPacks(id, 'automatic'); }
+    }
+  });
   document.addEventListener('click', async event => {
     const button = event.target.closest('button'); if (!button) return;
     try {
       if (button.dataset.skillInstall || button.dataset.skillUninstall || button.hasAttribute('data-skill-refresh')) {
         const install = !!button.dataset.skillInstall, id = button.dataset.skillInstall || button.dataset.skillUninstall;
         button.disabled = true;
+        button.textContent = !id ? 'Checking...' : install ? 'Installing...' : 'Removing...';
         try {
           if (!id) { await call('skills.refresh'); return; }
           const results = await call(install ? 'skills.install' : 'skills.uninstall', id);
           const problems = results.filter(x => ['skipped', 'failed', 'kept'].includes(x.state));
           toast(problems.length ? problems.map(x => x.reason).join(' ') : install ? 'Skill pack installed. New agent sessions load it.' : 'Skill pack removed.', problems.some(x => x.state !== 'kept'));
-        } finally { refreshSkillPacks(id); }
+        } finally {
+          try { refreshSkillPacks(id, undefined, { packs: await call('skills.refresh'), busy: false }); }
+          catch { button.disabled = false; refreshSkillPacks(id); }
+        }
         return;
       }
       if (button.dataset.creativePrepare) {

@@ -365,8 +365,8 @@ void main() {
     await tester.tap(find.byTooltip('Next picture'));
     await tester.pumpAndSettle();
     expect(c.seenRequests.last, {'ids': ['f']});
-    expect(find.text('1 · Viewed'), findsOneWidget);
-    expect(find.text('2 · Viewed'), findsOneWidget);
+    expect(find.text('1, Viewed'), findsOneWidget);
+    expect(find.text('2, Viewed'), findsOneWidget);
     expect(find.bySemanticsLabel(RegExp(r'Image 2 of 2, viewed')), findsOneWidget);
     await choose(tester, 'Result actions', 'Delete');
     expect(find.text('Delete "Second picture"?'), findsOneWidget);

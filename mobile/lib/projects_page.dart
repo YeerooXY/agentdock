@@ -1,8 +1,14 @@
+import 'dart:async';
+
 import 'build_counts.dart';
+
 import 'package:flutter/material.dart';
 
 import 'dock_client.dart';
 import 'dock_style.dart';
+import 'features/projects/project_workspace.dart';
+import 'results_page.dart';
+import 'tasks_page.dart';
 
 bool canReadProjects(DockClient client) =>
     (client.state['capabilities'] as List? ?? []).contains('projects.read');
@@ -10,7 +16,11 @@ bool canReadProjects(DockClient client) =>
 class ProjectsPage extends StatefulWidget {
   final DockClient client;
   final VoidCallback onConsoleSelected;
-  const ProjectsPage({super.key, required this.client, required this.onConsoleSelected});
+  const ProjectsPage({
+    super.key,
+    required this.client,
+    required this.onConsoleSelected,
+  });
 
   @override
   State<ProjectsPage> createState() => _ProjectsPageState();
@@ -18,23 +28,33 @@ class ProjectsPage extends StatefulWidget {
 
 class _ProjectsPageState extends State<ProjectsPage> {
   static const sectionNames = {
-    'brief': 'Brief', 'research': 'Research',
-    'infrastructure': 'Setup', 'roadmap': 'Roadmap',
+    'brief': 'Brief',
+    'research': 'Research',
+    'infrastructure': 'Setup',
+    'roadmap': 'Roadmap',
   };
   static const planStates = {
-    'approved': 'Approved', 'proposal waiting': 'Proposal waiting',
-    'not needed': 'Not needed', 'empty': 'Empty',
+    'approved': 'Approved',
+    'proposal waiting': 'Proposal waiting',
+    'not needed': 'Not needed',
+    'empty': 'Empty',
   };
   static const statuses = {
-    'planning': 'Planning', 'active': 'Active', 'paused': 'Paused',
-    'complete': 'Complete', 'archived': 'Archived',
+    'planning': 'Planning',
+    'active': 'Active',
+    'paused': 'Paused',
+    'complete': 'Complete',
+    'archived': 'Archived',
   };
   List<dynamic>? projects;
   Map<String, dynamic>? detail;
   String? selected;
+  String workspaceTab = 'overview';
+  Map<String, dynamic>? knowledgeData;
+  int? knowledgeVersion;
   String error = '';
   bool loading = false;
-  int serial = 0;
+  int serial = 0, knowledgeSerial = 0, readSerial = 0;
   late String pairedPC;
   late int connectionGeneration;
   late bool wasConnected;
@@ -60,12 +80,41 @@ class _ProjectsPageState extends State<ProjectsPage> {
     final pcChanged = pairedPC != client.activePC;
     final generationChanged = connectionGeneration != client.generation;
     final disconnected = wasConnected && !client.connected;
-    final reconnected = client.connected && (!wasConnected || generationChanged);
+    final reconnected =
+        client.connected && (!wasConnected || generationChanged);
     pairedPC = client.activePC;
     connectionGeneration = client.generation;
     wasConnected = client.connected;
+    if (!pcChanged && selected != null && detail?['workspace'] == true) {
+      final live = (client.state['projects'] as List? ?? [])
+          .whereType<Map>()
+          .where((project) => project['id'] == selected)
+          .firstOrNull;
+      if (live != null &&
+          live['knowledgeMode'] is String &&
+          (live['knowledgeMode'] != knowledgeData?['mode'] ||
+              live['knowledgeVersion'] != knowledgeVersion)) {
+        knowledgeVersion = live['knowledgeVersion'] as int?;
+        knowledgeSerial++;
+        readSerial++;
+        setState(
+          () => knowledgeData = {
+            'mode': live['knowledgeMode'] ?? 'off',
+            'status': 'idle',
+            'items': [],
+          },
+        );
+        if (['knowledge', 'overview'].contains(workspaceTab) &&
+            knowledgeData?['mode'] != 'off' &&
+            client.connected) {
+          unawaited(loadKnowledge());
+        }
+      }
+    }
     if (pcChanged) {
       serial++;
+      knowledgeSerial++;
+      readSerial++;
       setState(() {
         selected = null;
         projects = null;
@@ -77,17 +126,36 @@ class _ProjectsPageState extends State<ProjectsPage> {
     }
     if (generationChanged || disconnected) {
       serial++;
-      setState(() => loading = false);
+      knowledgeSerial++;
+      readSerial++;
+      setState(() {
+        loading = false;
+        if (knowledgeData?['status'] == 'loading') {
+          knowledgeData = {...?knowledgeData, 'status': 'idle'};
+        }
+      });
     }
     if (reconnected && canReadProjects(client)) load();
   }
 
   Future<void> load() async {
+    knowledgeSerial++;
+    readSerial++;
     final client = widget.client;
-    final request = ++serial, pc = client.activePC, generation = client.generation;
-    setState(() { loading = true; error = ''; });
+    final request = ++serial,
+        pc = client.activePC,
+        generation = client.generation;
+    setState(() {
+      loading = true;
+      if (knowledgeData?['status'] == 'loading') {
+        knowledgeData = {...?knowledgeData, 'status': 'idle'};
+      }
+      error = '';
+    });
     try {
-      if (!canReadProjects(client)) throw StateError('Projects are unavailable on this host.');
+      if (!canReadProjects(client)) {
+        throw StateError('Projects are unavailable on this host.');
+      }
       final value = await client.request(
         selected == null ? 'projects.list' : 'projects.detail',
         selected == null ? {} : {'id': selected},
@@ -98,6 +166,9 @@ class _ProjectsPageState extends State<ProjectsPage> {
           projects = value as List;
         } else {
           detail = Map<String, dynamic>.from(value as Map);
+          knowledgeData = detail!['knowledge'] is Map
+              ? Map<String, dynamic>.from(detail!['knowledge'] as Map)
+              : null;
         }
         loading = false;
       });
@@ -112,7 +183,28 @@ class _ProjectsPageState extends State<ProjectsPage> {
 
   bool acceptResponse(int request, String pc, int generation) {
     if (!mounted || request != serial) return false;
-    if (pc != widget.client.activePC || generation != widget.client.generation) {
+    if (pc != widget.client.activePC ||
+        generation != widget.client.generation) {
+      connectionChanged();
+      return false;
+    }
+    return true;
+  }
+
+  bool acceptContent(
+    int request,
+    bool knowledge,
+    String pc,
+    int generation,
+    String? id,
+  ) {
+    if (!mounted ||
+        selected != id ||
+        request != (knowledge ? knowledgeSerial : readSerial)) {
+      return false;
+    }
+    if (pc != widget.client.activePC ||
+        generation != widget.client.generation) {
       connectionChanged();
       return false;
     }
@@ -121,13 +213,21 @@ class _ProjectsPageState extends State<ProjectsPage> {
 
   void back() {
     serial++;
-    setState(() { selected = null; detail = null; error = ''; loading = false; });
+    setState(() {
+      selected = null;
+      detail = null;
+      knowledgeData = null;
+      workspaceTab = 'overview';
+      error = '';
+      loading = false;
+    });
     load();
   }
 
   Future<void> openConsole(String id) async {
     final client = widget.client;
-    if (!client.connected || !client.sessions.any((s) => s['id'] == id && s['alive'] == true)) {
+    if (!client.connected ||
+        !client.sessions.any((s) => s['id'] == id && s['alive'] == true)) {
       consoleError('This console is no longer open. Refresh the project.');
       return;
     }
@@ -135,12 +235,17 @@ class _ProjectsPageState extends State<ProjectsPage> {
       await client.select(id);
       if (mounted) widget.onConsoleSelected();
     } catch (_) {
-      if (mounted) consoleError('Could not open console. Check the connection and try again.');
+      if (mounted) {
+        consoleError(
+          'Could not open console. Check the connection and try again.',
+        );
+      }
     }
   }
 
   void consoleError(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
@@ -151,7 +256,9 @@ class _ProjectsPageState extends State<ProjectsPage> {
 
   Widget _page(BuildContext context) => PopScope(
     canPop: selected == null,
-    onPopInvokedWithResult: (didPop, _) { if (!didPop && selected != null) back(); },
+    onPopInvokedWithResult: (didPop, _) {
+      if (!didPop && selected != null) back();
+    },
     child: RefreshIndicator(
       onRefresh: load,
       child: ListView(
@@ -160,22 +267,215 @@ class _ProjectsPageState extends State<ProjectsPage> {
         padding: const EdgeInsets.all(16),
         children: [
           if (selected != null)
-            Align(alignment: Alignment.centerLeft, child: TextButton.icon(
-              onPressed: back, icon: const Icon(Icons.arrow_back), label: const Text('Projects'),
-            )),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: back,
+                icon: const Icon(Icons.arrow_back),
+                label: const Text('Projects'),
+              ),
+            ),
           if (loading) const LinearProgressIndicator(),
           if (error.isNotEmpty) ...[
             Text(error),
-            Align(alignment: Alignment.centerLeft, child: TextButton(onPressed: load, child: const Text('Retry'))),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton(onPressed: load, child: const Text('Retry')),
+            ),
           ],
           if (selected == null) ...[
-            if (projects != null && projects!.isEmpty) const Text('No projects.'),
+            if ((widget.client.state['capabilities'] as List? ?? []).contains(
+              'projects.workspace',
+            ))
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton(
+                  onPressed: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => TasksPage(client: widget.client),
+                    ),
+                  ),
+                  child: const Text('Worker history'),
+                ),
+              ),
+            if (projects != null && projects!.isEmpty)
+              const Text('No projects.'),
             for (final project in projects ?? []) projectCard(project as Map),
-          ] else if (detail != null) ...projectDetail(detail!),
+          ] else if (detail != null) ...[
+            if (detail!['workspace'] == true) ...[
+              projectTitle(detail!),
+              ProjectWorkspace(
+                project: detail!,
+                work: detail!['work'] as List? ?? [],
+                outputs: detail!['outputs'] as List? ?? [],
+                knowledge: knowledgeData,
+                tab: workspaceTab,
+                onTab: (tab) {
+                  setState(() => workspaceTab = tab);
+                  if (tab == 'knowledge' &&
+                      knowledgeData?['mode'] != 'off' &&
+                      knowledgeData?['status'] != 'loading') {
+                    loadKnowledge();
+                  }
+                },
+                onOpenOutput: openOutput,
+                onOpenReport: openReport,
+                onReadSection: readKnowledge,
+                onLoadMore: knowledgeData?['nextCursor'] != null
+                    ? () => loadKnowledge(more: true)
+                    : null,
+              ),
+              ExpansionTile(
+                title: const Text('Project details'),
+                children: projectDetail(detail!),
+              ),
+            ] else
+              ...projectDetail(detail!),
+          ],
         ],
       ),
     ),
   );
+
+  Future<void> loadKnowledge({bool more = false}) async {
+    if (selected == null ||
+        !widget.client.connected ||
+        knowledgeData?['mode'] == 'off') {
+      return;
+    }
+    final id = selected,
+        request = ++knowledgeSerial,
+        pc = widget.client.activePC,
+        generation = widget.client.generation;
+    final previous = knowledgeData;
+    setState(
+      () =>
+          knowledgeData = {...?knowledgeData, 'status': 'loading', 'error': ''},
+    );
+    try {
+      final value = Map<String, dynamic>.from(
+        await widget.client.request('projects.knowledge', {
+          'id': id,
+          if (more) 'cursor': previous?['nextCursor'],
+        }) as Map,
+      );
+      if (!acceptContent(request, true, pc, generation, id) || selected != id) {
+        return;
+      }
+      setState(
+        () => knowledgeData = {
+          ...value,
+          'status': 'ready',
+          if (more && value['mode'] != 'off')
+            'items': [
+              ...previous?['items'] as List? ?? [],
+              ...value['items'] as List? ?? [],
+            ],
+        },
+      );
+    } catch (_) {
+      if (acceptContent(request, true, pc, generation, id) && selected == id) {
+        setState(
+          () => knowledgeData = {
+            ...?previous,
+            'status': 'error',
+            'error': 'Could not read knowledge. Refresh the project to retry.',
+          },
+        );
+      }
+    }
+  }
+
+  void openOutput(Map<String, dynamic> item) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) =>
+            ResultDetail(client: widget.client, item: item, ids: [item['id']]),
+      ),
+    );
+  }
+
+  Future<void> openReport(Map<String, dynamic> task) async {
+    if (task['executionHistory'] == null && task['resultId'] != null) {
+      final item = <String, dynamic>{
+        'id': task['resultId'],
+        'title': task['title'],
+        'ext': '.md',
+        'kind': 'report',
+      };
+      openOutput(item);
+      return;
+    }
+    await readText('projects.report', {
+      'id': selected,
+      'taskId': task['id'],
+    }, '${task['title'] ?? 'Worker report'}');
+  }
+
+  Future<void> readKnowledge(String id) async {
+    await readText(
+      'projects.knowledge.read',
+      {
+        'id': selected,
+        'ids': [id],
+        'revision': knowledgeData?['revision'],
+      },
+      'Project knowledge',
+      section: true,
+    );
+  }
+
+  Future<void> readText(
+    String method,
+    Map<String, dynamic> payload,
+    String title, {
+    bool section = false,
+  }) async {
+    final id = selected,
+        request = ++readSerial,
+        pc = widget.client.activePC,
+        generation = widget.client.generation;
+    try {
+      final value = Map<String, dynamic>.from(
+        await widget.client.request(method, payload) as Map,
+      );
+      if (!acceptContent(request, false, pc, generation, id) ||
+          selected != id) {
+        return;
+      }
+      final text = section
+          ? ((value['items'] as List? ?? []).isEmpty
+                ? 'This section is unavailable within the reading limit.'
+                : '${value['items'][0]['recorded']['summary']}\n\nStored interpretation. Source freshness and semantic claims are unverified.')
+          : '${value['text'] ?? ''}';
+      if (!mounted) return;
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => Scaffold(
+            appBar: AppBar(title: Text(title)),
+            body: SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: SelectableText(
+                text +
+                    (!section && value['nextOffset'] != null
+                        ? '\n\nMore report content is available on the PC.'
+                        : ''),
+              ),
+            ),
+          ),
+        ),
+      );
+    } catch (_) {
+      if (acceptContent(request, false, pc, generation, id)) {
+        consoleError(
+          'Could not read this item. Check the connection and refresh the project.',
+        );
+      }
+    }
+  }
 
   Widget heading(String text) => Padding(
     padding: const EdgeInsets.only(top: 20, bottom: 8),
@@ -186,25 +486,41 @@ class _ProjectsPageState extends State<ProjectsPage> {
     final counts = project['progress'] as Map? ?? {};
     final done = (counts['done'] as num? ?? 0).toInt();
     final total = (counts['total'] as num? ?? 0).toInt();
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text('$done of $total milestones'),
-      const SizedBox(height: 8),
-      LinearProgressIndicator(
-        value: total > 0 ? (done / total).clamp(0.0, 1.0).toDouble() : 0,
-        semanticsLabel: '$done of $total milestones done', semanticsValue: '${total > 0 ? done * 100 ~/ total : 0}',
-      ),
-    ]);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('$done of $total milestones'),
+        const SizedBox(height: 8),
+        LinearProgressIndicator(
+          value: total > 0 ? (done / total).clamp(0.0, 1.0).toDouble() : 0,
+          semanticsLabel: '$done of $total milestones done',
+          semanticsValue: '${total > 0 ? done * 100 ~/ total : 0}',
+        ),
+      ],
+    );
   }
 
   Widget projectTitle(Map project) {
     final hex = '${project['color'] ?? ''}'.replaceFirst('#', '');
     final color = hex.length == 6 ? int.tryParse(hex, radix: 16) : null;
-    return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Padding(padding: const EdgeInsets.only(top: 6, right: 10), child: CircleAvatar(
-        radius: 6, backgroundColor: color == null ? blue : Color(0xff000000 | color),
-      )),
-      Expanded(child: Text('${project['name']}', style: Theme.of(context).textTheme.titleLarge)),
-    ]);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(top: 6, right: 10),
+          child: CircleAvatar(
+            radius: 6,
+            backgroundColor: color == null ? blue : Color(0xff000000 | color),
+          ),
+        ),
+        Expanded(
+          child: Text(
+            '${project['name']}',
+            style: Theme.of(context).textTheme.titleLarge,
+          ),
+        ),
+      ],
+    );
   }
 
   Widget projectCard(Map project) => Card(
@@ -212,75 +528,129 @@ class _ProjectsPageState extends State<ProjectsPage> {
     clipBehavior: Clip.antiAlias,
     child: InkWell(
       onTap: () {
-        setState(() { selected = project['id'] as String; detail = null; });
+        setState(() {
+          selected = project['id'] as String;
+          detail = null;
+          knowledgeData = null;
+          workspaceTab = 'overview';
+        });
         load();
       },
-      child: Padding(padding: const EdgeInsets.all(16), child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          projectTitle(project),
-          const SizedBox(height: 8),
-          Text(statuses[project['status']] ?? '${project['status']}'),
-          if ('${project['nextStep'] ?? ''}'.isNotEmpty) ...[
-            const SizedBox(height: 12), Text('${project['nextStep']}'),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            projectTitle(project),
+            const SizedBox(height: 8),
+            Text(statuses[project['status']] ?? '${project['status']}'),
+            if ('${project['nextStep'] ?? ''}'.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Text('${project['nextStep']}'),
+            ],
+            const SizedBox(height: 16),
+            progress(project),
           ],
-          const SizedBox(height: 16), progress(project),
-        ],
-      )),
+        ),
+      ),
     ),
   );
 
   List<Widget> projectDetail(Map project) => [
     projectTitle(project),
     Text(statuses[project['status']] ?? '${project['status']}'),
-    heading('Goals'), Text('${project['goals'] ?? ''}'.isEmpty ? 'No goals.' : '${project['goals']}'),
-    heading('Next step'), Text('${project['nextStep'] ?? ''}'.isEmpty ? 'No next step.' : '${project['nextStep']}'),
-    heading('Milestones'), progress(project),
+    heading('Goals'),
+    Text(
+      '${project['goals'] ?? ''}'.isEmpty ? 'No goals.' : '${project['goals']}',
+    ),
+    heading('Next step'),
+    Text(
+      '${project['nextStep'] ?? ''}'.isEmpty
+          ? 'No next step.'
+          : '${project['nextStep']}',
+    ),
+    heading('Milestones'),
+    progress(project),
     for (final milestone in project['milestones'] as List? ?? [])
-      Padding(padding: const EdgeInsets.only(top: 12), child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Semantics(label: milestone['done'] == true ? 'Completed' : 'Incomplete', child: Icon(
-            milestone['done'] == true ? Icons.check_box_outlined : Icons.check_box_outline_blank,
-          )),
-          const SizedBox(width: 10),
-          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('${milestone['text']}'),
-            if ('${milestone['acceptance'] ?? ''}'.isNotEmpty) Text('${milestone['acceptance']}'),
-          ])),
-        ],
-      )),
-    if (project['decisions'] is List) ...[
-      heading('Decisions'),
-      if ((project['decisions'] as List).isEmpty) const Text('No approved decisions.'),
-      for (final decision in (project['decisions'] as List).whereType<Map>())
-        Padding(padding: const EdgeInsets.only(top: 8), child: Column(
+      Padding(
+        padding: const EdgeInsets.only(top: 12),
+        child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('${decision['text']}'),
-            if ('${decision['reason'] ?? ''}'.isNotEmpty)
-              Text('${decision['reason']}', style: const TextStyle(color: muted)),
+            Semantics(
+              label: milestone['done'] == true ? 'Completed' : 'Incomplete',
+              child: Icon(
+                milestone['done'] == true
+                    ? Icons.check_box_outlined
+                    : Icons.check_box_outline_blank,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('${milestone['text']}'),
+                  if ('${milestone['acceptance'] ?? ''}'.isNotEmpty)
+                    Text('${milestone['acceptance']}'),
+                ],
+              ),
+            ),
           ],
-        )),
+        ),
+      ),
+    if (project['decisions'] is List) ...[
+      heading('Decisions'),
+      if ((project['decisions'] as List).isEmpty)
+        const Text('No approved decisions.'),
+      for (final decision in (project['decisions'] as List).whereType<Map>())
+        Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('${decision['text']}'),
+              if ('${decision['reason'] ?? ''}'.isNotEmpty)
+                Text(
+                  '${decision['reason']}',
+                  style: const TextStyle(color: muted),
+                ),
+            ],
+          ),
+        ),
       if ((project['decisionsWaiting'] as num? ?? 0) > 0)
-        Padding(padding: const EdgeInsets.only(top: 8), child: Text(
-          '${project['decisionsWaiting']} proposed by agents. Review them in Projects on your PC.',
-          style: TextStyle(color: pink),
-        )),
+        Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: Text(
+            '${project['decisionsWaiting']} proposed by agents. Review them in Projects on your PC.',
+            style: TextStyle(color: pink),
+          ),
+        ),
     ],
-    heading('Recent notes'), Text('${project['notes'] ?? ''}'.isEmpty ? 'No notes.' : '${project['notes']}'),
+    heading('Recent notes'),
+    Text(
+      '${project['notes'] ?? ''}'.isEmpty ? 'No notes.' : '${project['notes']}',
+    ),
     heading('Plan'),
-    if (project['plan']?['revision'] != null) Text('Revision ${project['plan']['revision']}'),
+    if (project['plan']?['revision'] != null)
+      Text('Revision ${project['plan']['revision']}'),
     for (final section in project['plan']?['sections'] as List? ?? [])
-      Padding(padding: const EdgeInsets.only(top: 8), child: Text(
-        '${sectionNames[section['name']] ?? section['name']}: ${planStates[section['state']] ?? section['state']}',
-      )),
+      Padding(
+        padding: const EdgeInsets.only(top: 8),
+        child: Text(
+          '${sectionNames[section['name']] ?? section['name']}: ${planStates[section['state']] ?? section['state']}',
+        ),
+      ),
     heading('Linked consoles'),
-    if ((project['consoles'] as List? ?? []).isEmpty) const Text('No live consoles.'),
+    if ((project['consoles'] as List? ?? []).isEmpty)
+      const Text('No live consoles.'),
     for (final console in project['consoles'] as List? ?? [])
-      Align(alignment: Alignment.centerLeft, child: TextButton(
-        onPressed: () => openConsole(console['id'] as String),
-        child: Text('${console['name']}'),
-      )),
+      Align(
+        alignment: Alignment.centerLeft,
+        child: TextButton(
+          onPressed: () => openConsole(console['id'] as String),
+          child: Text('${console['name']}'),
+        ),
+      ),
   ];
 }

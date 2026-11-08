@@ -10,6 +10,8 @@ function validateDraftText(text, provider) {
     const error = new Error('The CLI draft could not be preserved exactly. Keep the current console open.');
     error.code = 'draft-invalid'; throw error;
   }
+  // This standalone validator also ships beside the external draft editor,
+  // outside ASAR. Keep it independent of app services and provider loading.
   if (provider === 'claude' && hasClaudeEditorContext(text)) {
     const error = new Error('Turn off “Show last response in external editor” in Claude Code before switching. The current console and draft are still running.');
     error.code = 'claude-editor-context'; throw error;

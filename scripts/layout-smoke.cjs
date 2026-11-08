@@ -75,8 +75,8 @@ async function resize(id, edge, dx, dy, cancel = false, snapshot) {
   }
   console.log('PASS repeated F11 preserves custom window bounds');
   await app.evaluate(({ BrowserWindow }, bounds) => BrowserWindow.getAllWindows()[0].setBounds(bounds), initialBounds);
-  assert.equal(await page.locator('#results-count').innerText(), '2');
-  assert.equal(await page.locator('#results-count').evaluate(el => el.parentElement.classList.contains('notification-icon')), true);
+  assert.equal(await page.locator('#results-count').count(), 0);
+  assert.equal(await page.locator('.sidebar nav [data-page=tasks], .sidebar nav [data-page=results]').count(), 0);
   assert.deepEqual(await page.locator('.window-actions button').evaluateAll(els => els.map(el => el.dataset.action)), ['hud', 'minimize', 'fullscreen', 'tray']);
   assert.equal((await call('state')).settings.cursorBlink, false);
   await page.keyboard.press('Control+Shift+N');

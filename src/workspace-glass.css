@@ -1,8 +1,6 @@
 /* Selected direction: luminous blue/violet glass, compact cards, readable content. */
 .workspace:has(#content:is([data-view=projects],[data-view=tasks],[data-view=results],[data-view=usage]):not([hidden])) { background:radial-gradient(ellipse at 8% 16%,color-mix(in srgb,var(--accent-blue) 18%,transparent),transparent 42%),radial-gradient(ellipse at 85% 80%,color-mix(in srgb,var(--accent-pink) 14%,transparent),transparent 48%) }
-#content:is([data-view=projects],[data-view=tasks],[data-view=results],[data-view=usage]) { padding:28px 30px; color:#f1f4ff }
-#content:is([data-view=projects],[data-view=tasks],[data-view=results],[data-view=usage]) .page-heading { margin-bottom:22px }
-#content:is([data-view=projects],[data-view=tasks],[data-view=results],[data-view=usage]) .page-heading h1 { font-size:28px; letter-spacing:-.6px }
+#content:is([data-view=projects],[data-view=tasks],[data-view=results],[data-view=usage]) { color:#f1f4ff }
 #content:is([data-view=projects],[data-view=tasks],[data-view=results],[data-view=usage]) .page-heading h1::after { display:none }
 .project-card,.task-list button,.result-card,.result-folder,.task-detail,.quota-card.large,.usage-analytics { --glass-glow:var(--accent-pink); border:1px solid color-mix(in srgb,var(--accent-blue) 50%,#ffffff55)!important; background:radial-gradient(ellipse at 0 0,color-mix(in srgb,var(--accent-blue) 25%,transparent),transparent 53%),radial-gradient(ellipse at 100% 100%,color-mix(in srgb,var(--glass-glow) 28%,transparent),transparent 70%),linear-gradient(145deg,color-mix(in srgb,var(--accent-blue) 25%,#12151e99),color-mix(in srgb,var(--accent-blue) 12%,#0b0e1699) 48%,color-mix(in srgb,var(--accent-pink) 20%,#12121d99))!important; box-shadow:inset 0 1px 1px #fff6,inset 1px 0 1px #d6e8ff2e,inset 0 -1px 0 #b0caff4d,0 7px 24px #03081766,0 0 22px color-mix(in srgb,var(--glass-glow) 18%,transparent)!important; backdrop-filter:blur(20px) saturate(155%); border-radius:14px!important }
 .project-card:nth-child(3n + 2),.result-folder:nth-child(3n + 2) { --glass-glow:var(--accent-blue) }
@@ -65,7 +63,6 @@
 .result-side-panel .wb-dialog { border:1px solid #aec6ff66; background:#141e34ee; border-radius:14px }
 @media(max-width:850px) { .task-layout { grid-template-columns:minmax(0,1fr) }.task-list { grid-template-columns:repeat(auto-fit,minmax(min(240px,100%),1fr)) } }
 @media(max-width:600px) {
-  #content:is([data-view=projects],[data-view=tasks],[data-view=results],[data-view=usage]) { padding:20px 16px }
   .project-filters { grid-template-columns:repeat(2,minmax(0,1fr)) }.project-filters>label:first-child { grid-column:1/-1 }
   .project-card .project-goals { min-height:0 }.project-card { padding:20px }.task-detail { padding:18px }
 }

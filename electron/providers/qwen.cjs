@@ -1,6 +1,7 @@
 'use strict';
 module.exports = {
   id: 'qwen',
+  settings: { strategy: 'cli' },
   catalog: {
     name: 'Qwen Code',
     command: 'qwen',

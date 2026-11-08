@@ -5,6 +5,7 @@ const { randomUUID } = require('node:crypto');
 const { EventEmitter } = require('node:events');
 const { atomicJson, readJson } = require('./storage.cjs');
 const { ownerCapacity } = require('./owner-consoles.cjs');
+const { overlap } = require('./task-ownership.cjs');
 
 const parallelLimit = settings => { const value = Number(settings?.maxParallelTasks); return Number.isInteger(value) && value >= 1 && value <= 10 ? value : 5; };
 function subtaskLimit(args, job, settings) {
@@ -20,7 +21,7 @@ function resourceProfile(request, workers = []) {
     (request.accountId && workers.find(w => w.accountId === request.accountId && (!request.model || w.model === request.model)));
   const quotaGroupId = request.quotaGroupId || match?.quotaGroupId || request.accountId;
   const group = workers.filter(w => w.quotaGroupId === quotaGroupId && w.available !== false);
-  return { ...request, quotaGroupId, capacity: Math.min(request.capacity ?? match?.concurrency ?? 1, ...group.map(w => w.concurrency)), local: request.local === true || match?.local === true };
+  return { ...request, quotaGroupId, capacity: Math.min(request.capacity ?? match?.concurrency ?? Number.MAX_SAFE_INTEGER, ...group.map(w => w.concurrency)), local: request.local === true || match?.local === true };
 }
 function admissionReason(item, active, { limit = 5, reservations = new Set(), owners = emptyOwners, resourcePressure = false } = {}) {
   const locked = lockReason(item, active);
@@ -33,11 +34,12 @@ function admissionReason(item, active, { limit = 5, reservations = new Set(), ow
   }
   if (item.kind === 'checks') return active.some(turn => turn.kind === 'checks' || turn.kind === 'docker') ? 'Waiting for checks' : null;
   const models = active.filter(turn => !['checks', 'docker', 'subtask', 'checkout', 'merge-back'].includes(turn.kind));
-  if (models.length >= limit) return `Waiting for a free slot (${models.length} of ${limit} in use)`;
+  const projectModels = item.projectId ? models.filter(turn => turn.projectId === item.projectId) : models.filter(turn => !turn.projectId);
+  if (projectModels.length >= limit) return `Waiting for a free slot (${projectModels.length} of ${limit} in use)`;
   if (item.local && item.automatic !== false && owners.snapshot().some(record => record.local && reservations.has(record.quotaGroupId))) return 'Reserved for owner';
   if (item.local && models.some(turn => turn.local)) return 'Waiting for Strata';
   if (!item.quotaGroupId) return null;
-  const reason = ownerCapacity({ quotaGroupId: item.quotaGroupId, capacity: item.capacity ?? 1, active: models, reservations, automatic: item.automatic !== false });
+  const reason = ownerCapacity({ quotaGroupId: item.quotaGroupId, capacity: item.capacity ?? Number.MAX_SAFE_INTEGER, active: models, reservations, automatic: item.automatic !== false });
   return reason === 'Waiting for capacity' ? `Waiting for ${item.accountLabel || item.accountId || item.quotaGroupId || 'account'}` : reason;
 }
 
@@ -47,7 +49,7 @@ function lockReason(item, active) {
   if (!item.repository) return null;
   if (item.checkout && peers.some(turn => turn.checkout)) return 'Waiting for checkout';
   if (item.kind === 'merge-back' && peers.some(turn => turn.kind === 'merge-back' && turn.target === item.target)) return 'Waiting for merge';
-  if (item.owns?.length && peers.some(turn => turn.owns?.some(left => item.owns.some(right => require('./task-plan.cjs').overlap(left, right))))) return 'Waiting for files';
+  if (item.owns?.length && peers.some(turn => turn.owns?.some(left => item.owns.some(right => overlap(left, right))))) return 'Waiting for files';
   return null;
 }
 

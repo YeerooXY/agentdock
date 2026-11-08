@@ -165,7 +165,7 @@ test('local assistance is discoverable, receives caller context and validates br
 test('dock/start_task forwards task arguments, defaults to the caller folder and validates bridge input without launching agents', async t => {
   const { root, project } = fixture(t), calls = [];
   const callerFolder = path.join(project, 'caller'); fs.mkdirSync(callerFolder);
-  const sessions = { items: new Map([['live', { id: 'live', alive: true, cwd: callerFolder }]]) };
+  const sessions = { items: new Map([['live', { id: 'live', consoleKey: 'stable-console', alive: true, cwd: callerFolder }]]) };
   let tasks;
   const workbench = new Workbench(root, {}, { nativeImage: {} }, { testMode: true, onChange() {}, getSessions: () => sessions, getProject: () => project, getTasks: () => tasks });
   const tool = workbench.tools().find(tool => tool.name === 'dock/start_task');
@@ -178,9 +178,9 @@ test('dock/start_task forwards task arguments, defaults to the caller folder and
   const invoke = async arguments_ => (await fetch(grant.PADDOCK_BRIDGE_URL, { method: 'POST', headers: { Authorization: 'Bearer ' + grant.PADDOCK_BRIDGE_TOKEN }, body: JSON.stringify({ name: 'dock_call', arguments: { tool: tool.name, arguments: arguments_ } }) })).json();
   const reply = await invoke(args);
   assert.equal(reply.isError, undefined); assert.deepEqual(JSON.parse(reply.content[0].text), { id: 'task-1' });
-  assert.deepEqual(calls[0], { ...args, repo: callerFolder, originConsoleId: 'live' });
+  assert.deepEqual(calls[0], { ...args, repo: callerFolder, originConsoleId: 'live', originConsoleKey: 'stable-console' });
   const split = { ...args, repo: project, split: true, planner: { accountId: 'codex:default' }, reviewer: null, workflow: 'worktree' };
-  assert.equal((await invoke(split)).isError, undefined); assert.deepEqual(calls[1], { ...split, originConsoleId: 'live' });
+  assert.equal((await invoke(split)).isError, undefined); assert.deepEqual(calls[1], { ...split, originConsoleId: 'live', originConsoleKey: 'stable-console' });
   await workbench.invoke(tool.name, args); assert.equal(calls[2].repo, project); assert.equal(calls[2].originConsoleId, null);
   for (const invalid of [{ ...args, split: 'yes' }, { ...args, maxRounds: 6 }, { ...args, sessionId: 'someone-else' }, { criteria: 'Missing title' }]) assert.equal((await invoke(invalid)).isError, true);
   assert.equal(calls.length, 3, 'Invalid input never reaches the task loop');
@@ -304,4 +304,37 @@ test('Meshy fallback requires an agent attempt, preserves accepted IDs and resum
   await restored.remove(id); assert.equal(restored.items.length,0);
   assert.equal(new Concepts(root,{},results,reviews,alerts,{run}).usage[0].credits,9,'Deleting a job keeps the usage ledger');
   const disabled=new Concepts(root,{},results,reviews,alerts,{run,testMode:true}); await assert.rejects(disabled.start({reviewId:'review',nativeStatus:'failed'}),/disabled/);
+});
+
+test('task ownership survives a console restart and keyed tasks never fall back to session IDs', async t => {
+  const { root, project } = fixture(t), dismissed = [];
+  const session = { id: 'restarted', consoleKey: 'stable-owner', alive: true, cwd: project };
+  const sessions = { items: new Map([[session.id, session]]) };
+  let job = { id: 'job', state: 'needs-you', originConsoleId: 'old-session', originConsoleKey: 'stable-owner' };
+  const tasks = { status: async () => job, dismiss: id => dismissed.push(id) };
+  const wb = new Workbench(root, {}, { nativeImage: {} }, { testMode: true, onChange() {}, getSessions: () => sessions, getProject: () => project, getTasks: () => tasks });
+  const close = () => wb.invoke('dock/close_task', { id: 'job', reason: 'Completed directly.' }, session.id);
+  assert.deepEqual(await close(), { id: 'job', closed: true });
+  job = { ...job, originConsoleId: session.id, originConsoleKey: 'someone-else' };
+  await assert.rejects(close(), /Only the console/);
+  session.consoleKey = null;
+  await assert.rejects(close(), /Only the console/);
+  delete job.originConsoleKey;
+  assert.deepEqual(await close(), { id: 'job', closed: true }, 'legacy tasks retain session ownership');
+  job.originConsoleId = 'old-session';
+  await assert.rejects(close(), /Only the console/);
+  assert.equal(dismissed.length, 2);
+});
+
+
+test('compact and full lead instructions keep the scope and reuse contract', t => {
+  const { root } = fixture(t);
+  const hub = new SharedHub(root, { list: () => [] });
+  for (const instructions of [hub.summary(), hub.fullSummary()]) {
+    assert.match(instructions, /user scenario.impact/);
+    assert.match(instructions, /helpers, data shapes and transaction flows/);
+    assert.match(instructions, /same behavior checks/);
+    assert.match(instructions, /Line counts are clues, not objectives/);
+    assert.match(instructions, /manual skill selections and Knowledge Off/);
+  }
 });

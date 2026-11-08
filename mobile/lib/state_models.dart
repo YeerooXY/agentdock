@@ -245,7 +245,7 @@ class UsageWindow {
   /// Null means the provider did not report a percentage. Never show it as 0.
   final num? usedPercent;
   final int? minutes, resetsAt, observedAt;
-  final bool unlimited;
+  final bool unlimited, notApplicable;
   const UsageWindow({
     required this.key,
     required this.label,
@@ -257,6 +257,7 @@ class UsageWindow {
     this.resetsAt,
     this.observedAt,
     this.unlimited = false,
+    this.notApplicable = false,
   });
   factory UsageWindow.fromJson(Map<String, dynamic> j) => UsageWindow(
     key: _str(j['key']) ?? '',
@@ -269,6 +270,7 @@ class UsageWindow {
     resetsAt: _int(j['resetsAt']),
     observedAt: _int(j['observedAt']),
     unlimited: _bool(j['unlimited']),
+    notApplicable: _bool(j['notApplicable']),
   );
 }
 

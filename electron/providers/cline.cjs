@@ -1,6 +1,7 @@
 'use strict';
 module.exports = {
   id: 'cline',
+  settings: { strategy: 'cli' },
   catalog: {
     name: 'Cline',
     command: 'cline',

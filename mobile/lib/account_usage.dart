@@ -236,7 +236,10 @@ class UsageWindow extends StatelessWidget {
     final remaining = used == null ? null : 100 - used;
     final label = '${window['label'] ?? windowLabel(window['minutes'])}';
     final unlimited = window['unlimited'] == true;
-    final amount = unlimited
+    final notApplicable = window['notApplicable'] == true;
+    final amount = notApplicable
+        ? 'Not applicable'
+        : unlimited
         ? 'Unlimited'
         : remaining == null
         ? 'Unknown'
@@ -263,7 +266,7 @@ class UsageWindow extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 10),
-        if (!unlimited)
+        if (!unlimited && !notApplicable)
           Semantics(
             label: '$label allowance remaining',
             value: amount,

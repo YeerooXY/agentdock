@@ -99,9 +99,9 @@ test('owner reservations use the one hour away release and never preempt an acti
   owners.register({ consoleKey: 'owner', launchId: 'launch', accountId: 'account', ownerCreated: true });
   owners.heartbeat([{ consoleKey: 'owner', launchId: 'launch' }]);
   owners.interaction('owner', 'launch', 'focus', { trusted: true, focused: true });
-  const waiting = scheduler.acquire(request('auto', { accountId: 'account' }));
+  const waiting = scheduler.acquire(request('auto', { accountId: 'account', capacity: 1 }));
   assert.equal(scheduler.pending[0].reason, 'Reserved for owner');
-  const ownerRelease = await scheduler.acquire(request('owner-turn', { accountId: 'account', consoleKey: 'owner', automatic: false }));
+  const ownerRelease = await scheduler.acquire(request('owner-turn', { accountId: 'account', capacity: 1, consoleKey: 'owner', automatic: false }));
   assert.equal(scheduler.active.get('owner-turn').owner, true);
   now += AWAY_MS + 1; scheduler.drain(); assert.equal(scheduler.pending.length, 1);
   ownerRelease(); (await waiting)(); assert.equal(scheduler.active.size, 0);
@@ -234,4 +234,14 @@ test('stopping an active task closes its mock provider and releases admission', 
   await tick(); assert.ok(child); assert.equal(scheduler.active.size, 1);
   await loop.stop(job.id); await turn;
   assert.equal(job.state, 'stopped'); assert.equal(scheduler.active.size, 0);
+});
+
+
+test('five model turns belong to each project and unspecified account caps do not recreate one slot', () => {
+  const { admissionReason, resourceProfile } = require('../electron/scheduler.cjs');
+  const active = Array.from({ length: 5 }, (_, i) => ({ id: String(i), kind: 'model', projectId: 'first', quotaGroupId: 'same' }));
+  const second = resourceProfile({ kind: 'model', projectId: 'second', accountId: 'same' });
+  assert.equal(admissionReason(second, active), null);
+  assert.match(admissionReason({ ...second, projectId: 'first' }, active), /free slot/);
+  assert.equal(admissionReason({ ...second, capacity: 1 }, active), 'Waiting for same');
 });

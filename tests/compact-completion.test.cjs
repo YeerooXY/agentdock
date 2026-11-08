@@ -21,6 +21,39 @@ function fixture(t) {
   const complete = (extra = {}) => call('finish_turn', { turnId: wb.completion.turn(session.id).id, outcome: 'changed', summary: 'Implemented and verified the selected layout.', nextStep: 'Review the rendered page.', outputs: 'none', ...extra });
   return { root, projects, project, session, wb, hub, jobs, tasks, call, context, complete };
 }
+
+test('completion repairs a missing internal task outcome without requiring a Results card', async t => {
+  const f = fixture(t);
+  await f.context({ includeProject: true });
+  await f.call('start_task', { title: 'Bounded slice', criteria: 'Implement it.', implementer: { accountId: 'mock' } });
+  const job = f.jobs.get('worker');
+  Object.assign(job, { state: 'passed', resultId: null, unresolved: [] });
+  let writes = 0;
+  f.tasks.hasRecordedOutcome = candidate => !!candidate?.executionHistory;
+  f.tasks.record = async candidate => { writes++; candidate.executionHistory = { kind: 'task', id: candidate.id, revision: 1, updatedAt: 1 }; };
+  await f.complete();
+  const record = f.wb.completion.read(f.wb.completion.turn(f.session.id));
+  assert.equal(writes, 1);
+  assert.equal(record.tasks[0].executionHistory.id, 'worker');
+  assert.equal(record.tasks[0].resultId, null);
+  assert.equal(f.wb.results.items.length, 0);
+});
+test('completion retries a legacy archive failure despite an existing saved Result', async t => {
+  const f = fixture(t);
+  await f.context({ includeProject: true });
+  await f.call('start_task', { title: 'Bounded slice', criteria: 'Implement it.', implementer: { accountId: 'mock' } });
+  const job = f.jobs.get('worker');
+  Object.assign(job, { state: 'passed', resultId: 'legacy', reportError: 'Archive failed', unresolved: [] });
+  let writes = 0;
+  f.tasks.hasRecordedOutcome = candidate => !!candidate?.executionHistory || !!candidate?.resultId;
+  f.tasks.record = async candidate => { writes++; candidate.reportError = ''; candidate.executionHistory = { kind: 'task', id: candidate.id, revision: 1, updatedAt: 1 }; };
+  await f.complete();
+  const record = f.wb.completion.read(f.wb.completion.turn(f.session.id));
+  assert.equal(writes, 1);
+  assert.equal(record.tasks[0].executionHistory.id, 'worker');
+  assert.equal(record.tasks[0].resultId, 'legacy');
+  assert.equal(f.wb.results.items.length, 0);
+});
 test('compact context omits history and expands scoped details without starting another turn', async t => {
   const f = fixture(t); f.projects.decide(f.project.id, { action: 'add', text: 'Use the supplied reference' });
   const brief = await f.context(); const id = f.wb.turns.active.get('owner').id;

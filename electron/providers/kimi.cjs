@@ -1,6 +1,7 @@
 'use strict';
 module.exports = {
   id: 'kimi',
+  settings: { strategy: 'cli' },
   catalog: {
     name: 'Kimi Code',
     command: 'kimi',

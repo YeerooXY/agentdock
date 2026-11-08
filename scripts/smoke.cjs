@@ -11,6 +11,7 @@ const { checkFirstRun } = require('./first-run-check.cjs');
 const { checkToolsAndWindow } = require('./tool-window-check.cjs');
 const { checkWindowsIdentity } = require('./windows-identity-check.cjs');
 const { checkUserData } = require('./user-data-check.cjs');
+const { checkHiddenStartup } = require('./startup-check.cjs');
 const root = path.resolve(__dirname, '..');
 const testParent = path.join(root, 'test-data');
 fs.mkdirSync(testParent, { recursive: true });
@@ -28,6 +29,7 @@ async function eventually(predicate, message) {
 }
 (async () => {
   const problems = [], checks = [];
+  await checkHiddenStartup({ root });
   await checkUserData({ root });
   checks.push('Rename startup restores the existing profile, preserves an established Paddock profile and isolates explicit test data');
   let page;

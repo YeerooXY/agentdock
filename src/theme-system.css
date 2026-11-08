@@ -5,17 +5,9 @@
 @property --spec-b { syntax:'<color>'; inherits:true; initial-value:#00e5ff }
 :root { --light-speed:1; --on-accent:#10111b }
 body { --accent:var(--accent-blue); --wave-len:70vw }
-body[data-trim=classic] { --accent-blue:#89b4ff; --accent-pink:#f19cda }
-body[data-trim=hot-pink] { --accent-blue:#ff6ad5; --accent-pink:#c13cff }
-body[data-trim=blue] { --accent-blue:#80c7ff; --accent-pink:#4f7bff }
-body[data-trim=violet] { --accent-blue:#c7a3ff; --accent-pink:#8f5bff }
-body[data-trim=void] { --accent-blue:#8f80ff; --accent-pink:#5a3fd0; --on-accent:#ffffff; --window-black:#010102 }
-body[data-trim=redline] { --accent-blue:#ff9b91; --accent-pink:#ff3150 }
-body[data-trim=cyber] { --accent-blue:#00e1ff; --accent-pink:#cc55ff }
-body[data-trim=icy] { --accent-blue:#7fe9ff; --accent-pink:#4f9dff }
-body[data-trim=fiery] { --accent-blue:#ffb700; --accent-pink:#ff6a2b }
+body[data-trim=void] { --on-accent:#ffffff; --window-black:#010102 }
+body[data-trim=redline] { --on-accent:#ffffff; --window-black:#030303 }
 body[data-trim=gamer] { --accent-blue:var(--rgb-blue); --accent-pink:var(--rgb-pink) }
-body[data-trim=normal] { --accent-blue:#c4cedc; --accent-pink:#8f9bb0 }
 body[data-speed=slow] { --light-speed:1.8 }
 body[data-speed=fast] { --light-speed:.5 }
 
@@ -100,26 +92,20 @@ body:is([data-ambient=off],[data-visual-paused=true]) :is(.theme-wave,.sidebar-e
 body:is([data-ambient=off],[data-visual-paused=true]) { animation-play-state:paused }
 
 /* Classic keeps its own pastel pair even when another theme is the default. */
-[data-frame=classic] { --frame-a:#89b4ff; --frame-b:#f19cda }
 [data-frame=hot-pink] {
-  --frame-a:#ff6ad5; --frame-b:#c13cff; --theme-surface:#14060f; --theme-header:rgb(36 9 30 / .94); --theme-text:#fff0fa;
+  --theme-surface:#14060f; --theme-header:rgb(36 9 30 / .94); --theme-text:#fff0fa;
   --frame-border:linear-gradient(90deg,#ff6ad5,#ff2fa0 40%,#c13cff);
   --theme-pattern:linear-gradient(transparent 62%,#ff2fa012 62.3%,transparent 63%,transparent 74%,#ff2fa018 74.3%,transparent 75%,transparent 86%,#ff2fa020 86.4%,transparent 87.4%),radial-gradient(ellipse 60% 40% at 50% 112%,#ff2fa033,transparent 70%),radial-gradient(ellipse at 0 0,#c13cff14,transparent 50%);
   --theme-glow:color-mix(in srgb,#ff2fa0 30%,transparent);
 }
 [data-frame=hot-pink]>:where(.console-skin)>.theme-trace::before,[data-frame=hot-pink]>:where(.console-skin)>.theme-trace::after { height:2px; box-shadow:0 0 6px #ff6ad5,0 0 14px #ff2fa0 }
 [data-frame=void] {
-  --frame-a:#7b6cff; --frame-b:#35246e; --theme-surface:#020205; --theme-header:rgb(6 5 13 / .97); --theme-text:#d9d6ea; --theme-muted:#8c88a6;
+  --theme-surface:#020205; --theme-header:rgb(6 5 13 / .97); --theme-text:#d9d6ea; --theme-muted:#8c88a6;
   --frame-border:linear-gradient(135deg,#5a4bc4,#0e0b1d 32%,#08070f 68%,#2a1f5c);
   --theme-pattern:radial-gradient(circle at 82% 18%,#1a1238 0,#0b0818 9%,transparent 22%),radial-gradient(ellipse at 50% 120%,#120c2a,transparent 60%);
   --theme-glow:color-mix(in srgb,#5a3fd0 12%,transparent);
 }
 [data-frame=void]>:where(.console-skin)>.theme-trace::before,[data-frame=void]>:where(.console-skin)>.theme-trace::after { opacity:.45 }
-[data-frame=icy] { --frame-a:#7fe9ff; --frame-b:#4f9dff }
-[data-frame=fiery] { --frame-a:#ff6a2b; --frame-b:#ffb700 }
-[data-frame=redline] { --frame-a:#ff9b91; --frame-b:#ff3150 }
-[data-frame=blue] { --frame-a:#80c7ff; --frame-b:#4f7bff }
-[data-frame=violet] { --frame-a:#c7a3ff; --frame-b:#8f5bff }
 body[data-trim=void] .sidebar,body[data-trim=void] .titlebar { background:#010102 }
 body[data-trim=void] .surface { background:#05050a }
 
@@ -291,13 +277,13 @@ body:not([data-textures=off]) .theme-chip { background:linear-gradient(color-mix
    pure black for reading; red lives only on the trim, the corner slashes
    and a carbon-weave header. No texture or streaks behind the text. */
 [data-frame=redline] {
-  --frame-a:#ff2a3d; --frame-b:#b0001a; --theme-surface:#040404; --theme-header:rgb(9 9 9 / .97); --theme-text:#f4f4f4;
+  --theme-surface:#040404; --theme-header:rgb(9 9 9 / .97); --theme-text:#f4f4f4;
   --theme-pattern:none; --theme-texture:none; --frame-shape:polygon(14px 0,100% 0,100% calc(100% - 14px),calc(100% - 14px) 100%,0 100%,0 14px);
   --inner-shape:polygon(13px 0,100% 0,100% calc(100% - 13px),calc(100% - 13px) 100%,0 100%,0 13px);
   --frame-border:linear-gradient(135deg,#ff2a3d 0 9%,#2a2a2a 9.2% 46%,#1a1a1a 46% 90.8%,#ff2a3d 91% 100%);
   --theme-glow:color-mix(in srgb,#ff2a3d 16%,transparent);
 }
-body[data-trim=redline] { --accent-blue:#ff4d5e; --accent-pink:#d10022; --on-accent:#ffffff; --window-black:#030303 }
+body[data-trim=redline] { --on-accent:#ffffff; --window-black:#030303 }
 [data-frame=redline]>:where(.console-skin)>.theme-trace::before { top:0; left:22px; width:30%; height:4px; background:linear-gradient(90deg,#ff2a3d,#ff2a3d 70%,transparent); box-shadow:0 0 8px #ff2a3d88; clip-path:polygon(0 0,100% 0,calc(100% - 4px) 100%,4px 100%) }
 [data-frame=redline]>:where(.console-skin)>.theme-trace::after { bottom:0; right:22px; width:30%; height:4px; background:linear-gradient(270deg,#ff2a3d,#ff2a3d 70%,transparent); box-shadow:0 0 8px #ff2a3d88; clip-path:polygon(4px 0,calc(100% - 4px) 0,100% 100%,0 100%) }
 :is([data-frame=redline]>.console-panel-header,[data-frame=redline]>.empty-panel-header,[data-frame=redline]>header) {

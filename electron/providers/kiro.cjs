@@ -1,6 +1,8 @@
 'use strict';
 module.exports = {
   id: 'kiro',
+  settings: { strategy: 'cli' },
+  session: { steering: true },
   catalog: {
     name: 'Kiro',
     command: 'kiro-cli',

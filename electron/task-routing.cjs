@@ -133,6 +133,7 @@ function estimateEffort({ criteria = '', title = '' } = {}) {
 }
 function accountAllowance(id, limits = [], now = Date.now()) {
     const readings = limits.filter(item => item.accountId === id && Number.isFinite(item.observedAt) && item.observedAt <= now);
+    const invalidatedAt = Math.max(-Infinity, ...readings.filter(item => !Array.isArray(item.windows) || !item.windows.length || (item.usageCheck?.status && !['current', 'refreshing'].includes(item.usageCheck.status))).map(item => item.observedAt));
     const latest = new Map();
     for (const item of readings) for (const window of (Array.isArray(item.windows) ? item.windows : [])) {
       const key = window.key ?? `${window.label || ''}:${window.minutes ?? ''}`, before = latest.get(key);
@@ -145,12 +146,12 @@ function accountAllowance(id, limits = [], now = Date.now()) {
         if (check && !['current', 'refreshing'].includes(check)) before.checkStatus = check;
       }
     }
-    const windows = [...latest.values()], fresh = w => (!w.checkStatus || ['current', 'refreshing'].includes(w.checkStatus)) && now - w.observedAt <= 30 * 60_000 && Number.isFinite(w.usedPercent) && w.usedPercent >= 0 && w.usedPercent <= 100;
+    const windows = [...latest.values()].map(window => window.observedAt <= invalidatedAt ? { ...window, usedPercent: null, checkStatus: 'unknown' } : window), fresh = w => (!w.checkStatus || ['current', 'refreshing'].includes(w.checkStatus)) && now - w.observedAt <= 30 * 60_000 && Number.isFinite(w.usedPercent) && w.usedPercent >= 0 && w.usedPercent <= 100;
     const shortest = windows.sort((a, b) => (a.minutes ?? Infinity) - (b.minutes ?? Infinity))[0];
     const status = !windows.length || windows.some(w => !Number.isFinite(w.usedPercent) || w.usedPercent < 0 || w.usedPercent > 100 || (w.checkStatus && !['current', 'refreshing'].includes(w.checkStatus))) ? 'unknown' : windows.some(w => !fresh(w)) ? 'stale' : 'current';
     const controlling = status === 'current' ? windows.reduce((a, b) => a.usedPercent >= b.usedPercent ? a : b) : null;
     return { status, observedAt: readings.length ? Math.max(...readings.map(r => r.observedAt)) : null, plan: readings.slice().sort((a, b) => b.observedAt - a.observedAt).find(r => r.plan)?.plan || null,
-      blocked: windows.some(w => fresh(w) && w.usedPercent >= 90), shortest: shortest && fresh(shortest) ? shortest : null, controlling,
+      blocked: windows.some(w => fresh(w) && w.usedPercent >= 100), shortest: shortest && fresh(shortest) ? shortest : null, controlling,
       remainingPercent: controlling ? 100 - controlling.usedPercent : null, windows };
 }
 function builderAllowed(candidate, rules) {
@@ -241,9 +242,14 @@ function suggestAssignment({ size, candidates = [], limits = [], rules = default
   if (preferDifferentVendor && pool.some(c => c.provider !== reviewBase?.provider)) pool = pool.filter(c => c.provider !== reviewBase?.provider);
   const preferred = rules.defaultReviewer, match = preferred && pool.find(c => c.id === preferred.accountId);
   const discoveredReviews = rules.discoverAccounts ? pool.filter(c => !c.local).map(candidate => ({ candidate, selected: selectModel(candidate, { role: 'reviewer', size, now, excluded: rules.excludedModels }) })).filter(r => r.selected.tier !== null && r.selected.source !== 'account default') : [];
-  const strongest = discoveredReviews.sort((a, b) => b.selected.tier - a.selected.tier || (room(b.candidate.id).remainingPercent ?? -1) - (room(a.candidate.id).remainingPercent ?? -1))[0];
+  const sufficientReviews = discoveredReviews.filter(item => item.selected.tier >= 2);
+  const sufficient = (sufficientReviews.length ? sufficientReviews : discoveredReviews).sort((a, b) => a.selected.tier - b.selected.tier || (room(b.candidate.id).remainingPercent ?? -1) - (room(a.candidate.id).remainingPercent ?? -1))[0];
   const customReviewer = preferred && JSON.stringify(preferred) !== JSON.stringify(defaults.defaultReviewer);
-  if (strongest && !customReviewer) { reviewer = { accountId: strongest.candidate.id, model: strongest.selected.model }; reasons.push(`${strongest.candidate.label}: strongest discovered eligible review tier; model tiers are capability hints.`); }
+  if (sufficient && !customReviewer) {
+    reviewer = { accountId: sufficient.candidate.id, model: sufficient.selected.model };
+    if (sufficient.selected.warning) warnings.push(sufficient.selected.warning);
+    reasons.push(`${sufficient.candidate.label}: ${sufficient.selected.tier < 2 ? 'strongest available model below the preferred review tier' : 'smallest sufficient discovered review tier'}; model tiers are capability hints.`);
+  }
   else if (match && !rules.excludedModels.includes(preferred.model)) { reviewer = { ...preferred }; reasons.push(`${match.label}: default reviewer.`); }
   else if (pool.length && reviewBase) {
     const openCodeModel = ['opencode-go/gpt-6-luna', 'opencode-go/kimi-k3.1-pro', 'opencode/mimo-v2.6-flash-free'].find(model => !rules.excludedModels.includes(model));

@@ -115,7 +115,7 @@ const reports = [], browsers = new Set(), overflowProblems = [];
     for (const view of ['results', 'usage', 'api', 'vault', 'tools', 'instructions', 'settings']) {
       await openPage(page, view); await capture(view);
       if (view === 'results') {
-        assert.equal(await page.locator('#results-count').innerText(), '2');
+        assert.equal(await page.locator('#results-count').count(), 0);
         assert.equal(await page.locator('.result-pagination').isVisible(), false, 'A single Results page has no pagination');
       }
       if (view === 'settings') {
@@ -172,7 +172,7 @@ const reports = [], browsers = new Set(), overflowProblems = [];
     async function checkAcknowledged(session, other) {
       await page.waitForFunction(() => document.querySelector('#ready-count').textContent === '1');
       assert.equal(session.state, 'open'); assert.equal(other.state, 'ready');
-      assert.equal(await page.locator('#results-count').innerText(), '2');
+      assert.equal(await page.locator('#results-count').count(), 0);
     }
     await readyFor(first); await readyFor(second);
     await page.locator(`[data-terminal-id="${second.id}"] .xterm-screen`).click();

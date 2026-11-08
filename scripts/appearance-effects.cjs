@@ -268,7 +268,7 @@ function session(id, name, status = 'active') {
           captures.push(await savePanel(panel, 'blue-expanded-ready-100ms'));
           await page.waitForTimeout(800);
           await panel.locator('[data-action="toggle-console"]').click();
-          await page.locator('.sidebar nav [data-page=results]').click();
+          await require('./ui-navigation.cjs').openPage(page, 'results');
           await page.locator('.sidebar nav [data-page=consoles]').click();
           if (await panel.locator('canvas.console-state-effect').count()) throw new Error('Returning to the grid replayed the Blue Ready effect');
           await page.reload(); await page.locator('.session-grid').waitFor();

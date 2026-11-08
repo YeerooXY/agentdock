@@ -245,3 +245,15 @@ test('Claude model discovery initializes only and preserves account environment 
   assert.deepEqual(models[0].efforts, ['low', 'high']); assert.equal(models[0].resolvedModel, 'claude-sonnet-native');
   assert.ok(f.argv.includes('--restricted')); assert.ok(f.argv.includes('--no-session-persistence'));
 });
+
+
+test('automatic refresh never launches interactive Cursor/Antigravity CLIs and retains cached reading age', async () => {
+  let calls = 0;
+  const usage = new SubscriptionUsage({ now: () => 20000, readers: { antigravity: async account => { calls++; return reading(account.provider, account.id, 1000); }, cursor: async () => { calls++; return []; } } });
+  usage.seed(reading('antigravity', 'antigravity:default', 100));
+  const accounts = [{ id: 'antigravity:default', provider: 'antigravity' }, { id: 'cursor:default', provider: 'cursor' }];
+  await usage.refresh(accounts, { background: true });
+  assert.equal(calls, 0); assert.equal(usage.snapshot().find(x => x.accountId === accounts[0].id).observedAt, 100);
+  assert.equal(usage.snapshot().find(x => x.accountId === accounts[1].id).status, 'limited');
+  await usage.refresh([accounts[0]]); assert.equal(calls, 1);
+});

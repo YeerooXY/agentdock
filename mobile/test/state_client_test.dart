@@ -5,6 +5,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:agent_dock_mobile/dock_client.dart';
+import 'package:agent_dock_mobile/agent_profiles.dart';
 import 'package:agent_dock_mobile/state_client.dart';
 import 'package:agent_dock_mobile/state_protocol.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -117,6 +118,36 @@ void main() {
   });
 
   group('DockClient on /v2/events', () {
+    test('legacy phone frames install served profiles and older PCs restore the fallback', () {
+      final phone = DockClient();
+      addTearDown(phone.dispose);
+      addTearDown(() => AgentProfiles.apply(null));
+      final profiles = Map<String, dynamic>.from(_load('dto/phone-agent-profiles.json')['output']);
+      profiles['providers']['codex']['selectors'] = ['»'];
+      phone.handleMessage(jsonEncode({'type': 'state', 'state': {
+        'sessions': <dynamic>[], 'agentProfiles': profiles,
+      }}));
+      expect(AgentProfiles.current.dialogs['codex']!.selectors, {'»'});
+      phone.handleMessage(jsonEncode({'type': 'state', 'state': {'sessions': <dynamic>[]}}));
+      expect(identical(AgentProfiles.current, AgentProfiles.bundled), isTrue);
+    });
+
+    test('served profiles reach the parser through protocol slices and reset for another PC', () {
+      final phone = DockClient();
+      addTearDown(phone.dispose);
+      addTearDown(() => AgentProfiles.apply(null));
+      final profiles = Map<String, dynamic>.from(_load('dto/phone-agent-profiles.json')['output']);
+      profiles['providers']['codex']['selectors'] = ['»'];
+      final reset = _reset(1);
+      (reset['changes'][0]['value'] as Map)['agentProfiles'] = profiles;
+      phone.socketV2 = true;
+      phone.handleMessage(jsonEncode(_welcome()));
+      phone.handleMessage(jsonEncode(reset));
+      expect(AgentProfiles.current.dialogs['codex']!.selectors, {'»'});
+      phone.activate(null);
+      expect(identical(AgentProfiles.current, AgentProfiles.bundled), isTrue);
+    });
+
     test('slices and extras become the state map; requests are typed', () {
       final phone = DockClient();
       addTearDown(phone.dispose);

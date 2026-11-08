@@ -592,7 +592,7 @@ void main() {
     );
   });
   testWidgets(
-    'Results loads code on demand, and console drafts survive page changes',
+    'console drafts survive page changes and Results widget loads code on demand',
     (tester) async {
       tester.view.physicalSize = const Size(393, 852);
       tester.view.devicePixelRatio = 1;
@@ -606,7 +606,20 @@ void main() {
         find.byType(TextField).last,
         'inspect this project',
       );
-      await tester.tap(find.text('Results').last);
+      expect(
+        find.widgetWithText(NavigationDestination, 'Results'),
+        findsNothing,
+      );
+      await tester.tap(find.widgetWithText(NavigationDestination, 'Usage'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(NavigationDestination, 'Console'));
+      await tester.pumpAndSettle();
+      expect(find.text('inspect this project'), findsOneWidget);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(body: ResultsPage(client: c)),
+        ),
+      );
       await tester.pumpAndSettle();
       expect(find.text('Changed code'), findsOneWidget);
       expect(c.calls.contains('results.preview'), false);
@@ -621,9 +634,6 @@ void main() {
       expect(c.calls.contains('results.seen'), true);
       await tester.pageBack();
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Console').last);
-      await tester.pumpAndSettle();
-      expect(find.text('inspect this project'), findsOneWidget);
       expect(tester.takeException(), isNull);
     },
   );

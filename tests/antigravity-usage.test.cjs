@@ -23,6 +23,32 @@ Five Hour Limit Remaining
  Quota available
 ↑/↓ Scroll · esc Close`;
 
+const currentCompleteScreen = `Models & Quota
+Account: student@example.edu
+GEMINI MODELS
+Models within this group: Gemini Flash, Gemini Pro
+Weekly Limit Remaining
+ [█████] 100%
+ Quota available
+Five Hour Limit Remaining
+ [█████] 100%
+ Quota available
+CLAUDE AND GPT MODELS
+Models within this group: Claude Opus, Claude Sonnet, GPT-OSS
+Weekly Limit Remaining
+ [] 82.44%
+ Reset 77h 33m
+Five Hour Limit Remaining
+ [█████] 100%
+ Quota available
+GEMINI 4 ARGON
+Gemini 4 Argon is a dedicated experimental preview model for complex multi-step
+code reasoning, agentic planning and specialized analytical workflows.
+Gemini 4 Argon Weekly Limit
+ [] 96.99%
+ Reset 165h 5m
+esc Close`;
+
 function fixture({ response = screen, startup = 'Antigravity CLI 1.4.12\r\n? for shortcuts', silent = false } = {}) {
   let data, exit, options, args, kills = 0; const writes = [];
   const child = {
@@ -53,11 +79,89 @@ test('native quota retains separate model pools, windows and reset times without
   assert.doesNotMatch(JSON.stringify(value), /private@example/);
 });
 
+test('current complete usage page parses empty bars, wrapped prose and separate Argon pool', () => {
+  const [value] = antigravityReading(currentCompleteScreen, 'antigravity:default', 1000);
+  assert.equal(value.windows.length, 5);
+  assert.deepEqual(value.windows.map(w => w.key), [
+    'gemini-models-weekly',
+    'gemini-models-five-hour',
+    'claude-and-gpt-models-weekly',
+    'claude-and-gpt-models-five-hour',
+    'gemini-4-argon-weekly'
+  ]);
+  assert.deepEqual(value.windows.map(w => w.usedPercent), [0, 0, 17.56, 0, 3.01]);
+  assert.deepEqual(value.windows.map(w => w.minutes), [10080, 300, 10080, 300, 10080]);
+  assert.deepEqual(value.windows.map(w => w.label), [
+    'Gemini weekly',
+    'Gemini 5-hour',
+    'Claude / GPT weekly',
+    'Claude / GPT 5-hour',
+    'Gemini 4 Argon weekly'
+  ]);
+  assert.equal(value.windows[2].resetsAt, 1000 + (77 * 60 + 33) * 60000);
+  assert.equal(value.windows[2].resetLabel, 'Reset 77h 33m');
+  assert.equal(value.windows[4].resetsAt, 1000 + (165 * 60 + 5) * 60000);
+  assert.equal(value.windows[4].resetLabel, 'Reset 165h 5m');
+  assert.doesNotMatch(JSON.stringify(value), /student@example/);
+});
+
+test('a partial frame cannot publish older pools while the Argon block is still arriving', () => {
+  assert.equal(antigravityReading(currentCompleteScreen.split('GEMINI 4 ARGON')[0]), null);
+  assert.equal(antigravityReading(currentCompleteScreen.replace('esc Close', '')), null);
+});
+
 test('partial, invalid, loading and unknown quota layouts never invent a reading', () => {
-  for (const invalid of [screen.replace('esc Close', ''), screen.replace('99.05%', '101%'), screen.replace('99.05%', 'unknown'), screen.replace('167h 49m', 'tomorrow'), screen.replace('Five Hour Limit Remaining', 'Different limit'), screen + '\nRefreshing']) assert.equal(antigravityReading(invalid), null);
+  for (const invalid of [
+    screen.replace('99.05%', '101%'),
+    screen.replace('99.05%', 'unknown'),
+    screen.replace('167h 49m', 'tomorrow'),
+    screen.replace('Five Hour Limit Remaining', 'Different limit'),
+    screen + '\nRefreshing',
+    'Models & Quota\nGEMINI MODELS\nWeekly Limit Remaining',
+    currentCompleteScreen.split('Gemini 4 Argon Weekly Limit')[0] + 'Gemini 4 Argon Weekly Limit',
+    currentCompleteScreen.split('96.99%')[0],
+    currentCompleteScreen + '\nUNKNOWN EXPERIMENTAL GROUP\nTokens: unlimited'
+  ]) {
+    assert.equal(antigravityReading(invalid), null);
+  }
   assert.equal(antigravityReading('Login required'), null);
   const single = screen.split('CLAUDE AND GPT MODELS')[0] + 'esc Close';
   assert.equal(antigravityReading(single)[0].windows.length, 2);
+});
+
+const exhaustedScreen = screen.replace('Weekly Limit Remaining\n [█████] 100.00%', 'Weekly Limit Remaining\n [░░░░░] 0.00%')
+  .replace('Five Hour Limit Remaining\n [█████] 100.00%\n Quota available', 'Five Hour Limit Remaining\n Disabled: You have hit your weekly limit, the 5-hour limit does not currently apply. Your weekly limit will fully refresh in 5 days, 7 hours.');
+
+test('CLI 1.5 disabled five-hour window preserves exhausted weekly quota without inventing capacity', () => {
+  const [value] = antigravityReading(exhaustedScreen, 'antigravity:default', 1000);
+  assert.equal(value.windows.length, 4);
+  assert.equal(value.windows[2].usedPercent, 100);
+  assert.deepEqual(value.windows[3], { key: 'claude-and-gpt-models-five-hour', modelGroup: 'claude-and-gpt-models', label: 'Claude / GPT 5-hour', minutes: 300,
+    usedPercent: null, notApplicable: true, resetsAt: null, resetLabel: 'Weekly limit reached' });
+  assert.equal(antigravityReading(exhaustedScreen.replace('[░░░░░] 0.00%', '[█████] 50.00%')), null);
+});
+
+test('0% exhausted pool in Argon computes 100% used without inventing 5-hour window', () => {
+  const exhaustedArgon = currentCompleteScreen.replace(
+    'Gemini 4 Argon Weekly Limit\n [] 96.99%\n Reset 165h 5m',
+    'Gemini 4 Argon Weekly Limit\n [░░░░░] 0.00%\n Reset 12h 30m'
+  );
+  const [value] = antigravityReading(exhaustedArgon, 'antigravity:default', 1000);
+  assert.equal(value.windows.length, 5);
+  const argon = value.windows[4];
+  assert.equal(argon.key, 'gemini-4-argon-weekly');
+  assert.equal(argon.usedPercent, 100);
+  assert.equal(argon.resetsAt, 1000 + (12 * 60 + 30) * 60000);
+  assert.equal(argon.resetLabel, 'Reset 12h 30m');
+});
+
+test('native CLI 1.5 exhausted quota completes instead of timing out', async () => {
+  const f = fixture({ response: exhaustedScreen, startup: 'Antigravity CLI 1.5.0\r\n? for shortcuts' });
+  const [value] = await readAntigravityUsage(f);
+  assert.equal(value.windows[2].usedPercent, 100);
+  assert.equal(value.windows[3].notApplicable, true);
+  assert.deepEqual(f.writes, ['/usage', '\r']);
+  assert.equal(f.kills, 1);
 });
 
 test('reader uses only native /usage, session-only settings, sanitized environment and owned cleanup', async () => {

@@ -852,6 +852,7 @@ button[data-action="new"].is-holding .new-console-mark>.icon { transform:scale(1
 .skill-pack:first-of-type { border-top:0 }
 .skill-pack-heading { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap }
 .skill-pack h3 { margin:0 }
+.skill-pack h4 { margin:0; font-size:1.17em }
 .skill-pack-heading small,.skill-targets small { display:block; color:#b7b1ca; font-size:12px; margin-top:4px }
 .skill-pack p { color:#c5bfd4; font-size:13px; line-height:1.6; margin:10px 0 }
 .skill-pack summary { font-size:12px; color:#c5b6ed; cursor:pointer }

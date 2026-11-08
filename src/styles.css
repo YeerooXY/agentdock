@@ -17,8 +17,31 @@
 @import './usage-page.css';
 @import './console-trim.css';
 @import './console-themes.css';
+@import './theme-palette.css';
 @import './theme-system.css';
 @import './navigation-rail.css';
 @import './page-layout.css';
 @import './workspace-glass.css';
 @import './usage-glass.css';
+
+/* Project workspace uses the existing surfaces and controls. */
+.project-workspace { padding: clamp(16px, 3vw, 32px); }
+.project-workspace-header { display:flex; align-items:center; flex-wrap:wrap; gap:16px; }
+.project-workspace-header h1 { flex:1; min-width:160px; margin:0; }
+.project-workspace-tabs { display:flex; flex-wrap:wrap; gap:8px; margin:20px 0; }
+.project-workspace-tabs [aria-pressed="true"] { background:var(--accent); color:var(--bg); }
+.project-workspace-panel { display:block; min-height:160px; }
+.project-overview-content, .project-workspace .task-list, .project-outputs, .knowledge-entries { display:grid; gap:14px; }
+.project-overview-section, .project-workspace .task-card, .project-workspace .output-card { padding:18px; }
+.project-workspace p, .project-workspace code { overflow-wrap:anywhere; white-space:pre-wrap; }
+.project-workspace .task-card-heading, .knowledge-entry { display:flex; justify-content:space-between; gap:16px; align-items:center; }
+.project-workspace .task-card h3 { margin:0; }
+.project-workspace .task-actions { display:flex; gap:8px; margin-top:12px; }
+.project-workspace .task-details { margin-top:12px; }
+.project-workspace .output-card { text-align:left; width:100%; }
+.project-knowledge-control { max-width:360px; display:grid; gap:8px; margin-bottom:16px; }
+.project-workspace :focus-visible { outline:2px solid var(--accent); outline-offset:3px; }
+
+.project-workspace-tabs button { padding:10px 16px; border:1px solid var(--border); border-radius:8px; min-height:40px; }
+.project-workspace-tabs [aria-pressed="true"] { color:#10131c; }
+.project-knowledge-actions { margin-bottom:12px; }

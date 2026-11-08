@@ -335,8 +335,16 @@ class SubscriptionUsage {
       this.states.set(id, { accountId: id, provider: values[0].provider, checkedAt: 0, observedAt: Math.max(...values.map(value => value.observedAt)), status: 'stale', message: 'Not checked since Paddock started.', lastReadings: values });
     }
   }
-  async refresh(accounts) {
-    const queue = accounts.filter((account, index) => accounts.findIndex(other => other.id === account.id) === index);
+  async refresh(accounts, { background = false } = {}) {
+    const queue = accounts.filter((account, index) => accounts.findIndex(other => other.id === account.id) === index).filter(account => {
+      // These readers open a full interactive CLI in a PTY. Never do that on a timer.
+      if (!background || !['cursor', 'antigravity'].includes(account.provider)) return true;
+      if (!this.states.has(account.id)) {
+        this.states.set(account.id, { accountId: account.id, provider: account.provider, checkedAt: 0, observedAt: null, status: 'limited', message: 'Refresh manually to read this interactive CLI allowance. Automatic checks do not launch it.', lastReadings: [] });
+        this.onChange();
+      }
+      return false;
+    });
     // Bound native helper concurrency on large account lists.
     const worker = async () => { let account; while ((account = queue.shift())) await this.refreshOne(account); };
     await Promise.all(Array.from({ length: Math.min(3, queue.length) }, worker));
@@ -385,6 +393,7 @@ class SubscriptionUsage {
 }
 function usageHelp(provider) {
   const source = usageSource(provider);
+  if (['cursor', 'antigravity'].includes(provider)) return 'Use Refresh to read this interactive CLI allowance. Automatic checks keep the last reading without launching the CLI.';
   // A CLI with a reader is read in the background; a native command is not the answer.
   if (source?.reader) return 'This CLI’s limits are read in the background. Refresh to check them.';
   if (source?.state === 'no-quota') return 'Local model. It has no account quota.';

@@ -1,9 +1,9 @@
 # Relaunch the development copy of Paddock with the latest code, with an
-# automatic fallback to a known-good version, then keep it running.
+# automatic fallback to a known-good version. Continuous supervision is opt-in.
 #
 #   powershell -ExecutionPolicy Bypass -File scripts\relaunch.ps1                  # fallback: last good version
 #   powershell -ExecutionPolicy Bypass -File scripts\relaunch.ps1 -Fallback ede5216 # fallback: this commit
-#   ... -Hours 16      keep Paddock running for this long (default 16; 0 = only switch once)
+#   ... -Hours 16      explicitly keep Paddock running for this long (default 0: switch once)
 #   ... -Fallback      also accepts "none" to skip the fallback copy
 #   ... -DelaySeconds  wait before stopping Paddock (lets an agent finish its reply)
 #
@@ -12,7 +12,7 @@
 # Paddock and the console that started it have closed. Results are written to
 # .build\relaunch\<time>\status.json and supervisor.log; create a file named
 # "stop" there to end supervision early.
-param([string]$Fallback = '', [double]$Hours = 16, [int]$DelaySeconds = 0)
+param([string]$Fallback = '', [double]$Hours = 0, [int]$DelaySeconds = 0)
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $PSScriptRoot
 $exe = Join-Path $repo 'node_modules\electron\dist\electron.exe'
@@ -54,14 +54,14 @@ $run = Join-Path $runs (Get-Date -Format 'yyyyMMdd-HHmmss'); New-Item -ItemType 
 [ordered]@{
   exe = $exe; appFolder = $repo; rollbackFolder = $(if ($fallbackFolder) { $fallbackFolder } else { $repo }); dataFolder = $data
   mobileEnabled = [bool]$mobile.enabled; mobileHost = [string]$mobile.host; mobilePort = $(if ($mobile.port) { [int]$mobile.port } else { 47831 })
-  hours = $Hours; startDelaySeconds = $DelaySeconds; newCommit = $newCommit; lastGoodFile = $lastGoodFile
+  hours = $Hours; startDelaySeconds = $DelaySeconds; requestedAt = (Get-Date).ToString('o'); newCommit = $newCommit; lastGoodFile = $lastGoodFile
 } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $run 'config.json') -Encoding utf8
 
 # A scheduled task runs outside Paddock's process tree, in this user's desktop session.
 $name = 'Paddock relaunch ' + (Split-Path $run -Leaf)
 $supervisor = Join-Path $PSScriptRoot 'paddock-supervisor.ps1'
-$action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$supervisor`" -Root `"$run`""
-$settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Hours ([Math]::Max(1, [Math]::Ceiling($Hours + 1)))) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable
+$action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$supervisor`" -Root `"$run`""
+$settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Hours ([Math]::Max(1, [Math]::Ceiling($Hours + 1)))) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
 $principal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType Interactive -RunLevel Limited
 Register-ScheduledTask -TaskName $name -Action $action -Settings $settings -Principal $principal -Force | Out-Null
 Start-ScheduledTask -TaskName $name

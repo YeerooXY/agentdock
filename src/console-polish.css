@@ -1,4 +1,4 @@
-:root { --accent-blue:#89b4ff; --accent-pink:#f19cda; --window-black:#0c0d13; --console-black:#010103; --empty-black:#05060a }
+:root { --window-black:#0c0d13; --console-black:#010103; --empty-black:#05060a }
 body[data-accent=blue] { --accent-pink:#a2c5ff }
 body[data-accent=pink] { --accent-blue:#daa8ed }
 .icon-blue { stop-color:var(--accent-blue) }

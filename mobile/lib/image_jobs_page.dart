@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'dock_client.dart';
-import 'results_page.dart';
+import 'features/results/result_detail.dart';
 
 class ImageJobsPage extends StatefulWidget {
   final DockClient client;

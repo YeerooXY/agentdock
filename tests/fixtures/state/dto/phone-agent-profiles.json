@@ -1,0 +1,72 @@
+{
+  "screens": [
+    {
+      "file": "claude-trust-prompt.txt",
+      "provider": "claude",
+      "selected": 0,
+      "options": ["No, exit", "Yes, I trust this folder"]
+    },
+    {
+      "file": "codex-approval.txt",
+      "provider": "codex",
+      "selected": 0,
+      "options": [
+        "Yes, proceed (y)",
+        "Yes, and don't ask again for commands that start with `git push` (p)",
+        "No, and tell Codex what to do differently (esc)"
+      ]
+    },
+    {
+      "file": "codex-model-menu.txt",
+      "provider": "codex",
+      "menu": true,
+      "selected": 2,
+      "options": [
+        "GPT-6.1-Sol",
+        "GPT-6-Astra",
+        "GPT-6.1 Terra (current)",
+        "GPT-6-Sol",
+        "GPT-6-Luna",
+        "GPT-5.6-Sol",
+        "GPT-5.6-Terra",
+        "GPT-5.6-Luna"
+      ]
+    }
+  ],
+  "output": {
+    "version": 1,
+    "menu": {
+      "heading": "^\\s*((Select|Choose|Set)\\s+(a\\s+)?(model|reasoning|effort)\\b|Advanced Reasoning\\b)",
+      "option": "^\\s*([›❯>→])?\\s*(\\d{1,2})[.)]\\s+(.+?)\\s*$",
+      "working": "esc to interrupt"
+    },
+    "providers": {
+      "codex": {
+        "support": "dialog",
+        "selectors": ["›"],
+        "banner": "^>_ OpenAI Codex",
+        "emptyPrompts": ["› Ask Codex to do anything"]
+      },
+      "claude": {
+        "support": "dialog",
+        "selectors": ["❯"],
+        "banner": "Claude Code v|^[▐▛▜▝▘█▀▌ ]+$",
+        "emptyPrompts": []
+      },
+      "antigravity": { "support": "terminal" },
+      "copilot": { "support": "terminal" },
+      "opencode": { "support": "terminal" },
+      "cursor": { "support": "terminal" },
+      "grok": { "support": "terminal" },
+      "kiro": { "support": "terminal" },
+      "qwen": { "support": "terminal" },
+      "kimi": { "support": "terminal" },
+      "cline": { "support": "terminal" },
+      "droid": { "support": "terminal" },
+      "pi": { "support": "terminal" },
+      "strata": { "support": "terminal" },
+      "shell": { "support": "terminal" },
+      "custom": { "support": "terminal" }
+    }
+  }
+}

@@ -14,10 +14,11 @@ const { names, isNativeWorker, workerLaunch, workerInput, workerPrompt, workerRe
 const { launchArgs: effortLaunchArgs } = require('./task-effort.cjs');
 const { claudeTokens } = require('./native-token-usage.cjs');
 const { fundingFromLimits } = require('./account-funding.cjs');
+const { ExecutionHistory } = require('./execution-history.cjs');
 
 const REVIEWERS = Object.keys(names);
 const MAX_DIFF = 150_000, MAX_REPLY = 6000, MAX_FOCUS = 2000, MAX_FILES = 50;
-const MAX_PER_HOUR = 20, FRESH_MS = 30 * 60_000, FULL_PERCENT = 90;
+const MAX_PER_HOUR = 20, FRESH_MS = 30 * 60_000, FULL_PERCENT = 100;
 
 function git(cwd, args, run = execFile) {
   const safeArgs = args[0] === 'diff' ? ['diff', '--no-textconv', '--no-ext-diff', ...args.slice(1)] : args;
@@ -104,17 +105,17 @@ function pickReviewer({ candidates, limits, callerProvider, requested, now = Dat
       room.known ? `${Math.round(room.left)}% left${room.resetsAt ? `, resets in ${hours(room.resetsAt - now)}` : ''}` : 'usage unknown'];
     return { choice, room, score, why: `${choice.label}: ${reasons.join(', ')}.` };
   }).filter(item => !(item.room.known && item.room.left <= 100 - FULL_PERCENT));
-  if (!scored.length) throw new Error('Every allowed reviewer is at or above 90% of its limit. Try again after a reset.');
+  if (!scored.length) throw new Error('Every allowed reviewer is at or above 100% of its limit. Try again after a reset.');
   scored.sort((a, b) => b.score - a.score);
   return scored[0];
 }
 
 // Briefs use stdin or a private prompt file, never command arguments.
-function reviewerLaunch(provider, executable, { outFile, model, effort, platform = process.platform, workFolder, promptFile }) {
-  if (isNativeWorker(provider)) return workerLaunch(provider, executable, { model, effort, review: true, workFolder, promptFile });
+function reviewerLaunch(provider, executable, { outFile, model, effort, platform = process.platform, workFolder, promptFile, textOnly = false }) {
+  if (isNativeWorker(provider)) return workerLaunch(provider, executable, { model, effort, review: true, workFolder, promptFile, textOnly });
   const effortLaunch = effortLaunchArgs(provider, effort);
   const args = provider === 'claude'
-    ? ['-p', '--output-format', 'stream-json', '--verbose', '--tools', 'Read,Grep,Glob', '--strict-mcp-config', '--no-session-persistence', ...(model ? ['--model', model] : []), ...effortLaunch.args]
+    ? ['-p', '--output-format', 'stream-json', '--verbose', '--tools', textOnly ? '' : 'Read,Grep,Glob', '--strict-mcp-config', '--no-session-persistence', ...(model ? ['--model', model] : []), ...effortLaunch.args]
     : provider === 'kiro'
       ? ['chat', '--no-interactive', '--trust-tools=fs_read', ...(model ? ['--model', model] : [])]
       // Codex's default Windows sandbox rejects every command, even reads; the unelevated one enforces read-only.
@@ -243,6 +244,7 @@ class Delegation extends EventEmitter {
   constructor(root, { admission, getSettings, candidates, getLimits, environment, prepareAccount = async () => {}, releaseAccount = () => {}, saveResult, openPanel, panelOpen = () => false, spawnProcess = spawn, run = execFile, now = Date.now, testMode = false } = {}) {
     super();
     Object.assign(this, { getSettings, candidates, getLimits, environment, prepareAccount, releaseAccount, saveResult, openPanel, panelOpen, spawnProcess, run, now, testMode });
+    this.executionHistory = new ExecutionHistory(root, { now });
     this.admission = admission || require('./scheduler.cjs').getScheduler(root, { getSettings });
     this.dir = path.join(root, 'delegations'); this.jobs = new Map(); this.children = new Map(); this.finishers = new Map(); this.started = [];
   }
@@ -250,7 +252,7 @@ class Delegation extends EventEmitter {
     return [...this.jobs.values()].sort((a, b) => b.startedAt - a.startedAt)
       .map(job => ({ job, open: !!job.panelId && this.panelOpen(job.panelId) }))
       .filter(({ job, open }, index) => job.state === 'running' || index < 20 || open)
-      .map(({ job: { id, state, reviewer, why, consoleName, startedAt, finishedAt, verdict, error, resultId, log, panelId, noFreeSlot, queueReason, queuePosition }, open }) => ({ id, state, reviewer, why, consoleName, startedAt, finishedAt, verdict, error, resultId, log: state === 'running' || open ? [...(log || [])] : [], panelId, noFreeSlot, queueReason, queuePosition }));
+      .map(({ job: { id, state, reviewer, why, consoleName, startedAt, finishedAt, verdict, error, resultId, executionHistory, reportError, log, panelId, noFreeSlot, queueReason, queuePosition }, open }) => ({ id, state, reviewer, why, consoleName, startedAt, finishedAt, verdict, error, resultId, executionHistory, reportError, log: state === 'running' || open ? [...(log || [])] : [], panelId, noFreeSlot, queueReason, queuePosition }));
   }
   allowed() {
     const settings = this.getSettings() || {};
@@ -285,9 +287,11 @@ class Delegation extends EventEmitter {
   }
   async run_(job, { brief, outFile, folder }) {
     const settings = this.getSettings() || {}, provider = job.reviewer.provider;
-    let stream, progressTimer, release, processClosed = false;
+    let stream, progressTimer, release, processClosed = false, archiveEnvironment = {};
     const finish = (patch) => {
       if (job.state !== 'running') return;
+      if (patch.text) patch.text = redactText(patch.text, archiveEnvironment);
+      if (patch.error) patch.error = redactText(patch.error, archiveEnvironment);
       stream?.end(); this.admission.cancel(item => item.id === job.id);
       if (child && !processClosed) child.once('close', () => release?.()); else release?.();
       Object.assign(job, patch, { finishedAt: this.now() }); clearTimeout(timer); clearTimeout(progressTimer); this.children.delete(job.id); this.finishers.delete(job.id);
@@ -295,7 +299,7 @@ class Delegation extends EventEmitter {
       this.emit('changed');
       if (prepared) { try { this.releaseAccount(job.reviewer.accountId, provider); } catch {} }
       try { fs.rmSync(folder, { recursive: true, force: true }); } catch {}
-      this.record(job).finally(() => { for (const wake of job.waiters.splice(0)) wake(); this.emit('changed'); });
+      this.record(job, archiveEnvironment).finally(() => { for (const wake of job.waiters.splice(0)) wake(); this.emit('changed'); });
     };
     let timer;
     const startTimer = () => setTimeout(() => { if (child) killTree(child); finish({ state: 'failed', error: 'The review timed out after 10 minutes.' }); }, (settings.delegationTimeoutMinutes || 10) * 60_000);
@@ -315,6 +319,7 @@ class Delegation extends EventEmitter {
       await this.prepareAccount(job.reviewer.accountId, provider); prepared = true;
       if (job.state !== 'running') { this.releaseAccount(job.reviewer.accountId, provider); return; }
       const env = this.environment(job.reviewer.accountId, provider);
+      archiveEnvironment = env;
       const write = progressLog({ brief: brief + '\n' + job.focus, environment: env, append: line => { appendLog(job, line); } });
       stream = progressStream(provider, write);
       child = this.spawnProcess(launch.executable, launch.args, { cwd: job.cwd || job.context?.project || undefined, env: { ...env, ...launch.env }, windowsHide: true, shell: false, stdio: ['pipe', 'pipe', 'pipe'] });
@@ -343,23 +348,28 @@ class Delegation extends EventEmitter {
       }
     });
   }
-  async record(job) {
-    if (!this.saveResult) return;
+  async record(job, environment = {}) {
     const body = [`# Review by ${job.reviewer.label}`, '', `Requested by ${job.consoleName || 'a console'}. ${job.why}`, job.focus ? `\nFocus: ${job.focus}` : '', '',
       job.state === 'done' ? job.text : `Review failed: ${job.error}`].join('\n');
     try {
-      job.resultId = (await this.saveResult({ text: body, ext: '.md', title: `Review by ${job.reviewer.label}`, kind: 'report', status: job.verdict === 'approve' ? 'passed' : job.state === 'done' ? 'needs-review' : 'failed', summary: job.state === 'done' ? `Verdict: ${job.verdict}` : job.error }, job.context))?.id || null;
-    } catch {}
+      const archived = this.executionHistory.put({ kind: 'review', id: job.id,
+        title: `Review by ${job.reviewer.label}`, report: redactText(body, environment) });
+      job.executionHistory = { kind: 'review', id: job.id, revision: archived.revision, updatedAt: archived.updatedAt };
+      job.reportError = '';
+    } catch { job.reportError = 'Execution history could not be saved.'; }
   }
-  async status(id, { waitSeconds = 0, sessionId = null } = {}) {
+  async status(id, { waitSeconds = 0, sessionId = null, includeReport = false, reportOffset, reportLimit, reportRevision } = {}) {
     const job = this.jobs.get(String(id));
     if (!job || (sessionId && job.callerSessionId !== sessionId)) throw new Error('No review with that ID for this console.');
     const wait = Math.min(Math.max(Number(waitSeconds) || 0, 0), 45);
     if (job.state === 'running' && wait) await new Promise(resolve => { const timer = setTimeout(resolve, wait * 1000); job.waiters.push(() => { clearTimeout(timer); resolve(); }); });
-    const out = { id: job.id, state: job.state, reviewer: job.reviewer.label, why: job.why, elapsedSeconds: Math.round(((job.finishedAt || this.now()) - job.startedAt) / 1000) };
+    const out = { id: job.id, state: job.state, reviewer: job.reviewer.label, why: job.why, elapsedSeconds: Math.round(((job.finishedAt || this.now()) - job.startedAt) / 1000),
+      ...(job.executionHistory ? { executionHistory: job.executionHistory } : {}),
+      ...(job.reportError ? { reportError: job.reportError } : {}),
+      ...(includeReport ? { report: this.executionHistory.read('review', job.id, { offset: reportOffset, limit: reportLimit, revision: reportRevision }) } : {}) };
     if (job.state === 'running') return { ...out, queueReason: job.queueReason, queuePosition: job.queuePosition, next: 'Call dock/delegation_status again with waitSeconds to keep waiting.' };
     if (job.state === 'failed' || job.state === 'stopped') return { ...out, error: job.error };
-    return { ...out, verdict: job.verdict, review: job.text.length > MAX_REPLY ? job.text.slice(0, MAX_REPLY) + '\n[shortened; the full review is in Results]' : job.text, usage: job.usage, resultId: job.resultId };
+    return { ...out, verdict: job.verdict, review: job.text.length > MAX_REPLY ? job.text.slice(0, MAX_REPLY) + '\n[shortened; the full review is retained in execution history]' : job.text, usage: job.usage, resultId: job.resultId };
   }
   stop(id) { this.finishers.get(String(id))?.({ state: 'stopped', error: 'Stopped by the user.' }); }
   stopAll() { for (const id of [...this.finishers.keys()]) this.stop(id); }

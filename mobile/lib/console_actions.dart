@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'agent_identity.dart';
+import 'agent_profiles.dart';
 import 'dock_client.dart';
 import 'dock_style.dart';
 
@@ -19,7 +20,10 @@ class _NewConsoleSheetState extends State<NewConsoleSheet> {
   String? agent;
   String project = '', host = '', model = '';
   int folderIndex = 0, modelRevision = 0;
-  bool modelLoading = false, chooseModel = false, worktree = false, repositoryRoot = false;
+  bool modelLoading = false,
+      chooseModel = false,
+      worktree = false,
+      repositoryRoot = false;
   int rootRevision = 0;
   List<Map<String, dynamic>> projects = [], hosts = [], models = [];
   String error = '';
@@ -75,11 +79,22 @@ class _NewConsoleSheetState extends State<NewConsoleSheet> {
 
   Future<void> loadRoot() async {
     final revision = ++rootRevision;
-    setState(() { repositoryRoot = false; worktree = false; });
-    if (host.isNotEmpty || !(widget.client.state['capabilities'] as List? ?? []).contains('console.worktree')) return;
+    setState(() {
+      repositoryRoot = false;
+      worktree = false;
+    });
+    if (host.isNotEmpty ||
+        !(widget.client.state['capabilities'] as List? ?? []).contains(
+          'console.worktree',
+        )) {
+      return;
+    }
     try {
       final result = await widget.client.request('console.worktree.root', {
-        if (project.isNotEmpty) ...{'projectId': project, 'folderIndex': folderIndex},
+        if (project.isNotEmpty) ...{
+          'projectId': project,
+          'folderIndex': folderIndex,
+        },
       });
       if (mounted && current && revision == rootRevision) {
         setState(() => repositoryRoot = result['root'] == true);
@@ -94,7 +109,8 @@ class _NewConsoleSheetState extends State<NewConsoleSheet> {
     setState(() {
       models = [];
       model = '';
-      modelLoading = agent == 'codex' && host.isEmpty;
+      modelLoading =
+          selectedFeatures['mobileModelChoices'] == true && host.isEmpty;
     });
     if (!modelLoading) return;
     try {
@@ -127,6 +143,13 @@ class _NewConsoleSheetState extends State<NewConsoleSheet> {
         if ((saved?['agents'] as List? ?? []).contains(a['id']))
           {...a, 'installed': true},
     ];
+  }
+
+  Map<String, dynamic> get selectedFeatures {
+    final selected = availableAgents
+        .where((entry) => entry['id'] == agent)
+        .firstOrNull;
+    return AgentProfiles.consoleFeaturesFor(selected ?? {'id': agent});
   }
 
   @override
@@ -162,7 +185,7 @@ class _NewConsoleSheetState extends State<NewConsoleSheet> {
                   for (final h in hosts)
                     DropdownMenuItem(
                       value: h['id'] as String,
-                      child: Text('${h['name']} \u00b7 SSH'),
+                      child: Text('${h['name']} (SSH)'),
                     ),
                 ],
                 onChanged: current
@@ -187,7 +210,7 @@ class _NewConsoleSheetState extends State<NewConsoleSheet> {
                 items: [
                   const DropdownMenuItem(
                     value: '',
-                    child: Text('No project \u00b7 default folder'),
+                    child: Text('No project (default folder)'),
                   ),
                   for (final p in projects)
                     DropdownMenuItem(
@@ -200,7 +223,10 @@ class _NewConsoleSheetState extends State<NewConsoleSheet> {
                 ],
                 onChanged: current
                     ? (value) {
-                        setState(() { project = value!; folderIndex = 0; });
+                        setState(() {
+                          project = value!;
+                          folderIndex = 0;
+                        });
                         loadRoot();
                       }
                     : null,
@@ -230,7 +256,10 @@ class _NewConsoleSheetState extends State<NewConsoleSheet> {
                       ),
                   ],
                   onChanged: current
-                      ? (value) { setState(() => folderIndex = value!); loadRoot(); }
+                      ? (value) {
+                          setState(() => folderIndex = value!);
+                          loadRoot();
+                        }
                       : null,
                 ),
               const SizedBox(height: 12),
@@ -239,9 +268,13 @@ class _NewConsoleSheetState extends State<NewConsoleSheet> {
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
                 title: const Text('Isolated worktree'),
-                subtitle: const Text('Works on a new branch in its own folder. Your current files stay untouched.'),
+                subtitle: const Text(
+                  'Works on a new branch in its own folder. Your current files stay untouched.',
+                ),
                 value: worktree,
-                onChanged: current ? (value) => setState(() => worktree = value) : null,
+                onChanged: current
+                    ? (value) => setState(() => worktree = value)
+                    : null,
               ),
             TextField(
               controller: name,
@@ -271,7 +304,7 @@ class _NewConsoleSheetState extends State<NewConsoleSheet> {
                       value: entry['id'] as String,
                       enabled: entry['installed'] == true,
                       child: Text(
-                        '${entry['name']}${entry['installed'] == true ? '' : ' · not installed'}',
+                        '${entry['name']}${entry['installed'] == true ? '' : ' (not installed)'}',
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           color: entry['installed'] == true
@@ -318,7 +351,7 @@ class _NewConsoleSheetState extends State<NewConsoleSheet> {
                     : null,
               ),
             ],
-            if (['codex', 'claude', 'opencode'].contains(agent))
+            if (selectedFeatures['liveModelMenu'] == true)
               CheckboxListTile(
                 contentPadding: EdgeInsets.zero,
                 title: const Text('Choose model in the live menu'),
@@ -356,7 +389,8 @@ class _NewConsoleSheetState extends State<NewConsoleSheet> {
                       if (host.isNotEmpty) 'hostId': host,
                       if (model.isNotEmpty) 'model': model,
                       'chooseModel': chooseModel,
-                      if (worktree && repositoryRoot && host.isEmpty) 'worktree': true,
+                      if (worktree && repositoryRoot && host.isEmpty)
+                        'worktree': true,
                     })
                   : null,
               child: const Text('Open'),

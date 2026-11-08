@@ -3,52 +3,46 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
-import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'package:xterm/xterm.dart';
 
+import 'core/alerts/alert_relay.dart';
+import 'core/connection/endpoint_policy.dart';
+import 'core/connection/socket_transport.dart';
+import 'core/console_scope.dart';
+import 'core/protocol/frame_codec.dart' as frames;
+import 'core/protocol/request_tracker.dart';
+import 'core/protocol/state_stream.dart';
+import 'core/signal.dart';
+import 'core/terminal/console_terminals.dart';
+import 'core/terminal/console_submission.dart';
 import 'pairing_request.dart';
 import 'saved_devices.dart';
 import 'console_drafts.dart';
 import 'agent_selection.dart';
 import 'agent_menu.dart';
+import 'agent_profiles.dart';
 import 'console_theme.dart';
 import 'dock_style.dart';
 import 'state_client.dart';
-import 'state_protocol.dart';
+import 'state_models.dart';
 
-class ConsoleScreen {
-  final Terminal terminal = Terminal(maxLines: 3000);
-  int sequence = -1, epoch = 0, cols = 110, rows = 30;
-  bool receiving = false;
-}
+export 'core/console_scope.dart' show ConsoleScope;
+export 'core/signal.dart' show DockSignal;
+export 'core/terminal/console_terminals.dart' show ConsoleScreen;
 
-class _FrameBytes implements Sink<List<int>> {
-  final bytes = <int>[];
-  @override
-  void add(List<int> chunk) {
-    if (bytes.length + chunk.length > 5 * 1024 * 1024) {
-      throw const FormatException('Frame too large');
-    }
-    bytes.addAll(chunk);
-  }
-
-  @override
-  void close() {}
-}
-
-/// A notifier that anyone can fire; used for the narrow DockClient channels.
-class DockSignal extends ChangeNotifier {
-  int count = 0;
-  void fire() {
-    count++;
-    notifyListeners();
-  }
-}
-
-class DockClient extends ChangeNotifier {
+/// The phone's connection to one paired PC.
+///
+/// This facade keeps the map-shaped API used by pages and tests. It owns the
+/// connection lifecycle (pairing, generation, retry, foreground) and composes
+/// separately owned services:
+/// - [SocketTransport]: pinned TLS client and event socket;
+/// - [RequestTracker]: request/reply matching;
+/// - [StateStream]: state protocol 2 frames;
+/// - [ConsoleTerminals]: per-launch terminal buffers, signals and effects;
+/// - [AlertRelay]: background notifications.
+class DockClient extends ChangeNotifier implements ConsoleScope {
   /// Fires when the paired PC, link state, status text or generation changes.
   final connectionSignal = DockSignal();
 
@@ -57,19 +51,29 @@ class DockClient extends ChangeNotifier {
 
   /// Fires when the selected console changes.
   final selectionSignal = DockSignal();
-  final Map<String, DockSignal> _terminalSignals = {};
   Object? _connectionSeen, _appearanceSeen;
   String? _selectionSeen;
 
+  final SocketTransport _transport = SocketTransport();
+  final RequestTracker _requests = RequestTracker();
+  late final ConsoleTerminals _terminals = ConsoleTerminals(this);
+  late final StateStream _stream = StateStream(
+    send: _sendFrame,
+    apply: applyState,
+    changed: notifyListeners,
+    dropSocket: _transport.dropSocket,
+  );
+  late final AlertRelay _alerts = AlertRelay(
+    (notification) => unawaited(
+      background.invokeMethod('notify', notification).catchError((_) {}),
+    ),
+  );
+
   /// Notifier for one terminal, keyed by PC, session and launch. Output fires
   /// only this signal, not the client.
-  DockSignal terminalSignal(String id) =>
-      _terminalSignals.putIfAbsent(terminalKey(id), DockSignal.new);
+  DockSignal terminalSignal(String id) => _terminals.signal(id);
 
-  String terminalKey(String id) {
-    final session = sessions.where((s) => s['id'] == id).firstOrNull;
-    return '$activePC:$id:${session?['launchId'] ?? ''}';
-  }
+  String terminalKey(String id) => _terminals.key(id);
 
   Object get _connectionStamp =>
       Object.hash(activePC, connected, connecting, status, generation);
@@ -107,14 +111,11 @@ class DockClient extends ChangeNotifier {
 
   final Map<String, AgentSelection> _agentSelections = {};
   final Map<String, String> _selectionConfirmations = {};
-  String _selectionKey(String id) {
-    final session = sessions.where((s) => s['id'] == id).firstOrNull;
-    return '$activePC:$generation:$id:${session?['providerSessionId']}';
-  }
+  String _selectionKey(String id) =>
+      '$activePC:$generation:$id:${typedSession(id)?.providerSessionId}';
 
   AgentSelection agentSelection(String id) {
-    final session =
-        sessions.where((s) => s['id'] == id).firstOrNull ?? <String, dynamic>{};
+    final session = sessionMap(id) ?? <String, dynamic>{};
     final reported = AgentSelection.fromSession(session),
         key = _selectionKey(id);
     if (session['requestedSettings'] is Map) return reported;
@@ -188,16 +189,21 @@ class DockClient extends ChangeNotifier {
       }
     });
   }
+  @override
   String get activePC => pairing?['pin'] as String? ?? '';
   final resultFilters = <String, Map<String, String>>{};
   final _resultThumbnails = <String, Future<Uint8List?>>{};
 
-  bool supportsResult(String capability) =>
+  bool supportsResult(String capability) => supports(capability);
+
+  /// Whether the connected PC reports [capability].
+  bool supports(String capability) =>
       (state['capabilities'] as List? ?? []).contains(capability);
 
   Future<Uint8List?> resultThumbnail(String id) {
     final key = '$activePC:$id';
-    if (!_resultThumbnails.containsKey(key) && _resultThumbnails.length >= 128) {
+    if (!_resultThumbnails.containsKey(key) &&
+        _resultThumbnails.length >= 128) {
       _resultThumbnails.remove(_resultThumbnails.keys.first);
     }
     return _resultThumbnails.putIfAbsent(key, () async {
@@ -218,41 +224,29 @@ class DockClient extends ChangeNotifier {
   void forgetResultThumbnail(String id) {
     _resultThumbnails.remove('$activePC:$id');
   }
+
   String get pcName =>
       pairing == null ? 'Computers' : SavedDevices.label(pairing!);
   String get phoneName => devices.phoneName;
   bool changingDevice = false;
   bool stayConnected = false;
   double textScale = 1.0;
-  bool _alertBaselinePending = false;
-  final Set<String> _seenAlerts = {};
   int _alertModeGeneration = -1;
   bool get connectionAllowed => foreground || stayConnected;
   String deviceStoreError = '';
   final Map<String, String> _selections = {};
-  final Set<String> _pendingConsoleOpenings = {};
-  final Map<String, int> _consoleStateEffectSequences = {};
-  final Map<String, String> _consoleStateEffectKinds = {};
-  final Map<String, int> _consoleOutputBurstSequences = {};
-  final Map<String, int> _consoleOutputSequences = {};
-  final Map<String, DateTime> _consoleOutputLastPackets = {};
-  final Map<String, int> _consoleOutputGenerations = {};
-  final Set<String> _pendingConsoleOutputBaselines = {};
-  int _consoleBaselineGeneration = -1;
   Map<String, dynamic>? pairing;
   Map<String, dynamic> state = {'sessions': <dynamic>[], 'unreadResults': 0};
-  final Map<String, ConsoleScreen> screens = {};
-  final Map<String, Completer<dynamic>> pending = {};
-  WebSocket? socket;
-  HttpClient? transport;
-  // State protocol 2 (/v2/events). The cache stays across reconnects to the
-  // same PC so a resume sends only what changed; PCs that answer 404 (older
-  // builds, or protocol 2 turned off) use /v1/events.
-  bool socketV2 = false;
-  final StateClient v2State = StateClient();
-  Map<String, dynamic> _v2Extras = {};
-  final Set<String> _v2Refused = {};
-  int _v2Retries = 0;
+  Map<String, ConsoleScreen> get screens => _terminals.screens;
+  Map<String, Completer<dynamic>> get pending => _requests.pending;
+  WebSocket? get socket => _transport.socket;
+  HttpClient? get transport => _transport.http;
+
+  /// Whether the open socket uses state protocol 2 (/v2/events). PCs that
+  /// answer 404 (older builds, or protocol 2 turned off) use /v1/events.
+  bool get socketV2 => _transport.v2;
+  set socketV2(bool value) => _transport.v2 = value;
+  StateClient get v2State => _stream.cache;
   PairingRequest? _pairingRequest;
   String pairingCode = '';
   bool _disposed = false;
@@ -265,23 +259,39 @@ class DockClient extends ChangeNotifier {
   String selected = '', status = 'Pair your PC to begin.', inputError = '';
   // Set after a new pairing so the home screen can offer direct alerts once.
   bool offerAlerts = false;
-  int received = 0, sent = 0, attempts = 0, serial = 0, generation = 0;
+  int received = 0, sent = 0, attempts = 0;
+  @override
+  int generation = 0;
+  int get serial => _requests.serial;
+  @override
   List<Map<String, dynamic>> get sessions =>
       (state['sessions'] as List? ?? []).cast<Map<String, dynamic>>();
+
+  /// Typed console list. The map list stays the wire-compatible source.
+  List<Session> get typedSessions => sessions.map(Session.fromJson).toList();
+
+  @override
+  Map<String, dynamic>? sessionMap(String id) =>
+      sessions.where((s) => s['id'] == id).firstOrNull;
+
+  /// One console as a typed [Session], or null when it is not listed.
+  Session? typedSession(String id) {
+    final map = sessionMap(id);
+    return map == null ? null : Session.fromJson(map);
+  }
+
+  Session? get selectedSession => typedSession(selected);
   ConsoleScreen? get screen => screens[selected];
 
   /// Claims the one-shot opening produced by a live session-list addition.
   /// Initial snapshots and the first state after reconnect never add entries.
-  bool claimConsoleOpening(String id) =>
-      _pendingConsoleOpenings.remove('$activePC:$id');
+  bool claimConsoleOpening(String id) => _terminals.claimOpening(id);
   int consoleStateEffectSequence(String id) =>
-      _consoleStateEffectSequences['$activePC:$id'] ?? 0;
-  String? consoleStateEffectKind(String id) =>
-      _consoleStateEffectKinds['$activePC:$id'];
+      _terminals.stateEffectSequence(id);
+  String? consoleStateEffectKind(String id) => _terminals.stateEffectKind(id);
   int consoleOutputBurstSequence(String id) =>
-      _consoleOutputBurstSequences['$activePC:$id'] ?? 0;
-  int consoleOutputSequence(String id) =>
-      _consoleOutputSequences['$activePC:$id'] ?? 0;
+      _terminals.outputBurstSequence(id);
+  int consoleOutputSequence(String id) => _terminals.outputSequence(id);
 
   Future<void> restore() async {
     // A damaged appearance preference must not prevent pairing restoration.
@@ -327,7 +337,10 @@ class DockClient extends ChangeNotifier {
     textScale = value.clamp(.85, 1.15).toDouble();
     notifyListeners();
     if (save) {
-      await storage.write(key: 'textScale', value: textScale.toStringAsFixed(2));
+      await storage.write(
+        key: 'textScale',
+        value: textScale.toStringAsFixed(2),
+      );
     }
   }
 
@@ -339,139 +352,29 @@ class DockClient extends ChangeNotifier {
     notifyListeners();
   }
 
-  static Map<String, dynamic> parseInvite(String code, {DateTime? now}) {
-    if (!code.trim().startsWith('agentdock:') || code.length > 4000) {
-      throw const FormatException(
-        'Use a pairing code from Paddock on your PC.',
-      );
-    }
-    final invite = jsonDecode(
-      utf8.decode(
-        base64Url.decode(base64Url.normalize(code.trim().substring(10))),
-      ),
-    ) as Map<String, dynamic>;
-    final uri = Uri.parse(invite['url'] as String);
-    // Paddock connects only through Tailscale. Codes from a PC still set up
-    // for Wi-Fi or direct internet are refused with the way forward.
-    if (invite['v'] == 2 ||
-        invite['v'] == 1 && validEndpoint(uri) && !tailnetEndpoint(uri)) {
-      throw const FormatException(
-        'Your PC is not set up for Tailscale. In Paddock on the PC, open Phone setup, choose its Tailscale address, then show a new QR code.',
-      );
-    }
-    if (invite['v'] != 1 ||
-        !tailnetEndpoint(uri) ||
-        invite.containsKey('localUrl') ||
-        !RegExp(r'^[a-f0-9]{64}$').hasMatch(invite['pin'] as String? ?? '') ||
-        !RegExp(r'^[A-Za-z0-9_-]{43}$')
-            .hasMatch(invite['secret'] as String? ?? '')) {
-      throw const FormatException('This pairing code is not valid.');
-    }
-    if ((invite['expires'] as num? ?? 0) <
-        (now ?? DateTime.now()).millisecondsSinceEpoch) {
-      throw const FormatException(
-        'This code expired. Show a new QR code on your PC.',
-      );
-    }
-    return invite;
-  }
+  // Endpoint policy, kept here for existing callers.
+  static Map<String, dynamic> parseInvite(String code, {DateTime? now}) =>
+      EndpointPolicy.parseInvite(code, now: now);
 
   /// Lets tests reach a loopback server in place of a Tailscale address.
   @visibleForTesting
-  static bool loopbackForTests = false;
+  static bool get loopbackForTests => EndpointPolicy.loopbackForTests;
+  @visibleForTesting
+  static set loopbackForTests(bool value) =>
+      EndpointPolicy.loopbackForTests = value;
 
-  /// A Tailscale address (100.64.0.0/10), the only route Paddock accepts.
-  static bool tailnetEndpoint(Uri? uri) {
-    if (loopbackForTests && uri?.host == '127.0.0.1' && validEndpoint(uri!)) {
-      return true;
-    }
-    final b = uri == null
-        ? null
-        : InternetAddress.tryParse(uri.host)?.rawAddress;
-    return uri != null &&
-        b?.length == 4 &&
-        b![0] == 100 &&
-        b[1] >= 64 &&
-        b[1] <= 127 &&
-        validEndpoint(uri);
-  }
-
-  static bool validEndpoint(Uri uri, {bool internet = false}) {
-    final ip = InternetAddress.tryParse(uri.host);
-    final b = ip?.rawAddress;
-    final private =
-        b?.length == 4 &&
-        (b![0] == 10 ||
-            b[0] == 127 ||
-            b[0] == 192 && b[1] == 168 ||
-            b[0] == 172 && b[1] >= 16 && b[1] <= 31 ||
-            b[0] == 100 && b[1] >= 64 && b[1] <= 127);
-    final publicIp =
-        b?.length == 4 &&
-        !private &&
-        b![0] != 0 &&
-        b[0] < 224 &&
-        !(b[0] == 169 && b[1] == 254) &&
-        !(b[0] == 192 && b[1] == 0 && (b[2] == 0 || b[2] == 2)) &&
-        !(b[0] == 198 &&
-            (b[1] == 18 || b[1] == 19 || b[1] == 51 && b[2] == 100)) &&
-        !(b[0] == 203 && b[1] == 0 && b[2] == 113);
-    final hostname =
-        ip == null &&
-        uri.host.length <= 253 &&
-        uri.host.contains('.') &&
-        !RegExp(r'^[\d.]+$').hasMatch(uri.host) &&
-        !RegExp(r'\.(local|localhost|lan|internal|home|invalid|test)$')
-            .hasMatch(uri.host) &&
-        uri.host
-            .split('.')
-            .every(
-              (x) =>
-                  RegExp(r'^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$').hasMatch(x),
-            );
-    if (uri.scheme != 'https' ||
-        !(internet ? publicIp || hostname : private) ||
-        uri.userInfo.isNotEmpty ||
-        uri.path.isNotEmpty ||
-        uri.hasQuery ||
-        uri.hasFragment ||
-        !uri.hasPort ||
-        uri.port < 1024 ||
-        uri.port > 65535) {
-      return false;
-    }
-    return true;
-  }
-
-  /// Saved routes the phone may try. Wi-Fi and internet routes saved before
-  /// Paddock became Tailscale-only are skipped, never contacted.
-  static List<String> endpoints(Map<String, dynamic> config) => {
-    if (config['manualUrl'] is String) config['manualUrl'] as String,
-    if (config['localUrl'] is String) config['localUrl'] as String,
-    if (config['url'] is String) config['url'] as String,
-  }.where((url) => tailnetEndpoint(Uri.tryParse(url))).toList();
-
-  static String connectionError(Object error, Map<String, dynamic> config) {
-    if (error is HandshakeException) {
-      return 'The server identity could not be verified. Check the address and phone clock. Pair again on your PC if its identity changed.';
-    }
-    if (error is WebSocketException && error.httpStatusCode == 401) {
-      return 'This phone was not accepted. Its access may have been removed. Pair it again on your PC.';
-    }
-    final url = config['manualUrl'] ?? config['url'];
-    final uri = url is String ? Uri.tryParse(url) : null;
-    final ip = uri == null ? null : InternetAddress.tryParse(uri.host);
-    final tailnet =
-        ip != null &&
-        ip.type == InternetAddressType.IPv4 &&
-        ip.rawAddress[0] == 100 &&
-        ip.rawAddress[1] >= 64 &&
-        ip.rawAddress[1] <= 127;
-    if (tailnet) {
-      return 'PC unreachable. Turn on Tailscale on this phone, signed in to the same account as your PC, and check that Paddock is running.';
-    }
-    return 'Paddock now connects only through Tailscale. Turn on Tailscale on this phone and your PC, choose the PC’s Tailscale address in PC Phone setup, then enter it under Connection.';
-  }
+  static bool tailnetEndpoint(Uri? uri) => EndpointPolicy.tailnetEndpoint(uri);
+  static bool validEndpoint(Uri uri, {bool internet = false}) =>
+      EndpointPolicy.validEndpoint(uri, internet: internet);
+  static List<String> endpoints(Map<String, dynamic> config) =>
+      EndpointPolicy.endpoints(config);
+  static String connectionError(Object error, Map<String, dynamic> config) =>
+      EndpointPolicy.connectionError(error, config);
+  static Duration routeTimeout(Map<String, dynamic> config, String url) =>
+      EndpointPolicy.routeTimeout(config, url);
+  HttpClient pinned(Map<String, dynamic> config) =>
+      EndpointPolicy.pinned(config);
+  static String decodeFrame(dynamic raw) => frames.decodeFrame(raw);
 
   Future<void> updateAddress(String value) async {
     final url = value.trim();
@@ -527,11 +430,11 @@ class DockClient extends ChangeNotifier {
     disconnectTransport();
     _resultThumbnails.clear();
     pairing = pc;
+    AgentProfiles.apply(null);
     screens.clear();
     selected = _selections[activePC] ?? '';
     state = {'sessions': <dynamic>[], 'unreadResults': 0};
-    v2State.clear();
-    _v2Extras = {};
+    _stream.clear();
     received = sent = attempts = 0;
     inputError = '';
     status = pc == null ? 'Pair your PC to begin.' : 'Connecting…';
@@ -599,28 +502,10 @@ class DockClient extends ChangeNotifier {
   Future<void> reconnect() async {
     if (pairing == null || !foreground) return;
     disconnectTransport();
-    _v2Refused.clear();
+    _transport.forgetV2Refusals();
     foreground = true;
     attempts = 0;
     await connect();
-  }
-
-  static Duration routeTimeout(Map<String, dynamic> config, String url) =>
-      Duration(seconds: config['localUrl'] == url ? 2 : 12);
-
-  HttpClient pinned(Map<String, dynamic> config) {
-    final endpoint = Uri.parse(config['url'] as String);
-    final client = HttpClient(
-      context: SecurityContext(withTrustedRoots: false),
-    );
-    client.connectionTimeout = routeTimeout(config, config['url'] as String);
-    client.badCertificateCallback = (cert, host, port) =>
-        host == endpoint.host &&
-        port == endpoint.port &&
-        cert.startValidity.isBefore(DateTime.now()) &&
-        cert.endValidity.isAfter(DateTime.now()) &&
-        sha256.convert(cert.der).toString() == config['pin'];
-    return client;
   }
 
   Future<void> pair(String code) async {
@@ -718,59 +603,14 @@ class DockClient extends ChangeNotifier {
     await _pairingRequest?.cancel();
   }
 
-  Future<WebSocket> openSocket(Map<String, dynamic> config, int current) async {
-    Object? failure;
-    Object? manualFailure;
-    for (final endpoint in endpoints(config)) {
-      if (!connectionAllowed || current != generation) {
-        throw StateError('Connection paused.');
-      }
-      final client = pinned({...config, 'url': endpoint});
-      transport = client;
-      final pin = config['pin'] as String? ?? '';
-      Future<WebSocket> open(String route) => WebSocket.connect(
-        Uri.parse('$endpoint$route').replace(scheme: 'wss').toString(),
-        headers: {
-          HttpHeaders.authorizationHeader: 'Bearer ${config['token']}',
-        },
-        customClient: client,
-        compression: CompressionOptions.compressionOff,
-      ).timeout(routeTimeout(config, endpoint));
-      try {
-        WebSocket ws;
-        var v2 = !_v2Refused.contains(pin);
-        if (v2) {
-          try {
-            ws = await open('/v2/events');
-          } on WebSocketException catch (error) {
-            // Older PCs, or protocol 2 turned off: the authenticated phone gets 404.
-            if (error.httpStatusCode != 404) rethrow;
-            _v2Refused.add(pin);
-            v2 = false;
-            ws = await open('/v1/events');
-          }
-        } else {
-          ws = await open('/v1/events');
-        }
-        if (current != generation || !connectionAllowed) {
-          await ws.close();
-          client.close(force: true);
-          throw StateError('Connection paused.');
-        }
-        socketV2 = v2;
-        // Detect a dead Wi-Fi/mobile route even when no terminal data is sent.
-        ws.pingInterval = Duration(seconds: foreground ? 15 : 60);
-        return ws;
-      } catch (error) {
-        failure = error;
-        if (endpoint == config['manualUrl']) manualFailure = error;
-        client.close(force: true);
-      }
-    }
-    throw manualFailure ??
-        failure ??
-        StateError('The PC could not be reached.');
-  }
+  /// Opens a pinned socket for [current]. A later generation or a paused
+  /// connection discards the result.
+  Future<WebSocket> openSocket(Map<String, dynamic> config, int current) =>
+      _transport.open(
+        config,
+        wanted: () => connectionAllowed && current == generation,
+        foreground: () => foreground,
+      );
 
   Future<void> connect() async {
     if (pairing == null || !connectionAllowed || connecting || connected) {
@@ -787,7 +627,7 @@ class DockClient extends ChangeNotifier {
         await ws.close();
         return;
       }
-      socket = ws;
+      _transport.adopt(ws);
       connected = true;
       connecting = false;
       attempts = 0;
@@ -800,10 +640,7 @@ class DockClient extends ChangeNotifier {
         onError: (_) => disconnected(current),
         cancelOnError: true,
       );
-      if (socketV2) {
-        _v2Retries = 0;
-        _sendFrame(v2State.hello());
-      }
+      if (socketV2) _stream.start();
       if (selected.isNotEmpty && streaming) await subscribe();
       unawaited(syncPhoneName());
       unawaited(syncAlertMode().catchError((_) {}));
@@ -818,31 +655,21 @@ class DockClient extends ChangeNotifier {
 
   void disconnected(int current, {String? reason}) {
     if (current != generation) return;
-    _pendingConsoleOpenings.clear();
+    _terminals.cancelOpenings();
     ++generation; // Ignore late events from the socket that just failed.
     connected = false;
     connecting = false;
-    socket?.close();
-    socket = null;
-    socketV2 = false;
-    transport?.close(force: true);
-    for (final entry in pending.values) {
-      if (!entry.isCompleted) {
-        entry.completeError(
-          StateError(
-            'Connection lost. Check the console before sending again.',
-          ),
-        );
-      }
-    }
-    pending.clear();
+    _transport.close();
+    _requests.failAll(
+      'Connection lost. Check the console before sending again.',
+    );
     status = connectionAllowed
         ? reason ?? 'Connection lost. Reconnecting to your PC…'
         : 'Paused';
     if (stayConnected) {
       unawaited(
         background
-            .invokeMethod('status', {'name': '$pcName \u00b7 Reconnecting'})
+            .invokeMethod('status', {'name': '$pcName, Reconnecting'})
             .catchError((_) => null),
       );
     }
@@ -856,313 +683,80 @@ class DockClient extends ChangeNotifier {
     notifyListeners();
   }
 
-  static String decodeFrame(dynamic raw) {
-    if (raw is String) {
-      if (raw.length > 5 * 1024 * 1024) {
-        throw const FormatException('Frame too large');
-      }
-      return raw;
-    }
-    if (raw is! List<int> || raw.length > 5 * 1024 * 1024) {
-      throw const FormatException('Frame too large');
-    }
-    final output = _FrameBytes();
-    final decoder = gzip.decoder.startChunkedConversion(output);
-    decoder.add(raw);
-    decoder.close();
-    return utf8.decode(output.bytes);
-  }
-
   void handleMessage(dynamic raw) {
-    var terminalStructural = false;
     try {
       received += raw is String
           ? utf8.encode(raw).length
           : (raw as List<int>).length;
-      final text = decodeFrame(raw);
-      var data = jsonDecode(text) as Map<String, dynamic>;
-      if (socketV2) {
-        // Protocol 2 frames share the socket with replies and terminal output.
-        if (data['type'] == 'chunk') {
-          Map<String, dynamic>? complete;
-          try {
-            complete = v2State.addChunk(data);
-          } on ProtocolError {
-            _v2Recover();
-            return;
-          }
-          if (complete == null) return;
-          data = complete;
-        }
-        if (const {'welcome', 'changes', 'ping', 'error'}.contains(data['type'])) {
-          _receiveV2(data);
-          return;
-        }
-        if (data['type'] == 'extras') {
-          final value = data['value'];
-          _v2Extras = value is Map ? Map<String, dynamic>.from(value) : {};
-          if (v2State.ready) applyState(v2State.legacyState(_v2Extras));
+      Map<String, dynamic>? data =
+          jsonDecode(decodeFrame(raw)) as Map<String, dynamic>;
+      // Protocol 2 frames share the socket with replies and terminal output.
+      if (socketV2) data = _stream.accept(data);
+      if (data == null) return;
+      switch (data['type']) {
+        case 'reply':
+          _requests.reply(data);
           notifyListeners();
-          return;
-        }
-      }
-      if (data['type'] == 'reply') {
-        final done = pending.remove(data['id']);
-        if (done != null && !done.isCompleted) {
-          if (data['error'] != null) {
-            done.completeError(StateError(data['error'] as String));
-          } else {
-            done.complete(data['value']);
-          }
-        }
-      } else if (data['type'] == 'state') {
-        applyState(data['state'] as Map<String, dynamic>);
-      } else if (data['type'] == 'terminal') {
-        final structural = _receiveTerminal(data);
-        if (structural == null) return;
-        terminalStructural = structural;
-      }
-      if (data['type'] == 'terminal') {
-        terminalSignal(data['id'] as String).fire();
-        if (terminalStructural) notifyListeners();
-      } else {
-        notifyListeners();
+        case 'state':
+          applyState(data['state'] as Map<String, dynamic>);
+          notifyListeners();
+        case 'terminal':
+          final structural = _terminals.receive(data, makeScreen);
+          if (structural == null) return;
+          terminalSignal(data['id'] as String).fire();
+          if (structural) notifyListeners();
+        default:
+          notifyListeners();
       }
     } catch (_) {
       status = 'The PC sent an unreadable update. Reconnecting…';
-      socket?.close();
+      _transport.dropSocket();
     }
   }
 
   /// Applies a v1-shaped state map: a v1 `state` frame, or the map rebuilt
   /// from protocol 2 slices and extras.
   void applyState(Map<String, dynamic> nextState) {
-        final previous = {for (final s in sessions) s['id']: s['state']};
-        final nextSessions = (nextState['sessions'] as List? ?? [])
-            .whereType<Map>()
-            .cast<Map<String, dynamic>>()
-            .toList();
-        if (_consoleBaselineGeneration != generation) {
-          _consoleBaselineGeneration = generation;
-          _pendingConsoleOpenings.clear();
-          _pendingConsoleOutputBaselines.addAll(
-            nextSessions.map((session) => '$activePC:${session['id']}'),
-          );
-        } else {
-          for (final session in nextSessions) {
-            if (session['alive'] == true &&
-                !previous.containsKey(session['id'])) {
-              _pendingConsoleOpenings.add('$activePC:${session['id']}');
-              _pendingConsoleOutputBaselines.add('$activePC:${session['id']}');
-            }
-            final key = '$activePC:${session['id']}',
-                oldState = previous[session['id']],
-                nextStateValue = session['state'];
-            final effect = nextStateValue == 'ready' && oldState != 'ready'
-                ? 'ready'
-                : nextStateValue == 'error' && oldState != 'error'
-                ? 'error'
-                : null;
-            if (effect != null) {
-              _consoleStateEffectSequences.update(
-                key,
-                (value) => value + 1,
-                ifAbsent: () => 1,
-              );
-              _consoleStateEffectKinds[key] = effect;
-            }
-          }
-        }
-        final nextIds = nextSessions
-            .map((session) => '$activePC:${session['id']}')
-            .toSet();
-        _pendingConsoleOpenings.removeWhere((key) => !nextIds.contains(key));
-        _consoleStateEffectSequences.removeWhere(
-          (key, _) => !nextIds.contains(key),
-        );
-        _consoleStateEffectKinds.removeWhere(
-          (key, _) => !nextIds.contains(key),
-        );
-        _consoleOutputBurstSequences.removeWhere(
-          (key, _) => !nextIds.contains(key),
-        );
-        _consoleOutputSequences.removeWhere((key, _) => !nextIds.contains(key));
-        _consoleOutputLastPackets.removeWhere(
-          (key, _) => !nextIds.contains(key),
-        );
-        _consoleOutputGenerations.removeWhere(
-          (key, _) => !nextIds.contains(key),
-        );
-        _pendingConsoleOutputBaselines.removeWhere(
-          (key) => !nextIds.contains(key),
-        );
-        state = nextState;
-        if (_alertModeGeneration != generation &&
-            (state['capabilities'] as List? ?? []).contains('alerts.direct')) {
-          _alertModeGeneration = generation;
-          unawaited(syncAlertMode().catchError((_) {}));
-        }
-        if (stayConnected) {
-          final events = state['alerts'] as List?;
-          if (events != null) {
-            for (final event in events.whereType<Map>()) {
-              final key = '$activePC:${event['id']}';
-              if (_seenAlerts.add(key) &&
-                  !_alertBaselinePending &&
-                  !foreground) {
-                unawaited(
-                  background
-                      .invokeMethod('notify', {
-                        // One notification per console: a newer alert replaces its older one.
-                        'key': '$activePC:${event['sessionId'] ?? event['id']}',
-                        'title': event['title'],
-                        'text': event['message'] is String ? event['message'] : '',
-                      })
-                      .catchError((_) {}),
-                );
-              }
-            }
-            _alertBaselinePending = false;
-          } else {
-            for (final s in sessions) {
-              if (previous.containsKey(s['id']) &&
-                  previous[s['id']] != s['state'] &&
-                  ['ready', 'attention', 'error'].contains(s['state']) &&
-                  !foreground) {
-                unawaited(
-                  background
-                      .invokeMethod('notify', {
-                        'key': '$activePC:${s['id']}',
-                        'title': '${s['name']} is ${s['state']}',
-                      })
-                      .catchError((_) {}),
-                );
-              }
-            }
-          }
-          while (_seenAlerts.length > 500) {
-            _seenAlerts.remove(_seenAlerts.first);
-          }
-        }
-        unawaited(rememberRoutes(state['connection']));
-        final ids = sessions.map((s) => s['id']).toSet();
-        screens.removeWhere((id, _) => !ids.contains(id));
-        if (!sessions.any((s) => s['id'] == selected)) {
-          selected = sessions.isEmpty ? '' : sessions.first['id'] as String;
-          if (selected.isNotEmpty && streaming) subscribe().catchError((_) {});
-        }
-        if (!socketV2 &&
-            (state['capabilities'] as List? ?? []).contains('state.v2')) {
-          // The PC turned protocol 2 on: use it on the next connection.
-          _v2Refused.remove(activePC);
-        }
-  }
-
-  /// Writes one terminal frame. Returns whether the screen was replaced, or
-  /// null when the console is unknown.
-  bool? _receiveTerminal(Map<String, dynamic> data) {
-        final id = data['id'] as String;
-        if (!sessions.any((s) => s['id'] == id)) return null;
-        // xterm.dart does not implement RIS (ESC c). A checkpoint needs a
-        // fresh parser and buffers, including modes and partial escape input.
-        final terminalStructural = data['reset'] == true || !screens.containsKey(id);
-        final view = data['reset'] == true
-            ? (screens[id] = makeScreen(id))
-            : screens.putIfAbsent(id, () => makeScreen(id));
-        final now = DateTime.now(), key = '$activePC:$id';
-        final previousGeneration = _consoleOutputGenerations[key];
-        if (data['reset'] == true ||
-            _pendingConsoleOutputBaselines.contains(key) ||
-            previousGeneration != generation) {
-          final reconnectBaseline =
-              _pendingConsoleOutputBaselines.remove(key) ||
-              (previousGeneration != null && previousGeneration != generation);
-          _consoleOutputGenerations[key] = generation;
-          if (reconnectBaseline && _consoleOutputLastPackets.containsKey(key)) {
-            _consoleOutputLastPackets[key] = now;
-          }
-        } else {
-          final previousPacket = _consoleOutputLastPackets[key];
-          _consoleOutputSequences.update(
-            key,
-            (value) => value + 1,
-            ifAbsent: () => 1,
-          );
-          if (previousPacket == null ||
-              now.difference(previousPacket) >
-                  const Duration(milliseconds: 900)) {
-            _consoleOutputBurstSequences.update(
-              key,
-              (value) => value + 1,
-              ifAbsent: () => 1,
-            );
-          }
-          _consoleOutputGenerations[key] = generation;
-          _consoleOutputLastPackets[key] = now;
-        }
-        view.receiving = true;
-        try {
-          view.cols = (data['cols'] as num).toInt();
-          view.rows = (data['rows'] as num).toInt();
-          if (view.terminal.viewWidth != view.cols ||
-              view.terminal.viewHeight != view.rows) {
-            view.terminal.resize(view.cols, view.rows);
-          }
-          view.terminal.write(data['data'] as String);
-          view.sequence = (data['sequence'] as num).toInt();
-          view.epoch = (data['epoch'] as num).toInt();
-        } finally {
-          view.receiving = false;
-        }
-        return terminalStructural;
+    AgentProfiles.apply(nextState['agentProfiles']);
+    final previous = {for (final s in sessions) s['id']: s['state']};
+    final nextSessions = (nextState['sessions'] as List? ?? [])
+        .whereType<Map>()
+        .cast<Map<String, dynamic>>()
+        .toList();
+    _terminals.observeSessions(previous, nextSessions);
+    state = nextState;
+    if (_alertModeGeneration != generation && supports('alerts.direct')) {
+      _alertModeGeneration = generation;
+      unawaited(syncAlertMode().catchError((_) {}));
+    }
+    if (stayConnected) {
+      _alerts.relay(
+        pc: activePC,
+        state: state,
+        previousStates: previous,
+        sessions: sessions,
+        foreground: foreground,
+      );
+    }
+    unawaited(rememberRoutes(state['connection']));
+    _terminals.keepScreens(sessions.map((s) => s['id']).toSet());
+    if (!sessions.any((s) => s['id'] == selected)) {
+      selected = sessions.isEmpty ? '' : sessions.first['id'] as String;
+      if (selected.isNotEmpty && streaming) subscribe().catchError((_) {});
+    }
+    if (!socketV2 && supports('state.v2')) {
+      // The PC turned protocol 2 on: use it on the next connection.
+      _transport.allowV2(activePC);
+    }
   }
 
   void _sendFrame(Map<String, dynamic> message) {
-    final ws = socket;
-    if (ws == null) return;
-    final data = jsonEncode(message);
-    sent += utf8.encode(data).length;
-    ws.add(data);
+    final bytes = _transport.send(jsonEncode(message));
+    if (bytes != null) sent += bytes;
   }
 
-  /// One protocol 2 message: apply it, answer it, and rebuild the state map
-  /// once every slice has arrived.
-  void _receiveV2(Map<String, dynamic> message) {
-    final reply = v2State.receive(message);
-    for (final frame in reply.send) {
-      _sendFrame(frame);
-    }
-    switch (reply.outcome) {
-      case Outcome.applied:
-        _v2Retries = 0;
-        if (v2State.ready) {
-          applyState(v2State.legacyState(_v2Extras));
-          notifyListeners();
-        }
-      case Outcome.reconnect:
-        _v2Recover();
-      case Outcome.error:
-        // The PC lost this subscription; subscribe again from the cache.
-        if (++_v2Retries > 3) {
-          socket?.close();
-        } else {
-          _sendFrame(v2State.hello());
-        }
-      default:
-        break;
-    }
-  }
-
-  /// A batch could not be applied: ask for a fresh subscription on this
-  /// socket. Repeated failures close the socket and reconnect normally.
-  void _v2Recover() {
-    if (++_v2Retries > 3) {
-      socket?.close();
-      return;
-    }
-    _sendFrame(v2State.hello(resume: false));
-  }
-
+  /// A terminal buffer whose keyboard output reaches only the console, PC and
+  /// buffer it was created for.
   ConsoleScreen makeScreen(String id) {
     final view = ConsoleScreen();
     final pin = activePC;
@@ -1184,27 +778,25 @@ class DockClient extends ChangeNotifier {
     if (!connected || socket == null) {
       throw StateError('Reconnect to your PC first.');
     }
-    final id = '${DateTime.now().microsecondsSinceEpoch}-${serial++}',
-        completer = Completer<dynamic>();
-    pending[id] = completer;
-    final data = jsonEncode({
+    final (:id, :completer) = _requests.open();
+    _sendFrame({
       if (socketV2) 'type': 'request',
       'id': id,
       'method': method,
       'payload': payload,
     });
-    sent += utf8.encode(data).length;
-    socket!.add(data);
     try {
-      return await completer.future.timeout(Duration(seconds: method == 'console.settings' ? 120 : 20));
+      return await completer.future.timeout(RequestTracker.timeout(method));
     } finally {
-      pending.remove(id);
+      _requests.close(id);
     }
   }
 
   Future<int> previewStatus(String id, String address) async {
     final config = pairing;
-    if (!connected || config == null) throw StateError('Reconnect to your PC first.');
+    if (!connected || config == null) {
+      throw StateError('Reconnect to your PC first.');
+    }
     final path = Uri.tryParse(address);
     if (path == null || !RegExp(r'^[a-f0-9-]{36}$').hasMatch(id)) {
       throw const FormatException('Invalid preview.');
@@ -1217,10 +809,17 @@ class DockClient extends ChangeNotifier {
           path: '/v1/preview/$id${path.path.isEmpty ? '/' : path.path}',
           query: path.hasQuery ? path.query : null,
         );
-        final request = await client.getUrl(uri).timeout(routeTimeout(config, endpoint));
+        final request = await client
+            .getUrl(uri)
+            .timeout(routeTimeout(config, endpoint));
         request.followRedirects = false;
-        request.headers.set(HttpHeaders.authorizationHeader, 'Bearer ${config['token']}');
-        final response = await request.close().timeout(const Duration(seconds: 32));
+        request.headers.set(
+          HttpHeaders.authorizationHeader,
+          'Bearer ${config['token']}',
+        );
+        final response = await request.close().timeout(
+          const Duration(seconds: 32),
+        );
         await response.drain<void>().timeout(const Duration(seconds: 32));
         return response.statusCode;
       } catch (error) {
@@ -1232,15 +831,20 @@ class DockClient extends ChangeNotifier {
     throw failure ?? StateError('The PC could not be reached.');
   }
 
-  bool get canEditPrompts =>
-      (state['capabilities'] as List? ?? []).contains('prompts.edit');
+  bool get canEditPrompts => supports('prompts.edit');
 
   Future<void> refreshQueue() async {
     final pin = activePC, transportGeneration = generation;
     final snapshot = await request('state');
-    if (!connected || activePC != pin || generation != transportGeneration) return;
+    if (!connected || activePC != pin || generation != transportGeneration) {
+      return;
+    }
     if (snapshot is! Map) return;
-    state = {...state, 'queues': snapshot['queues'], 'prompts': snapshot['prompts']};
+    state = {
+      ...state,
+      'queues': snapshot['queues'],
+      'prompts': snapshot['prompts'],
+    };
     notifyListeners();
   }
 
@@ -1280,83 +884,36 @@ class DockClient extends ChangeNotifier {
   }
 
   Future<void> input(String value, {String? id}) async {
-    if (sessions.any((s) => s['id'] == (id ?? selected) && s['taskId'] != null)) {
+    if (typedSession(id ?? selected)?.taskId != null) {
       throw StateError('Use the worker composer for steering.');
     }
     await request('input', {'id': id ?? selected, 'data': value});
     inputError = '';
   }
 
-  final _workerSubmissions = <String, ({String text, String id})>{};
-  String workerSubmissionId(String id, String text) {
-    final key = '$activePC/$id';
-    if (_workerSubmissions[key]?.text != text) {
-      final random = Random.secure();
-      _workerSubmissions[key] = (text: text,
-        id: base64UrlEncode(List<int>.generate(24, (_) => random.nextInt(256))));
-    }
-    return _workerSubmissions[key]!.id;
-  }
+  late final ConsoleSubmission _submission = ConsoleSubmission(
+    snapshot: () => (
+      pc: activePC,
+      selected: selected,
+      generation: generation,
+      connection: socket,
+      connected: connected,
+      foreground: foreground,
+      bracketedPaste: screens[selected]?.terminal.bracketedPasteMode == true,
+      session: typedSession(selected),
+    ),
+    request: (method, payload) => request(method, payload),
+    input: input,
+  );
+
+  String workerSubmissionId(String id, String text) =>
+      _submission.workerSubmissionId(id, text);
 
   Future<void> submit(
     String text, {
     bool command = false,
     bool Function()? canContinue,
-  }) async {
-    final id = selected, connection = socket, current = generation;
-    final targetPC = activePC;
-    final targetSession = sessions.where((s) => s['id'] == id).firstOrNull;
-    final targetProvider = targetSession?['provider'];
-    final targetChat = targetSession?['providerSessionId'];
-    if (id.isEmpty ||
-        !connected ||
-        !foreground ||
-        canContinue?.call() == false) {
-      throw StateError('Select a connected console first.');
-    }
-    if (text.trim().isEmpty) return;
-    if (targetSession?['taskId'] != null) {
-      if (command) throw StateError('Use the worker composer for steering.');
-      if ((targetSession?['consoleCapabilities'] as Map?)?['steering'] != true) {
-        throw StateError('Steering is unavailable for this CLI.');
-      }
-      await request('worker.submit', {
-        'id': id, 'consoleKey': targetSession?['consoleKey'],
-        'launchId': targetSession?['launchId'],
-        'submissionId': workerSubmissionId(id, text), 'text': text,
-      });
-      _workerSubmissions.remove('$targetPC/$id');
-      return;
-    }
-    if (command && !RegExp(r'^/[a-z][a-z0-9 /_-]*$').hasMatch(text)) {
-      throw StateError('Choose a supported agent command.');
-    }
-    final paste = !command && screens[id]?.terminal.bracketedPasteMode == true;
-    final value = paste ? '\x1b[200~$text\x1b[201~' : text;
-    if (value.length > 65536) throw StateError('This message is too long.');
-    await input(value, id: id);
-    // Keep Enter out of a CLI's paste burst. The acknowledgement confirms the
-    // PC accepted the text, not that the terminal app has processed its input.
-    await Future<void>.delayed(const Duration(milliseconds: 150));
-    if (!connected ||
-        !foreground ||
-        canContinue?.call() == false ||
-        current != generation ||
-        activePC != targetPC ||
-        sessions.where((s) => s['id'] == id).firstOrNull?['provider'] !=
-            targetProvider ||
-        sessions
-                .where((s) => s['id'] == id)
-                .firstOrNull?['providerSessionId'] !=
-            targetChat ||
-        !identical(connection, socket) ||
-        selected != id) {
-      throw StateError(
-        'Message was typed but not submitted. Check the original console.',
-      );
-    }
-    await input('\r', id: id);
-  }
+  }) => _submission.submit(text, command: command, canContinue: canContinue);
 
   Future<void> acknowledge() async {
     if (connected && selected.isNotEmpty) {
@@ -1373,7 +930,7 @@ class DockClient extends ChangeNotifier {
 
   void setForeground(bool value) {
     foreground = value;
-    socket?.pingInterval = Duration(seconds: value ? 15 : 60);
+    _transport.setForeground(value);
     if (value) {
       // Opening Paddock reviews the alerts; clear them from the shade.
       unawaited(background.invokeMethod('clear').catchError((_) {}));
@@ -1429,13 +986,11 @@ class DockClient extends ChangeNotifier {
   }
 
   Future<void> syncAlertMode() async {
-    if ((state['capabilities'] as List? ?? []).contains('alerts.direct')) {
+    if (supports('alerts.direct')) {
       await request('alerts.mode', {'direct': stayConnected});
     }
     if (stayConnected) {
-      await background.invokeMethod('status', {
-        'name': '$pcName \u00b7 $status',
-      });
+      await background.invokeMethod('status', {'name': '$pcName, $status'});
     }
   }
 
@@ -1449,12 +1004,7 @@ class DockClient extends ChangeNotifier {
         );
       }
       await background.invokeMethod('start', {'name': pcName});
-      // Baseline unread IDs instead of comparing clocks on different devices.
-      // Reconnects within this run still deliver unseen events.
-      _alertBaselinePending = !connected;
-      for (final event in (state['alerts'] as List? ?? []).whereType<Map>()) {
-        _seenAlerts.add('$activePC:${event['id']}');
-      }
+      _alerts.baseline(activePC, state['alerts'], connected: connected);
     }
     stayConnected = value;
     await storage.write(key: 'stayConnected', value: '$value');
@@ -1465,25 +1015,15 @@ class DockClient extends ChangeNotifier {
   }
 
   void disconnectTransport() {
-    _pendingConsoleOpenings.clear();
+    _terminals.cancelOpenings();
     generation++;
     retry?.cancel();
-    socket?.close();
-    socket = null;
-    socketV2 = false;
-    transport?.close(force: true);
+    _transport.close();
     connected = false;
     connecting = false;
-    for (final c in pending.values) {
-      if (!c.isCompleted) {
-        c.completeError(
-          StateError(
-            'Connection paused. Check the console before sending again.',
-          ),
-        );
-      }
-    }
-    pending.clear();
+    _requests.failAll(
+      'Connection paused. Check the console before sending again.',
+    );
   }
 
   Future<void> forgetPC(String pin) async {
@@ -1514,17 +1054,14 @@ class DockClient extends ChangeNotifier {
     foreground = false;
     generation++;
     retry?.cancel();
-    socket?.close();
-    transport?.close(force: true);
+    _transport.close();
     drafts.removeListener(notifyListeners);
     drafts.dispose();
-    v2State.dispose();
+    _stream.dispose();
     connectionSignal.dispose();
     appearanceSignal.dispose();
     selectionSignal.dispose();
-    for (final signal in _terminalSignals.values) {
-      signal.dispose();
-    }
+    _terminals.dispose();
     super.dispose();
   }
 }

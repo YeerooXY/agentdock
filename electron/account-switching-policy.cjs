@@ -7,4 +7,8 @@ function accountIdForLimit(limit) {
   return null;
 }
 
-module.exports = { accountIdForLimit };
+function isDefaultAccountLimit(limit) {
+  return typeof limit?.provider === 'string' && accountIdForLimit(limit) === `${limit.provider}:default`;
+}
+
+module.exports = { accountIdForLimit, isDefaultAccountLimit };

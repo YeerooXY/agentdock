@@ -81,6 +81,8 @@ test('phone DTO fixtures match the projection builders', () => {
   }
   const usage = dto('phone-usage-account.json');
   assert.deepEqual(J.phoneUsageAccounts(usage.input).byId[usage.output.id], usage.output);
+  const disabled = dto('phone-usage-disabled.json');
+  assert.deepEqual(J.phoneUsageAccounts(disabled.input).byId[disabled.output.id], disabled.output);
   assert.ok(!JSON.stringify(usage.output).includes('cookie'));
   assert.ok(!JSON.stringify(dto('phone-session.json').output).includes('sk-test'));
   assert.ok(!JSON.stringify(dto('phone-task.json').output).includes('private criteria'));
@@ -91,7 +93,10 @@ test('phone projection exposes allowlisted slices only, without secrets', () => 
   load(writers, store, legacy());
   assert.deepEqual(Object.keys(phone.state()), Object.keys(J.PHONE));
   assert.deepEqual(phone.get('projects').order, ['p1'], 'archived projects stay on the PC');
-  assert.deepEqual(phone.get('shell'), { capacity: 6, version: '0.6.0' });
+  const { agentProfiles, ...shell } = phone.get('shell');
+  assert.deepEqual(shell, { capacity: 6, version: '0.6.0' });
+  assert.deepEqual(agentProfiles, dto('phone-agent-profiles.json').output);
+  assert.deepEqual(P.secretPaths(agentProfiles), []);
   assert.deepEqual(phone.get('results'), { unread: 1, count: 1 });
   const text = JSON.stringify(phone.state());
   for (const banned of ['envKeys', 'openai', 'C:/Users/me', 'loginInstruction', 'Bearer']) assert.ok(!text.includes(banned), banned);
@@ -128,4 +133,19 @@ test('projection batches are valid protocol changes', () => {
   load(writers, store, legacy());
   for (const batch of batches) assert.doesNotThrow(() => P.validateServerMessage({ type: 'changes', epoch: batch.epoch, subscription: 's', batch: batch.batch, changes: JSON.parse(JSON.stringify(batch.changes)) }, batch.view));
   assert.ok(batches.some(batch => batch.view === 'phone'));
+});
+
+
+test('knowledge refresh epochs survive desktop snapshot projection and advance without output changes', () => {
+  const { store, writers, desktop } = setup();
+  const raw = legacy(); raw.workbench.knowledgeEpoch = 0;
+  load(writers, store, raw);
+  assert.ok(jsonEqual(J.legacySnapshot(desktop.state(), J.ephemeralFromLegacy(raw)), raw));
+  const revision = desktop.state().results;
+  raw.workbench.knowledgeEpoch = 2;
+  load(writers, store, raw);
+  const snapshot = J.legacySnapshot(desktop.state(), J.ephemeralFromLegacy(raw));
+  assert.equal(snapshot.workbench.knowledgeEpoch, 2);
+  assert.deepEqual(snapshot.workbench.results, raw.workbench.results);
+  assert.notDeepEqual(desktop.state().results, revision);
 });

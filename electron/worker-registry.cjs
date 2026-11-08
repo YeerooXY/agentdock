@@ -42,8 +42,8 @@ function registryFromRouting({ routing, candidates = [], profiles = {} }) {
     definitions.push({ id: `${level}:${index}:${entry.accountId}:${entry.model}`, accountId: entry.accountId,
       launcher: account?.provider || entry.accountId.split(':')[0], model: entry.model, family: entry.family,
       familyConfirmed: !!entry.family && profile.confirmedFamilies?.[entry.model] === entry.family,
-      level, quotaGroupId: profile.quotaGroupId || entry.accountId, concurrency: profile.concurrency ?? 1,
-      unknownAllowance: profile.unknownAllowance ?? 1, roles: { builder: true, reviewer: true }, canEdit: true,
+      level, quotaGroupId: profile.quotaGroupId || entry.accountId, concurrency: profile.concurrency ?? Number.MAX_SAFE_INTEGER,
+      unknownAllowance: profile.unknownAllowance ?? 0, roles: { builder: true, reviewer: true }, canEdit: true,
       available: !!account && account.installed !== false && account.signedIn !== false,
       needsSetup: entry.needsSetup === true, local: profile.local === true, endpoint: profile.endpoint, cost: profile.cost });
   }
@@ -54,8 +54,10 @@ function registryFromRouting({ routing, candidates = [], profiles = {} }) {
 // window visible, and apply the conservative allowance if any window is unknown.
 function groupHeadroom(limits, accountIds, now = Date.now()) {
   const latest = new Map();
+  const invalidatedAt = new Map();
   for (const reading of limits || []) {
     if (!accountIds.includes(reading.accountId) || !Number.isFinite(reading.observedAt) || reading.observedAt > now) continue;
+    if (!Array.isArray(reading.windows) || !reading.windows.length || (reading.usageCheck?.status && !['current', 'refreshing'].includes(reading.usageCheck.status))) invalidatedAt.set(reading.accountId, Math.max(invalidatedAt.get(reading.accountId) ?? -Infinity, reading.observedAt));
     for (const window of Array.isArray(reading.windows) ? reading.windows : []) {
       const key = JSON.stringify([reading.accountId, window.key ?? `${window.label || ''}:${window.minutes ?? ''}`]);
       const prior = latest.get(key);
@@ -63,6 +65,7 @@ function groupHeadroom(limits, accountIds, now = Date.now()) {
     }
   }
   const windows = [...latest.values()].map(window => {
+    if (window.observedAt <= (invalidatedAt.get(window.accountId) ?? -Infinity)) return { ...window, usedPercent: null, status: 'unknown' };
     const valid = Number.isFinite(window.usedPercent) && window.usedPercent >= 0 && window.usedPercent <= 100;
     const status = !valid ? 'unknown' : now - window.observedAt > FRESH_MS ? 'stale' : 'fresh';
     return { ...window, status };
@@ -70,7 +73,7 @@ function groupHeadroom(limits, accountIds, now = Date.now()) {
   const fresh = windows.filter(window => window.status === 'fresh');
   return { status: !windows.length || accountIds.some(id => !windows.some(window => window.accountId === id)) || windows.some(window => window.status === 'unknown') ? 'unknown' : windows.some(window => window.status === 'stale') ? 'stale' : 'fresh',
     left: fresh.length ? Math.min(...fresh.map(window => 100 - window.usedPercent)) : null,
-    blocked: fresh.some(window => window.usedPercent >= 90), windows };
+    blocked: fresh.some(window => window.usedPercent >= 100), windows };
 }
 
 function routeWorker({ workers, role = 'builder', level, builderFamily, limits = [], active = [], now = Date.now(), rotation = 0, owners, automatic = true } = {}) {

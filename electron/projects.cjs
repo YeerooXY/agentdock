@@ -3,6 +3,7 @@ const fs = require('node:fs'), path = require('node:path'), { randomUUID } = req
 const { EventEmitter } = require('node:events');
 const { readJson, atomicJson } = require('./storage.cjs');
 const planning = require('./project-planning.cjs');
+const { normalizeKnowledgeMode } = require('./knowledge-policy.cjs');
 const projectPalette = ['#89b4ff', '#f19cda', '#8bd6b0', '#f0bf78', '#b8a0f5', '#7ed6d0'];
 function projectColor(color, id) {
   if (/^#[\da-f]{6}$/i.test(color || '')) return color.toLowerCase();
@@ -72,6 +73,7 @@ class Projects extends EventEmitter {
     if (!Array.isArray(raw.milestones || []) || (raw.milestones || []).length > 100) throw new Error('Use up to 100 milestones.');
     const milestones = planning.milestones(raw.milestones || []);
     const item = { id: before?.id || randomUUID(), decisions: before?.decisions || [], name, category: text(raw.category || '', 60, 'Category'), goals: text(raw.goals || '', 10000, 'Goals'), approach: text(raw.approach || '', 10000, 'Plan'), notes: text(raw.notes || '', 20000, 'Notes'), nextStep: text(raw.nextStep || '', 1000, 'Next step'), status: raw.status || 'active', folders, milestones, createdAt: before?.createdAt || Date.now(), updatedAt: Date.now(), lastActiveAt: before?.lastActiveAt || null };
+    item.knowledgeMode = before?.knowledgeMode || 'inherit';
     item.color = projectColor(raw.color ?? before?.color, item.id);
     if (before?.lastProgress) item.lastProgress = before.lastProgress;
     if (before?.plan) {
@@ -141,6 +143,11 @@ class Projects extends EventEmitter {
     if (planFiles) return folder(planning.directory(p));
     if (!Number.isInteger(index) || !p.folders[index]) throw new Error('Project folder not found.');
     return folder(p.folders[index].path);
+  }
+  setKnowledgeMode(id, value) {
+    const project = this.get(id); if (!project) throw new Error('Project not found.');
+    const mode = normalizeKnowledgeMode(value, { project: true });
+    return this.store({ ...project, knowledgeMode: mode, updatedAt: Date.now() });
   }
   remove(id) { if (!this.get(id)) throw new Error('Project not found.'); this.commit(this.items.filter(x => x.id !== id)); }
   touch(id, at = Date.now()) {

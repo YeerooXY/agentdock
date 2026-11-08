@@ -15,6 +15,13 @@ function accountModels(candidate, now = Date.now()) {
     validId(m.id) && m.available === true && m.funding !== 'metered' &&
     Number.isFinite(m.observedAt) && m.observedAt <= now && now - m.observedAt <= FRESH_MS);
 }
+// Routine work starts at the cheapest sufficient discovered tier: bounded builds
+// take tier 1, large builds and reviews start at tier 2, and tier 3 needs an
+// explicit escalation. Tiers choose a starting point, not quality.
+function preferredTier({ size, role, escalation }) {
+  if (escalation) return 3;
+  return role === 'reviewer' || size === 'large' ? 2 : 1;
+}
 // Adopted the local draft's sufficient-tier selection; corrected its forbidden
 // paid fallback, size handling and unknown-model handling before integration.
 function selectModel(candidate, { size = 'small', role = 'builder', now = Date.now(), excluded = [], escalation = false } = {}) {
@@ -24,14 +31,14 @@ function selectModel(candidate, { size = 'small', role = 'builder', now = Date.n
   if (!available.length && discovered.length) return { model: '', tier: null, source: 'explicit escalation required', blocked: true, warning: 'Only escalation models are currently eligible; select one explicitly for an unresolved blocker.' };
   const known = available.filter(m => [1, 2, 3].includes(m.tier ?? modelTier(m.id)))
     .map(m => ({ ...m, tier: m.tier ?? modelTier(m.id) }));
-  const required = role === 'reviewer' || size === 'large' ? 3 : size === 'medium' ? 2 : 1;
-  let pool = known.filter(m => m.tier >= required);
+  const preferred = preferredTier({ size, role, escalation });
+  let pool = known.filter(m => m.tier >= preferred);
   if (!pool.length && known.length) pool = known.filter(m => m.tier === Math.max(...known.map(x => x.tier)));
-  pool.sort((a, b) => (role === 'reviewer' ? b.tier - a.tier : a.tier - b.tier) ||
+  pool.sort((a, b) => a.tier - b.tier ||
     (Number.isFinite(a.economy) ? a.economy : Infinity) - (Number.isFinite(b.economy) ? b.economy : Infinity));
   const chosen = pool[0] || available.find(m => m.id === candidate.model) || available[0];
   return chosen ? { model: chosen.id, tier: chosen.tier ?? modelTier(chosen.id), source: chosen.source || 'account model discovery',
-    warning: chosen.tier < required ? 'Use the strongest discovered tier available; check the result against the task.' : null }
+    warning: chosen.tier < preferred ? 'Use the strongest discovered tier available; check the result against the task.' : null }
     : { model: candidate?.model || '', tier: null, source: 'account default', warning: 'No fresh model entitlement/capability reading; account default retained.' };
 }
 function modelsFromReading(reading, now = Date.now()) {

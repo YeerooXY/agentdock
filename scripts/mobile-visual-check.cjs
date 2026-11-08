@@ -61,7 +61,7 @@ const reports = []; let browser;
     await page.locator('[data-mobile=next]').click(); await capture('alerts');
     await page.keyboard.press('Tab'); assert.ok(await page.evaluate(() => document.querySelector('dialog[open]').contains(document.activeElement)));
     await page.locator('[data-mobile=close]').last().click();
-    await page.locator('[data-page=results]').first().click(); await page.getByRole('button', { name: '2 changed files', exact: true }).click(); await capture('code-diff');
+    await require('./ui-navigation.cjs').openPage(page, 'results'); await page.getByRole('button', { name: '2 changed files', exact: true }).click(); await capture('code-diff');
     await page.keyboard.press('Escape'); assert.equal(await page.locator('dialog[open]').count(), 0);
     await page.getByRole('button', { name: 'Verification notes', exact: true }).click(); await page.locator('.result-markdown h1').waitFor(); await capture('markdown');
     assert.equal(await page.locator('.result-markdown table').count(), 1); assert.equal(await page.locator('.result-markdown pre code').count(), 1);

@@ -53,3 +53,6 @@ export function turnRevisions(items) {
   }
   return [...revisions.values()];
 }
+
+// Known legacy engine reports remain available in the full archive.
+export const isOperationalResult = item => item?.outcome?.type === 'task' && (String(item.consoleKey || '').startsWith('task-') || item.source === 'Tasks');

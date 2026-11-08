@@ -14,7 +14,9 @@ test('routing uses fresh account headroom and respects exclusions', () => {
   const reading = (accountId, usedPercent, observedAt = now) => ({ accountId, observedAt, windows: [{ label: '5-hour', minutes: 300, usedPercent }] });
   const suggest = limits => suggestAssignment({ size: 'small', candidates, limits, rules: defaults, now });
   assert.equal(suggest([]).implementer.accountId, 'codex:default');
-  assert.equal(suggest([reading('codex:default', 90)]).implementer.accountId, 'opencode:default');
+  assert.equal(suggest([reading('codex:default', 90)]).implementer.accountId, 'codex:default');
+  assert.equal(suggest([reading('codex:default', 99.9)]).implementer.accountId, 'codex:default');
+  assert.equal(suggest([reading('codex:default', 100)]).implementer.accountId, 'opencode:default');
   assert.equal(suggest([reading('codex:default', 30), reading('opencode:default', 25)]).implementer.accountId, 'opencode:default');
   assert.equal(suggest([reading('codex:default', 50), reading('opencode:default', 20)]).implementer.accountId, 'opencode:default');
   assert.equal(suggest([reading('codex:default', 1, 0), reading('opencode:default', 50)]).implementer.accountId, 'opencode:default');
@@ -189,4 +191,40 @@ test('same-time quota snapshots retain the more restrictive reading in either or
   }
   const unknown = { ...low, windows: [{ key: 'weekly', usedPercent: null }] };
   assert.equal(accountAllowance('opencode:default', [low, unknown], 110).status, 'unknown');
+});
+
+
+test('automatic review uses Sonnet-class before a larger model across accounts', () => {
+  const now = 100;
+  const model = id => ({ id, available: true, observedAt: now });
+  const candidates = [
+    { id: 'codex:default', provider: 'codex', label: 'Builder', models: [model('gpt-6-luna')] },
+    { id: 'claude:sonnet', provider: 'claude', label: 'Sonnet', models: [model('claude-sonnet-5')] },
+    { id: 'claude:opus', provider: 'claude', label: 'Opus', models: [model('claude-opus-5')] }
+  ];
+  const result = suggestAssignment({ size: 'medium', candidates, rules: { ...defaults, defaultReviewer: null }, now });
+  assert.equal(result.implementer.model, 'gpt-6-luna');
+  assert.equal(result.reviewer.model, 'claude-sonnet-5');
+});
+
+
+test('a newer empty or failed allowance check invalidates earlier current data', () => {
+  const { accountAllowance } = require('../electron/task-routing.cjs');
+  const earlier = { accountId: 'claude:a', observedAt: 100, windows: [{ key: 'weekly', usedPercent: 90 }] };
+  for (const newer of [{ windows: [] }, { windows: [{ key: 'weekly', usedPercent: 0 }], usageCheck: { status: 'sign-in' } }]) {
+    const value = accountAllowance('claude:a', [earlier, { ...newer, accountId: 'claude:a', observedAt: 110 }], 120);
+    assert.equal(value.status, 'unknown'); assert.equal(value.remainingPercent, null);
+  }
+  assert.equal(accountAllowance('claude:a', [earlier, { accountId: 'claude:a', observedAt: 110, windows: [] }, { ...earlier, observedAt: 120 }], 130).status, 'current');
+});
+
+test('a below-floor reviewer carries its capability warning instead of claiming sufficiency', () => {
+  const row = id => ({ id, available: true, observedAt: 100 });
+  const result = suggestAssignment({ size: 'small', now: 100, rules: { ...defaults, defaultReviewer: null }, candidates: [
+    { id: 'codex:default', provider: 'codex', label: 'Builder', models: [row('gpt-6-luna')] },
+    { id: 'claude:default', provider: 'claude', label: 'Reviewer', models: [row('claude-haiku-5')] }
+  ] });
+  assert.equal(result.reviewer.model, 'claude-haiku-5');
+  assert.ok(result.warnings.some(w => /strongest discovered tier/.test(w)));
+  assert.ok(result.reasons.some(r => /below the preferred review tier/.test(r)));
 });

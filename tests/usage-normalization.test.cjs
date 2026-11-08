@@ -10,6 +10,17 @@ const { STALE_AFTER_MS, normalizeReading } = require('../electron/usage-reading.
 const MIN = 60_000;
 const row = (provider, id, at, windows = [{ key: 'five_hour', label: '5-hour', minutes: 300, usedPercent: 34, resetsAt: at + 60 * MIN }]) => [{ id, accountId: id, provider, observedAt: at, windows }];
 
+test('inapplicable windows cannot carry a false percentage or reset countdown', () => {
+  const account = { id: 'antigravity:default', provider: 'antigravity' };
+  const value = normalizeReading({ accountId: account.id, provider: account.provider, observedAt: 1, windows: [
+    { key: 'five-hour', notApplicable: true, usedPercent: 0, resetsAt: 2, resetLabel: 'Weekly limit reached' }
+  ] }, account).windows[0];
+  assert.equal(value.notApplicable, true);
+  assert.equal(value.usedPercent, null);
+  assert.equal(value.resetsAt, null);
+  assert.equal(value.resetLabel, 'Weekly limit reached');
+});
+
 test('readings are normalized and keep unknown percentages unknown', () => {
   const account = { id: 'cursor:default', provider: 'cursor', label: 'Default Cursor' };
   const reading = normalizeReading({ id: account.id, accountId: account.id, provider: 'cursor', observedAt: 5, windows: [

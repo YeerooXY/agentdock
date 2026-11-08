@@ -14,7 +14,7 @@ const isNativeWorker = provider => NATIVE_WORKERS.includes(provider);
 const counter = value => Number.isFinite(value) && value >= 0 ? value : null;
 const sum = values => values.every(value => counter(value) !== null) ? counter(values.reduce((a, b) => a + b, 0)) : null;
 
-function workerLaunch(provider, executable, { model, effort, review = false, workFolder, promptFile } = {}) {
+function workerLaunch(provider, executable, { model, effort, review = false, workFolder, promptFile, textOnly = false } = {}) {
   // Validate before dispatch so unsupported settings cannot be dropped.
   validateEffort(provider, effort);
   if (extended.NATIVE_WORKERS.includes(provider)) return extended.extensionLaunch(provider, executable, { model, review, workFolder, promptFile });
@@ -30,8 +30,8 @@ function workerLaunch(provider, executable, { model, effort, review = false, wor
   if (provider === 'antigravity') {
     const settings = { agentMode: review ? 'plan' : 'accept-edits', toolPermission: 'request-review',
       allowNonWorkspaceAccess: false, useG1Credits: false, artifactReviewPolicy: 'always-proceed', notifications: false,
-      permissions: { allow: [`read_file(${workFolder})`, ...(review ? [] : [`write_file(${workFolder})`])],
-        deny: ['command(*)', 'mcp(*)', 'read_url(*)', 'execute_url(*)', ...(review ? ['write_file(*)'] : [])] } };
+      permissions: { allow: [...(textOnly ? [] : [`read_file(${workFolder})`]), ...(review ? [] : [`write_file(${workFolder})`])],
+        deny: [...(textOnly ? ['read_file(*)'] : []), 'command(*)', 'mcp(*)', 'read_url(*)', 'execute_url(*)', ...(review ? ['write_file(*)'] : [])] } };
     return programLaunch(executable, ['--input-format', 'stream-json', '--output-format', 'stream-json',
       '--disable-slash-commands', '--settings', JSON.stringify(settings), ...chosen]);
   }

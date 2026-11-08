@@ -1,6 +1,7 @@
 'use strict';
 module.exports = {
   id: 'droid',
+  settings: { strategy: 'cli' },
   catalog: {
     name: 'Factory Droid',
     command: 'droid',

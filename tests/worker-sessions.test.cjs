@@ -130,6 +130,7 @@ test('stale and older phone requests cannot bypass worker guards or confirmed St
   await until(() => f.spawned.length === 1);
   const item = f.sessions.items.get(f.job.workerSession.id), device = {}, client = { ws: { readyState: 1 }, device, selected: item.id };
   const mobile = { sessions: f.sessions, clients: new Set([client]), private: { devices: [device] } };
+  mobile.commands = MobileCompanion.prototype.createCommands.call(mobile);
   const call = (method, payload) => MobileCompanion.prototype.call.call(mobile, client, method, payload);
   for (const method of ['input', 'console.close', 'console.switch', 'console.setup', 'console.rename', 'console.project',
     'console.models', 'console.worktree', 'console.worktree.root', 'console.worktree.status',
@@ -176,7 +177,7 @@ test('deadline exhaustion preserves the process and named Stop remains usable', 
 test('pending worker steering receives owner capacity instead of starving behind its reservation', async t => {
   const f = fixture(t), item = f.open();
   f.owners.heartbeat([{ consoleKey: item.consoleKey, launchId: item.launchId }]);
-  const admission = new CapacityReservations(f.owners); t.after(() => admission.dispose());
+  const admission = new CapacityReservations(f.owners, { workers: () => [{ id: 'explicit-test-cap', accountId: 'codex:default', quotaGroupId: 'codex:default', concurrency: 1 }] }); t.after(() => admission.dispose());
   f.loop.admission = admission;
   f.bridge.submit(f.payload(item));
   const messages = f.bridge.take(f.job);
@@ -190,7 +191,7 @@ test('owner steering wakes a worker waiting for its first automatic slot without
   f.sessions.items.set('owner', { id: 'owner', consoleKey: 'owner', launchId: 'owner-launch',
     accountId: 'codex:default', projectId: 'other-project', alive: true, slot: 1, provider: 'codex', purpose: 'agent', name: 'Owner', width: 1, height: 1 });
   f.sessions.emit('changed'); f.sessions.ownerInteraction('owner', 'typing', { draft: true });
-  const admission = new CapacityReservations(f.owners); t.after(() => admission.dispose());
+  const admission = new CapacityReservations(f.owners, { workers: () => [{ id: 'explicit-owner-test-cap', accountId: 'codex:default', quotaGroupId: 'codex:default', concurrency: 1 }] }); t.after(() => admission.dispose());
   f.loop.admission = admission;
   const before = { ...f.sessions.items.get('owner') };
   const running = f.loop.runTask(f.job, 'mock-check');

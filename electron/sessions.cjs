@@ -3,56 +3,25 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { EventEmitter } = require('node:events');
-const { findProgram, nativeCodex, wslPath } = require('./adapters.cjs');
-const { atomicJson, readJson } = require('./storage.cjs');
+const { findProgram, nativeCodex } = require('./adapters.cjs');
 const { planLayout, planOpening, planGrid, gridSize, occupied } = require('./console-layout.cjs');
 const { providers, byId: cliAgents } = require('./cli-catalog.cjs');
-const { prepareCli } = require('./cli-launch.cjs');
 const { settingsAdapter } = require('./provider-settings.cjs');
 const { cachedAntigravityConversation } = require('./antigravity-session.cjs');
 const { prepareCodexSession } = require('./codex-session.cjs');
-const { copyConversation, findConversation } = require('./account-history.cjs');
-const { resolveSelection } = require('./model-selection.cjs');
-const { defaultId, inside } = require('./account-profiles.cjs');
-const { hasClaudeEditorContext, validateDraftText } = require('./draft-policy.cjs');
-const { psQuote, shQuote, quote, shellLaunch, programLaunch, customLaunch, realRoot } = require('./platform.cjs');
+const { defaultId } = require('./account-profiles.cjs');
+const { psQuote, realRoot } = require('./platform.cjs');
 const { cleanWorktree } = require('./worktrees.cjs');
 const { previewUrl } = require('./web-preview.cjs');
 const { ordinaryConsole } = require('./worker-sessions.cjs');
 const { consoleCapabilities } = require('./worker-placement.cjs');
 const { studyContext, playtimeDirectory } = require('./study-context.cjs');
-// Code and preview panels sit in the grid but run no process.
+const { SessionLauncher, publicSession } = require('./session-launch.cjs');
+const { SessionEventRuntime } = require('./session-runtime.cjs');
+const { AccountSwitching } = require('./account-switching.cjs');
+const { sessionPolicy } = require('./providers/index.cjs');
+
 const isPanel = item => ['code', 'web', 'review'].includes(item?.kind);
-function envValue(env, name) { return Object.entries(env).find(([key]) => key.toLowerCase() === name.toLowerCase())?.[1]; }
-const { stripInheritedSessionEnv } = require('./agent-env.cjs');
-function removeEnv(env, names) { const set = new Set(names.map(x => x.toLowerCase())); for (const key of Object.keys(env)) if (set.has(key.toLowerCase())) delete env[key]; }
-function canonical(value) { const result = path.resolve(value).replace(/[\\/]+$/, ''); return process.platform === 'win32' ? result.toLowerCase() : result; }
-const UUID_TEXT = '[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}';
-function plainTerminalText(value) {
-  return String(value || '').replace(/\x1b\][^\x07]*(?:\x07|\x1b\\)/g, '').replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '').replace(/\x1b[()][A-Z0-9]/g, '').replace(/\r/g, '\n');
-}
-function hasCodexFolderTrustPrompt(value) {
-  const text = plainTerminalText(value).toLowerCase();
-  return /folder\s*access/.test(text) && /trust\s*this\s*folder/.test(text);
-}
-function ensureOwnedDirectory(parent, target) {
-  const parentInfo = fs.lstatSync(parent), parentReal = fs.realpathSync(parent);
-  if (!parentInfo.isDirectory() || parentInfo.isSymbolicLink() || canonical(parentReal) !== canonical(parent)) throw new Error('The private CLI draft folder is linked or unavailable.');
-  try { fs.mkdirSync(target); } catch (error) { if (error.code !== 'EEXIST') throw error; }
-  const info = fs.lstatSync(target), real = fs.realpathSync(target);
-  if (!info.isDirectory() || info.isSymbolicLink() || canonical(real) !== canonical(target) || !inside(parentReal, real)) throw new Error('The private CLI draft folder is linked or unavailable.');
-  return real;
-}
-function publicSession({ terminal, buffer, command, claudeTarget, switchOperation, accountConfigDir, editorRoots, ...session }) { return session; }
-function terminalEnvironment() {
-  const env = { ...process.env };
-  // Agents can launch Paddock with NO_COLOR=1 and TERM=dumb for their command
-  // output. Our interactive PTYs have their own color capabilities.
-  for (const key of Object.keys(env)) {
-    if (/^(NO_COLOR|FORCE_COLOR|CLICOLOR|CLICOLOR_FORCE|TERM|COLORTERM)$/i.test(key)) delete env[key];
-  }
-  return { ...env, TERM: 'xterm-256color', COLORTERM: 'truecolor' };
-}
 function validateConsoleDefaults(raw) {
   if (!providers.includes(raw?.provider)) throw new Error('Choose an agent or shell.');
   const cwd = String(raw.cwd || '').trim();
@@ -61,6 +30,10 @@ function validateConsoleDefaults(raw) {
   if (command.length > 4000 || command.includes('\0') || (raw.provider === 'custom' && !command.trim())) throw new Error('Enter a custom command, up to 4,000 characters.');
   return { provider: raw.provider, cwd, name: String(raw.name || '').trim().slice(0, 64), command };
 }
+
+// Sessions remains the public service facade for layout, metadata and lifecycle.
+// Process creation, PTY/event runtime and staged account changes have separate
+// owners with explicit hosts instead of sharing the former monolithic class body.
 class Sessions extends EventEmitter {
   constructor(root, dependencies = {}) {
     super(); this.root = realRoot(root); this.items = new Map(); this.eventTimes = new Map(); this.starting = new Map(); this.codexIdentities = new Map();
@@ -91,12 +64,48 @@ class Sessions extends EventEmitter {
     this.refreshProjectContext = () => this.syncProjects();
     this.projects?.on('changed', this.refreshProjectContext);
     this.hub?.on?.('context-changed', this.refreshProjectContext);
+
+    const facade = this;
+    this.eventRuntime = new SessionEventRuntime({
+      root: this.root, get items() { return facade.items; }, pendingStages: this.pendingStages, loginAccounts: this.loginAccounts,
+      setupAccounts: this.setupAccounts, contexts: this.contexts, eventTimes: this.eventTimes, codexIdentities: this.codexIdentities,
+      getHub: () => this.hub, getDraftBridge: () => this.draftBridge, getAccounts: () => this.accounts,
+      getCredentialSwitch: () => this.credentialSwitch, emit: (...args) => this.emit(...args), listItem: id => this.list().find(item => item.id === id)
+    });
+    this.launcher = new SessionLauncher({
+      root: this.root, get items() { return facade.items; }, starting: this.starting, pendingStages: this.pendingStages, contexts: this.contexts,
+      loginAccounts: this.loginAccounts, setupAccounts: this.setupAccounts, events: this.eventRuntime, pty: this.pty, agentHome: this.agentHome,
+      isStopping: () => !!this.stopping, getGrid: () => this.grid, layoutItems: () => this.layoutItems(),
+      commitLayout: (plan, grid) => this.commitLayout(plan, grid), emit: (...args) => this.emit(...args), listItem: id => this.list().find(item => item.id === id),
+      getProjects: () => this.projects, getHub: () => this.hub, getAccounts: () => this.accounts, getCredentialSwitch: () => this.credentialSwitch,
+      getDraftBridge: () => this.draftBridge, getRuntime: () => this.runtime, getCliSetup: () => this.cliSetup, getClaude: () => this.claude, getSsh: () => this.ssh,
+      findProgram: name => this.findProgram(name), nativeCodex: () => this.nativeCodex(), prepareCodexSession: (...args) => this.prepareCodexSession(...args),
+      codexScrollback: () => this.codexScrollback(), studyContext: (...args) => this.studyContext(...args), playtimeDirectory
+    });
+    this.accountSwitching = new AccountSwitching(this.accountSwitchingHost());
   }
+
+  accountSwitchingHost() {
+    const facade = this;
+    return {
+      root: this.root, get items() { return facade.items; }, pendingStages: this.pendingStages, switchOperations: this.switchOperations,
+      loginAccounts: this.loginAccounts, setupAccounts: this.setupAccounts, launcher: this.launcher,
+      getAccounts: () => this.accounts, getHub: () => this.hub, getDraftBridge: () => this.draftBridge,
+      getModels: (...args) => this.getModels(...args), getThreadModel: (...args) => this.getThreadModel(...args), isBusy: id => this.isBusy(id),
+      getDraftQuietMs: () => this.draftQuietMs, emit: (...args) => this.emit(...args), refreshContextFile: item => this.refreshContextFile(item)
+    };
+  }
+  getAccountSwitching() {
+    // Keep the prototype helpers usable by focused draft tests that provide only
+    // a session and draft bridge without constructing the full service.
+    if (!this.accountSwitching) this.accountSwitching = new AccountSwitching(this.accountSwitchingHost());
+    return this.accountSwitching;
+  }
+
   layoutItems() { return [...this.items.values()].filter(item => !item.hidden); }
   list() { return [...this.items.values()].filter(item => !isPanel(item)).map(item => ({
     ...publicSession(item),
     consoleCapabilities: consoleCapabilities(item, this.ownerConsoles, !!this.workerBridge),
-    // How model and effort changes apply: 'resume' reopens the chat with new flags, 'none' is not supported.
     switchMethod: item.remote || item.taskId ? 'none' : settingsAdapter(item.provider).switchMethod,
       ...(this.accounts && !item.taskId && settingsAdapter(item.provider).switchMethod === 'resume' && !['login', 'setup'].includes(item.purpose) ? {
       switchTargets: this.accounts.choices(item.provider).filter(x => x.id !== item.accountId).map(({ id, label, loginCompletedAt }) => ({ id, label, ready: id.endsWith(':default') || !!loginCompletedAt }))
@@ -109,7 +118,7 @@ class Sessions extends EventEmitter {
     const slot = Array.from({ length: this.grid.columns * this.grid.rows }, (_, i) => i + 1).find(x => !used.has(x));
     if (!slot) return null;
     const item = { id: crypto.randomUUID(), kind: 'review', provider: 'review', purpose: 'review', alive: true, state: 'open',
-      name: `Review · ${job.reviewer.label}`, consoleName: job.consoleName, reviewId: job.id, slot, width: 1, height: 1, cwd: '', consoleKey: crypto.randomUUID() };
+      name: `Review, ${job.reviewer.label}`, consoleName: job.consoleName, reviewId: job.id, slot, width: 1, height: 1, cwd: '', consoleKey: crypto.randomUUID() };
     this.items.set(item.id, item); this.emit('changed'); return publicSession(item);
   }
   createCodePanel(raw = {}) {
@@ -144,7 +153,7 @@ class Sessions extends EventEmitter {
       slot: x.slot, width: x.width || 1, height: x.height || 1, consoleKey: x.consoleKey || x.id, projectId: x.projectId || null, name: x.name, nameMode: x.nameMode, cwd: x.cwd, provider: x.provider, permissions: x.permissions,
       ...(x.kind === 'code' ? { kind: 'code', codeSourceKey: x.codeSourceKey } : {}),
       ...(x.kind === 'web' ? { kind: 'web', url: x.url, codeSourceKey: x.codeSourceKey } : {}),
-      command: x.command || '', model: x.launchModel || '', effort: x.launchEffort ?? null, accountId: cliAgents.has(x.provider) ? x.accountId || defaultId(x.provider) : null, providerSessionId: ['codex', 'claude', 'antigravity'].includes(x.provider) ? x.providerSessionId : null, claudeTarget: x.claudeTarget,
+      command: x.command || '', model: x.launchModel || '', effort: x.launchEffort ?? null, accountId: cliAgents.has(x.provider) ? x.accountId || defaultId(x.provider) : null, providerSessionId: sessionPolicy(x.provider).persistConversation ? x.providerSessionId : null, claudeTarget: x.claudeTarget,
       ...(x.remote ? { remoteHostId: x.remote.hostId, remoteFolder: x.remote.folder } : {}),
       ...(x.worktree ? { worktree: x.worktree } : {}),
       ...(x.playtimeDataDir ? { playtimeDataDir: x.playtimeDataDir } : {})
@@ -170,9 +179,12 @@ class Sessions extends EventEmitter {
     this.items.delete(id);
     return this.restore(entry);
   }
-  create(raw, options) {
-    return this.createOne(raw, options);
-  }
+  create(raw, options) { return this.createOne(raw, options); }
+  createOne(raw, options) { return this.launcher.createOne(raw, options); }
+  createLoginConsole(accountId, cwd) { return this.launcher.createLoginConsole(accountId, cwd); }
+  createRemote(raw) { return this.launcher.createRemote(raw); }
+  createSetupConsole(payload) { return this.getAccountSwitching().createSetupConsole(payload); }
+
   commitLayout(plan, grid = this.grid) {
     this.onLayout({ plan, grid });
     this.grid = grid;
@@ -183,493 +195,17 @@ class Sessions extends EventEmitter {
     const { plan, grid } = planGrid(this.layoutItems(), this.grid, raw);
     this.commitLayout(plan, grid); this.emit('changed');
   }
-  async createOne(raw, { resumeId = null, resumePath = null, claudeTarget = null, accountId = null, sessionId = null, launchId = null, stage = false, resumeModel = null, resumeEffort = null, purpose = 'agent', login = false, cancelCheck = null } = {}) {
-    resumeEffort ??= raw?.effort ?? null;
-    if (this.stopping) throw new Error('Paddock is closing.');
-    if (raw?.remoteHostId) return this.createRemote(raw);
-    raw = this.projects?.launch(raw) || raw;
-    if (raw.nameMode != null && !['project', 'folder', 'custom'].includes(raw.nameMode)) throw new Error('Choose project naming or a custom chat title.');
-    const opening = stage ? { slot: raw.slot, width: raw.width || 1, height: raw.height || 1, grid: this.grid, plan: [] } : planOpening([...this.layoutItems(), ...this.starting.values()], raw, this.grid);
-    if (!stage && this.starting.size && (JSON.stringify(opening.grid) !== JSON.stringify(this.grid) || opening.plan.some(x => { const before = this.items.get(x.id) || this.starting.get(x.id); return before && ['slot','width','height'].some(k => x[k] !== before[k]); }))) throw new Error('Wait for the console to open before changing the layout.');
-    opening.plan = opening.plan.filter(x => this.items.has(x.id));
-    const { slot, width, height } = opening;
-    if (!providers.includes(raw?.provider)) throw new Error('Choose a console type.');
-    if (resumeId != null && !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(resumeId)) throw new Error('The saved conversation ID is invalid.');
-    const selectedPermissions = raw.permissions ?? 'default';
-    if (!['default', 'unrestricted'].includes(selectedPermissions)) throw new Error('Choose a supported agent permission mode.');
-    const permissions = settingsAdapter(raw.provider).native || cliAgents.get(raw.provider)?.unrestricted ? selectedPermissions : 'system';
-    const model = settingsAdapter(raw.provider).native || cliAgents.get(raw.provider)?.model ? String(raw.model ?? '').trim() : '';
-    if (resumeEffort !== null && !/^(none|minimal|low|medium|high|xhigh|max|ultra)$/.test(resumeEffort)) throw new Error('Choose a supported effort level.');
-    if (model && !/^[a-zA-Z0-9][a-zA-Z0-9._:/\[\]@+-]{0,199}$/.test(model)) throw new Error('Enter a model name or alias, up to 200 characters.');
-    const cwd = String(raw.cwd || '');
-    if (!path.isAbsolute(cwd) || !fs.existsSync(cwd) || !fs.statSync(cwd).isDirectory()) throw new Error('Choose an existing project folder.');
-    const nameMode = raw.nameMode || (raw.name?.trim() ? 'custom' : 'folder');
-    const name = String(nameMode === 'folder' ? path.basename(cwd) : raw.name || path.basename(cwd)).trim().slice(0, 64);
-    const id = sessionId || crypto.randomUUID();
-    launchId ||= crypto.randomUUID();
-    if (!stage && this.items.has(id)) throw new Error('This console is already open.');
-    const selectedAccountId = cliAgents.has(raw.provider) ? accountId || defaultId(raw.provider) : null;
-    const account = selectedAccountId && this.accounts ? this.accounts.getAccount(selectedAccountId, raw.provider) : null;
-    // One-at-a-time CLIs (Antigravity) sign in to the chosen account first.
-    if (selectedAccountId && this.credentialSwitch?.handles(raw.provider)) await this.credentialSwitch.activate(raw.provider, selectedAccountId, { except: sessionId });
-    const sessionsRoot = path.join(this.root, 'sessions');
-    try { fs.mkdirSync(sessionsRoot); } catch (error) { if (error.code !== 'EEXIST') throw error; }
-    ensureOwnedDirectory(this.root, sessionsRoot);
-    const dir = path.join(sessionsRoot, id);
-    try { fs.mkdirSync(dir); } catch (error) { if (error.code !== 'EEXIST') throw error; }
-    ensureOwnedDirectory(sessionsRoot, dir);
-    const playtimeDataDir = raw.playtimeDataDir == null ? undefined : playtimeDirectory(raw.playtimeDataDir);
-    const summary = purpose === 'agent' && this.hub ? this.hub.summary() + (this.projects?.chatSummary({ projectId: raw.projectId, name, cwd }) || '') + this.studyContext({ cwd, playtimeDataDir, purpose, provider: raw.provider, projectId: raw.projectId || null }) : '';
-    let discussion = '';
-    if (raw.planDiscussion && !resumeId) {
-      if (!['brief', 'research', 'infrastructure', 'roadmap'].includes(raw.planDiscussion)) throw new Error('Choose a planning section.');
-      this.projects?.plan(raw.projectId, raw.planDiscussion);
-      discussion = `Call dock_context, then dock/project_plan for section ${raw.planDiscussion}. Help me plan this project through a conversation. Ask one focused question and wait for my answer. Discuss alternatives and explain recommendations. Do not edit code, initialize the project or add features. Submit a proposal only after we have discussed this section; I approve it in Projects.`;
-    }
-    const summaryPath = purpose === 'agent' && this.hub ? path.join(dir, 'PADDOCK.md') : undefined;
-    if (summaryPath) { fs.writeFileSync(summaryPath, summary, { mode: 0o600 }); this.contexts.set(id, summary); }
-    const helper = this.runtime?.event || path.join(__dirname, 'agent-event.cjs');
-    const node = this.runtime?.node || this.findProgram('node.exe') || this.findProgram('node');
-    const claudeInstall = claudeTarget || this.claude || (raw.provider === 'claude' && { kind: 'native', path: this.findProgram('claude') });
-    const isWsl = raw.provider === 'claude' && claudeInstall?.kind === 'wsl';
-    const bridgeHelper = this.runtime?.tools || path.join(__dirname, 'agent-tools.cjs');
-    const mcpConfig = path.join(dir, 'mcp.json');
-    if (purpose === 'agent' && this.hub && node) atomicJson(mcpConfig, { mcpServers: { paddock: { type: 'stdio', command: isWsl ? wslPath(node) : node, args: [bridgeHelper], env: { PADDOCK_BRIDGE_URL: '${PADDOCK_BRIDGE_URL}', PADDOCK_BRIDGE_TOKEN: '${PADDOCK_BRIDGE_TOKEN}', ...(isWsl ? { WSLENV: 'PADDOCK_BRIDGE_URL:PADDOCK_BRIDGE_TOKEN' } : {}) } } } });
-    let { executable, args } = shellLaunch(), cliEnv = {};
-    const adapterCtx = {
-      purpose, model, resumeId, resumePath, resumeModel, resumeEffort,
-      permissions, account, node, helper, summary, summaryPath,
-      mcpConfig, dir, cwd, isWsl, claudeInstall, discussion,
-      hub: !!this.hub, codexScrollback: () => this.codexScrollback(),
-      nativeCodex: () => this.nativeCodex(), programLaunch, prepareCli,
-      cliAgents, agentHome: this.agentHome, cliSetup: this.cliSetup,
-      findProgram: n => this.findProgram(n), runtime: this.runtime,
-      bridgeHelper, atomicJson, shQuote, wslPath, quote, customLaunch, shellLaunch,
-      provider: raw.provider, command: raw.command,
-      profiles: this.hub?.config?.profiles || []
-    };
-    const launched = settingsAdapter(raw.provider).launchArgs(adapterCtx);
-    executable = launched.executable;
-    args = launched.args;
-    cliEnv = launched.env;
-    const baseEnv = terminalEnvironment();
-    const editorCommand = envValue(baseEnv, 'VISUAL') || envValue(baseEnv, 'EDITOR') || '';
-    const editorRoots = raw.provider === 'codex' && account?.configDir ? [path.join(account.configDir, 'editor')] : [];
-    let claudeTempRoot = null;
-    if (raw.provider === 'claude' && purpose === 'agent' && node && this.draftBridge && !isWsl) {
-      const launchTemp = path.join(this.root, 'sessions', id, 'draft-editor', launchId);
-      ensureOwnedDirectory(path.dirname(path.dirname(launchTemp)), path.dirname(launchTemp));
-      ensureOwnedDirectory(path.dirname(launchTemp), launchTemp);
-      claudeTempRoot = launchTemp;
-      editorRoots.push(path.join(launchTemp, 'claude'));
-    }
-    let bridge = null;
-    if (settingsAdapter(raw.provider).switchMethod === 'resume' && purpose === 'agent' && node && this.draftBridge && !isWsl) {
-      try { bridge = this.draftBridge.register(id, launchId, { node, helper: this.runtime?.draftEditor || path.join(__dirname, 'draft-editor.cjs'), editorCommand, editorRoots, provider: raw.provider }); }
-      catch { bridge = null; }
-    }
-    let env = this.accounts && selectedAccountId
-      ? this.accounts.environment(selectedAccountId, raw.provider, { baseEnv, bridge, login })
-      : { ...baseEnv };
-    if (purpose === 'setup') {
-      for (const key of Object.keys(env)) if (key.toLowerCase().startsWith('paddock_')) delete env[key];
-    } else {
-      Object.assign(env, { PADDOCK_DATA_DIR: this.root, PADDOCK_SESSION_ID: id, PADDOCK_LAUNCH_ID: launchId });
-      if (selectedAccountId) env.PADDOCK_ACCOUNT_ID = selectedAccountId;
-    }
-    stripInheritedSessionEnv(env);
-    if (claudeTempRoot && bridge) env.CLAUDE_CODE_TMPDIR = claudeTempRoot;
-    delete env.ELECTRON_RUN_AS_NODE;
-    removeEnv(env, ['OPENAI_API_KEY', 'CODEX_API_KEY', 'CODEX_ACCESS_TOKEN', 'ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'CLAUDE_CODE_OAUTH_TOKEN', 'GOOGLE_API_KEY', 'GEMINI_API_KEY']);
-    if (this.hub && purpose === 'agent' && !login) Object.assign(env, this.hub.grant(id, launchId), { PADDOCK_MCP_CONFIG: mcpConfig });
-    if (summaryPath) env.PADDOCK_INSTRUCTIONS = summaryPath;
-    Object.assign(env, cliEnv);
-    if (isWsl && account?.profile && raw.provider === 'claude') {
-      const configured = envValue(env, 'CLAUDE_CONFIG_DIR');
-      if (configured && path.isAbsolute(configured)) env.CLAUDE_CONFIG_DIR = wslPath(configured);
-    }
-    if (isWsl && claudeTempRoot && bridge) env.CLAUDE_CODE_TMPDIR = wslPath(claudeTempRoot);
-    if (node && purpose === 'agent') {
-      const currentPath = Object.entries(env).find(([key]) => key.toLowerCase() === 'path')?.[1] || '';
-      for (const key of Object.keys(env)) if (key.toLowerCase() === 'path') delete env[key];
-      env.PATH = path.dirname(node) + path.delimiter + currentPath;
-    }
-    if (isWsl) {
-      const inherited = (env.WSLENV || '').split(':').filter(Boolean).filter(value => purpose !== 'setup' || !value.split('/')[0].toLowerCase().startsWith('paddock_'));
-      env.WSLENV = [...new Set([...inherited, ...(purpose === 'agent' ? ['PADDOCK_DATA_DIR', 'PADDOCK_SESSION_ID', 'PADDOCK_LAUNCH_ID', 'PADDOCK_ACCOUNT_ID', 'PADDOCK_BRIDGE_URL', 'PADDOCK_BRIDGE_TOKEN', 'PADDOCK_INSTRUCTIONS/p', 'PADDOCK_MCP_CONFIG/p'] : []), ...(envValue(env, 'CLAUDE_CONFIG_DIR') ? ['CLAUDE_CONFIG_DIR/p'] : []), ...(claudeTempRoot && bridge ? ['CLAUDE_CODE_TMPDIR/p'] : [])])].join(':');
-    }
-    let trackingWarning = '';
-    if (purpose === 'agent' && !login && raw.provider === 'codex') {
-      if (!stage) this.starting.set(id, { id, slot, width, height, alive: true });
-      try { args.push(...await this.prepareCodexSession(executable, { node, helper, root: this.root, session: id, launchId, cwd, env, sqliteHome: account?.profile ? path.join(account.configDir, 'sqlite') : null })); }
-      catch { trackingWarning = 'Paddock: Update Codex to restore chats before the first reply finishes.\r\n'; }
-      finally { if (!stage) this.starting.delete(id); }
-    }
-    if (cancelCheck?.()) { this.hub?.revoke(id, launchId); this.draftBridge?.unregister(id, launchId); throw new Error('The console changed before the selected account could open. The original console is still available.'); }
-    if (this.stopping) { this.hub?.revoke(id, launchId); this.draftBridge?.unregister(id, launchId); throw new Error('Paddock is closing.'); }
-    if (!login && raw.provider === 'codex' && discussion) args.push('--', discussion);
-    let terminal;
-    try { terminal = this.pty.spawn(executable, args, { name: 'xterm-256color', cols: 110, rows: 30, cwd, env, useConpty: true }); }
-    catch (error) { this.hub?.revoke(id, launchId); this.draftBridge?.unregister(id, launchId); throw error; }
-    try { if (!stage) this.commitLayout(opening.plan, opening.grid); }
-    catch (error) { terminal.kill(); this.hub?.revoke(id, launchId); this.draftBridge?.unregister(id, launchId); throw error; }
-    if (!stage) for (const [oldId, old] of this.items) if (old.slot === slot && !old.alive) this.items.delete(oldId);
-    const consoleKey = /^[a-f0-9-]{36}$/i.test(raw.consoleKey || '') ? raw.consoleKey : id;
-    const session = { id, consoleKey, projectId: raw.projectId || null, ...(cleanWorktree(raw.worktree) ? { worktree: cleanWorktree(raw.worktree) } : {}), slot, width, height, name, nameMode, cwd, provider: raw.provider, permissions, launchModel: resumeModel || model, command: raw.provider === 'custom' ? raw.command : '', claudeTarget: raw.provider === 'claude' ? claudeInstall : undefined, accountId: selectedAccountId, accountLabel: account?.label || null, accountConfigDir: account?.configDir || null, launchId, purpose, switching: false, draftSupported: !!bridge, ...(isWsl && raw.provider === 'claude' ? { draftSupportReason: 'Account switching is unavailable for Claude Code in WSL.' } : {}), editorRoots, state: 'open', alive: true, cols: 110, rows: 30, createdAt: Date.now(), updatedAt: Date.now(), terminal, buffer: '', sequence: 0, usage: null, providerSessionId: resumeId };
-    session.launchEffort = resumeEffort;
-    if (resumeModel) { session.model = resumeModel; session.modelId = resumeModel; session.settingsAt = Date.now(); }
-    if (playtimeDataDir) session.playtimeDataDir = playtimeDataDir;
-    if (trackingWarning) session.buffer = trackingWarning;
-    if (!stage) this.items.set(id, session);
-    else this.pendingStages.set(launchId, session);
-    if (!stage) this.projects?.touch(session.projectId);
-    terminal.onData(data => {
-      session.buffer = (session.buffer + data).slice(-250000);
-      session.lastOutputAt = Date.now();
-      if (this.items.get(id) === session) this.emit('output', { id, launchId, data, sequence: ++session.sequence });
-      else session.sequence++;
-    });
-    terminal.onExit(({ exitCode }) => {
-      this.hub?.revoke(id, launchId); this.draftBridge?.unregister(id, launchId);
-      session.alive = false; session.exitCode = exitCode; session.updatedAt = Date.now();
-      if (this.pendingStages.get(launchId) === session) this.pendingStages.delete(launchId);
-      if (session.purpose === 'setup' && this.setupAccounts.get(session.accountId) === session) this.setupAccounts.delete(session.accountId);
-      if (this.items.get(id) !== session) { session.state = 'ended'; session.exitResolve?.(); this.emit('changed'); return; }
-      this.contexts.delete(id); session.state = 'ended';
-      if (resumeId && exitCode !== 0 && !session.dismissed) {
-        session.state = 'error'; session.restoreError = 'The saved conversation could not be reopened. Check the console output, then try again.';
-      }
-      if (session.purpose === 'login' && this.accounts) this.accounts.markLoginCompleted(session.accountId, exitCode === 0);
-      void this.credentialSwitch?.release(session.provider);
-      this.emit('changed');
-    });
-    if (!stage) this.emit('changed');
-    return stage ? publicSession(session) : this.list().find(x => x.id === id);
-  }
-  async createLoginConsole(accountId, cwd = this.root) {
-    if (this.stopping || !this.accounts) throw new Error('Account sign-in is unavailable.');
-    const saved = this.accounts.get(accountId);
-    if (!saved) throw new Error('Account profile not found.');
-    if (this.loginAccounts.has(accountId)) throw new Error('A sign-in console is already open for this account.');
-    if (this.setupAccounts.has(accountId)) throw new Error('A setup console is already open for this account.');
-    if (!path.isAbsolute(cwd) || !fs.existsSync(cwd) || !fs.statSync(cwd).isDirectory()) cwd = this.root;
-    const opening = planOpening([...this.layoutItems(), ...this.starting.values()], { cwd, provider: saved.provider }, this.grid);
-    if (this.starting.size) throw new Error('Wait for the console to open before starting sign-in.');
-    const adapter = this.accounts.provider(saved.provider);
-    if (!adapter?.namedProfiles || !adapter.login) throw new Error('Sign-in for a separate account is unavailable for this provider.');
-    const id = crypto.randomUUID(), launchId = crypto.randomUUID(), executable = saved.provider === 'codex' ? this.nativeCodex() : saved.provider === 'claude' ? (this.claude?.path || this.findProgram('claude')) : (this.cliSetup?.executable(saved.provider) || this.findProgram(cliAgents.get(saved.provider)?.command));
-    if (!executable) throw new Error(`${adapter.name} was not found. Install it, then restart Paddock.`);
-    const switched = !!this.credentialSwitch?.handles(saved.provider);
-    // A new account signs in with the CLI signed out; the saved sign-in of the
-    // previous account is kept by Paddock.
-    if (switched) await this.credentialSwitch.activate(saved.provider, accountId);
-    const account = this.accounts.getAccount(accountId, saved.provider), env = this.accounts.environment(accountId, saved.provider, { baseEnv: terminalEnvironment(), login: true });
-    Object.assign(env, { PADDOCK_ACCOUNT_ID: accountId });
-    let command = executable, args = [...adapter.login.args];
-    const install = saved.provider === 'claude' ? (this.claude || { kind: 'native', path: executable }) : null;
-    if (install?.kind === 'wsl') {
-      const config = envValue(env, 'CLAUDE_CONFIG_DIR');
-      if (config && path.isAbsolute(config)) env.CLAUDE_CONFIG_DIR = wslPath(config);
-      env.WSLENV = [...new Set([...(env.WSLENV || '').split(':').filter(Boolean), 'CLAUDE_CONFIG_DIR/p', 'PADDOCK_ACCOUNT_ID'])].join(':');
-      command = 'wsl.exe'; args = ['-d', install.distro, '--cd', cwd, '--exec', executable, ...args];
-    } else if (!settingsAdapter(saved.provider).native) ({ executable: command, args } = programLaunch(command, args, { bypass: true }));
-    const terminal = this.pty.spawn(command, args, { name: 'xterm-256color', cols: 110, rows: 30, cwd, env, useConpty: true });
-    this.commitLayout(opening.plan, opening.grid);
-    for (const [oldId, old] of this.items) if (old.slot === opening.slot && !old.alive) this.items.delete(oldId);
-    const session = { id, launchId, consoleKey: id, slot: opening.slot, width: opening.width, height: opening.height, name: `Sign in (${saved.label})`, nameMode: 'custom', cwd, provider: saved.provider, accountId, accountLabel: saved.label, purpose: 'login', switching: false, state: 'open', alive: true, cols: 110, rows: 30, createdAt: Date.now(), updatedAt: Date.now(), terminal, buffer: '', sequence: 0, usage: null };
-    this.items.set(id, session); this.loginAccounts.set(accountId, session);
-    terminal.onData(data => { session.buffer = (session.buffer + data).slice(-250000); session.lastOutputAt = Date.now(); this.emit('output', { id, launchId, data, sequence: ++session.sequence }); });
-    terminal.onExit(({ exitCode }) => {
-      session.alive = false; session.state = 'ended'; session.exitCode = exitCode; session.updatedAt = Date.now();
-      if (this.loginAccounts.get(accountId) === session) this.loginAccounts.delete(accountId);
-      if (switched) {
-        void this.credentialSwitch.completeLogin(saved.provider, accountId).then(result => {
-          this.accounts.markLoginCompleted(accountId, result.completed);
-          if (!result.completed) session.loginError = result.duplicate ? 'This Google account is already added in Paddock. Sign in with a different account.' : 'Sign-in was not confirmed. Reopen this account and complete the provider sign-in.';
-        }, () => { session.loginError = 'Paddock could not save this sign-in. Try again.'; })
-          .finally(() => { void this.credentialSwitch.release(saved.provider); this.emit('changed'); });
-      } else if (exitCode === 0 && !session.dismissed) {
-        // No declared login files means the exit itself is the only evidence.
-        const completed = this.accounts.hasCredentials(accountId, saved.provider) !== false;
-        this.accounts.markLoginCompleted(accountId, completed);
-        if (!completed) session.loginError = 'Sign-in was not confirmed. Reopen this account and complete the provider sign-in.';
-      }
-      this.emit('changed');
-    });
-    this.emit('changed');
-    return this.list().find(x => x.id === id);
-  }
-  async createSetupConsole({ id, launchId, targetAccountId } = {}) {
-    ordinaryConsole(this.items.get(id));
-    const source = this.items.get(id);
-    if (!source?.alive || source.dismissed || source.purpose !== 'agent' || source.launchId !== launchId || source.switching || this.isBusy(id)) {
-      throw new Error('This console changed. Select it again before setting up the account.');
-    }
-    if (!this.accounts || targetAccountId === source.accountId || !this.accounts.choices(source.provider).some(choice => choice.id === targetAccountId && (!choice.profile || !!choice.loginCompletedAt))) {
-      throw new Error('Choose a signed-in account for this provider before setting up its folder access.');
-    }
-    const target = this.accounts.getAccount(targetAccountId, source.provider);
-    if (target.profile && !target.loginCompletedAt) throw new Error(`Sign in to ${target.label} before setting up its folder access.`);
-    if (this.setupAccounts.has(target.id) || this.loginAccounts.has(target.id)) throw new Error(`A sign-in or setup console is already open for ${target.label}.`);
-    const reservation = { id, launchId, targetAccountId };
-    this.setupAccounts.set(target.id, reservation);
-    try {
-      const opened = await this.createOne({
-        provider: source.provider, cwd: source.cwd, name: `Set up ${target.label}`, nameMode: 'custom',
-        permissions: source.permissions, model: source.launchModel
-      }, {
-        accountId: target.id, purpose: 'setup',
-        cancelCheck: () => this.items.get(id) !== source || !source.alive || source.dismissed || source.launchId !== launchId
-      });
-      const setup = this.items.get(opened.id);
-      if (!setup?.alive || this.setupAccounts.get(target.id) !== reservation) throw new Error('The setup console could not be opened. The original console is still running.');
-      this.setupAccounts.set(target.id, setup);
-      this.emit('changed');
-      return opened;
-    } catch (error) {
-      if (this.setupAccounts.get(target.id) === reservation) this.setupAccounts.delete(target.id);
-      throw error;
-    }
-  }
-  async waitForOutputIdle(session, { afterSequence = -1, timeout = 15000, quietMs = this.draftQuietMs } = {}) {
-    const deadline = Date.now() + timeout;
-    while (Date.now() < deadline) {
-      if (!session.alive) throw new Error('The CLI process ended before the composer could be checked. Keep the original console open.');
-      if (session.sequence > afterSequence && session.lastOutputAt && Date.now() - session.lastOutputAt >= quietMs) return;
-      await new Promise(resolve => setTimeout(resolve, 50));
-    }
-    throw new Error('The CLI composer did not reach a stable prompt. Keep the original console open and try again.');
-  }
-  async nativeDraft(session, mode, text) {
-    const pending = this.draftBridge.request(session.id, session.launchId, mode, text);
-    session.terminal.write('\x07');
-    return pending;
-  }
-  validateSwitchDraft(text, provider) { return validateDraftText(text, provider); }
-  async removeNativeDraftMarker(session, marker, { timeout = 15000 } = {}) {
-    const deadline = Date.now() + timeout;
-    // An editor acknowledgement precedes its exit. Background terminal output
-    // can arrive before the CLI imports the file, so sequence/quiet alone is
-    // insufficient. The unique suffix must actually appear before deletion.
-    // ANSI styling and terminal line wrapping may split the ASCII suffix.
-    while (!plainTerminalText(session.buffer).replace(/\s/g, '').includes(marker)) {
-      if (!session.alive) throw new Error('The CLI closed while Paddock checked the draft. Keep this console open.');
-      if (Date.now() >= deadline) throw new Error('The CLI did not display the draft verification marker. Keep the original console open.');
-      await new Promise(resolve => setTimeout(resolve, 50));
-    }
-    await this.waitForOutputIdle(session);
-    const deleteSequence = session.sequence;
-    session.terminal.write('\x7f'.repeat(marker.length));
-    await this.waitForOutputIdle(session, { afterSequence: deleteSequence });
-  }
-  async captureNativeDraft(session, { dismissCodexStatusPopup = false } = {}) {
-    if (!session.draftSupported || !this.draftBridge) throw new Error('Paddock could not verify the CLI composer draft. Keep the current console open.');
-    const captureOnce = async () => {
-      await this.waitForOutputIdle(session);
-      const marker = `PDK${crypto.randomUUID().replaceAll('-', '')}`;
-      const text = await this.nativeDraft(session, 'capture', marker);
-      this.validateSwitchDraft(text, session.provider);
-      await this.removeNativeDraftMarker(session, marker);
-      // Removing the capture suffix reopens Codex's slash-command completion
-      // popup when the controlled local command is /status. Dismiss only that
-      // verified command state so the next acknowledged editor capture works.
-      if (dismissCodexStatusPopup && session.provider === 'codex' && text === '/status') {
-        const popupSequence = session.sequence;
-        session.terminal.write('\x1b');
-        await this.waitForOutputIdle(session, { afterSequence: popupSequence });
-      }
-      return text;
-    };
-    const first = await captureOnce();
-    this.validateSwitchDraft(first, session.provider);
-    const second = await captureOnce();
-    this.validateSwitchDraft(second, session.provider);
-    if (second !== first) throw new Error('The draft changed while Paddock checked it. Keep the current console open.');
-    return second;
-  }
-  async awaitResumeIdentity(session, expectedId, timeout = 20000) {
-    if (session.provider === 'codex') return this.confirmCodexResumeIdentity(session, expectedId);
-    const stateFile = path.join(this.root, 'events', `${session.id}.${session.launchId}.state.json`);
-    const usageFile = path.join(this.root, 'events', `${session.id}.${session.launchId}.usage.json`);
-    const deadline = Date.now() + timeout;
-    while (Date.now() < deadline) {
-      if (!session.alive) throw new Error('The selected conversation could not be reopened. Keep the original console open.');
-      const state = readJson(stateFile, {}), usage = readJson(usageFile, {});
-      for (const event of [state, usage]) if (event.session === session.id && event.launchId === session.launchId && event.accountId === session.accountId && event.providerSessionId) {
-        if (event.providerSessionId !== expectedId) throw new Error('The CLI opened a different conversation. Keep the original console open.');
-        session.providerSessionId = event.providerSessionId;
-        if (event.model) { session.model = event.model; session.modelId = event.modelId || event.model; }
-        return;
-      }
-      await new Promise(resolve => setTimeout(resolve, 100));
-    }
-    throw new Error('The CLI did not confirm the selected conversation. Keep the original console open.');
-  }
-  async confirmCodexResumeIdentity(session, expectedId) {
-    if (!/^[a-f0-9-]{36}$/i.test(expectedId || '')) throw new Error('The selected Codex conversation ID is unavailable. Keep the original console open.');
-    await this.waitForOutputIdle(session);
-    if (await this.captureNativeDraft(session) !== '') throw new Error('The selected account opened with a draft already present. Keep the original console open.');
-    const originalBuffer = session.buffer, initialSequence = session.sequence;
-    session.terminal.write('/status');
-    await this.waitForOutputIdle(session, { afterSequence: initialSequence });
-    const popupSequence = session.sequence;
-    session.terminal.write('\x1b');
-    await this.waitForOutputIdle(session, { afterSequence: popupSequence });
-    if (await this.captureNativeDraft(session, { dismissCodexStatusPopup: true }) !== '/status') throw new Error('Codex did not confirm its local status command. Keep the original console open.');
-    const commandSequence = session.sequence;
-    const statusStart = session.buffer.length;
-    session.terminal.write('\r');
-    await this.waitForOutputIdle(session, { afterSequence: commandSequence });
-    const statusText = plainTerminalText(session.buffer.slice(statusStart));
-    const match = statusText.match(new RegExp(`(?:^|\\n)\\s*Session:\\s*(${UUID_TEXT})`, 'i'));
-    if (!match) throw new Error('Codex did not report the selected conversation ID. Keep the original console open.');
-    if (match[1].toLowerCase() !== expectedId.toLowerCase()) throw new Error('Codex opened a different conversation. Keep the original console open.');
-    if (await this.captureNativeDraft(session) !== '') throw new Error('Codex did not return to an empty composer after its local status check. Keep the original console open.');
-    // /status is a local CLI command. Keep its temporary terminal output out of
-    // the visible handover checkpoint while retaining the live process state.
-    session.buffer = originalBuffer;
-    session.providerSessionId = expectedId;
-  }
-  async switchSettings({ id, launchId, model, effort, confirmConversationReload } = {}) {
-    if (confirmConversationReload !== true) throw new Error('Confirm reloading the saved conversation before applying these settings.');
-    const source = this.items.get(id);
-    if (source?.remote || source?.taskId || settingsAdapter(source?.provider).switchMethod !== 'resume') throw new Error('Model switching is unavailable for this console.');
-    return this.switchAccount({ id, launchId, targetAccountId: source.accountId }, { model, effort });
-  }
-  async switchAccount({ id, launchId, targetAccountId } = {}, settingsSelection = null) {
-    ordinaryConsole(this.items.get(id));
-    const source = this.items.get(id);
-    if (!source?.alive || source.dismissed || source.purpose !== 'agent' || source.launchId !== launchId) throw new Error('This console has changed. Select it again before switching.');
-    if (settingsAdapter(source.provider).switchMethod !== 'resume' || !this.accounts) throw new Error('Account switching is unavailable for this console.');
-    if (this.switchOperations.has(id)) throw new Error('An account switch is already in progress.');
-    if (settingsSelection && !['open', 'ready', 'idle'].includes(source.state)) throw new Error('Wait until this chat is idle before applying settings.');
-    if (source.switching || ['active', 'attention'].includes(source.state) || this.isBusy(id)) throw new Error('Finish the current task before switching accounts.');
-    const target = this.accounts.getAccount(targetAccountId, source.provider);
-    if (!settingsSelection && target.id === source.accountId) throw new Error('Choose a different account for this console.');
-    if (target.profile && !target.loginCompletedAt) throw new Error(`Sign in to ${target.label} before switching to it.`);
-    const operation = (async () => {
-      let staged = null, stageLaunchId = null, committed = false;
-      source.switching = true; source.switchTargetId = target.id; this.emit('changed');
-      try {
-        await this.hub?.waitForLaunchCalls?.(id, launchId);
-        if (this.items.get(id) !== source || !source.alive || source.dismissed || !source.switching || this.isBusy(id) || ['active', 'attention'].includes(source.state)) throw new Error('Finish the current task before switching accounts. The original console is still running.');
-        const selection = settingsSelection ? resolveSelection(await this.getModels(source.provider, source.accountId), settingsSelection, source) : null;
-        if (this.items.get(id) !== source || !source.alive || source.dismissed || source.launchId !== launchId) throw new Error('This console changed. Reopen the model choices.');
-        const draft = await this.captureNativeDraft(source);
-        if (source.provider === 'claude' && hasClaudeEditorContext(draft)) {
-          throw new Error('Turn off "Show last response in external editor" in Claude Code before switching. The current console and draft are still running.');
-        }
-        const currentSource = this.items.get(id);
-        if (currentSource !== source || !source.alive || source.dismissed || !source.switching || source.launchId !== launchId || this.isBusy(id) || ['active', 'attention'].includes(source.state)) throw new Error('The console changed while Paddock was checking it. The original console is still running.');
-        const liveTarget = this.accounts.getAccount(target.id, source.provider);
-        if (liveTarget.id !== target.id || liveTarget.provider !== source.provider || (liveTarget.profile && !liveTarget.loginCompletedAt)) throw new Error('The selected account changed or needs sign-in. The original console is still running.');
-        const history = selection ? await findConversation(source.accountConfigDir, source.provider, source.providerSessionId) : await copyConversation({
-          sourceConfig: source.accountConfigDir, targetConfig: liveTarget.configDir, provider: source.provider, sessionId: source.providerSessionId,
-          isTargetInUse: () => [...this.items.values()].some(item => item !== source && item.alive && item.provider === source.provider && item.accountId === target.id && item.providerSessionId === source.providerSessionId)
-        });
-        if (this.items.get(id) !== source || !source.alive || source.dismissed || !source.switching || source.launchId !== launchId) throw new Error('The original console was closed while Paddock checked its conversation.');
-        const resumeModel = selection ? selection.model : source.provider === 'codex'
-          ? await this.getThreadModel(target.id, source.providerSessionId)
-          : (source.modelId || source.model || null);
-        if (!resumeModel) throw new Error(`${source.provider === 'codex' ? 'Codex' : 'Claude Code'} has not confirmed the current conversation model. Keep the current console open.`);
-        if (this.items.get(id) !== source || !source.alive || source.dismissed || !source.switching || source.launchId !== launchId) throw new Error('The original console was closed while Paddock checked its model.');
-        const resumePath = source.provider === 'claude' ? path.join(liveTarget.configDir, 'projects', selection ? history.relative : history.path) : null;
-        const raw = { provider: source.provider, cwd: source.cwd, name: source.name, nameMode: source.nameMode, projectId: source.projectId, slot: source.slot, width: source.width, height: source.height, consoleKey: source.consoleKey, permissions: source.permissions, model: source.launchModel,
-          ...(selection ? {} : { effort: source.launchEffort ?? null }), worktree: source.worktree };
-        stageLaunchId = crypto.randomUUID();
-        staged = await this.createOne(raw, {
-          resumeId: source.providerSessionId, resumePath, accountId: target.id, sessionId: source.id, launchId: stageLaunchId, stage: true, resumeModel, resumeEffort: selection?.effort ?? null,
-          cancelCheck: () => this.items.get(id) !== source || !source.alive || source.dismissed || !source.switching || source.launchId !== launchId
-        });
-        const stageSession = this.pendingStages.get(stageLaunchId);
-        if (!stageSession) throw new Error('The selected account console could not be started. Keep the original console open.');
-        await this.waitForOutputIdle(stageSession);
-        await this.awaitResumeIdentity(stageSession, source.providerSessionId);
-        if (selection) {
-          // Launch flags are a request, not proof of the model used for inference.
-          delete stageSession.model; delete stageSession.modelId; delete stageSession.effort; delete stageSession.settingsAt;
-          stageSession.requestedSettings = { ...selection, at: Date.now(), status: 'awaiting-provider' };
-          stageSession.launchEffort = selection.effort;
-        }
-        const targetDraft = await this.captureNativeDraft(stageSession);
-        if (source.provider === 'claude' && hasClaudeEditorContext(targetDraft)) {
-          throw new Error('Turn off "Show last response in external editor" in Claude Code before switching. Keep the original console open.');
-        }
-        if (targetDraft !== '') throw new Error('The selected account opened with a draft already present. Keep the original console open.');
-        const marker = `PDK${crypto.randomUUID().replaceAll('-', '')}`;
-        await this.nativeDraft(stageSession, 'restore', draft + marker);
-        await this.removeNativeDraftMarker(stageSession, marker);
-        const restored = await this.captureNativeDraft(stageSession);
-        if (restored !== draft) throw new Error('The selected account could not confirm the exact unsent draft. Keep the original console open.');
-        if (this.items.get(id) !== source || !source.alive || source.dismissed || !source.switching || source.launchId !== launchId || this.isBusy(id) || ['active', 'attention'].includes(source.state)) throw new Error('The console changed while Paddock was switching accounts. The original console is still running.');
-        const finalTarget = this.accounts.getAccount(target.id, source.provider);
-        if (finalTarget.id !== liveTarget.id || finalTarget.provider !== source.provider || (finalTarget.profile && !finalTarget.loginCompletedAt)) throw new Error('The selected account changed. The original console is still running.');
-        Object.assign(stageSession, {
-          name: source.name, nameMode: source.nameMode, projectId: source.projectId,
-          slot: source.slot, width: source.width || 1, height: source.height || 1,
-          cols: source.cols || 110, rows: source.rows || 30, accountLabel: finalTarget.label
-        });
-        this.refreshContextFile(source);
-        stageSession.terminal.resize?.(stageSession.cols, stageSession.rows);
-        this.hub?.revoke(id, source.launchId);
-        this.draftBridge?.unregister(id, source.launchId);
-        stageSession.switching = false; delete stageSession.switchTargetId;
-        this.items.set(id, stageSession); this.pendingStages.delete(stageLaunchId); committed = true;
-        this.emit('changed');
-        this.emit('output', { id, launchId: stageSession.launchId, data: stageSession.buffer, sequence: stageSession.sequence, reset: true });
-        try { source.terminal.kill(); } catch {}
-        staged = publicSession(stageSession);
-      } catch (error) {
-        const stageSession = stageLaunchId && this.pendingStages.get(stageLaunchId);
-        if (stageSession && source.provider === 'codex' && hasCodexFolderTrustPrompt(stageSession.buffer) && this.items.get(id) === source && source.alive && !source.dismissed) {
-          error = new Error(`${target.label} needs to trust this project folder before it can resume here. Select "Set up ${target.label}" in this console's account menu. Paddock kept this console and its draft open.`);
-          this.emit('changed');
-        }
-        if (stageSession) {
-          this.pendingStages.delete(stageLaunchId);
-          this.hub?.revoke(stageSession.id, stageSession.launchId); this.draftBridge?.unregister(stageSession.id, stageSession.launchId);
-          try { stageSession.terminal.kill(); } catch {}
-        }
-        throw error;
-      } finally {
-        if (!committed && this.items.get(id) === source) { source.switching = false; delete source.switchTargetId; this.emit('changed'); }
-        this.switchOperations.delete(id);
-      }
-      return staged;
-    })();
-    this.switchOperations.set(id, operation);
-    return operation;
-  }
-  createRemote(raw) {
-    if (!this.ssh) throw new Error('SSH connections are unavailable.');
-    raw = this.projects?.launch(raw) || raw;
-    const opening = planOpening([...this.layoutItems(), ...this.starting.values()], raw, this.grid);
-    if (this.starting.size && (JSON.stringify(opening.grid) !== JSON.stringify(this.grid) || opening.plan.some(x => { const before = this.items.get(x.id) || this.starting.get(x.id); return before && ['slot','width','height'].some(k => x[k] !== before[k]); }))) throw new Error('Wait for the console to open before changing the layout.');
-    const id = crypto.randomUUID(), consoleKey = /^[a-f0-9-]{36}$/i.test(raw.consoleKey || '') ? raw.consoleKey : id;
-    const launch = this.ssh.launch(raw.remoteHostId, { consoleKey, provider: raw.provider, folder: raw.remoteFolder, model: raw.model });
-    const cwd = raw.cwd && path.isAbsolute(raw.cwd) && fs.existsSync(raw.cwd) ? raw.cwd : this.root;
-    const name = String(raw.name?.trim() || this.projects?.get(raw.projectId)?.name || launch.remote.name).slice(0, 64);
-    const env = terminalEnvironment();
-    for (const key of Object.keys(env)) if (/^(PADDOCK_|ELECTRON_RUN_AS_NODE$|OPENAI_API_KEY$|ANTHROPIC_API_KEY$|GOOGLE_API_KEY$|GEMINI_API_KEY$)/.test(key)) delete env[key];
-    const terminal = this.pty.spawn(launch.executable, launch.args, { name: 'xterm-256color', cwd, cols: 110, rows: 30, env, useConpty: true });
-    try { this.commitLayout(opening.plan.filter(x => this.items.has(x.id)), opening.grid); }
-    catch (error) { terminal.kill(); throw error; }
-    for (const [oldId, old] of this.items) if (old.slot === opening.slot && !old.alive) this.items.delete(oldId);
-    const session = { id, consoleKey, projectId: raw.projectId || null, slot: opening.slot, width: opening.width, height: opening.height,
-      name, nameMode: raw.nameMode || 'custom', cwd, provider: raw.provider, permissions: 'default', launchModel: raw.model || '',
-      remote: launch.remote, state: 'open', alive: true, cols: 110, rows: 30, createdAt: Date.now(), updatedAt: Date.now(),
-      terminal, buffer: '', sequence: 0, usage: null };
-    this.items.set(id, session);
-    terminal.onData(data => { session.buffer = (session.buffer + data).slice(-250000); this.emit('output', { id, data, sequence: ++session.sequence }); });
-    terminal.onExit(({ exitCode }) => {
-      session.alive = false; session.state = 'ended'; session.exitCode = exitCode;
-      if (!session.dismissed) { session.state = 'error'; session.restoreError = 'SSH disconnected. Reconnect to reattach the remote session.'; }
-      session.updatedAt = Date.now(); this.emit('changed');
-    });
-    this.projects?.touch(session.projectId);
-    this.emit('changed');
-    return this.list().find(x => x.id === id);
-  }
+
+  waitForOutputIdle(...args) { return this.getAccountSwitching().waitForOutputIdle(...args); }
+  nativeDraft(...args) { return this.getAccountSwitching().nativeDraft(...args); }
+  validateSwitchDraft(...args) { return this.getAccountSwitching().validateSwitchDraft(...args); }
+  removeNativeDraftMarker(...args) { return this.getAccountSwitching().removeNativeDraftMarker(...args); }
+  captureNativeDraft(...args) { return this.getAccountSwitching().captureNativeDraft(...args); }
+  awaitResumeIdentity(...args) { return this.getAccountSwitching().awaitResumeIdentity(...args); }
+  confirmCodexResumeIdentity(...args) { return this.getAccountSwitching().confirmCodexResumeIdentity(...args); }
+  switchSettings(payload) { return this.getAccountSwitching().switchSettings(payload); }
+  switchAccount(payload, settingsSelection) { return this.getAccountSwitching().switchAccount(payload, settingsSelection); }
+
   write(id, data, { draft = false, queued = false } = {}) {
     const item = this.items.get(id);
     ordinaryConsole(item);
@@ -677,14 +213,11 @@ class Sessions extends EventEmitter {
     if (!item?.alive) return;
     if (item.switching) throw new Error('This console is switching accounts. Your composer draft stays on the phone until switching finishes.');
     if (typeof data !== 'string' || data.length > 65536) throw new Error('Terminal input is too large.');
-    // Keep DEC 1004 focus events out of Codex's redraw path. xterm emits each
-    // report as a separate onData event; whole-event matching preserves paste contents.
-    if (item.provider === 'codex' && (data === '\x1b[I' || data === '\x1b[O')) return;
+    if (!sessionPolicy(item.provider).focusReports && (data === '\x1b[I' || data === '\x1b[O')) return;
     if (!draft && !queued && data && (!data.startsWith('\x1b') || data.startsWith('\x1b[200~'))) {
       this.ownerInteraction(id, 'typing', { ownerTurn: /[\r\n]/.test(data) || undefined });
     }
     item.terminal.write(data);
-    // Typed keys, not terminal reports such as focus or mouse events.
     if (!draft && !queued && !data.startsWith('\x1b')) item.lastInputAt = Date.now();
     if (!draft && /[\r\n]/.test(data)) this.projects?.touch(item.projectId);
     if (!draft && /[\r\n]/.test(data) && cliAgents.has(item.provider) && !item.remote) { item.state = 'active'; item.updatedAt = Date.now(); this.emit('changed'); }
@@ -712,13 +245,11 @@ class Sessions extends EventEmitter {
   refreshContextFile(item) {
     if (isPanel(item)) return;
     if (!this.hub || item.remote) return;
-    const names = ['PADDOCK.md', ...(item.provider === 'copilot' ? ['AGENTS.md'] : [])];
+    const names = sessionPolicy(item.provider).instructionFiles;
     let temp;
     try {
-      const summary = this.hub.summary() + (this.projects?.chatSummary(item) || '') + this.studyContext(item);
+      const summary = this.hub.summary({ knowledgeEnabled: this.hub.knowledgeEnabled?.(item.projectId) === true }) + (this.projects?.chatSummary(item) || '') + this.studyContext(item);
       if (this.contexts.get(item.id) === summary) return;
-      // Copilot discovers AGENTS.md in its custom instructions directory.
-      // Keep that launch copy current when the project or shared rules change.
       for (const name of names) {
         const file = path.join(this.root, 'sessions', item.id, name); temp = file + '.tmp';
         fs.writeFileSync(temp, summary, { mode: 0o600 }); fs.renameSync(temp, file);
@@ -757,7 +288,6 @@ class Sessions extends EventEmitter {
     if (!item || (!item.alive && !item.restoreError) || item.dismissed) throw new Error('This console is no longer open.');
     if (projectId !== null && (typeof projectId !== 'string' || !this.projects?.get(projectId))) throw new Error('Choose an existing project.');
     if (useProjectName != null && typeof useProjectName !== 'boolean') throw new Error('Choose whether to use the project name.');
-    // Associate metadata only. Never restart the PTY, replay input or change its folder.
     item.projectId = projectId;
     if (projectId) item.nameMode = useProjectName === true || (useProjectName == null && item.nameMode !== 'custom') ? 'project' : 'custom';
     else if (item.nameMode === 'project') item.nameMode = 'folder';
@@ -772,9 +302,7 @@ class Sessions extends EventEmitter {
     if (!Number.isInteger(slot) || slot < 1 || slot > this.grid.columns * this.grid.rows) throw new Error('Choose a slot inside the console grid.');
     return this.layout({ id, slot }, beforeMove);
   }
-  previewLayout(change) {
-    return planLayout(this.layoutItems(), change, this.grid);
-  }
+  previewLayout(change) { return planLayout(this.layoutItems(), change, this.grid); }
   layout(change, beforeMove = () => {}) {
     if (this.starting.size) throw new Error('Wait for the new console to open before moving panels.');
     const plan = this.previewLayout(change);
@@ -807,50 +335,8 @@ class Sessions extends EventEmitter {
     else this.items.delete(id);
     this.emit('changed');
   }
-  scanEvents() {
-    let changed = false;
-    for (const item of this.items.values()) {
-      if (item.taskId || ['login', 'setup'].includes(item.purpose) || !item.launchId || item.switching) continue;
-      for (const kind of ['identity', 'state', 'usage']) {
-        const file = path.join(this.root, 'events', `${item.id}.${item.launchId}.${kind}.json`);
-        try {
-          const stat = fs.statSync(file);
-          if (this.eventTimes.get(file) === stat.mtimeMs) continue;
-          this.eventTimes.set(file, stat.mtimeMs);
-          const event = readJson(file, {});
-          if (event.session !== item.id || event.launchId !== item.launchId) continue;
-          if (kind === 'identity') {
-            if (!['codex', 'antigravity'].includes(item.provider) || (item.provider === 'antigravity' && event.provider !== 'antigravity') || !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(event.providerSessionId || '')) continue;
-            this.codexIdentities.set(item.id, event.providerSessionId);
-            if (item.providerSessionId !== event.providerSessionId) { item.providerSessionId = event.providerSessionId; delete item.model; delete item.modelId; delete item.effort; delete item.settingsAt; changed = true; }
-            continue;
-          }
-          // A late completion from a previous chat must not replace the new
-          // chat selected with /new, /resume or /fork in this same terminal.
-          if (['codex', 'antigravity'].includes(item.provider) && this.codexIdentities.has(item.id) && event.providerSessionId && event.providerSessionId !== this.codexIdentities.get(item.id)) continue;
-          if (event.providerSessionId && event.providerSessionId !== item.providerSessionId) {
-            item.providerSessionId = event.providerSessionId;
-            delete item.model; delete item.modelId; delete item.effort; delete item.settingsAt;
-          }
-          if (event.usage) item.usage = event.usage;
-          if (event.messageUsage) this.emit('message-usage', { session: item, messages: [event.messageUsage] });
-          if (event.model) { item.model = event.model; item.modelId = event.modelId || event.model; item.effort = event.effort || null; item.settingsAt = event.at; }
-          if (event.contextPercent !== undefined) item.contextPercent = event.contextPercent;
-          if (event.state && item.alive) {
-            // A quiet callback can arrive after another agent has begun work in
-            // the same console. It must not clear that task's active state.
-            if (event.studyContinuation && !this.hub?.workbench?.completion?.canContinueStudy(item.id, event.turnId || null)) { changed = true; continue; }
-            item.state = event.state; item.updatedAt = event.at;
-            if (['ready', 'attention'].includes(event.state)) this.emit('attention', { ...this.list().find(x => x.id === item.id), turnId: event.turnId || null, summary: typeof event.summary === 'string' ? event.summary.slice(0, 200) : '' });
-          }
-          if (event.limits) this.emit('limits', event.limits);
-          changed = true;
-        } catch {}
-      }
-    }
-    if (changed) this.emit('changed');
-  }
-  updateUsage(recent) { for (const session of this.items.values()) { if (['login', 'setup'].includes(session.purpose) || (session.provider === 'codex' && (session.accountId || 'codex:default') !== 'codex:default')) continue; const match = recent.find(x => x.id === session.providerSessionId); if (match?.usage) session.usage = match.usage; if (match?.model) { session.model = match.model; session.modelId = match.model; session.effort = match.effort || null; session.settingsAt = match.settingsAt; } if (match?.messages?.length) this.emit('message-usage', { session, messages: match.messages }); } }
+  scanEvents() { this.eventRuntime.scanEvents(); }
+  updateUsage(recent) { this.eventRuntime.updateUsage(recent); }
   async stop() {
     this.stopping = true;
     this.projects?.off('changed', this.refreshProjectContext);

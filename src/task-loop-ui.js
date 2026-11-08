@@ -1,4 +1,6 @@
 
+import { openExecutionReport } from './ui/execution-report.js';
+
 export function taskLoopUI({ call, getState, getPage, escape: e, renderPage, toast, openResult }) {
   let choices = null, selected = '', detailStamp = '', listStamp = '', announcement = '', request = 0, bucket = '';
   const planDrafts = new Map();
@@ -17,6 +19,7 @@ export function taskLoopUI({ call, getState, getPage, escape: e, renderPage, toa
     .replace(new RegExp(`</?(${toolTags})\\b[^>]*>`, 'gi'), ' ')
     .replace(/\s+/g, ' ').trim();
   const outcomeFor = job => {
+    if (Object.hasOwn(job, 'outcome')) return job.outcome?.type === 'task' && job.outcome.taskId === job.id ? job.outcome : null;
     const results = getState()?.workbench?.results || [];
     const linked = results.find(item => item.id === job.resultId && item.outcome?.type === 'task' && item.outcome.taskId === job.id);
     return (linked || results.find(item => item.taskId === job.id && item.outcome?.type === 'task'))?.outcome || null;
@@ -116,7 +119,7 @@ export function taskLoopUI({ call, getState, getPage, escape: e, renderPage, toa
       ${job.reportError ? `<p class="form-error">${e(clean(job.reportError))}</p>` : ''}${job.error ? `<p class="form-error">${e(clean(job.error))}</p>` : ''}
       <details class="task-result-details" data-task-details="result-details"><summary>Details</summary>
         ${job.repo !== job.workFolder ? `<p>Repository: <span class="task-folder">${e(job.repo)}</span></p>` : ''}<p class="task-folder">${e(job.workFolder)}</p><p>${job.workflow === 'worktree' ? 'Separate worktree' : 'Current branch'}${job.branch ? `, ${e(job.branch)}` : ''}</p><p class="field-hint">Revision: <code>${e(job.sourceRevision)}</code></p>
-        ${job.resultId ? `<div class="task-actions"><button type="button" data-task-action="report" data-id="${e(job.id)}">Open markdown report</button></div>` : ''}${technical(job)}
+        ${job.executionHistory || job.resultId ? `<div class="task-actions"><button type="button" data-task-action="report" data-id="${e(job.id)}">Open report</button></div>` : ''}${technical(job)}
       </details>
     </article>`;
   }
@@ -127,7 +130,7 @@ export function taskLoopUI({ call, getState, getPage, escape: e, renderPage, toa
       ${job.repo !== job.workFolder ? `<p>Repository: <span class="task-folder">${e(job.repo)}</span></p>` : ''}
       <p class="task-folder">${e(job.workFolder)}</p><p>${job.workflow === 'worktree' ? 'Separate worktree' : 'Current branch'}${job.branch ? `, ${e(job.branch)}` : ''}</p>
       <p class="field-hint">Revision: <code>${e(job.sourceRevision)}</code></p>
-      <div class="task-actions">${running(job) || job.state === 'plan-ready' ? `<button type="button" data-task-action="stop" data-id="${e(job.id)}">Stop</button>` : ''}${job.resultId ? `<button type="button" data-task-action="report" data-id="${e(job.id)}">Open markdown report</button>` : ''}</div>
+      <div class="task-actions">${running(job) || job.state === 'plan-ready' ? `<button type="button" data-task-action="stop" data-id="${e(job.id)}">Stop</button>` : ''}${job.executionHistory || job.resultId ? `<button type="button" data-task-action="report" data-id="${e(job.id)}">Open report</button>` : ''}</div>
       ${job.reportError ? `<p class="form-error">${e(clean(job.reportError))}</p>` : ''}${job.error ? `<p class="form-error">${e(clean(job.error))}</p>` : ''}${technical(job)}
     </article>`;
   }
@@ -135,7 +138,7 @@ export function taskLoopUI({ call, getState, getPage, escape: e, renderPage, toa
     if (!bucket) bucket = jobs().length && jobs().every(historic) ? 'history' : 'active';
     if (!visibleJobs().some(job => job.id === selected)) selected = visibleJobs()[0]?.id || '';
     detailStamp = ''; listStamp = ''; announcement = '';
-    return `<div class="task-page"><header class="page-heading"><h1>Tasks</h1><div class="task-actions"><button type="button" data-task-action="refresh">Refresh</button></div></header>${tabs()}<p id="task-announcement" class="task-announcement" role="status" aria-live="polite" aria-atomic="true"></p><p class="task-empty field-hint" ${visibleJobs().length ? 'hidden' : ''}>${bucket === 'history' ? 'No finished tasks.' : 'No active tasks. Start a task from a console.'}</p><div class="task-layout" ${visibleJobs().length ? '' : 'hidden'}><nav aria-label="Repository tasks"><ul class="task-list">${list()}</ul></nav><div id="task-content">${detail(jobs().find(job => job.id === selected))}</div></div></div>`;
+    return `<div class="task-page"><header class="page-heading"><h1>Worker history</h1><div class="task-actions"><button type="button" data-task-action="refresh">Refresh</button></div></header>${tabs()}<p id="task-announcement" class="task-announcement" role="status" aria-live="polite" aria-atomic="true"></p><p class="task-empty field-hint" ${visibleJobs().length ? 'hidden' : ''}>${bucket === 'history' ? 'No finished tasks.' : 'No active tasks. Start a task from a console.'}</p><div class="task-layout" ${visibleJobs().length ? '' : 'hidden'}><nav aria-label="Repository tasks"><ul class="task-list">${list()}</ul></nav><div id="task-content">${detail(jobs().find(job => job.id === selected))}</div></div></div>`;
   }
   async function loadChoices() {
     const version = ++request;
@@ -259,7 +262,9 @@ export function taskLoopUI({ call, getState, getPage, escape: e, renderPage, toa
         getState().tasks = jobs().filter(item => item.id !== id); sync();
         if (!button.isConnected) focusSuccessor(action);
       }
-      if (action === 'report') { const job = jobs().find(item => item.id === id); if (job?.resultId) await openResult(job.resultId); }
+      if (action === 'report') { const job = jobs().find(item => item.id === id);
+        if (job?.executionHistory) await openExecutionReport(page => call('execution.report', { kind: 'task', id, ...page }), button, () => document.querySelector(`[data-task-action="select"][data-id="${id}"]`));
+        else if (job?.resultId) await openResult(job.resultId); }
     } catch (failure) { toast(failure.message, true); }
     finally { if (button.isConnected) { button.disabled = false; if (document.activeElement === document.body) button.focus({ preventScroll: true }); } }
   });

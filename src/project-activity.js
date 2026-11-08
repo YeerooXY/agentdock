@@ -1,3 +1,4 @@
+import { isOperationalResult } from './results-model.js';
 import { projectResolver } from './project-identity.js';
 
 const runningStates = new Set(['planning', 'reviewing-plan', 'building', 'implementing', 'checking', 'reviewing']);
@@ -10,6 +11,7 @@ const taskTime = item => item.startedAt || item.finishedAt || 0;
 // problem, and a newer task in the same project replaces an older outcome.
 // A plan waiting for approval always counts.
 function needsAttention(item, newest) {
+  if (item.automaticResolution && !item.decisionRequired) return false;
   if (!attentionStates.has(item.state) || closedByApp(item) || item.acknowledgedAt || item.dismissedAt || item.supersededBy) return false;
   return item.state === 'plan-ready' || taskTime(item) >= newest;
 }
@@ -35,6 +37,7 @@ export function projectActivity(state) {
     current.lastActiveAt = Math.max(current.lastActiveAt, item.updatedAt || item.finishedAt || item.startedAt || 0);
   }
   for (const item of state.workbench?.results || []) {
+    if (isOperationalResult(item)) continue;
     const current = activity.get(owner(item)); if (!current) continue;
     const at = item.updatedAt || item.at || 0;
     current.lastActiveAt = Math.max(current.lastActiveAt, at);

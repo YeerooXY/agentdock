@@ -16,7 +16,8 @@ function fixture(t, ownerOptions = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'paddock-owner-'));
   let time = 2_000_000;
   const owners = new OwnerConsoles(root, { now: () => time, ...ownerOptions });
-  const admission = new CapacityReservations(owners, { now: () => time });
+  // These tests exercise priority under an explicitly configured one-turn account cap.
+  const admission = new CapacityReservations(owners, { now: () => time, workers: () => [...new Set(['codex:a', ...owners.snapshot().map(owner => owner.quotaGroupId)])].filter(Boolean).map(id => ({ id, accountId: id, quotaGroupId: id, concurrency: 1 })) });
   t.after(() => { admission.dispose(); owners.dispose(); fs.rmSync(root, { recursive: true, force: true }); });
   const register = (key, extra = {}) => {
     owners.register({ consoleKey: key, launchId: `${key}-launch`, accountId: 'codex:a', projectId: 'project-a', ...extra });
