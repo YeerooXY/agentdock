@@ -3,7 +3,7 @@
 // Starts the current code against a copy of the real Paddock data, before the
 // real app is touched. The copy leaves out the console layout (so no agent
 // consoles reopen), the phone listener and Antigravity's credential switch, and
-// runs in test mode, so nothing reaches the live app, the phone port or the
+// runs in hidden startup-check mode (including failures), so nothing reaches the live app, the phone port or the
 // Windows credential store. Passes when the copy logs "window ready" with no
 // ERROR lines, and exits non-zero otherwise.
 //   node scripts/relaunch-preflight.cjs [--app <folder>] [--data <folder>]
@@ -38,7 +38,7 @@ async function main() {
     }
     for (const dir of COPY_DIRS) copyDir(path.join(data, dir), path.join(copy, dir));
     const env = { ...process.env }; delete env.ELECTRON_RUN_AS_NODE; delete env.NODE_OPTIONS;
-    const child = spawn(electron, [app, '--smoke-test', `--data-dir=${copy}`], { env, stdio: 'ignore', windowsHide: true });
+    const child = spawn(electron, [app, '--smoke-test', '--startup-check', `--data-dir=${copy}`], { env, stdio: 'ignore', windowsHide: true });
     const log = path.join(copy, 'logs', 'main.log');
     const deadline = Date.now() + 90_000;
     let ready = false, errors = [];

@@ -3,6 +3,7 @@
 // no account quota, so it appears in usage as Local rather than as unknown.
 module.exports = {
   id: 'strata',
+  settings: { strategy: 'cli' },
   catalog: null,
   launch: {},
   accounts: null,

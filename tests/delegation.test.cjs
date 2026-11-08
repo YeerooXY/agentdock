@@ -24,7 +24,9 @@ test('the reviewer is the account with the most measured room, another vendor pr
   assert.match(unknown.why, /usage unknown/);
   assert.equal(pickReviewer({ candidates: [claude, codex], limits, callerProvider: 'codex', requested: 'claude', now }).choice.id, 'claude:default');
   assert.throws(() => pickReviewer({ candidates: [claude], limits, callerProvider: 'codex', requested: 'kiro', now }), /not an allowed/);
-  assert.throws(() => pickReviewer({ candidates: [codex], limits: full, callerProvider: 'claude', now }), /90%/);
+  assert.equal(pickReviewer({ candidates: [codex], limits: full, callerProvider: 'claude', now }).choice.id, codex.id);
+  const exhausted = [{ accountId: codex.id, observedAt: now, windows: [window(100)] }];
+  assert.throws(() => pickReviewer({ candidates: [codex], limits: exhausted, callerProvider: 'claude', now }), /100%/);
 });
 
 test('reviewers start read-only, without Paddock tools, and read the brief from stdin', () => {
@@ -84,7 +86,7 @@ function fakeCli() {
   return { spawned, spawnProcess };
 }
 
-test('a review runs once per console, returns a short verdict and is saved in Results', async t => {
+test('a review runs once per console and retains its verdict internally without a Results card', async t => {
   const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'paddock-delegation-run-')), root = fs.mkdtempSync(path.join(os.tmpdir(), 'paddock-delegation-root-'));
   t.after(() => { fs.rmSync(repo, { recursive: true, force: true }); fs.rmSync(root, { recursive: true, force: true }); });
   const run = (...args) => execFileSync('git', args, { cwd: repo, stdio: 'pipe' });
@@ -108,8 +110,8 @@ test('a review runs once per console, returns a short verdict and is saved in Re
   const waiting = delegation.status(started.id, { waitSeconds: 30, sessionId: 's1' });
   cli.spawned[0].child.emit('close', 0);
   const done = await waiting;
-  assert.equal(done.state, 'done'); assert.equal(done.verdict, 'changes-requested'); assert.match(done.review, /a\.js:1/); assert.equal(done.resultId, 'r1');
-  assert.equal(saved[0].status, 'needs-review'); assert.match(saved[0].text, /Requested by Builder/);
+  assert.equal(done.state, 'done'); assert.equal(done.verdict, 'changes-requested'); assert.match(done.review, /a\.js:1/); assert.equal(done.resultId, null);
+  assert.equal(saved.length, 0); assert.match(delegation.executionHistory.get('review', done.id).report, /Requested by Builder/);
   assert.equal(fs.existsSync(path.dirname(outFile)), false, 'the brief folder is removed');
   // Claude replies as JSON; a stop ends the run and is reported as stopped.
   const second = await delegation.start({ reviewer: 'claude' }, caller);

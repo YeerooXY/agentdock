@@ -42,6 +42,16 @@ test('adapter schema rejects malformed adapters', () => {
   const bad = [
     [a => { a.id = 'other'; }, /file name must match/],
     [a => { a.extra = 1; }, /unknown top-level/],
+    [a => { a.settings.strategy = 'missing'; }, /unknown settings strategy/],
+    [a => { a.settings.extra = true; }, /unknown settings/],
+    [a => { a.settings.resumeFlag = ['--conversation']; }, /resumeFlag needs/],
+    [a => { a.settings = { strategy: 'codex', resumeFlag: '--conversation' }; }, /resumeFlag needs/],
+    [a => { a.session = { identityEvents: 'guess' }; }, /identity event policy/],
+    [a => { a.session = { focusReports: 'yes' }; }, /session flags/],
+    [a => { a.session = { steering: 'yes' }; }, /session flags/],
+    [a => { a.console = { permissions: 'yes' }; }, /console.permissions/],
+    [a => { a.console = { unknown: true }; }, /unknown console/],
+    [a => { a.session = { instructionFiles: ['../AGENTS.md'] }; }, /distinct basenames/],
     [a => { delete a.catalog.name; }, /catalog needs/],
     [a => { a.catalog.install = {}; }, /script or npm/],
     [a => { a.launch.surprise = 1; }, /unknown launch/],
@@ -60,4 +70,37 @@ test('adapter schema rejects malformed adapters', () => {
 test('two providers cannot claim the same fixed account', () => {
   const loader = id => { const adapter = structuredClone(registry.byId(id)); if (id === 'codex') adapter.usage = { reader: null, state: 'no-quota', accountIds: ['opencode:strata'] }; return adapter; };
   assert.throws(() => registry.load(loader), /already claimed/);
+});
+
+test('session policies are immutable, serializable and safe for unknown providers', () => {
+  assert.equal(registry.sessionPolicy('codex').focusReports, false);
+  assert.equal(registry.sessionPolicy('antigravity').identityEvents, 'tagged-uuid');
+  assert.deepEqual(registry.ids.filter(id => registry.sessionPolicy(id).persistConversation), ['codex', 'claude', 'antigravity']);
+  assert.deepEqual(registry.sessionPolicy('copilot').instructionFiles, ['PADDOCK.md', 'AGENTS.md']);
+  assert.equal(registry.sessionPolicy('__proto__').identityEvents, 'none');
+  assert.equal(Object.isFrozen(registry.sessionPolicy('copilot').instructionFiles), true);
+  for (const adapter of registry.adapters) assert.deepEqual(structuredClone(adapter), JSON.parse(JSON.stringify(adapter)));
+});
+
+test('console choices carry registry flags and steering uses one provider policy', () => {
+  const { consoleChoices } = require('../electron/mobile-console.cjs');
+  const { WorkerSessions } = require('../electron/worker-sessions.cjs');
+  const { consoleCapabilities } = require('../electron/worker-placement.cjs');
+  const choices = consoleChoices({ items: new Map(), cliSetup: { snapshot: () => [] } }, {});
+  const workers = new WorkerSessions({ items: new Map(), emit() {} }, {
+    jobs: new Map(), unconfirmed: new Set(), changed() {}, now: () => 1
+  });
+  for (const agent of choices.agents) {
+    assert.deepEqual(agent.consoleFeatures, registry.consoleFeaturesFor(agent.id));
+    const item = workers.open({ id: agent.id, rounds: [{ attemptId: 'a' }] }, { provider: agent.id });
+    assert.equal(item.steeringSupported, registry.sessionPolicy(agent.id).steering);
+    assert.equal(consoleCapabilities(item, null, true).steering,
+      registry.sessionPolicy(agent.id).steering);
+  }
+  assert.equal(registry.consoleFeaturesFor('__proto__').permissions, false);
+  assert.equal(Object.isFrozen(registry.consoleFeaturesFor('codex')), true);
+  assert.deepEqual(registry.ids.filter(id => registry.consoleFeaturesFor(id).modelChoices), ['codex', 'claude', 'opencode']);
+  assert.deepEqual(registry.ids.filter(id => registry.consoleFeaturesFor(id).mobileModelChoices), ['codex', 'claude']);
+  assert.deepEqual(registry.ids.filter(id => registry.consoleFeaturesFor(id).liveModelMenu), ['codex', 'claude', 'opencode']);
+  assert.deepEqual(registry.ids.filter(id => registry.sessionPolicy(id).steering), ['codex', 'claude', 'kiro']);
 });

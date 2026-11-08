@@ -11,9 +11,13 @@
 #content:is([data-view=usage],[data-view=projects]) { --page-max:var(--page-default) }
 
 /* Shared spacing for the redesigned pages. Console layout is independent. */
-#content:is([data-view=projects],[data-view=results],[data-view=usage]) { padding:24px; min-width:0 }
-#content:is([data-view=projects],[data-view=results],[data-view=usage])>.page-heading { gap:16px; margin-bottom:24px; flex-wrap:wrap }
-#content:is([data-view=projects],[data-view=results],[data-view=usage])>.page-heading h1,.settings-title { font-size:30px; line-height:1.22; letter-spacing:-.8px }
+#content:is([data-view=projects],[data-view=results],[data-view=usage]) { padding:28px 30px; min-width:0 }
+#content[data-view=tasks] { padding:28px 30px }
+#content:is([data-view=projects],[data-view=results],[data-view=usage])>.page-heading { gap:16px; flex-wrap:wrap }
+#content:is([data-view=projects],[data-view=tasks],[data-view=results],[data-view=usage]) .page-heading { margin-bottom:22px }
+#content:is([data-view=projects],[data-view=results],[data-view=usage]) .page-heading h1 { font-size:28px; line-height:1.22; letter-spacing:-.6px }
+#content[data-view=tasks] .page-heading h1 { font-size:28px; letter-spacing:-.6px }
+.settings-title { font-size:30px; line-height:1.22; letter-spacing:-.8px }
 #content:is([data-view=projects],[data-view=results],[data-view=usage]) :is(.primary,.secondary),.settings-content :is(.primary,.secondary) { min-height:40px; padding:10px 14px; border-radius:6px }
 #content:is([data-view=projects],[data-view=results],[data-view=usage]) .section-label { gap:16px }
 
@@ -49,6 +53,9 @@
 @media(max-width:650px) {
   #content[data-view=results] .result-filters { grid-template-columns:repeat(2,minmax(0,1fr)) }
   #content[data-view=results] #result-search { grid-column:1/-1 }
+}
+@media(max-width:600px) {
+  #content:is([data-view=projects],[data-view=tasks],[data-view=results],[data-view=usage]) { padding:20px 16px }
 }
 
 /* Settings: one darker panel with sections divided by lines, not separate cards. */

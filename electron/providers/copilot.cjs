@@ -1,6 +1,8 @@
 'use strict';
 module.exports = {
   id: 'copilot',
+  settings: { strategy: 'cli' },
+  session: { instructionFiles: ['PADDOCK.md', 'AGENTS.md'] },
   catalog: {
     name: 'GitHub Copilot',
     command: 'copilot',

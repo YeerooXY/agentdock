@@ -1,0 +1,19 @@
+{
+  "input": {
+    "usageAccounts": [{"id":"antigravity:default","provider":"antigravity","label":"Antigravity","hasUsage":true}],
+    "limits": [{
+      "accountId":"antigravity:default","provider":"antigravity","observedAt":1762000000000,
+      "windows":[
+        {"key":"claude-weekly","label":"Claude / GPT weekly","modelGroup":"claude-gpt","usedPercent":100,"resetsAt":1762457200000},
+        {"key":"claude-five-hour","label":"Claude / GPT 5-hour","modelGroup":"claude-gpt","usedPercent":null,"notApplicable":true,"resetsAt":null,"resetLabel":"Weekly limit reached"}
+      ]
+    }]
+  },
+  "output": {
+    "id":"antigravity:default","provider":"antigravity","label":"Antigravity","hasUsage":true,"inUse":false,"check":null,
+    "windows":[
+      {"key":"claude-weekly","label":"Claude / GPT weekly","modelGroup":"claude-gpt","usedPercent":100,"resetsAt":1762457200000,"observedAt":1762000000000},
+      {"key":"claude-five-hour","label":"Claude / GPT 5-hour","modelGroup":"claude-gpt","usedPercent":null,"notApplicable":true,"resetsAt":null,"resetLabel":"Weekly limit reached","observedAt":1762000000000}
+    ]
+  }
+}

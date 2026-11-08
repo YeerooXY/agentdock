@@ -1,6 +1,7 @@
 'use strict';
 module.exports = {
   id: 'pi',
+  settings: { strategy: 'cli' },
   catalog: {
     name: 'Pi',
     command: 'pi',

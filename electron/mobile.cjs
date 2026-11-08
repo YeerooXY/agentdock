@@ -11,15 +11,14 @@ const { readJson, atomicJson } = require('./storage.cjs');
 const { TerminalStream } = require('./mobile-stream.cjs');
 const { isPrivate, isPublic, isTailscale, connectionOptions } = require('./mobile-address.cjs');
 const { MobileNetwork } = require('./mobile-network.cjs');
-const { consoleChoices, mobileLaunch, consoleFiles, worktreeRoot } = require('./mobile-console.cjs');
-const { prepareWorktree } = require('./worktrees.cjs');
 const { MobileAttachments } = require('./mobile-attachments.cjs');
-const { settingsSummary } = require('./mobile-settings.cjs');
 const mobileProjects = require('./mobile-projects.cjs');
 const { MobilePreview } = require('./mobile-preview.cjs');
 const { consoleCapabilities } = require('./worker-placement.cjs');
 const { imageJobs, resumableImageJob } = require('./mobile-images.cjs');
 const { StateConnection } = require('./state-sync.cjs');
+const { createMobileCommands } = require('./mobile-commands.cjs');
+const { screenProfiles } = require('./providers/index.cjs');
 const token = () => crypto.randomBytes(32).toString('base64url');
 const digest = text => crypto.createHash('sha256').update(text).digest('hex');
 const match = (value, stored) => {
@@ -61,9 +60,9 @@ const STATE_MESSAGES = new Set(['hello', 'subscribe', 'ack', 'resync', 'pong']);
 // Phone fields that are not slices yet. v2 phones get them in `extras` frames.
 const EXTRA_FIELDS = ['connection', 'previews', 'projects', 'imageJobs', 'imageJobsRunning', 'capabilities', 'alerts', 'unreadResults', 'resultVersion'];
 class MobileCompanion extends EventEmitter {
-  constructor(root, safeStorage, { sessions, results, alerts, queue, prompts, getUsage, getUsageTurns, refreshUsage, getDefaults, getModels, getSettings, toolsStatus = false, getKey, codePanel, networkScript, program, network, worktrees, endMobileSession, concepts, redactImageText, testMode = false, isTailnet = isTailscale, stateSync = null, getTasks = null } = {}) {
+  constructor(root, safeStorage, { sessions, results, alerts, queue, prompts, getUsage, getUsageTurns, refreshUsage, getDefaults, getModels, getSettings, toolsStatus = false, getKey, codePanel, networkScript, program, network, worktrees, endMobileSession, concepts, redactImageText, testMode = false, isTailnet = isTailscale, stateSync = null, getTasks = null, knowledge = null } = {}) {
     super(); this.file = path.join(root, 'mobile.json'); this.crypto = safeStorage;
-    this.getTasks = getTasks;
+    this.getTasks = getTasks; this.knowledge = knowledge;
     this.queue = queue; this.prompts = prompts; this.worktrees = worktrees; this.endMobileSession = endMobileSession; this.concepts = concepts; this.redactImageText = redactImageText;
     this.sessions = sessions; this.results = results; this.getUsage = getUsage; this.getDefaults = getDefaults; this.testMode = testMode;
     this.preview = new MobilePreview(sessions);
@@ -77,6 +76,7 @@ class MobileCompanion extends EventEmitter {
     this.tailnet = isTailnet;
     this.attachments = new MobileAttachments();
     this.code = new (require('./mobile-code.cjs').MobileCode)(sessions, codePanel);
+    this.commands = this.createCommands();
     this.config = readJson(this.file, { enabled: false, host: '', port: 47831 });
     this.config.mappingId ||= crypto.randomUUID();
     // Phones connect only through Tailscale. A saved Wi-Fi or direct-internet
@@ -293,13 +293,13 @@ class MobileCompanion extends EventEmitter {
   publicState() {
     const extras = this.extrasState();
     const { connection, previews, projects, imageJobs, imageJobsRunning, capabilities, alerts, unreadResults, resultVersion } = extras;
-    return { connection, previews, projects, imageJobs, imageJobsRunning, capabilities, capacity: (this.sessions.grid?.columns || 3) * (this.sessions.grid?.rows || 3), sessions: this.sessions.list().filter(x => !x.dismissed).map(item => mobileSession(item, this.sessions)), queues: this.queue?.snapshot() || {}, prompts: this.prompts?.list() || [], alerts, unreadResults, resultVersion };
+    return { connection, previews, projects, imageJobs, imageJobsRunning, capabilities, agentProfiles: screenProfiles, capacity: (this.sessions.grid?.columns || 3) * (this.sessions.grid?.rows || 3), sessions: this.sessions.list().filter(x => !x.dismissed).map(item => mobileSession(item, this.sessions)), queues: this.queue?.snapshot() || {}, prompts: this.prompts?.list() || [], alerts, unreadResults, resultVersion };
   }
   extrasState() {
     const localUrl = `https://${this.config.host}:${this.config.port}`;
     const connection = { url: localUrl };
     connection.name = this.name;
-    return { connection, previews: (this.sessions.codePanels?.() || []).filter(p => p.kind === 'web').map(({ id, name, url, state, phoneAllowed }) => ({ id, name, url, state, phoneAllowed: phoneAllowed === true })), projects: (typeof this.sessions.projects?.list === 'function' ? this.sessions.projects.list() || [] : []).filter(x => x.status !== 'archived').map(({ id, name, color }) => ({ id, name, ...(color ? { color } : {}) })), imageJobs: this.concepts ? imageJobs(this.concepts, this.redactImageText) : [], imageJobsRunning: !!this.concepts?.items.some(x => ['submitting', 'waiting', 'downloading'].includes(x.state)), capabilities: [...(this.concepts ? ['image.jobs'] : []), ...(this.toolsStatus ? ['tools.status'] : []), ...(typeof this.getUsageTurns === 'function' ? ['usage.turns'] : []), ...(mobileProjects.available(this.sessions.projects) ? ['projects.read'] : []), 'code.read', 'results.thumbnails', 'results.actions', 'console.agents', ...(this.worktrees && this.endMobileSession ? ['console.worktree'] : []), 'console.files', 'console.close', 'console.projects', 'console.models', ...(typeof this.sessions.switchSettings === 'function' ? ['console.settings'] : []), 'console.ssh', 'console.manage', 'console.switch', 'console.setup', 'alerts.direct', 'console.attachments', ...(this.queue ? ['console.queue'] : []), ...(this.prompts ? ['prompts', 'prompts.edit'] : []), ...(this.sessions.workerBridge ? ['worker.submit', 'worker.stop'] : []), ...(this.stateV2() ? ['state.v2'] : []), ...(typeof this.getTasks === 'function' ? ['tasks.actions'] : [])], alerts: this.liveAlerts, unreadResults: this.results.unreadGroups(), resultVersion: digest(this.results.list().map(x => x.id + ':' + x.seenAt + ':' + x.changeCount).join(',')).slice(0, 16) };
+    return { connection, previews: (this.sessions.codePanels?.() || []).filter(p => p.kind === 'web').map(({ id, name, url, state, phoneAllowed }) => ({ id, name, url, state, phoneAllowed: phoneAllowed === true })), projects: (typeof this.sessions.projects?.list === 'function' ? this.sessions.projects.list() || [] : []).filter(x => x.status !== 'archived').map(({ id, name, color }) => ({ id, name, ...(color ? { color } : {}), ...(this.knowledge ? { knowledgeMode: this.knowledge.enabled(id) ? this.knowledge.automatic(id) ? 'automatic' : 'read' : 'off', knowledgeVersion: this.knowledge.upkeep?.epoch || 0 } : {}) })), imageJobs: this.concepts ? imageJobs(this.concepts, this.redactImageText) : [], imageJobsRunning: !!this.concepts?.items.some(x => ['submitting', 'waiting', 'downloading'].includes(x.state)), capabilities: [...(this.concepts ? ['image.jobs'] : []), ...(this.toolsStatus ? ['tools.status'] : []), ...(typeof this.getUsageTurns === 'function' ? ['usage.turns'] : []), ...(mobileProjects.available(this.sessions.projects) ? ['projects.read', ...(this.knowledge ? ['projects.workspace'] : [])] : []), 'code.read', 'results.thumbnails', 'results.actions', 'console.agents', ...(this.worktrees && this.endMobileSession ? ['console.worktree'] : []), 'console.files', 'console.close', 'console.projects', 'console.models', ...(typeof this.sessions.switchSettings === 'function' ? ['console.settings'] : []), 'console.ssh', 'console.manage', 'console.switch', 'console.setup', 'alerts.direct', 'console.attachments', ...(this.queue ? ['console.queue'] : []), ...(this.prompts ? ['prompts', 'prompts.edit'] : []), ...(this.sessions.workerBridge ? ['worker.submit', 'worker.stop'] : []), ...(this.stateV2() ? ['state.v2'] : []), ...(typeof this.getTasks === 'function' ? ['tasks.actions'] : [])], alerts: this.liveAlerts, unreadResults: this.results.unreadGroups(), resultVersion: digest(this.results.list().map(x => x.id + ':' + x.seenAt + ':' + x.changeCount).join(',')).slice(0, 16) };
   }
   scheduleState() {
     if (!this.server || this.stateTimer) return;
@@ -370,6 +370,19 @@ class MobileCompanion extends EventEmitter {
     });
     ws.on('error', () => {}); ws.on('close', () => { client.v2?.dispose(); this.clients.delete(client); this.emit('changed'); });
   }
+  createCommands() {
+    return createMobileCommands({
+      sessions: this.sessions, knowledge: this.knowledge, results: this.results, attachments: this.attachments, code: this.code, concepts: this.concepts,
+      authorized: client => client.ws.readyState === WebSocket.OPEN && this.clients.has(client) && this.private.devices.includes(client.device),
+      defaults: () => this.getDefaults(), worktrees: () => this.worktrees, endMobileSession: () => this.endMobileSession,
+      queue: () => this.queue, prompts: () => this.prompts, publicState: () => this.publicState(), persist: () => this.persist(),
+      renameDevice: (client, name) => this.rename({ id: client.device.id, name }),
+      settings: () => this.getSettings, toolsStatus: () => this.toolsStatus,
+      hasModels: () => typeof this.getModels === 'function', models: (...args) => this.getModels(...args),
+      tasks: () => typeof this.getTasks === 'function' ? this.getTasks() : null,
+      usageTurns: () => this.getUsageTurns, refreshUsage: () => this.refreshUsage, usage: () => this.getUsage()
+    });
+  }
   async call(client, method, payload = {}) {
     // Closing a WebSocket is a handshake, not an authorization boundary.
     // Frames already buffered can still arrive after revoke/replacement.
@@ -384,219 +397,7 @@ class MobileCompanion extends EventEmitter {
         !WORKER_CONSOLE_READS.has(method) && !WORKER_ACTIONS.has(method)) {
       throw new Error('Use the worker composer or Stop worker.');
     }
-    switch (method) {
-      case 'worker.submit': case 'worker.stop': {
-        if (!this.sessions.workerBridge || client.selected !== payload.id) throw new Error('Select a current worker first.');
-        this.sessions.workerBridge.current(payload);
-        if (method === 'worker.submit') return this.sessions.workerBridge.submit(payload);
-        return this.sessions.workerBridge.stop(payload);
-      }
-      case 'projects.list': return mobileProjects.readProjects(this.sessions);
-      case 'projects.detail': return mobileProjects.readProjects(this.sessions, payload.id, true);
-      case 'state': return this.publicState();
-      case 'device.rename': return this.rename({ id: client.device.id, name: payload.name });
-      case 'subscribe': {
-        if (payload.id && !this.sessions.items.has(payload.id)) throw new Error('This console is no longer open.');
-        client.selected = payload.id || ''; client.sequence = Number.isSafeInteger(payload.sequence) ? payload.sequence : -1; client.epoch = Number.isSafeInteger(payload.epoch) ? payload.epoch : 0; client.saver = payload.saver !== false; client.lastFlush = 0; return true;
-      }
-      case 'input': {
-        if (client.selected !== payload.id || !this.sessions.items.get(payload.id)?.alive) throw new Error('Select an open console first.');
-        if (typeof payload.data !== 'string' || payload.data.length > 65536) throw new Error('Input is too large.');
-        this.sessions.acknowledge(payload.id); this.sessions.write(payload.id, payload.data); return true;
-      }
-      case 'acknowledge': this.sessions.acknowledge(payload.id); return true;
-      case 'queue.add': case 'queue.edit': case 'queue.remove': case 'queue.move': case 'queue.pause': case 'queue.send': {
-        // Queue changes apply only to the console this phone has open.
-        if (!this.queue) throw new Error('Update Paddock on your PC to queue messages.');
-        if (client.selected !== payload.id) throw new Error('Select an open console first.');
-        if (method === 'queue.add') return this.queue.add(payload.id, payload.text, { ownerRequested: true });
-        if (method === 'queue.edit') {
-          try { this.queue.edit(payload.id, payload.entryId, payload.text); }
-          catch (error) {
-            if (error.message === 'This console has no queued messages.') throw new Error('This queued message was already sent or removed.');
-            throw error;
-          }
-          return true;
-        }
-        if (method === 'queue.remove') { this.queue.remove(payload.id, payload.entryId); return true; }
-        if (method === 'queue.move') { this.queue.move(payload.id, payload.entryId, payload.offset); return true; }
-        if (method === 'queue.pause') { this.queue.pause(payload.id, payload.paused === true); return true; }
-        await this.queue.sendNow(payload.id, payload.entryId); return true;
-      }
-      case 'prompts.save': {
-        if (!this.prompts) throw new Error('Update Paddock on your PC to manage prompts.');
-        const scope = payload.scope === undefined ? (payload.projectId == null ? 'global' : 'project') : payload.scope;
-        if (!['global', 'project'].includes(scope) || (scope === 'global' && payload.projectId != null)) throw new Error('Choose This PC or a project for the prompt.');
-        const projectId = scope === 'project' ? payload.projectId : null;
-        const project = typeof projectId === 'string' && /^[\w-]{1,64}$/.test(projectId) ? this.sessions.projects?.get(projectId) : null;
-        if (scope === 'project' && (!project || project.status === 'archived')) throw new Error('Choose an existing project on this PC.');
-        return this.prompts.save({ name: payload.name, text: payload.text, projectId });
-      }
-      case 'prompts.remove': {
-        if (!this.prompts) throw new Error('Update Paddock on your PC to manage prompts.');
-        this.prompts.remove(payload.id); return true;
-      }
-      case 'console.worktree.root': {
-        if (!this.worktrees || !this.endMobileSession) throw new Error('Worktrees are unavailable on this PC.');
-        if (payload.cwd !== undefined || payload.path !== undefined) throw new Error('Choose a saved project folder.');
-        const launch = mobileLaunch(this.sessions, this.getDefaults(), payload);
-        return { root: !launch.remoteHostId && await worktreeRoot(this.worktrees, launch.cwd) };
-      }
-      case 'console.create': {
-        if (payload.worktree !== undefined && typeof payload.worktree !== 'boolean') throw new Error('Invalid worktree option.');
-        const launch = mobileLaunch(this.sessions, this.getDefaults(), payload);
-        if (payload.worktree) {
-          if (payload.cwd !== undefined || payload.path !== undefined) throw new Error('Choose a saved project folder.');
-          if (!this.worktrees || !this.endMobileSession) throw new Error('Worktrees are unavailable on this PC.');
-          if (launch.remoteHostId || !await worktreeRoot(this.worktrees, launch.cwd)) throw new Error('Choose a Git repository root on this PC.');
-          if (client.ws.readyState !== WebSocket.OPEN || !this.clients.has(client) || !this.private.devices.includes(client.device)) throw new Error('This phone connection is no longer authorized.');
-          await prepareWorktree(launch, this.worktrees, this.getDefaults().cwd);
-        }
-        return this.sessions.create(launch);
-      }
-      case 'console.worktree.status': {
-        const session = this.sessions.items.get(payload.id);
-        if (client.selected !== payload.id || !session?.worktree || session.dismissed || (session.launchId || null) !== (payload.launchId || null) || !this.worktrees) throw new Error('Select the current worktree console.');
-        const status = await this.worktrees.status(session.worktree).catch(() => null);
-        if (client.selected !== payload.id || this.sessions.items.get(payload.id) !== session || session.dismissed || (session.launchId || null) !== (payload.launchId || null) || client.ws.readyState !== WebSocket.OPEN || !this.clients.has(client) || !this.private.devices.includes(client.device)) throw new Error('Console changed.');
-        return { dirty: status?.dirty ?? null, ahead: status?.ahead ?? null };
-      }
-      case 'console.settings': {
-        const session = this.sessions.items.get(payload.id);
-        if (client.selected !== payload.id || !session?.alive || session.launchId !== payload.launchId || session.consoleKey !== payload.consoleKey || session.accountId !== payload.accountId) throw new Error('This console changed. Reopen the model choices.');
-        return this.sessions.switchSettings({ id: payload.id, launchId: payload.launchId, model: payload.model, effort: payload.effort, confirmConversationReload: payload.confirmConversationReload });
-      }
-      case 'console.switch': {
-        const session = this.sessions.items.get(payload.id);
-        if (client.selected !== payload.id || !session?.alive || session.launchId !== payload.launchId || session.consoleKey !== payload.consoleKey || session.accountId !== payload.accountId) throw new Error('This console changed. Open its account menu again.');
-        return this.sessions.switchAccount({ id: payload.id, launchId: payload.launchId, targetAccountId: payload.targetAccountId });
-      }
-      case 'console.rename': case 'console.project': {
-        const session = this.sessions.items.get(payload.id);
-        if (client.selected !== payload.id || !session?.alive || session.dismissed ||
-            typeof payload.consoleKey !== 'string' || !payload.consoleKey ||
-            !(typeof payload.launchId === 'string' && payload.launchId || payload.launchId === null && session.remote && !session.launchId) ||
-            session.consoleKey !== payload.consoleKey || (session.launchId || null) !== payload.launchId) {
-          throw new Error('This console changed. Open its menu again.');
-        }
-        if (method === 'console.rename') {
-          if (typeof payload.name !== 'string' || !payload.name.trim() || payload.name.length > 64 || /[\x00-\x1f\x7f]/.test(payload.name)) throw new Error('Use a name from 1 to 64 characters, on one line.');
-          this.sessions.rename(payload.id, payload.name.trim());
-          this.results.renameConsole(session.consoleKey, session.name);
-          return true;
-        }
-        const project = typeof payload.projectId === 'string' ? this.sessions.projects?.get(payload.projectId) : null;
-        if (payload.projectId !== null && (!project || project.status === 'archived')) throw new Error('Choose an existing project on this PC.');
-        return this.sessions.assignProject(payload.id, payload.projectId);
-      }
-      case 'console.setup': {
-        const session = this.sessions.items.get(payload.id);
-        if (client.selected !== payload.id || !session?.alive || session.launchId !== payload.launchId || session.consoleKey !== payload.consoleKey || session.accountId !== payload.accountId) throw new Error('This console changed. Open its account menu again.');
-        return this.sessions.createSetupConsole({ id: payload.id, launchId: payload.launchId, targetAccountId: payload.targetAccountId });
-      }
-      case 'console.agents': return consoleChoices(this.sessions, this.getDefaults());
-      case 'console.models': {
-        if (!['codex', 'claude'].includes(payload.provider)) return { models: [], livePicker: false };
-        const session = payload.id ? this.sessions.items.get(payload.id) : null;
-        if (payload.id && (client.selected !== payload.id || !session?.alive || session.provider !== payload.provider || session.launchId !== payload.launchId || session.accountId !== payload.accountId || session.consoleKey !== payload.consoleKey)) throw new Error('This console changed. Reopen the model choices.');
-        if (!this.getModels) return { models: [], livePicker: false };
-        const models = await this.getModels(payload.provider, session?.accountId);
-        if (client.ws.readyState !== WebSocket.OPEN || !this.clients.has(client) || !this.private.devices.includes(client.device)) throw new Error('Connection changed.');
-        if (session && (client.selected !== payload.id || this.sessions.items.get(payload.id) !== session || session.launchId !== payload.launchId || !session.alive)) throw new Error('This console changed. Reopen the model choices.');
-        this.sessions.mobileModels ||= new Map();
-        this.sessions.mobileModels.set(payload.provider, new Set(models.map(x => x.id)));
-        return { models, livePicker: true, settingsSupported: typeof this.sessions.switchSettings === 'function', reloadsConversation: true };
-      }
-      case 'settings.summary': {
-        if (!this.getSettings) throw new Error('PC settings are unavailable. Update Paddock on your PC.');
-        return settingsSummary({ ...this.getSettings(), capabilities: this.toolsStatus ? ['tools.status'] : [] });
-      }
-      case 'code.list': case 'code.read': {
-        const session = this.sessions.items.get(payload.consoleId);
-        if (client.selected !== payload.consoleId) throw new Error('Select an open console first.');
-        if (client.codeRequest) throw new Error('Wait for the code request.');
-        client.codeRequest = true;
-        try {
-          const roots = JSON.stringify(this.code.roots(session));
-          const value = await this.code.call(method, session, payload.path);
-          if (client.ws.readyState !== WebSocket.OPEN || !this.clients.has(client) ||
-              !this.private.devices.includes(client.device) || client.selected !== payload.consoleId ||
-              this.sessions.items.get(payload.consoleId) !== session || session.dismissed ||
-              JSON.stringify(this.code.roots(session)) !== roots) throw new Error('Console or connection changed. Reopen Code.');
-          return value;
-        } finally { client.codeRequest = false; }
-      }
-      case 'console.files': {
-        const session = this.sessions.items.get(payload.id);
-        if (session?.remote) throw new Error('Remote files are available through the SSH terminal.');
-        if (client.selected !== payload.id || !session || session.dismissed) throw new Error('Select an open console first.');
-        if (client.fileRequest) throw new Error('Wait for the file list.');
-        client.fileRequest = true;
-        try {
-          const value = await consoleFiles(session, payload);
-          if (client.ws.readyState !== WebSocket.OPEN || !this.clients.has(client) ||
-              !this.private.devices.includes(client.device) || client.selected !== payload.id ||
-              this.sessions.items.get(payload.id) !== session || session.dismissed) throw new Error('Console or connection changed. Reopen Files.');
-          return value;
-        } finally { client.fileRequest = false; }
-      }
-      case 'console.close': {
-        const session = this.sessions.items.get(payload.id);
-        if (payload.confirm !== true || client.selected !== payload.id || !session || session.dismissed) throw new Error('Confirm closing the selected console.');
-        if (session.worktree) {
-          if (!this.endMobileSession || !['keep', 'remove'].includes(payload.worktree) || (session.launchId || null) !== (payload.launchId || null)) throw new Error('Choose how to close this worktree console.');
-          const valid = () => client.ws.readyState === WebSocket.OPEN && this.clients.has(client) && this.private.devices.includes(client.device) && client.selected === payload.id && this.sessions.items.get(payload.id) === session && !session.dismissed && (session.launchId || null) === (payload.launchId || null);
-          if (!await this.endMobileSession(payload.id, payload.worktree, valid)) throw new Error('Console changed.');
-        } else await this.sessions.end(payload.id);
-        client.selected = '';
-        return true;
-      }
-      case 'attachment.begin': {
-        if (client.selected !== payload.id) throw new Error('Select a console first.');
-        return this.attachments.begin(client, this.sessions.items.get(payload.id), payload.size);
-      }
-      case 'attachment.chunk': return this.attachments.chunk(client, payload);
-      case 'attachment.finish': return this.attachments.finish(client, payload, () =>
-        client.ws.readyState === WebSocket.OPEN && this.clients.has(client) && this.private.devices.includes(client.device));
-      case 'image.resume': {
-        if (!this.concepts) throw new Error('Image jobs are unavailable.');
-        if (typeof payload.id !== 'string' || !/^[a-f0-9-]{36}$/.test(payload.id) || Object.keys(payload).some(key => key !== 'id')) throw new Error('Invalid image job.');
-        const job = this.concepts.items.find(x => x.id === payload.id);
-        if (!resumableImageJob(job)) throw new Error('This image job cannot be resumed.');
-        this.concepts.resume(job.id); return true;
-      }
-      case 'results.list': return this.results.list().map(({ id, title, kind, status, summary, at, size, image, ext, groupId, sessionId, consoleKey, consoleName, seenAt, project, projectId, changeCount, git, gitEnd, outcome }) => ({ id, title, kind, status, summary, at, size, image, ext, groupId, sessionId, consoleKey, consoleName, seenAt, project, projectId, changeCount, git, gitEnd, ...(outcome ? { outcome } : {}) }));
-      case 'results.preview': {
-        if (typeof payload.id !== 'string' || !/^[a-f0-9-]{36}$/.test(payload.id)) throw new Error('Choose a result.');
-        if (payload.thumbnail !== undefined && typeof payload.thumbnail !== 'boolean') throw new Error('Invalid thumbnail option.');
-        const value = await this.results.preview(payload.id, payload.thumbnail !== false, payload.entry);
-        if (JSON.stringify(value).length > 3 * 1024 * 1024) throw new Error('This preview is too large. Open it on your PC.');
-        return value;
-      }
-      case 'results.seen': return this.results.markSeen(payload.ids);
-      // Delegated tasks: mark as seen, or close a stopped task with a reason.
-      case 'tasks.seen': case 'tasks.close': {
-        const tasks = typeof this.getTasks === 'function' ? this.getTasks() : null;
-        if (!tasks) throw new Error('Tasks are unavailable on this PC.');
-        if (typeof payload.id !== 'string' || !tasks.jobs?.has(payload.id)) throw new Error('Task not found.');
-        if (method === 'tasks.seen') { tasks.acknowledge(payload.id); return true; }
-        const reason = typeof payload.reason === 'string' ? payload.reason.trim() : '';
-        if (!reason || reason.length > 300) throw new Error('Enter a reason up to 300 characters.');
-        return tasks.dismiss(payload.id, { reason, by: 'owner' });
-      }
-      case 'results.delete': return this.results.remove(payload.ids);
-      case 'usage.turns':
-        if (typeof this.getUsageTurns !== 'function') throw new Error('Turn usage is unavailable on this host.');
-        return require('./mobile-usage.cjs').turnPage(await this.getUsageTurns(), this.sessions.projects?.list?.() || [], payload);
-      case 'usage':
-        if (payload.refresh === true) this.refreshUsage?.().catch(() => {});
-        return this.getUsage();
-      case 'alerts.mode':
-        if (typeof payload.direct !== 'boolean') throw new Error('Choose a notification mode.');
-        client.device.directAlerts = payload.direct; this.persist(); return true;
-      case 'ping': return true;
-      default: throw new Error('This mobile action is unavailable.');
-    }
+    return this.commands.call(client, method, payload);
   }
   async flush() {
     for (const client of this.clients) {

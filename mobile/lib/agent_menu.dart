@@ -1,5 +1,7 @@
 import 'package:xterm/xterm.dart';
 
+import 'agent_profiles.dart';
+
 /// Only the viewport can represent a live menu. Never replay scrollback controls.
 String activeTerminalText(Terminal terminal) {
   final buffer = terminal.buffer;
@@ -41,14 +43,10 @@ class AgentMenu {
 
   /// Unknown CLI layouts stay in the terminal. Require numbered choices,
   /// a single active selector, and an Enter/Escape navigation footer.
-  static AgentMenu? parse(String text) {
+  static AgentMenu? parse(String text, {AgentProfiles? profiles}) {
+    final profile = (profiles ?? AgentProfiles.current).menu;
     final lines = text.split('\n').map(clearHintArrow).toList();
-    final heading = lines.lastIndexWhere(
-      (line) => RegExp(
-        r'^\s*((Select|Choose|Set)\s+(a\s+)?(model|reasoning|effort)\b|Advanced Reasoning\b)',
-        caseSensitive: false,
-      ).hasMatch(line),
-    );
+    final heading = lines.lastIndexWhere(profile.heading.hasMatch);
     if (heading < 0) return null;
     // A narrow terminal can wrap the footer, leaving "Esc" on the next row.
     final enter = RegExp(r'\benter\b', caseSensitive: false),
@@ -71,8 +69,7 @@ class AgentMenu {
     final notes = <String>[];
     var selected = -1, lastNumber = 0;
     for (final line in lines.sublist(heading + 1, footerIndex)) {
-      final match = RegExp(r'^\s*([›❯>→])?\s*(\d{1,2})[.)]\s+(.+?)\s*$')
-          .firstMatch(line);
+      final match = profile.option.firstMatch(line);
       if (match == null) {
         if (options.isNotEmpty && line.trim().isNotEmpty) {
           options[options.length - 1] += '\n${line.trim()}';
@@ -121,8 +118,8 @@ int menuOptionIndex(AgentMenu menu, String value, {String? name}) {
 }
 
 /// Codex and Claude Code both show "esc to interrupt" while a turn runs.
-bool agentWorking(String screen) =>
-    RegExp(r'esc to interrupt', caseSensitive: false).hasMatch(screen);
+bool agentWorking(String screen, {AgentProfiles? profiles}) =>
+    (profiles ?? AgentProfiles.current).menu.working.hasMatch(screen);
 
 /// Box-drawing borders some Claude Code layouts put around the input.
 const _borders = [0x2502, 0x2503, 0x7c];
@@ -182,13 +179,18 @@ bool _typed(BufferLine row) {
   return false;
 }
 
-bool hasEmptyAgentPrompt(Terminal terminal, String provider) {
-  if (!['codex', 'claude'].contains(provider)) return false;
+bool hasEmptyAgentPrompt(
+  Terminal terminal,
+  String provider, {
+  AgentProfiles? profiles,
+}) {
+  final profile = (profiles ?? AgentProfiles.current).dialogs[provider];
+  if (profile == null) return false;
   final found = _promptRow(terminal);
   if (found == null) return false;
   final line = _stripBorders(found.row.getText());
   if (RegExp(r'^[›❯>]\s*$').hasMatch(line) ||
-      (provider == 'codex' && line == '› Ask Codex to do anything')) {
+      profile.emptyPrompts.contains(line)) {
     return true;
   }
   return !_typed(found.row);

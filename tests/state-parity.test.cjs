@@ -233,6 +233,8 @@ function assertPhone(wire, mobile, label) {
   const v1 = clone(mobile.publicState());
   const extras = clone(Object.fromEntries(EXTRA_FIELDS.map(key => [key, mobile.extrasState()[key]])));
   const rebuilt = J.phoneLegacyState(clone(wire.values()), extras);
+  assert.deepEqual(v1.agentProfiles, require('../electron/providers/index.cjs').screenProfiles, `${label}: v1 served profiles`);
+  assert.deepEqual(rebuilt.agentProfiles, v1.agentProfiles, `${label}: profile parity`);
   for (const key of Object.keys(v1)) covers(v1[key], rebuilt[key], `${label}: ${key}`);
   assert.ok(Array.isArray(rebuilt.tasks) && Array.isArray(rebuilt.usage), `${label}: v2-only lists`);
   assert.deepEqual(Object.keys(extras), EXTRA_FIELDS);

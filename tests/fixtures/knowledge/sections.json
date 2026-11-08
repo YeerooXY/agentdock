@@ -1,0 +1,108 @@
+{
+  "greenfieldProposed": {
+    "schemaVersion": 1,
+    "id": "sec_ssh_host_registry",
+    "kind": "fact",
+    "title": "SSH host registry and key verification",
+    "summary": "Planned storage and host-key verification boundary for saved Linux SSH targets before console launch.",
+    "sourceSnapshot": null,
+    "freshness": "proposed",
+    "provenance": {
+      "kind": "inferred",
+      "reference": "plan:rev_60#milestone_1"
+    },
+    "evidence": [],
+    "sourceRefs": [],
+    "flowRefs": [
+      "flow_ssh_connect"
+    ]
+  },
+  "existingObservedFact": {
+    "schemaVersion": 1,
+    "id": "sec_persist",
+    "kind": "fact",
+    "title": "TaskLoop job persistence",
+    "summary": "Resolves parent task owner, increments generation counter, writes owner JSON atomically, clears prior storage error state and emits changed or storage-error events.",
+    "sourceSnapshot": "f3fadec67553d7dbf3df256836ccd536fae90b44",
+    "freshness": "current",
+    "provenance": {
+      "kind": "observed",
+      "reference": "extractor:task_loop_persist@v1"
+    },
+    "evidence": [
+      {
+        "sourceId": "src_electron_task_loop_persist",
+        "contentHash": "7d3daf075752b7c150e3a445b74921719972721a15367d7c703f259cf932124f",
+        "anchor": "electron/task-loop.cjs#TaskLoop.persist"
+      }
+    ],
+    "sourceRefs": [
+      "src_electron_task_loop_persist"
+    ],
+    "flowRefs": [
+      "flow_task_lifecycle"
+    ]
+  },
+  "staleInterpretation": {
+    "schemaVersion": 1,
+    "id": "sec_sched",
+    "kind": "interpretation",
+    "title": "Worker slot scheduling and cancellation obligations",
+    "summary": "Coordinates active worker dispatch and cancellation transitions before pending documentation maintenance updates are reconciled against newer snapshots.",
+    "sourceSnapshot": "4136ea47e33a836d86140f2560ddec6fa90c6ebb63bb7bc3df8eaa34438c67f4",
+    "freshness": "stale",
+    "provenance": {
+      "kind": "inferred",
+      "reference": "maint:doc_delta_sec_sched_01"
+    },
+    "evidence": [
+      {
+        "sourceId": "src_electron_task_loop_schedule",
+        "contentHash": "4136ea47e33a836d86140f2560ddec6fa90c6ebb63bb7bc3df8eaa34438c67f4",
+        "anchor": "electron/task-loop.cjs#TaskLoop.cancelTask"
+      }
+    ],
+    "sourceRefs": [
+      "src_electron_task_loop_schedule"
+    ],
+    "flowRefs": [
+      "flow_task_lifecycle"
+    ]
+  },
+  "ownerIntent": {
+    "schemaVersion": 1,
+    "id": "sec_project_worker_cap",
+    "kind": "intent",
+    "title": "Per-project executing worker cap",
+    "summary": "Five executing managed workers per project is the owner requirement, shared with the background documentation maintenance lane.",
+    "sourceSnapshot": null,
+    "freshness": "current",
+    "provenance": {
+      "kind": "owner",
+      "reference": "owner:docs/project-knowledge-protocol-2026-11-04.md#section_1"
+    },
+    "evidence": [],
+    "sourceRefs": [],
+    "flowRefs": [
+      "flow_task_lifecycle"
+    ]
+  },
+  "unknownCoverage": {
+    "schemaVersion": 1,
+    "id": "sec_dynamic_script_bridge",
+    "kind": "fact",
+    "title": "Dynamic script bridge coverage gap",
+    "summary": "Dynamic dispatch targets in external helper invocations have not been statically resolved yet and remain an explicit coverage gap.",
+    "sourceSnapshot": null,
+    "freshness": "unknown",
+    "provenance": {
+      "kind": "inferred",
+      "reference": "discovery:coverage_gap_01"
+    },
+    "evidence": [],
+    "sourceRefs": [
+      "src_scripts_bridge"
+    ],
+    "flowRefs": []
+  }
+}

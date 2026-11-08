@@ -18,16 +18,18 @@ class StateClient extends ChangeNotifier {
   _ChunkBuffer? _chunks;
   bool _disposed = false;
 
-  StateClient({this.subscribed = const [
-    'shell',
-    'sessions',
-    'queues',
-    'prompts',
-    'projects',
-    'tasks',
-    'usage',
-    'results',
-  ]});
+  StateClient({
+    this.subscribed = const [
+      'shell',
+      'sessions',
+      'queues',
+      'prompts',
+      'projects',
+      'tasks',
+      'usage',
+      'results',
+    ],
+  });
 
   ClientState get state => _state;
 
@@ -56,10 +58,14 @@ class StateClient extends ChangeNotifier {
     _chunks = null;
   }
 
-  List<Session> get sessions => collectionItems(_state.values['sessions'], Session.fromJson);
-  List<Task> get tasks => collectionItems(_state.values['tasks'], Task.fromJson);
-  List<Project> get projects => collectionItems(_state.values['projects'], Project.fromJson);
-  List<UsageAccount> get usage => collectionItems(_state.values['usage'], UsageAccount.fromJson);
+  List<Session> get sessions =>
+      collectionItems(_state.values['sessions'], Session.fromJson);
+  List<Task> get tasks =>
+      collectionItems(_state.values['tasks'], Task.fromJson);
+  List<Project> get projects =>
+      collectionItems(_state.values['projects'], Project.fromJson);
+  List<UsageAccount> get usage =>
+      collectionItems(_state.values['usage'], UsageAccount.fromJson);
   Map<String, dynamic>? value(String slice) {
     final v = _state.values[slice];
     return v is Map ? Map<String, dynamic>.from(v) : null;
@@ -69,16 +75,17 @@ class StateClient extends ChangeNotifier {
   /// frame, so pages read one map on both paths. Mirrors phoneLegacyState in
   /// electron/projections.cjs. Adds the v2-only `tasks` and `usage` lists.
   Map<String, dynamic> legacyState(Map<String, dynamic> extras) {
-    List<Map<String, dynamic>> items(String slice) => collectionItems(
-      _state.values[slice],
-      (item) => item,
-    );
+    List<Map<String, dynamic>> items(String slice) =>
+        collectionItems(_state.values[slice], (item) => item);
     final queues = _state.values['queues'];
     return {
       ...extras,
       'capacity': value('shell')?['capacity'] ?? 9,
+      'agentProfiles': value('shell')?['agentProfiles'],
       'sessions': items('sessions'),
-      'queues': queues is Map ? Map<String, dynamic>.from(queues) : <String, dynamic>{},
+      'queues': queues is Map
+          ? Map<String, dynamic>.from(queues)
+          : <String, dynamic>{},
       'prompts': items('prompts'),
       'tasks': items('tasks'),
       'usage': items('usage'),
@@ -95,9 +102,12 @@ class StateClient extends ChangeNotifier {
       throw ProtocolError('invalid', 'Invalid chunk.');
     }
     final subscription = chunk['subscription'] as String;
-    final batch = chunk['batch'] as int, part = chunk['part'] as int, parts = chunk['parts'] as int;
+    final batch = chunk['batch'] as int,
+        part = chunk['part'] as int,
+        parts = chunk['parts'] as int;
     final current = _chunks;
-    final same = current != null &&
+    final same =
+        current != null &&
         current.subscription == subscription &&
         current.batch == batch &&
         current.parts == parts;
@@ -144,7 +154,11 @@ class StateClient extends ChangeNotifier {
     if (frame.keys.any((key) => !allowed.contains(key))) return null;
     final subscription = frame['subscription'], batch = frame['batch'];
     final part = frame['part'], parts = frame['parts'], data = frame['data'];
-    if (subscription is! String || subscription.isEmpty || subscription.length > 64) return null;
+    if (subscription is! String ||
+        subscription.isEmpty ||
+        subscription.length > 64) {
+      return null;
+    }
     if (batch is! int || batch < 1) return null;
     if (parts is! int || parts < 2 || parts > maxChunkParts) return null;
     if (part is! int || part < 1 || part > parts) return null;
@@ -164,9 +178,17 @@ class StateClient extends ChangeNotifier {
     switch (result.outcome) {
       case Outcome.applied:
       case Outcome.duplicate:
-        send.add({'type': 'ack', 'subscription': _state.subscription, 'batch': result.batch});
+        send.add({
+          'type': 'ack',
+          'subscription': _state.subscription,
+          'batch': result.batch,
+        });
       case Outcome.resync:
-        send.add({'type': 'resync', 'subscription': _state.subscription, 'slices': result.slices});
+        send.add({
+          'type': 'resync',
+          'subscription': _state.subscription,
+          'slices': result.slices,
+        });
       case Outcome.pong:
         send.add({'type': 'pong', 'nonce': result.nonce});
       case Outcome.welcome:
@@ -175,7 +197,8 @@ class StateClient extends ChangeNotifier {
       case Outcome.error:
         break;
     }
-    if (result.outcome == Outcome.applied || result.outcome == Outcome.welcome) {
+    if (result.outcome == Outcome.applied ||
+        result.outcome == Outcome.welcome) {
       _notifyChanged(before, _state);
     }
     return StateReply(result.outcome, send, error: result.error);

@@ -81,7 +81,7 @@ test('token redaction preserves long paths and identifiers', () => {
 function fixture(t, settings = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'paddock-review-panel-'));
   const sessions = new Sessions(root, { grid: { columns: 2, rows: 2 }, pty: { spawn() { throw new Error('No terminal expected'); } } });
-  const children = [];
+  const children = [], published = [];
   const delegation = new Delegation(root, {
     getSettings: () => ({ delegationEnabled: true, ...settings }), candidates: () => [{ id: 'kiro:default', provider: 'kiro', label: 'Kiro', executable: '/mock/kiro' }], getLimits: () => [], environment: () => ({ TOKEN: 'PRIVATE_TOKEN_VALUE' }),
     openPanel: job => sessions.createReviewPanel(job),
@@ -90,11 +90,11 @@ function fixture(t, settings = {}) {
     spawnProcess: () => {
       const child = new EventEmitter(); child.stdout = new EventEmitter(); child.stderr = new EventEmitter();
       child.stdin = { on() {}, end(brief) { child.brief = brief; } }; child.kill = () => { child.killed = true; }; children.push(child); return child;
-    }, saveResult: async () => ({ id: 'saved-review' })
+    }, saveResult: async raw => { published.push(raw); return { id: 'saved-review' }; }
   });
   t.after(() => { delegation.stopAll(); fs.rmSync(root, { recursive: true, force: true }); });
   const start = () => delegation.start({ focus: 'PRIVATE_FOCUS_TEXT' }, { sessionId: 'caller', cwd: root, consoleName: 'Builder', context: { project: root } });
-  return { sessions, delegation, start, children };
+  return { sessions, delegation, start, children, published };
 }
 
 test('starting a review opens a panel; drag, resize and close preserve the running job', async t => {
@@ -113,7 +113,17 @@ test('starting a review opens a panel; drag, resize and close preserve the runni
   assert.ok(!f.children[0].killed);
   const waiting = f.delegation.status(started.id, { waitSeconds: 5 });
   f.children[0].stdout.emit('data', 'VERDICT: approve\nFINDINGS:\n- none'); f.children[0].emit('close', 0);
-  const done = await waiting; assert.equal(done.verdict, 'approve'); assert.equal(done.resultId, 'saved-review');
+  const done = await waiting; assert.equal(done.verdict, 'approve'); assert.equal(done.resultId, null);
+  assert.equal(f.published.length, 0);
+  const archived = f.delegation.executionHistory.get('review', started.id);
+  assert.match(archived.report, /VERDICT: approve/);
+  const page = await f.delegation.status(started.id, { includeReport: true, reportLimit: 100 });
+  assert.equal(page.report.text, archived.report.slice(0, 100));
+  assert.equal(f.delegation.snapshot()[0].executionHistory.id, started.id);
+  await assert.rejects(f.delegation.status(started.id, { sessionId: 'other', includeReport: true }), /No review/);
+
+  assert.doesNotMatch(archived.report, /PRIVATE_TOKEN_VALUE/);
+  assert.doesNotMatch(done.review, /PRIVATE_TOKEN_VALUE/);
   assert.deepEqual(f.delegation.jobs.get(started.id).log.slice(-4), ['VERDICT: approve', 'FINDINGS:', '- none', 'Verdict: approve']);
   assert.deepEqual(f.delegation.snapshot()[0].log, [], 'finished jobs without panels publish metadata only');
 });

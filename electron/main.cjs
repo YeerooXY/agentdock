@@ -6,24 +6,24 @@ const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
 const { pathToFileURL } = require('node:url');
-const { Vault, readJson, atomicJson, validateKeyId } = require('./storage.cjs');
+const { Vault, readJson, atomicJson } = require('./storage.cjs');
 const { SshHosts } = require('./ssh-hosts.cjs');
-const { CodexAccount, RecentCodex, findProgram, nativeCodex, findClaude, consoleModels } = require('./adapters.cjs');
-const { strataModels, strataTaskCandidates, StrataReadiness } = require('./local-models.cjs');
+const { CodexAccount, RecentCodex, findProgram, nativeCodex, findClaude } = require('./adapters.cjs');
+const { strataTaskCandidates, StrataReadiness } = require('./local-models.cjs');
 const { runtimeFiles } = require('./runtime.cjs');
 const { initialSettings } = require('./settings.cjs');
-const { validateRouting } = require('./task-routing.cjs');
 const { openCodeSignedIn } = require('./opencode-auth.cjs');
-const { frameStyles, lightingStyles, updatedSlotTrims, moveSlotTrims } = require('./console-appearance.cjs');
+const { moveSlotTrims } = require('./console-appearance.cjs');
 const { CliSetup } = require('./cli-setup.cjs');
-const { catalog: cliCatalog, byId: cliAgents } = require('./cli-catalog.cjs');
-const { cells: consoleCells, occupied: occupiedCells, planLayout } = require('./console-layout.cjs');
+const { cells: consoleCells } = require('./console-layout.cjs');
 const { Sessions, validateConsoleDefaults } = require('./sessions.cjs');
 const { Workspace } = require('./workspace.cjs');
 const { Projects } = require('./projects.cjs');
 const { MessageUsage, apiMessages } = require('./message-usage.cjs');
 const { Updates } = require('./updates.cjs');
 const { loginPath } = require('./platform.cjs');
+const { KnowledgeQueue } = require('./knowledge-queue.cjs');
+const { KnowledgeUpkeep } = require('./knowledge-upkeep.cjs');
 const { Workbench } = require('./workbench.cjs');
 const { Delegation, REVIEWERS } = require('./delegation.cjs');
 const { TaskLoop } = require('./task-loop.cjs');
@@ -31,51 +31,52 @@ const { WorkerSessions } = require('./worker-sessions.cjs');
 const { OwnerConsoles } = require('./owner-consoles.cjs');
 const { CapacityReservations } = require('./capacity-reservations.cjs');
 const { registryFromRouting } = require('./worker-registry.cjs');
-const { closeReviewPanel } = require('./review-panel.cjs');
 const { resultGitContext } = require('./git-context.cjs');
-const { creativeTools } = require('./creative-tools.cjs');
 const { Turns } = require('./turns.cjs');
 const { MobileCompanion } = require('./mobile.cjs');
 const { DockNotifications } = require('./notifications.cjs');
 const { completionNotice } = require('./completion-notice.cjs');
 const { WorkPower } = require('./power.cjs');
-const { runApi } = require('./api-run.cjs');
 const { SharedHub } = require('./shared.cjs');
-const { ToolIntegrations, definitions: integrationDefinitions, runProgram } = require('./integrations.cjs');
-const { McpCatalog, catalog: recommendedTools } = require('./mcp-catalog.cjs');
+const { ToolIntegrations, runProgram } = require('./integrations.cjs');
+const { McpCatalog } = require('./mcp-catalog.cjs');
 const { known: policyLimits, budgetUnit } = require('./tool-policy.cjs');
 const { ManagedDownloads } = require('./managed-downloads.cjs');
 const { SkillPacks } = require('./skill-packs.cjs');
 const { taskGuidance } = require('./task-guidance.cjs');
-const { validateProvider, validateRequest, ledgerSummary, number, validateExplorerWidth } = require('./domain.cjs');
+const { ledgerSummary } = require('./domain.cjs');
 const { APP_ID, taskbarIcon, developmentShortcuts } = require('./windows-identity.cjs');
 const { CodePanel } = require('./code-panel.cjs');
 const { Screenshots, clipboardReader } = require('./screenshots.cjs');
-const { endSession, endMobileSession } = require('./session-end.cjs');
-const { Worktrees, prepareWorktree } = require('./worktrees.cjs');
+const { endMobileSession } = require('./session-end.cjs');
+const { Worktrees } = require('./worktrees.cjs');
 const { MessageQueue } = require('./message-queue.cjs');
 const { PromptLibrary } = require('./prompt-library.cjs');
 const { isLocal } = require('./web-preview.cjs');
-const filePreview = require('./file-preview.cjs');
 const { userDataPath } = require('./user-data.cjs');
 const { AccountProfiles, defaultId } = require('./account-profiles.cjs');
 const { CredentialSwitch } = require('./credential-switch.cjs');
 const { DraftBridge } = require('./draft-bridge.cjs');
-const { accountIdForLimit } = require('./account-switching-policy.cjs');
+const { accountIdForLimit, isDefaultAccountLimit } = require('./account-switching-policy.cjs');
 const { SubscriptionUsage, readClaudeModels, usageEnvironment, stopUsageReaders } = require('./subscription-usage.cjs');
 const { buildUsageReaders } = require('./usage-readers.cjs');
-const { modelsFromReading } = require('./routing-models.cjs');
+const { createTaskAccounts } = require('./task-accounts.cjs');
 const { clineRoute } = require('./native-account-route.cjs');
+const { consoleFeaturesFor } = require('./providers/index.cjs');
 const { CrashReport, diagnose, redact, guardStartup } = require('./crash-report.cjs');
 const { SLICES, toCollection } = require('./state-protocol.cjs');
 const { StateStore, jsonEqual } = require('./state-store.cjs');
 const { desktopProjection, phoneProjection, slicesFromLegacy, legacySnapshot, ephemeralFromLegacy } = require('./projections.cjs');
 const { ProjectionHistory, StateConnection } = require('./state-sync.cjs');
 const { courseFromArgs, profileFromArgs, openCourseConsole } = require('./course-launch.cjs');
+const { createDesktopCommands } = require('./desktop-commands.cjs');
+const { NO_VALUE } = require('./command-result.cjs');
 app.setName('Paddock');
 const appModelId = APP_ID;
 if (process.platform === 'win32') app.setAppUserModelId(appModelId);
 const testMode = process.argv.includes('--smoke-test');
+// Restart preflight validates an isolated copy without presenting a test window.
+const startupCheck = testMode && process.argv.includes('--startup-check');
 const testDir = process.argv.find(x => x.startsWith('--data-dir='))?.slice(11);
 // Playwright starts Electron with --password-store=basic, which Paddock rejects.
 // Linux test runs with an unlocked keyring opt back in to it explicitly.
@@ -85,10 +86,10 @@ else app.setPath('userData', userDataPath(app.getPath('appData'), app.getPath('u
 // A second launch hands over to the running Paddock; it must not count as a failed start.
 const secondInstance = !app.requestSingleInstanceLock() && !testMode;
 if (secondInstance) app.quit();
-let window, tray, vault, sessions, workspace, projects, messageUsage, updates, account, root, settings, ledger, notifications, hub, integrations, mcpCatalog, workbench, cliSetup, skillPacks, turns, mobile, workPower, ssh, screenshots, accounts, draftBridge;
+let knowledgeUpkeep, window, tray, vault, sessions, workspace, projects, messageUsage, updates, account, root, settings, ledger, notifications, hub, integrations, mcpCatalog, workbench, cliSetup, skillPacks, turns, mobile, workPower, ssh, screenshots, accounts, draftBridge;
 let codePanel, worktrees, messageQueue, prompts, tasks;
 let ownerConsoles, capacityReservations;
-let mode = 'dashboard', quitting = false, refreshing = false, lastRefresh = 0, apiBusy = false, subscriptionUsage, usageRefresh, credentialSwitch;
+let mode = 'dashboard', quitting = false, refreshing = false, lastRefresh = 0, apiBusy = false, subscriptionUsage, usageRefresh, usageRefreshBackground = false, credentialSwitch;
 let modeTarget = null, modeTask, modeSequence = 0, transitioning = false;
 let dashboardRestore = null;
 let trayHidden = false, windowDrag = null, hiddenBounds = null;
@@ -136,7 +137,8 @@ async function startupCrash(error) {
   crash.log('ERROR', `${crash.step}: ${error?.stack || error}`);
   let report;
   try { report = crash.report(error, { version: app.getVersion(), electron: process.versions.electron, node: process.versions.node, install: app.getAppPath() }); }
-  catch { dialog.showErrorBox("Paddock couldn't start", 'Paddock could not save a crash report. Check access to its data folder.'); app.exit(1); return; }
+  catch { if (!startupCheck) dialog.showErrorBox("Paddock couldn't start", 'Paddock could not save a crash report. Check access to its data folder.'); app.exit(1); return; }
+  if (startupCheck) { app.exit(1); return; }
   const detail = `${redact(error?.message || error, crash.home).replace(/[\r\n]+/g, ' ').slice(0, 500)}\nA report was saved to ${report.folder}.`;
   while (true) {
     const { response } = await dialog.showMessageBox({ type: 'error', title: "Paddock couldn't start", message: report.summary, detail, buttons: ['Diagnose with AI', 'Start in safe mode', 'Open report folder', 'Quit'], defaultId: 0, cancelId: 3, noLink: true });
@@ -217,7 +219,7 @@ function snapshot() {
   return built;
 }
 function serviceSnapshot() {
-  return { platform: process.platform, mode, transitioning, trayHidden, sessions: sessions?.list() || [], codePanels: sessions?.codePanels() || [], queues: messageQueue?.snapshot() || {}, prompts: prompts?.list() || [], codeRevision: codePanel?.revision || 0, limits, accounts: accounts?.allChoices() || [], accountProviders: accounts?.providers() || [], recent, accountError, refreshing, lastRefresh, agents: (cliSetup?.snapshot() || []).map(agent => agent.id === 'opencode' && !openCodeAvailable ? { ...agent, installed: false } : agent), agentSetupBusy: !!cliSetup?.running, skills: skillPacks?.snapshot() || { packs: [], busy: false },
+  return { platform: process.platform, mode, transitioning, trayHidden, sessions: sessions?.list() || [], codePanels: sessions?.codePanels() || [], queues: messageQueue?.snapshot() || {}, prompts: prompts?.list() || [], codeRevision: codePanel?.revision || 0, limits, accounts: accounts?.allChoices() || [], accountProviders: accounts?.providers() || [], recent, accountError, refreshing, lastRefresh, agents: (cliSetup?.snapshot() || []).map(agent => ({ ...(agent.id === 'opencode' && !openCodeAvailable ? { ...agent, installed: false } : agent), consoleFeatures: consoleFeaturesFor(agent.id) })), agentSetupBusy: !!cliSetup?.running, skills: skillPacks?.snapshot() || { packs: [], busy: false },
     usageAccounts: usageAccounts(), usageChecks: subscriptionUsage?.snapshot() || [], delegations: workbench?.delegation?.snapshot() || [], tasks: tasks?.snapshot() || [],
     sshHosts: ssh?.list() || [], capabilities, projects: projects?.list() || [], projectProposals: projects?.proposals || [], messages: [...(messageUsage?.items || []), ...apiMessages(ledger || [])].sort((a,b) => b.at - a.at).slice(0, 200), mobile: mobile?.snapshot(), workbench: workbench?.snapshot(), vault: { available: vault?.available() || false, entries: vault?.list() || [] },
     ledger: ledger || [], summary: ledgerSummary(ledger || []), shared: hub?.snapshot(), updates: updates?.snapshot(), grid: sessions?.grid || settings?.grid, settings, storageError, workspaceError, shortcutAvailable, safeMode, startupNotices: crash.notices,
@@ -244,6 +246,7 @@ function publish() {
 function updatePower() { workPower?.update({ enabled: settings?.keepAwakeWhileWorking === true, sessions: sessions?.list() || [], apiBusy }); }
 function persistSettings(next) { atomicJson(path.join(root, 'settings.json'), next); settings = next; updatePower(); }
 function revealWindow() {
+  if (startupCheck) return;
   if (!window || window.isDestroyed()) return;
   trayHidden = false; window.setSkipTaskbar(false);
   if (window.isMinimized()) window.restore();
@@ -279,6 +282,7 @@ function dragWindow(action, point) {
   }
 }
 function setMode(next) {
+  if (startupCheck) return Promise.resolve();
   if (next === 'hud' && settings?.setupComplete === false) next = 'dashboard';
   if (!window || window.isDestroyed() || quitting || !['hud', 'dashboard', 'fullscreen'].includes(next)) return Promise.resolve();
   if (modeTarget === next) return modeTask;
@@ -367,7 +371,7 @@ function usageAccounts() {
   for (const value of limits) {
     if (value.provider === 'opencode' && !safeMode && !(cliSetup?.snapshot() || []).some(agent => agent.id === 'opencode' && agent.installed)) continue;
     const id = limitAccountId(value);
-    if (id && !choices.some(choice => choice.id === id)) choices.push({ id, provider: value.provider, label: value.name || value.provider });
+    if (isDefaultAccountLimit(value) && !choices.some(choice => choice.id === id)) choices.push({ id, provider: value.provider, label: value.name || value.provider });
   }
   const checks = subscriptionUsage?.snapshot() || [];
   const known = choice => limits.some(value => limitAccountId(value) === choice.id && value.windows?.length)
@@ -382,11 +386,12 @@ function saveUsage(account, values) {
   try { atomicJson(path.join(root, 'limits.json'), limits); } catch (error) { storageError = error.message; }
   publish(); mobile?.scheduleState();
 }
-function refreshLimits() {
+function refreshLimits({ background = false } = {}) {
   if (testMode || safeMode || !subscriptionUsage) return Promise.resolve();
-  if (usageRefresh) return usageRefresh;
+  if (usageRefresh) return !background && usageRefreshBackground ? usageRefresh.then(() => refreshLimits()) : usageRefresh;
+  usageRefreshBackground = background;
   refreshing = true; publish();
-  usageRefresh = subscriptionUsage.refresh(usageAccounts()).then(checks => {
+  usageRefresh = subscriptionUsage.refresh(usageAccounts(), { background }).then(checks => {
     accountError = checks.find(check => check.accountId === defaultId('codex'))?.message || null;
     if (checks.some(check => check.status === 'current')) lastRefresh = Date.now();
   }).finally(() => { refreshing = false; usageRefresh = null; publish(); mobile?.scheduleState(); });
@@ -464,7 +469,6 @@ app.whenReady().then(() => guardStartup(async () => {
     if (!crash.notices.includes(message)) crash.notices.push(message);
     if (windowReady) publish();
   } });
-  skillPacks = new SkillPacks(root, { home: process.env.PADDOCK_SKILLS_HOME || os.homedir(), getAgents: () => cliSetup.snapshot(), downloads: new ManagedDownloads(root), onChange: publish });
   let claude = null;
   await startupStep('Claude Code check', () => { claude = findClaude(); }, { optional: true });
   const usageDirectory = path.join(root, 'usage-reader'); fs.mkdirSync(usageDirectory, { recursive: true });
@@ -488,13 +492,19 @@ app.whenReady().then(() => guardStartup(async () => {
   const savedSettings = readJson(path.join(root, 'settings.json'), {});
   settings = initialSettings(savedSettings, defaultFolder, capabilities);
   if (savedSettings.resultsPolicyVersion !== settings.resultsPolicyVersion) persistSettings(settings);
+  // Saved skill preferences must exist before adapters are rendered and cached.
+  skillPacks = new SkillPacks(root, { home: process.env.PADDOCK_SKILLS_HOME || os.homedir(), getAgents: () => cliSetup.snapshot(), getPreferences: () => settings.skillAuto || {}, downloads: new ManagedDownloads(root), onChange: publish });
+  if (!safeMode && (!testMode || process.env.PADDOCK_SKILLS_HOME)) await startupStep('Managed skill update', async () => {
+    const results = await skillPacks.updateManaged();
+    for (const result of results.filter(result => ['failed', 'skipped'].includes(result.state))) crash.log('WARN', `Skill ${result.pack}: ${result.reason}`);
+  }, { optional: true });
   ledger = readJson(path.join(root, 'ledger.json'), []);
   messageUsage = new MessageUsage(root);
   updates = new Updates(root, app.getVersion(), { onChange: publish });
   vault = new Vault(path.join(root, 'vault.json'), safeStorage);
   integrations = new ToolIntegrations(root, runtime, { onChange: publish });
   mcpCatalog = new McpCatalog(root, runtime, { run: runProgram, downloads: new ManagedDownloads(root), onChange: publish });
-  workbench = new Workbench(root, runtime, require('electron'), { testMode, onChange: publish, getSessions: () => sessions, getProject: () => settings.consoleDefaults.cwd, getWindow: () => window, getHub: () => hub, getAgents: () => cliSetup.snapshot(), getTasks: () => tasks,
+  workbench = new Workbench(root, runtime, require('electron'), { testMode, onChange: publish, getSessions: () => sessions, getProject: () => settings.consoleDefaults.cwd, getWindow: () => window, getHub: () => hub, getAgents: () => cliSetup.snapshot(), getTasks: () => tasks, getSettings: () => settings,
     onLocalEntry: entry => {
       ledger = [entry, ...ledger];
       try { atomicJson(path.join(root, 'ledger.json'), ledger); }
@@ -503,52 +513,24 @@ app.whenReady().then(() => guardStartup(async () => {
     }
   });
   projects = new Projects(root); projects.on('changed', publish); workbench.projects = projects;
-  // Signed in: from the latest usage check, else from the login files the
-  // provider adapter declares, else unknown.
-  const usageSignIn = (accountId, provider = String(accountId).split(':')[0]) => {
-    const status = subscriptionUsage?.snapshot().find(check => check.accountId === accountId)?.status;
-    if (status === 'sign-in') return false;
-    if (status === 'current') return true;
-    const profile = accounts.get(accountId);
-    return accounts.hasCredentials(accountId, profile?.provider || provider) ?? undefined;
-  };
-  const taskAccounts = {
-    getAccounts: () => {
-      const workers = tasks?.candidates() || [];
-      return [...usageAccounts(), ...workers.filter(w => w.local)].map(choice => {
-        const worker = workers.find(w => w.id === choice.id), check = subscriptionUsage?.snapshot().find(s => s.accountId === choice.id);
-        const needsSignIn = choice.profile && !choice.loginCompletedAt && !choice.unavailableReason;
-        return { ...choice, ...worker, signedIn: worker?.signedIn ?? usageSignIn(choice.id, choice.provider),
-          quotaReader: check?.status || 'unchecked',
-          unavailableReason: choice.unavailableReason || (needsSignIn ? 'Sign in to this account first: Settings, Agents, then Sign in next to the account.' : worker ? undefined : 'No bounded worker adapter is connected for this CLI.') };
-      });
-    },
-    getLimits: () => limits.map(item => ({ ...item, accountId: limitAccountId(item), usageCheck: subscriptionUsage?.snapshot().find(check => check.accountId === limitAccountId(item)) })),
-    candidates: () => REVIEWERS.flatMap(provider => {
-      const executable = cliSetup.executable(provider), name = require('./provider-workers.cjs').names[provider];
-      if (provider === 'pi') {
-        if (!executable) return [];
-        return accounts.choices(provider).filter(choice => !choice.profile || choice.loginCompletedAt).map(choice => {
-          const reading = limits.filter(row => limitAccountId(row) === choice.id).sort((a, b) => b.observedAt - a.observedAt)[0];
-          const current = subscriptionUsage?.snapshot().find(s => s.accountId === choice.id)?.status === 'current' && Date.now() - reading?.observedAt <= 30 * 60_000;
-          const freeRoom = current && reading?.windows?.some(w => w.modelGroup === 'openrouter:free' && w.remaining > 0);
-          const models = freeRoom ? (reading.freeAlternatives || []).map(m => ({ id: m.route, available: true, observedAt: reading.observedAt, funding: 'free', source: 'native OpenRouter sign-in, zero-price tool model and free request quota' })) : [];
-          const selected = current && reading?.modelAllowed === true && reading?.route?.provider && reading?.route?.model ? reading.route.provider + '/' + reading.route.model : null;
-          return { id: choice.id, provider, label: choice.profile ? name + ' (' + choice.label + ')' : name, executable, signedIn: usageSignIn(choice.id), available: models.length > 0 || !!selected,
-            model: models.find(m => m.id === 'openrouter/cohere/north-mini-code:free')?.id || models[0]?.id || selected,
-            models, funding: models.length ? 'free' : selected ? reading.funding : 'unknown' };
-        });
-      }
-      return executable ? accounts.choices(provider).filter(choice => !choice.profile || accounts.provider(provider)?.namedProfiles && choice.loginCompletedAt)
-        .map(choice => ({ id: choice.id, provider, label: choice.profile ? `${name} (${choice.label})` : name, executable, signedIn: usageSignIn(choice.id),
-          models: modelsFromReading(limits.filter(row => limitAccountId(row) === choice.id).sort((a, b) => b.observedAt - a.observedAt)[0]),
-          ...(provider === 'cline' && !choice.profile ? clineRoute() || {} : {}) })) : [];
-    }),
-    environment: (id, provider) => usageEnvironment(accounts.environment(id, provider, { baseEnv: process.env })),
-    prepareAccount: (id, provider) => credentialSwitch.activate(provider, id),
-    releaseAccount: (id, provider) => { void credentialSwitch.release(provider); },
+  const taskAccounts = createTaskAccounts({
+    getWorkers: () => tasks?.candidates() || [],
+    usageAccounts,
+    getUsageCheck: accountId => subscriptionUsage?.snapshot().find(check => check.accountId === accountId),
+    getLimits: () => limits,
+    limitAccountId,
+    reviewers: REVIEWERS,
+    executable: provider => cliSetup.executable(provider),
+    choices: provider => accounts.choices(provider),
+    getAccount: id => accounts.get(id),
+    namedProfiles: provider => accounts.provider(provider)?.namedProfiles === true,
+    hasCredentials: (id, provider) => accounts.hasCredentials(id, provider),
+    environment: (id, provider) => accounts.environment(id, provider, { baseEnv: process.env }),
+    usageEnvironment,
+    credentialSwitch,
+    clineRoute,
     saveResult: async (raw, context) => workbench.results.add(raw, await resultGitContext({}, context || {}, workbench.results.root))
-  };
+  });
   workbench.delegation = new Delegation(root, { ...taskAccounts, testMode, getSettings: () => settings,
     openPanel: job => sessions?.createReviewPanel(job), panelOpen: id => sessions?.items.get(id)?.kind === 'review' });
   workbench.delegation.on('changed', publish);
@@ -564,7 +546,7 @@ app.whenReady().then(() => guardStartup(async () => {
     workers: () => registryFromRouting({ routing: settings.routing, candidates: testMode ? [] : taskAccounts.candidates() }),
     active: () => [...(sessions?.items.values() || [])]
     .filter(item => item.alive && item.state === 'active' && !item.remote && !item.kind && !item.taskId)
-    .map(item => ({ quotaGroupId: ownerConsoles.records.get(item.consoleKey)?.quotaGroupId || item.accountId || `${item.provider}:default`,
+    .map(item => ({ projectId: item.projectId || null, quotaGroupId: ownerConsoles.records.get(item.consoleKey)?.quotaGroupId || item.accountId || `${item.provider}:default`,
       local: ownerConsoles.records.get(item.consoleKey)?.local === true, owner: ownerConsoles.records.get(item.consoleKey)?.ownerTurn === true })) });
   workbench.delegation.admission = capacityReservations;
   workbench.localAssist.admission = capacityReservations;
@@ -572,11 +554,16 @@ app.whenReady().then(() => guardStartup(async () => {
   tasks = new TaskLoop(root, { ...taskAccounts, admission: capacityReservations, getSettings: () => settings, getProfiles: () => hub?.config.profiles || [], candidates: () => {
     if (testMode) return [];
     const choices = taskAccounts.candidates(), executable = cliSetup.executable('opencode');
-    if (openCodeAvailable && executable && openCodeSignedIn({ executable })) choices.push({ id: 'opencode:default', provider: 'opencode', label: 'OpenCode', executable, signedIn: usageSignIn('opencode:default') });
+    if (openCodeAvailable && executable && openCodeSignedIn({ executable })) choices.push({ id: 'opencode:default', provider: 'opencode', label: 'OpenCode', executable, signedIn: taskAccounts.usageSignIn('opencode:default') });
     choices.push(...strataTaskCandidates(executable, hub?.config.profiles || [], strataReadiness.snapshot()));
     return choices;
   },
-    getInstructions: (job, phase) => { const parent = tasks?.jobs.get(job.parentId); return taskGuidance(hub?.config, job, parent, projects.brief(job.projectId || parent?.projectId, true), phase); },
+    getInstructions: (job, phase) => {
+      const parent = tasks?.jobs.get(job.parentId), projectId = job.projectId || parent?.projectId;
+      const knowledge = workbench.knowledgeAccess.brief({ ...job, documentationRole: phase?.role, projectId });
+      const skills = skillPacks.guidance({ role: phase?.role || 'builder', knowledgeEnabled: workbench.knowledgeAccess.enabled(projectId) });
+      return taskGuidance(hub?.config, job, parent, projects.brief(projectId, true), { ...phase, skills }) + (knowledge ? '\n\n' + knowledge : '');
+    },
     environment: (id, provider) => id === 'opencode:strata' ? usageEnvironment(Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.toLowerCase().startsWith('paddock_')))) : taskAccounts.environment(id, provider),
     repositories: () => {
       const folders = projects.list().flatMap(project => project.folders.map(folder => ({ path: folder.path, label: `${project.name}${folder.label ? ` / ${folder.label}` : ''}: ${folder.path}` })));
@@ -590,6 +577,11 @@ app.whenReady().then(() => guardStartup(async () => {
   // The tasks slice is written by TaskLoop's events, not by the publish-time sync.
   const writeTasks = () => { try { stateWriters.tasks.set(toCollection(tasks.snapshot())); } catch (error) { stateFailure('tasks', error); } };
   writeTasks();
+  knowledgeUpkeep = new KnowledgeUpkeep({ access: workbench.knowledgeAccess, queue: new KnowledgeQueue(root), getSettings: () => settings, getProjects: () => projects, getJobs: () => [...tasks.jobs.values()],
+    runTurn: args => tasks.documentationTurn(args), canRun: worker => tasks.documentationEligibility(worker), onChange: publish });
+  tasks.documentation = knowledgeUpkeep; workbench.knowledgeAccess.upkeep = knowledgeUpkeep;
+  knowledgeUpkeep.reconcile([...tasks.jobs.values()]);
+  if (!testMode) knowledgeUpkeep.start();
   tasks.on('changed', () => { writeTasks(); publish(); });
   let taskStorageError = null;
   tasks.on('storage-error', ({ error }) => {
@@ -609,7 +601,10 @@ app.whenReady().then(() => guardStartup(async () => {
     projectFolders = next;
   });
   projects.on('tracking-error', message => { storageError = message; publish(); });
-  hub = new SharedHub(root, vault, { integrations, workbench, skills: () => skillPacks.snapshot().packs, confirm: confirmToolCall, isLaunchCurrent: owner => {
+  hub = new SharedHub(root, vault, { integrations, workbench, skills: () => skillPacks.snapshot().packs,
+    readSkill: args => skillPacks.readGuide(args),
+    knowledgeEnabled: projectId => projectId ? workbench.knowledgeAccess.enabled(projectId) : ['read', 'automatic'].includes(settings.knowledgeMode),
+    confirm: confirmToolCall, isLaunchCurrent: owner => {
     const item = sessions?.items.get(owner?.sessionId);
     return !!item?.alive && !item.switching && item.launchId === owner.launchId;
   } }); await startupStep('Shared tools', () => hub.start(), { optional: true });
@@ -649,7 +644,7 @@ app.whenReady().then(() => guardStartup(async () => {
   messageQueue = new MessageQueue(sessions);
   messageQueue.on('changed', publish); prompts.on('changed', publish);
   messageQueue.on('error', ({ id, message }) => workbench.alerts.send({ key: 'queue:' + id + ':' + Date.now(), title: (sessions.items.get(id)?.name || 'Console') + ': queued message not sent', message, sessionId: id, kind: 'error' }));
-  mobile = new MobileCompanion(root, safeStorage, { codePanel, sessions, concepts: workbench.concepts, redactImageText: value => hub.redact(value), results: workbench.results, alerts: workbench.alerts, queue: messageQueue, prompts, getUsage: usageSnapshot, getUsageTurns: () => [...(messageUsage?.items || []), ...apiMessages(ledger || [])], refreshUsage: refreshLimits, getDefaults: () => ({ ...settings.consoleDefaults, permissions: settings.agentPermissions }), worktrees, endMobileSession: (id, choice, valid) => endMobileSession(id, choice, valid, { sessions, getSettings: () => settings, persistSettings, worktrees }), getModels: modelChoices, toolsStatus: true, getSettings: () => { const shared = hub.snapshot(), keys = vault.list(); return { shared, keys, integrations: integrations.snapshot(shared.connections, keys), setupRequests: workbench.snapshot().setupRequests, redact: value => hub.redact(value) }; }, stateSync: { history: phoneHistory, enabled: stateV2Enabled }, getTasks: () => tasks, getKey: id => vault.get(id), networkScript: app.isPackaged ? path.join(process.resourcesPath, 'mobile-network.ps1') : path.join(__dirname, 'mobile-network.ps1'), program: process.execPath, testMode });
+  mobile = new MobileCompanion(root, safeStorage, { codePanel, sessions, concepts: workbench.concepts, redactImageText: value => hub.redact(value), results: workbench.results, alerts: workbench.alerts, queue: messageQueue, prompts, getUsage: usageSnapshot, getUsageTurns: () => [...(messageUsage?.items || []), ...apiMessages(ledger || [])], refreshUsage: refreshLimits, getDefaults: () => ({ ...settings.consoleDefaults, permissions: settings.agentPermissions }), worktrees, endMobileSession: (id, choice, valid) => endMobileSession(id, choice, valid, { sessions, getSettings: () => settings, persistSettings, worktrees }), getModels: modelChoices, toolsStatus: true, getSettings: () => { const shared = hub.snapshot(), keys = vault.list(); return { shared, keys, integrations: integrations.snapshot(shared.connections, keys), setupRequests: workbench.snapshot().setupRequests, redact: value => hub.redact(value) }; }, stateSync: { history: phoneHistory, enabled: stateV2Enabled }, getTasks: () => tasks, knowledge: workbench.knowledgeAccess, getKey: id => vault.get(id), networkScript: app.isPackaged ? path.join(process.resourcesPath, 'mobile-network.ps1') : path.join(__dirname, 'mobile-network.ps1'), program: process.execPath, testMode });
   mobile.on('changed', publish);
   mobile.on('pairing-requested', () => { if (settings.notifications && !testMode) notifications?.show({ title: 'Approve a phone?', message: 'Compare the codes on your PC and phone before allowing access.', destination: 'phone-pairing' }); });
   if (!testMode) void startupStep('Phone connection', () => mobile.start(), { optional: true }).catch(() => {});
@@ -693,7 +688,7 @@ app.whenReady().then(() => guardStartup(async () => {
   const windowIcon = path.join(__dirname, '..', 'assets', process.platform === 'win32' && !app.isPackaged ? 'icon.ico' : 'icon.png');
   // macOS keeps its own window buttons; other systems use Paddock's title bar.
   const chrome = process.platform === 'darwin' ? { titleBarStyle: 'hidden', trafficLightPosition: { x: 14, y: 14 } } : { frame: false };
-  window = new BrowserWindow({ width: 1240, height: 840, minWidth: 720, minHeight: 520, ...chrome, show: false, backgroundColor: '#010103', title: 'Paddock', icon: windowIcon,
+  window = new BrowserWindow({ width: 1240, height: 840, minWidth: 720, minHeight: 520, ...chrome, show: false, skipTaskbar: startupCheck, backgroundColor: '#010103', title: 'Paddock', icon: windowIcon,
     webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true, webSecurity: true, spellcheck: false } });
   if (process.platform === 'win32') {
     const icon = taskbarIcon({ projectDir: app.getAppPath(), dataDir: root, packaged: app.isPackaged });
@@ -734,7 +729,7 @@ app.whenReady().then(() => guardStartup(async () => {
   };
   window.once('ready-to-show', () => { readyShown = true; void finishWindow(); });
   const iconFile = path.join(__dirname, '..', 'assets', 'icon.png');
-  await startupStep('System tray', () => { if (fs.existsSync(iconFile)) {
+  await startupStep('System tray', () => { if (!startupCheck && fs.existsSync(iconFile)) {
     tray = new Tray(nativeImage.createFromPath(iconFile)); tray.setToolTip('Paddock');
     tray.setContextMenu(Menu.buildFromTemplate([{ label: 'Open Paddock', click: revealWindow }, { label: 'Corner HUD', click: () => setMode('hud') }, { type: 'separator' }, { label: 'Quit Paddock', click: quit }]));
     tray.on('click', revealWindow); tray.on('double-click', revealWindow);
@@ -752,14 +747,14 @@ app.whenReady().then(() => guardStartup(async () => {
   }, { optional: true, skipInSafeMode: false });
   if (!testMode) {
     await startupStep('Recent chats', () => { recent = recentReader.scan(); }, { optional: true });
-    void startupStep('Usage checks', () => refreshLimits(), { optional: true }).catch(() => {});
+    void startupStep('Usage checks', () => refreshLimits({ background: true }), { optional: true }).catch(() => {});
   }
   setInterval(() => { sessions.scanEvents(); }, 1000).unref();
   if (!testMode && !safeMode) {
     void strataReadiness.refresh();
     setInterval(() => { void strataReadiness.refresh(); }, 30000).unref();
     setInterval(() => { void startupStep('Recent chats', () => { recent = recentReader.scan(); sessions.updateUsage(recent); publish(); }, { optional: true }); }, 12000).unref();
-    setInterval(() => { void startupStep('Usage checks', refreshLimits, { optional: true }); }, 120000).unref();
+    setInterval(() => { void startupStep('Usage checks', () => refreshLimits({ background: true }), { optional: true }); }, 120000).unref();
   }
   ipcMain.on('dock:owner-activity', (event, payload) => {
     if (event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame || event.senderFrame.url !== entryUrl) return;
@@ -792,496 +787,31 @@ app.whenReady().then(() => guardStartup(async () => {
     desktopV2.receive(message);
     return true;
   });
+  const desktopCommands = createDesktopCommands({
+    app, dialog, shell, nativeImage, clipboard, Menu, crash, testMode, safeMode, root,
+    mobile, workbench, tasks, sessions, projects, screenshots, accounts, worktrees, cliSetup, codePanel,
+    messageQueue, prompts, ownerConsoles, codexAccounts, credentialSwitch, hub, workspace, turns, skillPacks, ssh,
+    vault, integrations, mcpCatalog, updates,
+    getWindow: () => window, getSettings: () => settings, persistSettings, publish,
+    getLimits: () => limits, setLimits: value => { limits = value; }, setStorageError: value => { storageError = value; },
+    getCapabilities: () => capabilities, setCapabilities: value => { capabilities = value; },
+    getLedger: () => ledger, setLedger: value => { ledger = value; },
+    getApiBusy: () => apiBusy, setApiBusy: value => { apiBusy = value; }, updatePower,
+    getDesktopLegacy: () => desktopLegacy, setDesktopLegacy: value => { desktopLegacy = value; },
+    setQuitting: value => { quitting = value; }, getMode: () => mode,
+    stateV2Enabled, stateV2Flag, endDesktopV2, snapshot, restart, setMode,
+    minimize: () => window.minimize(), hideToTray, revealWindow, dragWindow, quit, refreshLimits,
+    qrCode: (code, options) => require('qrcode').toDataURL(code, options),
+    resolveKey: id => vault.get(id)
+  });
   ipcMain.handle('dock:call', async (event, method, payload) => {
     if (event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame || event.senderFrame.url !== entryUrl) throw new Error('Untrusted client.');
     // State changes already owed to the window arrive before this call's answer,
     // as they did with full snapshots.
     if (desktopV2 && !desktopV2.closed) { await new Promise(resolve => queueMicrotask(resolve)); await desktopV2.whenIdle(); }
     try {
-      if (typeof method === 'string' && method.startsWith('mobile.')) {
-        let value;
-        switch (method) {
-          case 'mobile.configure': await mobile.configure(payload); break;
-          case 'mobile.invite': { const invite = await mobile.invite(); value = { ...invite, qr: await require('qrcode').toDataURL(invite.code, { width: 280, margin: 2, errorCorrectionLevel: 'M' }) }; break; }
-          case 'mobile.cancel-pairing': mobile.cancelPairing(); break;
-          case 'mobile.decide-pairing': mobile.decidePairing(payload); break;
-          case 'mobile.revoke': mobile.revoke(payload); break;
-          case 'mobile.rename': value = mobile.rename(payload); break;
-          case 'mobile.status': value = mobile.snapshot(); publish(); break;
-          case 'mobile.check-firewall': await mobile.network.checkFirewall(mobile.config); value = mobile.snapshot(); break;
-          case 'mobile.inspect-network': value = await mobile.network.inspect(payload?.host); break;
-          case 'mobile.firewall': if (!mobile.server && payload?.remove !== true) throw new Error('Enable the phone connection first.'); value = await mobile.network.firewall(mobile.config, payload?.remove === true); break;
-          case 'mobile.windows-network': await shell.openExternal('ms-settings:network-status'); break;
-          case 'mobile.router': {
-            const gateway = mobile.network.snapshot().gateway;
-            if (!gateway || !require('./mobile-address.cjs').isPrivate(gateway)) throw new Error('Check your network first.');
-            await shell.openExternal(`http://${gateway}/`); break;
-          }
-          default: throw new Error('Unknown mobile action.');
-        }
-        return { ok: true, value };
-      }
-      if (typeof method === 'string' && method.startsWith('workbench.')) return { ok: true, value: await workbench.call(method.slice(10), payload) };
-      switch (method) {
-        case 'state': return { ok: true, value: snapshot() };
-        case 'state.protocol': return { ok: true, value: { protocol: 2, v2: stateV2Enabled(), flag: stateV2Flag } };
-        // Renderer fallback: its protocol 2 subscription failed, so publish
-        // full dock:state snapshots again until it reloads.
-        case 'state.legacy': {
-          if (!desktopLegacy) crash.log('WARN', 'Desktop state subscription unavailable; using full snapshots.');
-          endDesktopV2(); desktopLegacy = true;
-          return { ok: true, value: snapshot() };
-        }
-        // Display codes stay out of the store; a v2 client reads them here.
-        // The phone pairing comparison code comes from mobile.status.
-        case 'meshy.auth': { const auth = workbench.concepts.auth || { state: 'unchecked' }; return { ok: true, value: { ...auth } }; }
-        case 'restart.normal': {
-          if (sessions.list().some(item => item.alive) && !testMode) {
-            const { response } = await dialog.showMessageBox(window, { type: 'question', message: 'End open consoles and restart normally?', detail: 'Consoles opened in safe mode are not saved.', buttons: ['Keep running', 'Restart normally'], defaultId: 0, cancelId: 0 });
-            if (response !== 1) break;
-          }
-          restart(false); break;
-        }
-        case 'tasks.candidates': return { ok: true, value: tasks.choices(payload?.implementer, payload || {}) };
-        case 'tasks.start': return { ok: true, value: await tasks.start({ ...payload, projectId: projects.forFolder(payload?.repo)?.id || null }) };
-        case 'tasks.acknowledge': return { ok: true, value: tasks.acknowledge(payload?.id) };
-        case 'tasks.dismiss': return { ok: true, value: tasks.dismiss(payload?.id) };
-        case 'tasks.approvePlan': return { ok: true, value: await tasks.approvePlan(payload) };
-        case 'tasks.resume': return { ok: true, value: await tasks.resume(payload?.id) };
-        case 'tasks.stop': {
-          const affected = sessions.list().filter(item => item.taskId === payload?.id && item.processAlive);
-          if (affected.length && !testMode) {
-            const reply = await dialog.showMessageBox(window, { type: 'question', buttons: ['Keep running', 'Stop workers'], defaultId: 0, cancelId: 0,
-              message: 'Stop task workers?', detail: affected.map(item => item.name).join('\n') });
-            if (reply.response !== 1) return { ok: true, value: false };
-            const current = sessions.list().filter(item => item.taskId === payload?.id && item.processAlive);
-            if (current.length !== affected.length || current.some(item => !affected.some(prior => prior.consoleKey === item.consoleKey && prior.launchId === item.launchId))) {
-              throw new Error('The task workers changed. Review Stop again.');
-            }
-          }
-          return { ok: true, value: await tasks.stop(payload?.id) };
-        }
-        case 'worker.submit': return { ok: true, value: sessions.workerBridge.submit(payload) };
-        case 'worker.stop': {
-          return { ok: true, value: await sessions.workerBridge.stopDesktop(payload, { testMode,
-            confirm: async item => (await dialog.showMessageBox(window, { type: 'question', buttons: ['Keep running', 'Stop worker'], defaultId: 0, cancelId: 0,
-              message: `Stop worker for ${item.name}?`, detail: 'All work is kept.' })).response === 1 }) };
-        }
-        case 'tasks.accept': return { ok: true, value: await tasks.accept(payload?.id) };
-        case 'tasks.list': await tasks.refresh(); return { ok: true, value: tasks.snapshot() };
-        case 'updates.check': return { ok: true, value: await updates.check() };
-        case 'updates.download': if (testMode) throw new Error('Real update downloads are disabled in tests.'); return { ok: true, value: await updates.download() };
-        case 'updates.install': {
-          if (testMode) throw new Error('Installer launching is disabled in tests.');
-          const file = await updates.verifiedFile();
-          if (apiBusy) throw new Error('Wait for API work to finish before installing. The download is saved.');
-          if (sessions.list().some(x => x.alive)) {
-            const answer = await dialog.showMessageBox(window, { type: 'question', buttons: ['Keep working', 'Install update'], defaultId: 0, cancelId: 0, message: 'Install the downloaded update?', detail: 'Running console tasks will stop. Your saved panels can reopen after installation.' });
-            if (answer.response !== 1) break;
-          }
-          if (process.platform === 'linux' && process.env.APPIMAGE) {
-            // Replace the running AppImage with the verified download, then restart.
-            const target = process.env.APPIMAGE, staged = target + '.update';
-            fs.copyFileSync(file, staged); fs.chmodSync(staged, 0o755); fs.renameSync(staged, target);
-            quitting = true; app.relaunch({ execPath: target }); app.quit(); break;
-          }
-          if (process.platform === 'linux') { shell.showItemInFolder(file); break; }
-          const error = await shell.openPath(file); if (error) throw new Error('The installer could not be opened.');
-          quitting = true; app.quit(); break;
-        }
-        case 'mode': await setMode(payload); break;
-        case 'minimize': window.minimize(); break;
-        case 'tray': hideToTray(); break;
-        case 'show': revealWindow(); break;
-        case 'window.drag': dragWindow(payload?.action, payload); break;
-        case 'quit': await quit(); break;
-        case 'refresh': await refreshLimits(); break;
-        case 'skills.refresh': { const value = skillPacks.list(); publish(); return { ok: true, value }; }
-        case 'skills.install': { if (testMode && !process.env.PADDOCK_SKILLS_HOME) throw new Error('Skill installs need a temporary home in tests.'); const value = await skillPacks.install(payload); hub.writeSummary(); return { ok: true, value }; }
-        case 'skills.uninstall': { if (testMode && !process.env.PADDOCK_SKILLS_HOME) throw new Error('Skill installs need a temporary home in tests.'); const value = await skillPacks.uninstall(payload); hub.writeSummary(); return { ok: true, value }; }
-        case 'agents.refresh': {
-          cliSetup.refresh(); skillPacks.list();
-          sessions.claude = findClaude();
-          capabilities = { ...capabilities, codex: !!nativeCodex(), claude: !!sessions.claude, claudeLocation: sessions.claude?.label };
-          publish(); return { ok: true, value: capabilities };
-        }
-        case 'agents.install': {
-          const result = await cliSetup.install(payload); skillPacks.list();
-          sessions.claude = findClaude();
-          capabilities = { ...capabilities, codex: !!nativeCodex(), claude: !!sessions.claude, claudeLocation: sessions.claude?.label };
-          publish(); return { ok: true, value: result };
-        }
-        case 'ssh.scan': return { ok: true, value: await ssh.scan(payload) };
-        case 'ssh.approve': { const value = ssh.approve(payload); publish(); return { ok: true, value }; }
-        case 'ssh.check': { const value = await ssh.check(payload); publish(); return { ok: true, value }; }
-        case 'ssh.rename': { const value = ssh.rename(payload.id, payload.name); publish(); return { ok: true, value }; }
-        case 'ssh.remove': {
-          if (sessions.list().some(x => x.remote?.hostId === payload && (x.alive || x.restoreError))) throw new Error('End this host’s consoles before removing it.');
-          ssh.remove(payload); publish(); break;
-        }
-        case 'ssh.keyFile': {
-          const picked = await dialog.showOpenDialog(window, { properties: ['openFile'], title: 'Choose an SSH private key (stays on this PC)' });
-          return { ok: true, value: picked.filePaths[0] || '' };
-        }
-        case 'setup.validate': return { ok: true, value: validateConsoleDefaults(payload) };
-        case 'setup.complete': {
-          const consoleDefaults = validateConsoleDefaults(payload);
-          if (cliAgents.has(consoleDefaults.provider) && !cliSetup.executable(consoleDefaults.provider)) throw new Error('Install this agent, then check again. You can also start with PowerShell.');
-          const opened = payload.launchNow === true ? await sessions.create({ ...consoleDefaults, permissions: settings.agentPermissions }) : null;
-          persistSettings({ ...settings, consoleDefaults, setupComplete: true });
-          publish(); return { ok: true, value: opened };
-        }
-        case 'pickFolder': {
-          const suggested = typeof payload?.cwd === 'string' && path.isAbsolute(payload.cwd) && fs.existsSync(payload.cwd) && fs.statSync(payload.cwd).isDirectory() ? payload.cwd : settings.consoleDefaults.cwd;
-          const result = await dialog.showOpenDialog(window, { properties: ['openDirectory'], title: 'Choose a launch folder', defaultPath: suggested });
-          return { ok: true, value: result.filePaths[0] || null };
-        }
-        case 'explorer.list': case 'code.create': case 'web.create':
-          throw new Error('The file explorer, Code and Preview panels have been removed.');
-        case 'review.close': {
-          closeReviewPanel(payload, { sessions, getSettings: () => settings, persistSettings }); break;
-        }
-        case 'code.close': case 'web.close': {
-          const panel = method === 'code.close' ? codePanel.panel(payload) : sessions.items.get(payload), slotNames = { ...settings.slotNames };
-          if (method === 'web.close' && panel?.kind !== 'web') throw new Error('Open a preview panel first.');
-          delete slotNames[panel.slot]; persistSettings({ ...settings, slotNames });
-          sessions.end(payload); break;
-        }
-        case 'session.create': {
-          payload = payload?.projectId ? projects.launch(payload) : payload;
-          const occupied = occupiedCells(sessions.items.values(), sessions.grid);
-          const slot = payload?.slot ?? Array.from({ length: sessions.grid.columns * sessions.grid.rows }, (_, i) => i + 1).find(x => !occupied.has(x));
-          const { accountId, worktree: ownWorktree, ...launch } = payload || {};
-          if (ownWorktree) {
-            await prepareWorktree(launch, worktrees, settings.consoleDefaults.cwd);
-          }
-          // Only a signed-in account of the chosen agent can be launched directly.
-          if (accountId !== undefined && !accounts?.choices(launch.provider).some(choice => choice.id === accountId && (!choice.profile || choice.loginCompletedAt))) throw new Error('Choose a signed-in account for this agent.');
-          const session = await sessions.create({ ...settings.consoleDefaults, ...(settings.slotNames?.[slot] ? { name: settings.slotNames[slot] } : {}), ...launch, permissions: launch.permissions ?? settings.agentPermissions }, accountId ? { accountId } : undefined);
-          persistSettings({ ...settings, slotNames: { ...settings.slotNames, [session.slot]: session.name } }); publish();
-          return { ok: true, value: session };
-        }
-        case 'accounts.create': {
-          const profile = accounts.create(payload?.provider, payload?.label);
-          publish();
-          return { ok: true, value: accounts.choices(profile.provider).find(item => item.id === profile.id) };
-        }
-        case 'accounts.rename': {
-          const renamed = accounts.rename(payload?.id, payload?.label);
-          for (const session of sessions.items.values()) if (session.accountId === renamed.id) session.accountLabel = renamed.label;
-          publish(); return { ok: true, value: renamed };
-        }
-        case 'accounts.remove': {
-          const profile = accounts.get(payload);
-          if (!profile) throw new Error('Account profile not found.');
-          if ([...sessions.items.values()].some(item => item.alive && item.accountId === profile.id)) throw new Error('End the consoles using this account first.');
-          const { response } = await dialog.showMessageBox(window, { type: 'warning', buttons: ['Keep account', 'Remove account'], defaultId: 0, cancelId: 0, noLink: true,
-            message: `Remove ${profile.label}?`, detail: 'Paddock deletes this account\'s sign-in and settings folder. Chats stored with the provider are not affected.' });
-          if (response !== 1) break;
-          codexAccounts.get(profile.id)?.stop(); codexAccounts.delete(profile.id);
-          await credentialSwitch.remove(profile.provider, profile.id);
-          accounts.remove(profile.id);
-          limits = limits.filter(item => limitAccountId(item) !== profile.id);
-          try { atomicJson(path.join(root, 'limits.json'), limits); } catch (error) { storageError = error.message; }
-          publish(); return { ok: true, value: true };
-        }
-        case 'accounts.login': {
-          const session = await sessions.createLoginConsole(payload?.id, settings.consoleDefaults.cwd);
-          publish(); return { ok: true, value: session };
-        }
-        case 'accounts.setup': {
-          const session = await sessions.createSetupConsole(payload);
-          publish(); return { ok: true, value: session };
-        }
-        case 'slot.trim': {
-          const slotTrims = updatedSlotTrims(settings.slotTrims, payload, sessions.list(), sessions.grid);
-          persistSettings({ ...settings, slotTrims }); publish(); break;
-        }
-        case 'slot.name': {
-          const slot = payload?.slot;
-          if (!Number.isInteger(slot) || slot < 1 || slot > sessions.grid.columns * sessions.grid.rows) throw new Error('Choose a slot inside the console grid.');
-          if (typeof payload.name !== 'string' || payload.name.length > 64 || /[\x00-\x1f\x7f]/.test(payload.name)) throw new Error('Use a name up to 64 characters, on one line.');
-          const item = sessions.list().find(x => x.slot === slot && (x.alive || x.restoreError));
-          if ((item?.id || null) !== (payload.sessionId || null)) throw new Error('This slot has changed. Try naming it again.');
-          const name = payload.name.trim(), slotNames = { ...settings.slotNames };
-          if (name) slotNames[slot] = name; else delete slotNames[slot];
-          persistSettings({ ...settings, slotNames });
-          if (item) { sessions.rename(item.id, name); workbench.results.renameConsole(item.consoleKey || item.id, sessions.items.get(item.id).name); } else publish();
-          break;
-        }
-        case 'projects.save': { const project = projects.save({ ...payload, guided: !payload.id }); publish(); return { ok: true, value: project }; }
-        case 'projects.proposal.accept': return { ok: true, value: projects.acceptProposal(payload.id, sessions) };
-        case 'projects.proposal.dismiss': projects.dismissProposal(payload.id); return { ok: true };
-        case 'projects.decision': { const project = projects.decide(payload.id, payload); publish(); return { ok: true, value: project }; }
-        case 'projects.plan.begin': return { ok: true, value: projects.beginPlan(payload.id) };
-        case 'projects.plan.review': return { ok: true, value: projects.review(payload.id, payload) };
-        case 'projects.plan.underway': return { ok: true, value: projects.underway(payload.id, payload) };
-        case 'projects.plan.later': return { ok: true, value: projects.addLater(payload.id, payload) };
-        case 'projects.plan.sync': return { ok: true, value: projects.syncPlan(payload.id) };
-        case 'projects.plan.reference.add': {
-          const raw = payload?.kind === 'screenshot' ? { ...payload, kind: 'file', value: screenshots.file(), title: 'Screenshot ' + new Date().toLocaleString() } : payload;
-          return { ok: true, value: projects.addReference(payload.id, raw) };
-        }
-        case 'projects.plan.reference.remove': return { ok: true, value: projects.removeReference(payload.id, payload) };
-        case 'projects.plan.thumb': {
-          const item = projects.get(payload?.id)?.plan?.references?.find(x => x.id === payload?.ref && x.kind === 'image');
-          if (!item) return { ok: true, value: '' };
-          const image = nativeImage.createFromPath(item.value);
-          return { ok: true, value: image.isEmpty() ? '' : image.resize({ width: 240, quality: 'good' }).toDataURL() };
-        }
-        case 'projects.plan.pick': {
-          const result = await dialog.showOpenDialog(window, { properties: ['openFile', 'multiSelections'] });
-          return { ok: true, value: result.canceled ? [] : result.filePaths.slice(0, 20) };
-        }
-        case 'open.link': {
-          let url; try { url = new URL(String(payload)); } catch { throw new Error('That link is not valid.'); }
-          if (!['https:', 'http:'].includes(url.protocol)) throw new Error('Only web links can be opened.');
-          await shell.openExternal(url.href); break;
-        }
-        case 'projects.folder': {
-          const target = projects.folderPath(payload.id, payload.index ?? 0, payload.planFiles === true);
-          const error = await shell.openPath(target); if (error) throw new Error('The project folder could not be opened.');
-          return { ok: true, value: target };
-        }
-        case 'session.project': return { ok: true, value: sessions.assignProject(payload?.id, payload?.projectId, { useProjectName: payload?.useProjectName }) };
-        case 'projects.progress': { const project = projects.progress(payload?.id, payload); publish(); return { ok: true, value: project }; }
-        case 'projects.remove': {
-          projects.remove(payload);
-          for (const item of sessions.items.values()) if (item.projectId === payload) item.projectId = null;
-          sessions.emit('changed'); publish(); break;
-        }
-        case 'session.models': return { ok: true, value: payload === 'opencode' ? strataModels(hub.config.profiles) : consoleModels(payload) };
-        case 'grid.configure': sessions.setGrid(payload); break;
-        case 'session.layout.preview': return { ok: true, value: sessions.previewLayout({ id: payload?.id, slot: payload?.slot, width: payload?.width, height: payload?.height }) };
-        case 'session.move':
-        case 'session.layout': {
-          sessions.layout(method === 'session.move' ? { id: payload?.id, slot: payload?.slot } : { id: payload?.id, slot: payload?.slot, width: payload?.width, height: payload?.height }, plan => {
-            const slotNames = { ...settings.slotNames };
-            const previous = new Set(plan.map(x => sessions.items.get(x.id).slot));
-            const displaced = plan.filter(x => !previous.has(x.slot) && slotNames[x.slot]).map(x => slotNames[x.slot]);
-            const freed = [...previous].filter(slot => !plan.some(x => x.slot === slot));
-            for (const placed of plan) delete slotNames[sessions.items.get(placed.id).slot];
-            for (let i = 0; i < displaced.length && i < freed.length; i++) slotNames[freed[i]] = displaced[i];
-            for (const placed of plan) slotNames[placed.slot] = sessions.items.get(placed.id).name;
-            persistSettings({ ...settings, slotNames, slotTrims: moveSlotTrims(settings.slotTrims, plan, sessions.items) });
-          });
-          break;
-        }
-        case 'session.retry': return { ok: true, value: await sessions.retry(payload) };
-        case 'session.releaseToHub': ownerConsoles.release(payload?.consoleKey, payload?.launchId); break;
-        case 'session.input': sessions.write(payload?.id, payload?.data); break;
-        case 'queue.add': return { ok: true, value: messageQueue.add(payload?.id, payload?.text, { ownerRequested: true }) };
-        case 'queue.edit': messageQueue.edit(payload?.id, payload?.entryId, payload?.text); break;
-        case 'queue.remove': messageQueue.remove(payload?.id, payload?.entryId); break;
-        case 'queue.move': messageQueue.move(payload?.id, payload?.entryId, payload?.offset); break;
-        case 'queue.pause': messageQueue.pause(payload?.id, payload?.paused === true); break;
-        case 'queue.send': await messageQueue.sendNow(payload?.id, payload?.entryId); break;
-        case 'prompt.save': return { ok: true, value: prompts.save(payload) };
-        case 'prompt.remove': prompts.remove(payload); break;
-        case 'clipboard.write': {
-          if (typeof payload !== 'string' || payload.length > 1024 * 1024) throw new Error('Select up to 1 MB of text to copy.');
-          clipboard.writeText(payload); break;
-        }
-        case 'clipboard.menu': {
-          if (typeof payload !== 'string' || payload.length > 1024 * 1024) throw new Error('Select up to 1 MB of text to copy.');
-          Menu.buildFromTemplate([{ label: 'Copy', enabled: !!payload, click: () => clipboard.writeText(payload) }]).popup({ window }); break;
-        }
-        case 'session.switch': return { ok: true, value: await sessions.switchAccount(payload) };
-        case 'screenshot.path': return { ok: true, value: screenshots.pathFor(sessions.items.get(payload?.id)) };
-        case 'screenshot.clipboard': return { ok: true, value: await screenshots.paste(sessions.items.get(payload?.id)) };
-        case 'file.preview': {
-          const item = sessions.items.get(payload?.id);
-          if (item?.remote) throw new Error('This file is on the Linux machine. View it from that console, for example with cat.');
-          return { ok: true, value: filePreview.preview(payload?.path, item?.cwd) };
-        }
-        case 'file.open': case 'file.reveal': {
-          const file = filePreview.resolve(payload?.path);
-          if (!fs.existsSync(file)) throw new Error(`File not found: ${file}`);
-          if (method === 'file.reveal') { shell.showItemInFolder(file); break; }
-          const error = await shell.openPath(file); if (error) throw new Error('Windows could not open this file: ' + error);
-          break;
-        }
-        case 'session.resize': sessions.resize(payload?.id, payload?.cols, payload?.rows); break;
-        case 'session.buffer': return { ok: true, value: sessions.buffer(payload) };
-        case 'session.acknowledge': sessions.acknowledge(payload); break;
-        case 'session.end': {
-          return { ok: true, value: await endSession(payload, { sessions, getSettings: () => settings, persistSettings, dialog, window, testMode, worktrees }) };
-        }
-        case 'vault.save': vault.set(payload?.provider, payload?.key, payload?.label); hub.writeSummary(); await Promise.allSettled([...hub.clients.keys()].map(id => hub.disconnect(id))); publish(); break;
-        case 'vault.remove': {
-          validateKeyId(payload);
-          const used = hub.config.imageGeneration?.keyId === payload || hub.config.profiles.some(x => x.keyId === payload) || hub.config.connections.some(x => [x.envKeys, x.headerKeys, x.queryKeys].some(map => Object.values(map || {}).some(ref => ref.key === payload)));
-          if (used && !testMode) { const result = await dialog.showMessageBox(window, { type: 'question', message: 'Remove this key?', detail: 'Connections using it will need another key.', buttons: ['Keep key', 'Remove'], defaultId: 0, cancelId: 0 }); if (result.response !== 1) break; }
-          vault.remove(payload); hub.writeSummary(); await Promise.allSettled([...hub.clients.keys()].map(id => hub.disconnect(id))); publish(); break;
-        }
-        case 'shared.instructions': hub.instructions(payload); publish(); break;
-        case 'shared.guides': hub.setGuides(payload); publish(); break;
-        case 'images.settings': hub.setImageGeneration(payload); publish(); break;
-        case 'integrations.refresh': integrations.refresh(); publish(); break;
-        case 'integrations.setup': {
-          if (testMode && payload?.id !== 'meshy') throw new Error('Software installation is disabled during tests.');
-          if (payload?.id === 'meshy' && !vault.list().some(x => x.id === payload.keyId)) throw new Error('Paste your Meshy API key, then connect.');
-          const previous = hub.config.connections.find(x => x.id === payload?.id);
-          if (previous && previous.integration !== payload.id) throw new Error('A custom tool already uses this ID. Rename it before setting up this integration.');
-          const connection = await integrations.prepare(payload?.id, payload);
-          await hub.saveConnection(connection); publish(); break;
-        }
-        case 'tools.save': await hub.saveConnection(payload); publish(); break;
-        case 'catalog.add': {
-          if (testMode) throw new Error('Software installation is disabled during tests.');
-          const existing = hub.config.connections.find(x => x.id === payload?.id);
-          if (existing && existing.catalog !== payload?.id) throw new Error('A custom tool already uses this ID. Rename it before adding this one.');
-          if (payload?.keyId && !vault.list().some(x => x.id === payload.keyId)) throw new Error('Paste the key on this card, then save.');
-          await hub.saveConnection(await mcpCatalog.add(payload?.id, { keyId: payload?.keyId })); publish(); break;
-        }
-        case 'tools.policy': {
-          const connection = hub.config.connections.find(x => x.id === payload?.id);
-          if (!connection) throw new Error('That tool is no longer connected.');
-          const { access, ...limits } = payload.policy || {};
-          await hub.saveConnection({ ...connection, enabled: access !== 'off', policy: { ...limits, access: access === 'off' ? connection.policy?.access : access } }); publish(); break;
-        }
-        case 'tools.remove': await hub.removeConnection(payload); publish(); break;
-        case 'tools.test': { try { const result = await hub.test(payload); return { ok: true, value: result }; } finally { publish(); } }
-        case 'tools.catalog': { try { return { ok: true, value: await hub.list(payload) }; } finally { publish(); } }
-        case 'profiles.save': hub.saveProfile(payload); publish(); break;
-        case 'profiles.remove': hub.removeProfile(payload); publish(); break;
-        case 'settings': {
-          const next = { ...settings };
-          if (payload?.routing !== undefined) next.routing = validateRouting(payload.routing);
-          if (typeof payload?.hudAlwaysOnTop === 'boolean') next.hudAlwaysOnTop = payload.hudAlwaysOnTop;
-          if (typeof payload?.notifications === 'boolean') next.notifications = payload.notifications;
-          if (typeof payload?.confirmConsoleEnd === 'boolean') next.confirmConsoleEnd = payload.confirmConsoleEnd;
-          if (typeof payload?.keepAwakeWhileWorking === 'boolean') next.keepAwakeWhileWorking = payload.keepAwakeWhileWorking;
-          if (typeof payload?.restoreConsoles === 'boolean') {
-            if (safeMode && payload.restoreConsoles !== settings.restoreConsoles) throw new Error('Restart normally to change console restoration.');
-            next.restoreConsoles = payload.restoreConsoles;
-          }
-          if (typeof payload?.codexScrollback === 'boolean') next.codexScrollback = payload.codexScrollback;
-          if (typeof payload?.autoSaveResults === 'boolean') next.autoSaveResults = payload.autoSaveResults;
-          if (typeof payload?.delegationEnabled === 'boolean') next.delegationEnabled = payload.delegationEnabled;
-          if (typeof payload?.delegationPanels === 'boolean') next.delegationPanels = payload.delegationPanels;
-          if (payload?.delegationProviders !== undefined) {
-            if (!Array.isArray(payload.delegationProviders) || payload.delegationProviders.some(id => !REVIEWERS.includes(id))) throw new Error('Choose a supported reviewer.');
-            next.delegationProviders = [...new Set(payload.delegationProviders)];
-          }
-          // Which subscriptions the Usage page lists; a display preference only.
-          for (const key of ['usageShown', 'usageHidden']) if (payload?.[key] !== undefined) {
-            const ids = payload[key];
-            if (!Array.isArray(ids) || ids.length > 100 || ids.some(id => typeof id !== 'string' || !/^[a-z0-9-]{1,40}:[\w.-]{1,80}$/i.test(id))) throw new Error('Choose subscriptions from the list.');
-            next[key] = [...new Set(ids)];
-          }
-          if (typeof payload?.suggestProjects === 'boolean') next.suggestProjects = payload.suggestProjects;
-          if (typeof payload?.stateSyncV2 === 'boolean') next.stateSyncV2 = payload.stateSyncV2;
-          if (payload?.maxParallelTasks !== undefined) {
-            const limit = Number(payload.maxParallelTasks);
-            if (!Number.isInteger(limit) || limit < 1 || limit > 10) throw new Error('Choose 1 to 10 tasks at once.');
-            next.maxParallelTasks = limit;
-          }
-          if (payload?.explorerWidth !== undefined) {
-            next.explorerWidth = validateExplorerWidth(payload.explorerWidth);
-          }
-          if (typeof payload?.sidebarCollapsed === 'boolean') next.sidebarCollapsed = payload.sidebarCollapsed;
-          if (typeof payload?.vimControls === 'boolean') next.vimControls = payload.vimControls;
-          if (typeof payload?.cursorBlink === 'boolean') next.cursorBlink = payload.cursorBlink;
-          if (payload?.lighting !== undefined) {
-            if (!lightingStyles.includes(payload.lighting)) throw new Error('Choose an available lighting effect.');
-            next.lighting = payload.lighting;
-          }
-          if (payload?.lightingSpeed !== undefined) {
-            if (!['slow', 'normal', 'fast'].includes(payload.lightingSpeed)) throw new Error('Choose slow, normal or fast lighting.');
-            next.lightingSpeed = payload.lightingSpeed;
-          }
-          if (payload?.starDensity !== undefined) {
-            const level = Number(payload.starDensity);
-            if (!Number.isInteger(level) || level < 0 || level > 4) throw new Error('Choose a star level from Off to Galaxy.');
-            next.starDensity = level;
-          }
-          if (typeof payload?.ambientMotion === 'boolean') next.ambientMotion = payload.ambientMotion;
-          if (typeof payload?.themeTextures === 'boolean') next.themeTextures = payload.themeTextures;
-          if (typeof payload?.launchEffect === 'boolean') next.launchEffect = payload.launchEffect;
-          if (payload?.trimStyle !== undefined) {
-            if (!frameStyles.includes(payload.trimStyle)) throw new Error('Choose an available console trim.');
-            next.trimStyle = payload.trimStyle;
-          }
-          if (payload?.trimWidth !== undefined) {
-            const width = Number(payload.trimWidth);
-            if (![1, 2, 3, 4, 6].includes(width)) throw new Error('Choose an available trim width.');
-            next.trimWidth = width;
-          }
-          if (payload?.consoleDefaults !== undefined) next.consoleDefaults = validateConsoleDefaults(payload.consoleDefaults);
-          if (payload?.agentPermissions !== undefined) {
-            if (!['default', 'unrestricted'].includes(payload.agentPermissions)) throw new Error('Choose a supported agent permission mode.');
-            next.agentPermissions = payload.agentPermissions;
-          }
-          workspace.setEnabled(next.restoreConsoles);
-          const v2Was = stateV2Enabled();
-          persistSettings(next);
-          // Turning protocol 2 off returns the renderer to dock:state and phones to v1.
-          if (v2Was && !stateV2Enabled()) { endDesktopV2(); for (const client of mobile.clients) if (client.v2) client.ws.close(1012, 'Reconnect'); }
-          // Turned back on: this renderer stays on dock:state until it reloads.
-          if (!v2Was && stateV2Enabled()) desktopLegacy = true;
-          turns.setEnabled(settings.autoSaveResults === true); if (mode === 'hud') window.setAlwaysOnTop(settings.hudAlwaysOnTop); publish(); break;
-        }
-        case 'rates.save': {
-          if (!hub.config.profiles.some(x => x.id === payload?.provider)) throw new Error('Choose an API connection.');
-          if (!/^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,149}$/.test(payload.model || '')) throw new Error('Enter a valid model ID.');
-          const rates = {};
-          for (const field of ['input', 'output', 'cached', 'cacheWrite']) {
-            const value = payload[field] === '' || payload[field] === null || payload[field] === undefined ? null : Number(payload[field]);
-            if (value !== null && (number(value) === null || value > 100000)) throw new Error('Rates must be nonnegative USD per million tokens.');
-            rates[field] = value;
-          }
-          persistSettings({ ...settings, rates: { ...settings.rates, [`${payload.provider}:${payload.model}`]: rates } }); publish(); break;
-        }
-        case 'api.send': {
-          if (testMode) throw new Error('Paid API requests are disabled during tests.');
-          if (apiBusy) throw new Error('Wait for the current API request to finish.');
-          const profile = hub.config.profiles.find(x => x.id === payload?.provider);
-          if (!profile) throw new Error('Choose an API connection.');
-          const key = profile.keyId ? vault.get(profile.keyId) : '';
-          const project = payload.projectId ? projects.launch({ projectId: payload.projectId }) : {};
-          apiBusy = true; updatePower();
-          const apiOwner = 'api:' + require('node:crypto').randomUUID();
-          turns.virtual.set(apiOwner, { id: apiOwner, consoleKey: 'api:' + profile.id, projectId: project.projectId || null, name: profile.name, cwd: project.cwd || settings.consoleDefaults.cwd, alive: true });
-          projects.touch(project.projectId);
-          const apiHub = { summary: () => hub.summary() + projects.chatSummary(turns.virtual.get(apiOwner)), invoke: (name, args) => hub.invoke(name, args, apiOwner), completionCheck: () => workbench.completion.check(apiOwner) };
-          let result;
-          try { await turns.begin(apiOwner); result = await runApi(payload, key, settings.rates[`${profile.id}:${payload.model?.trim()}`], { profile, hub: apiHub, onEntry: entry => {
-            entry.projectId = project.projectId || null; entry.consoleName = project.name || profile.name; entry.turnId = turns.context(apiOwner)?.turnId || null;
-            ledger = [entry, ...ledger];
-            try { atomicJson(path.join(root, 'ledger.json'), ledger); }
-            catch { storageError = 'Latest API usage is only in memory. Export it before quitting.'; }
-            publish();
-          } }); }
-          finally { try { await turns.finish(apiOwner); } finally { turns.virtual.delete(apiOwner); apiBusy = false; updatePower(); } }
-          workbench.alerts.send({ title: result.error || result.entry?.status !== 'completed' ? 'API request needs attention' : 'API response ready', message: `${profile.name} · ${payload.model}`, kind: result.error || result.entry?.status !== 'completed' ? 'error' : 'ready', destination: 'usage' });
-          publish(); return { ok: true, value: result };
-        }
-        case 'ledger.export': {
-          const result = await dialog.showSaveDialog(window, { defaultPath: 'paddock-usage.json', filters: [{ name: 'JSON', extensions: ['json'] }] });
-          if (!result.canceled && result.filePath) atomicJson(result.filePath, { scope: 'API requests made through Paddock', currency: 'USD', costs: 'estimates', entries: ledger }); break;
-        }
-        case 'external.open': {
-          if (typeof payload !== 'string' || payload.length > 4096) throw new Error('Invalid web link.');
-          const url = new URL(payload);
-          if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password) throw new Error('Only web links can open here.');
-          await shell.openExternal(url.href); break;
-        }
-        case 'docs': {
-          const urls = { codex: 'https://learn.chatgpt.com/docs/codex/cli', claude: 'https://code.claude.com/docs/en/overview', openai: 'https://developers.openai.com/api/docs/pricing', anthropic: 'https://platform.claude.com/docs/en/about-claude/pricing' };
-          Object.assign(urls, { tailscale: 'https://tailscale.com/download', duckdns: 'https://www.duckdns.org/', 'mobile-guide': 'https://github.com/YeerooXY/agentdock/blob/main/docs/android-setup.md', 'android-download': 'https://github.com/YeerooXY/agentdock/releases' });
-          for (const item of integrationDefinitions) urls[item.id] = item.docs;
-          for (const item of creativeTools) urls[item.id] = item.docs;
-          for (const item of recommendedTools) urls[item.id] = item.docs;
-          for (const item of cliCatalog) urls[item.id] = item.docs;
-          urls.zai = 'https://docs.z.ai/devpack/tool/opencode';
-          urls.strata = 'https://github.com/Niko1221/Strata/blob/main/docs/INSTALL.md';
-          Object.assign(urls, { 'key-notion': 'https://www.notion.so/profile/integrations', 'key-stripe': 'https://dashboard.stripe.com/apikeys', 'key-github': 'https://github.com/settings/personal-access-tokens/new' });
-          if (!urls[payload]) throw new Error('Unknown documentation link.'); await shell.openExternal(urls[payload]); break;
-        }
-        default: throw new Error('Unknown action.');
-      }
-      return { ok: true };
+      const value = await desktopCommands.call(method, payload);
+      return value === NO_VALUE ? { ok: true } : { ok: true, value };
     } catch (error) { return { ok: false, error: error.message || 'This action could not be completed.' }; }
   });
   crash.step = 'opening the window'; crash.log('INFO', crash.step);
@@ -1299,7 +829,7 @@ app.on('before-quit', event => {
   cleanupStarted = true; quitting = true;
   workPower?.dispose();
   workspace?.freeze();
-  tasks?.interruptAll();
+  knowledgeUpkeep?.stop(); tasks?.interruptAll();
   capacityReservations?.dispose();
   ownerConsoles?.dispose();
   workbench?.stop();

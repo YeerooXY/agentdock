@@ -1,10 +1,11 @@
 'use strict';
 const { randomUUID } = require('node:crypto');
+const { sessionPolicy } = require('./providers/index.cjs');
 
 function ordinaryConsole(item) {
   if (item?.taskId) throw new Error('Use the worker composer or Stop worker.');
 }
-const steeringSupported = provider => ['codex', 'claude', 'kiro'].includes(provider);
+const steeringSupported = provider => sessionPolicy(provider).steering;
 
 // Batch CLIs close stdin after the brief. Steering is consumed at the next
 // serial turn boundary, never typed into a closed pipe or a second agent.

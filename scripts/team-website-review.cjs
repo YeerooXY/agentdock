@@ -1,0 +1,23 @@
+'use strict';
+// Authorized manual subscription review; excluded from automated tests.
+const fs = require('node:fs'), path = require('node:path'), { spawn } = require('node:child_process');
+const { AccountProfiles } = require('../electron/account-profiles.cjs');
+const { reviewerLaunch, killTree } = require('../electron/delegation.cjs');
+const { nativeCodex } = require('../electron/adapters.cjs');
+const { usageEnvironment } = require('../electron/subscription-usage.cjs');
+if (process.argv[2] !== '--live') throw Error('Pass --live for the authorized review.');
+const accountId = 'cb75b00b-2caf-4295-8256-0d28514a1531', model = 'gpt-5.6-terra';
+const root = path.resolve(__dirname, '../artifacts/team-website-rerun-20261101');
+const outFile = path.join(root, 'REVIEW.md');
+const launch = reviewerLaunch('codex', nativeCodex(), { outFile, model, workFolder: root });
+for (const site of ['bakery', 'playtime']) for (const profile of ['pc', 'iphone']) launch.args.splice(launch.args.length - 1, 0, '-i', path.join(root, 'verification', `${site}-${profile}.png`));
+const profiles = new AccountProfiles(path.join(process.env.APPDATA, 'Paddock'));
+const env = usageEnvironment(profiles.environment(accountId, 'codex', { baseEnv: process.env }));
+const brief = 'Review the attached bakery and Playtime desktop/iPhone renders and bakery/index.html plus playtime/index.html in this folder. Read-only focused review; no delegation, browsing, changes, broad repo exploration or tool setup. Check concrete visual defects, mobile typography, contrast, truthful actions and working anchors. Owner rules: no generic slogan/contrastive promotional wording, never call either website a demo, no three radiating strokes, no explanatory art callouts, no baked text in art. Playtime chosen direction is a paper ribbon from distracting apps to study/work/focus with Playtime middle. Bakery keep authentic original facts. Finish under 500 words with VERDICT: approve or changes-requested and only concrete defects with file/location and visual quality assessment. Mention real-device gaps separately; do not invent a full security certification.';
+const report = { accountId, model, startedAt: Date.now(), usage: null, failed: false, timedOut: false }; let buffer = '';
+const child = spawn(launch.executable, launch.args, { cwd: root, env, windowsHide: true, detached: process.platform !== 'win32', stdio: ['pipe','pipe','pipe'] });
+const timer = setTimeout(() => { report.timedOut = true; killTree(child); }, 180000);
+child.stdout.on('data', b => { const lines = (buffer + b.toString()).split('\n'); buffer = lines.pop(); for (const line of lines) { try { const e = JSON.parse(line); if (e.type === 'turn.completed') report.usage = e.usage; if (['error','turn.failed'].includes(e.type)) report.failed = true; } catch {} } });
+child.stderr.on('data', () => {}); child.stdin.end(brief);
+child.once('error', () => { report.failed = true; });
+child.once('close', code => { clearTimeout(timer); report.exitCode = code; report.elapsedMs = Date.now() - report.startedAt; report.hasReview = fs.existsSync(outFile); fs.writeFileSync(path.join(root, 'review-usage.json'), JSON.stringify(report, null, 2)); console.log(JSON.stringify(report)); process.exitCode = code || report.failed || report.timedOut ? 1 : 0; });

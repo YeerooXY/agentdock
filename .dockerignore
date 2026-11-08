@@ -6,5 +6,11 @@ test-data
 artifacts
 mobile/*
 !mobile/assets
+!mobile/lib
+!mobile/lib/**
+!mobile/test
+mobile/test/*
+!mobile/test/fixtures
+!mobile/test/fixtures/**
 .git
 HANDOFF.md

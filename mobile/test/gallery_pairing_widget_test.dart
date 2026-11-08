@@ -96,20 +96,20 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(phone.viewed, ['r1']);
-      expect(find.text('main · bbbbbbbb · Uncommitted changes'), findsNothing);
+      expect(find.text('main, bbbbbbbb, Uncommitted changes'), findsNothing);
       await tester.tap(find.text('Details'));
       await tester.pumpAndSettle();
       expect(
-        find.text('main · bbbbbbbb · Uncommitted changes'),
+        find.text('main, bbbbbbbb, Uncommitted changes'),
         findsOneWidget,
       );
-      expect(find.text('1 · Viewed'), findsOneWidget);
+      expect(find.text('1, Viewed'), findsOneWidget);
       await tester.tap(find.byTooltip('Next picture'));
       await tester.pumpAndSettle();
       expect(phone.viewed, ['r1', 'r2']);
       expect(find.text('Picture 2'), findsOneWidget);
       expect(images.last['seenAt'], isNull);
-      expect(find.text('2 · Viewed'), findsOneWidget);
+      expect(find.text('2, Viewed'), findsOneWidget);
       await tester.tap(find.byTooltip('Previous picture'));
       await tester.pumpAndSettle();
       expect(find.text('Picture 1'), findsOneWidget);

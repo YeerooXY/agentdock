@@ -11,7 +11,7 @@ import 'help_link.dart';
 import 'update_panel.dart';
 import 'connection_panel.dart';
 import 'devices_page.dart';
-import 'main.dart' show formatBytes;
+import 'core/format.dart';
 import 'pc_settings_page.dart';
 import 'console_appearance_controls.dart';
 

@@ -44,7 +44,7 @@ void main() {
     await tester.tap(find.text('Isolated worktree'));
     await tester.pumpAndSettle();
     expect(tester.widget<SwitchListTile>(find.byType(SwitchListTile)).value, isTrue);
-    await tester.tap(find.text('No project \u00b7 default folder'));
+    await tester.tap(find.text('No project (default folder)'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Project').last);
     await tester.pumpAndSettle();

@@ -25,7 +25,7 @@ export function snapshotFromSlices(state, ephemeral = {}) {
     usageAccounts: usage.usageAccounts ?? [], usageChecks: usage.usageChecks ?? [], delegations: list('delegations'), tasks: list('tasks'),
     sshHosts: list('sshHosts'), capabilities: shell.capabilities, projects: list('projects'), projectProposals: list('projectProposals'),
     messages: history.messages ?? [], mobile,
-    workbench: images ? { results: list('results'), unreadResults: state.results?.meta?.unread, concepts: images.concepts, conceptUsage: images.conceptUsage, meshyAuth, setupRequests: list('setupRequests') } : undefined,
+    workbench: images ? { ...(state.results?.meta?.knowledgeEpoch !== undefined ? { knowledgeEpoch: state.results.meta.knowledgeEpoch } : {}), results: list('results'), unreadResults: state.results?.meta?.unread, concepts: images.concepts, conceptUsage: images.conceptUsage, meshyAuth, setupRequests: list('setupRequests') } : undefined,
     vault: state.keyMetadata ?? undefined,
     ledger: history.ledger ?? [], summary: history.summary, shared: tools.shared ?? undefined, updates: state.updates ?? undefined, grid: shell.grid,
     settings: state.preferences ?? undefined, storageError: shell.storageError, workspaceError: shell.workspaceError, shortcutAvailable: shell.shortcutAvailable,

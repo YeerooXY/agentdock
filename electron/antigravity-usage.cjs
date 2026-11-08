@@ -4,19 +4,44 @@ const { UsageError, usageEnvironment, trackUsageReader } = require('./subscripti
 // /usage is a native TUI command, not a model prompt. Keep each shared model
 // group's weekly and five-hour windows separate; never sum their percentages.
 function antigravityReading(screen, accountId = 'antigravity:default', at = Date.now()) {
-  const panel = String(screen).split('Models & Quota')[1];
-  if (!panel || !/esc\s+Close/i.test(panel) || /\b(?:loading|refreshing)\b/i.test(panel)) return null;
-  const groups = [...panel.matchAll(/^([A-Z][A-Z0-9 &+/-]{1,64} MODELS)\s*$/gm)];
+  const panel = String(screen).split(/Models & Quota/i)[1];
+  if (!panel || !/\b(?:esc|q)\s+(?:to\s+)?close\b/i.test(panel) || /\b(?:loading|refreshing)\b/i.test(panel)) return null;
+  const groups = [...panel.matchAll(/^([A-Z][A-Z0-9 &+/-]{1,64})\s*$/gm)]
+    .filter(m => !/^(?:ESC|CLOSE|SCROLL|ACCOUNT|HELP)\b/i.test(m[1].trim()));
   if (!groups.length) return null;
   const windows = [];
   for (let i = 0; i < groups.length; i++) {
-    const heading = groups[i][1], group = heading.toLowerCase().replace(/[^a-z0-9]+/g, '-');
-    const name = ({ 'GEMINI MODELS': 'Gemini', 'CLAUDE AND GPT MODELS': 'Claude / GPT' })[heading] || heading.replace(/ MODELS$/, '');
+    const heading = groups[i][1].trim();
+    const group = heading.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    const isArgon = /argon/i.test(heading);
+    const name = ({
+      'GEMINI MODELS': 'Gemini',
+      'CLAUDE AND GPT MODELS': 'Claude / GPT',
+      'GEMINI 4 ARGON': 'Gemini 4 Argon'
+    })[heading] || (isArgon ? 'Gemini 4 Argon' : heading.replace(/\s+MODELS$/i, ''));
     const block = panel.slice(groups[i].index + groups[i][0].length, groups[i + 1]?.index ?? panel.length);
-    for (const [title, key, minutes, suffix] of [['Weekly', 'weekly', 10080, 'weekly'], ['Five Hour', 'five-hour', 300, '5-hour']]) {
-      const match = new RegExp(title + ' Limit Remaining\\s*\\[[^\\]\\r\\n]+\\]\\s*(\\d+(?:\\.\\d+)?)%[ \\t]*\\r?\\n[ \\t]*(Refreshes in ([^\\r\\n]+)|Quota available)').exec(block);
-      const left = Number(match?.[1]);
-      if (!match || !Number.isFinite(left) || left < 0 || left > 100) return null;
+    const limitDefs = isArgon
+      ? [['Weekly', 'weekly', 10080, 'weekly']]
+      : [['Weekly', 'weekly', 10080, 'weekly'], ['Five Hour', 'five-hour', 300, '5-hour']];
+    for (const [title, key, minutes, suffix] of limitDefs) {
+      if (key === 'five-hour' && /(?:Five Hour Limit(?: Remaining)?)\s*\r?\n[ \t]*Disabled: You have hit your weekly limit, the 5-hour limit does not currently apply\./i.test(block)) {
+        if (!windows.some(window => window.key === group + '-weekly' && window.usedPercent === 100)) return null;
+        windows.push({ key: group + '-' + key, modelGroup: group, label: name + ' ' + suffix, minutes,
+          usedPercent: null, notApplicable: true, resetsAt: null, resetLabel: 'Weekly limit reached' });
+        continue;
+      }
+      const titlePattern = key === 'weekly'
+        ? '(?:(?:(?:Gemini 4 Argon|[A-Za-z0-9]+)\\s+)?Weekly Limit(?: Remaining)?)'
+        : '(?:Five Hour Limit(?: Remaining)?)';
+      const limitRegex = new RegExp(
+        titlePattern +
+        '\\s*(?:\\r?\\n[ \\t]*)?\\[[^\\]\\r\\n]*\\]\\s*(\\d+(?:\\.\\d+)?)%[ \\t]*(?:\\r?\\n[ \\t]*|[ \\t]+)((?:Refreshes in|Resets? in|Reset)\\s+([^\\r\\n]+)|Quota available)',
+        'i'
+      );
+      const match = limitRegex.exec(block);
+      if (!match) return null;
+      const left = Number(match[1]);
+      if (!Number.isFinite(left) || left < 0 || left > 100) return null;
       let resetsAt = null;
       if (match[3]) {
         const duration = match[3].trim(), parts = [...duration.matchAll(/(\d+)\s*([dhms])/g)];
@@ -25,7 +50,15 @@ function antigravityReading(screen, accountId = 'antigravity:default', at = Date
         if (!Number.isSafeInteger(ms) || ms > 366 * 86400000) return null;
         resetsAt = at + ms;
       }
-      windows.push({ key: group + '-' + key, modelGroup: group, label: name + ' ' + suffix, minutes, usedPercent: Number((100 - left).toFixed(6)), resetsAt, resetLabel: match[2].trim() });
+      windows.push({
+        key: group + '-' + key,
+        modelGroup: group,
+        label: name + ' ' + suffix,
+        minutes,
+        usedPercent: Number((100 - left).toFixed(6)),
+        resetsAt,
+        resetLabel: match[2].trim()
+      });
     }
   }
   return [{ id: accountId, accountId, provider: 'antigravity', name: 'Google Antigravity', source: 'Antigravity /usage', observedAt: at, windows }];
@@ -70,7 +103,7 @@ async function readAntigravityUsage({ executable, accountId = 'antigravity:defau
       } catch { finish(new UsageError('unavailable', 'Antigravity returned no readable allowance. Check /usage in Antigravity.')); }
     };
     try {
-      child = spawnPty(executable, args, { cwd, env: { ...usageEnvironment(env), TERM: 'xterm-256color' }, cols: 150, rows: 100, name: 'xterm-256color' });
+      child = spawnPty(executable, args, { cwd, env: { ...usageEnvironment(env), TERM: 'xterm-256color' }, useConpty: true, cols: 150, rows: 100, name: 'xterm-256color' });
       unregister = trackUsageReader({ kill: () => finish(new UsageError('unavailable', 'The usage reader closed.')) });
       exitListener = child.onExit(() => finish(new UsageError('unavailable', 'Antigravity closed before returning its allowance.')));
       dataListener = child.onData(data => {

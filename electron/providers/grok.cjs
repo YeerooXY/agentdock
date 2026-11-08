@@ -1,6 +1,7 @@
 'use strict';
 module.exports = {
   id: 'grok',
+  settings: { strategy: 'cli' },
   catalog: {
     name: 'Grok Build',
     command: 'grok',

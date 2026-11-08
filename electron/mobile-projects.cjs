@@ -10,6 +10,7 @@ function summary(project, sessions) {
     id: project.id, name: project.name, color: project.color || '#89b4ff',
     status: project.status, goals: (project.goals || '').slice(0, 2000),
     nextStep: project.nextStep || '',
+    ...(project.lastProgress ? { lastProgress: { summary: String(project.lastProgress.summary || '').slice(0, 1200), at: project.lastProgress.at || null } } : {}),
     progress: { done: milestones.filter(m => m.done).length, total: milestones.length },
     lastActiveAt: project.lastActiveAt || null,
     consoles: sessions.list().filter(s => s.projectId === project.id && s.alive && !s.dismissed)

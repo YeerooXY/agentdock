@@ -1,12 +1,17 @@
 'use strict';
 // One adapter file per provider. This module validates them and derives the
 // CLI catalog, the account capability table and the usage source table, so the
-// facts live in one place. Adapters are data only; usage readers are wired in
+// facts live in one place. Adapters are data only; behavior is selected by
+// validated strategy references. Usage readers are wired in
 // usage-readers.cjs and must match the `usage.reader` references declared here.
 const ORDER = ['codex', 'claude', 'antigravity', 'copilot', 'opencode', 'cursor', 'grok', 'kiro', 'qwen', 'kimi', 'cline', 'droid', 'pi', 'strata'];
+const { SETTINGS_STRATEGIES } = require('./strategies/index.cjs');
+const { deriveScreenProfiles, screenProblem } = require('./screen-profiles.cjs');
 const METHODS = ['native-rpc', 'native-command', 'screen', 'documented-api', 'undocumented-api', 'local'];
 const UNSUPPORTED_STATES = ['no-reader', 'no-source', 'no-quota'];
 const NO_PROFILE_REASON = 'Separate sign-in storage has not been verified for this provider.';
+const SESSION_DEFAULTS = Object.freeze({ identityEvents: 'none', persistConversation: false, recentUsageDefaultOnly: false, focusReports: true, steering: false, instructionFiles: Object.freeze(['PADDOCK.md']) });
+const CONSOLE_DEFAULTS = Object.freeze({ modelChoices: false, mobileModelChoices: false, liveModelMenu: false, permissions: false });
 
 function check(condition, id, message) { if (!condition) throw new Error(`Provider adapter "${id}": ${message}`); }
 const plain = value => value && typeof value === 'object' && !Array.isArray(value);
@@ -25,8 +30,32 @@ function validate(adapter, file) {
   const id = adapter?.id;
   check(typeof id === 'string' && /^[a-z][a-z0-9-]{0,31}$/.test(id), file, 'id must be a lowercase provider name');
   check(id === file, id, `file name must match id (${file})`);
-  only(adapter, ['id', 'catalog', 'launch', 'accounts', 'usage'], id, 'top-level');
+  only(adapter, ['id', 'catalog', 'launch', 'accounts', 'usage', 'settings', 'session', 'screen', 'console'], id, 'top-level');
   const { catalog, launch, accounts, usage } = adapter;
+  if (adapter.screen !== undefined) {
+    const problem = screenProblem(adapter.screen);
+    check(!problem, id, problem);
+    check(adapter.catalog !== null, id, 'screen needs a CLI');
+  }
+  check(plain(adapter.settings), id, 'settings must be an object');
+  only(adapter.settings, ['strategy', 'resumeFlag'], id, 'settings');
+  check(SETTINGS_STRATEGIES.includes(adapter.settings.strategy), id, 'unknown settings strategy');
+  check(adapter.settings.resumeFlag === undefined || (adapter.settings.strategy === 'cli' && text(adapter.settings.resumeFlag) && /^--[a-z][a-z-]*$/.test(adapter.settings.resumeFlag)), id, 'resumeFlag needs a CLI strategy and a long flag');
+  if (adapter.session !== undefined) {
+    check(plain(adapter.session), id, 'session must be an object');
+    only(adapter.session, Object.keys(SESSION_DEFAULTS), id, 'session');
+    const policy = { ...SESSION_DEFAULTS, ...adapter.session };
+    check(['none', 'uuid', 'tagged-uuid'].includes(policy.identityEvents), id, 'unknown identity event policy');
+    check(typeof policy.persistConversation === 'boolean' && typeof policy.recentUsageDefaultOnly === 'boolean' && typeof policy.focusReports === 'boolean' && typeof policy.steering === 'boolean', id, 'session flags must be booleans');
+    check(strings(policy.instructionFiles) && policy.instructionFiles.length > 0 && policy.instructionFiles.length <= 8 && new Set(policy.instructionFiles).size === policy.instructionFiles.length && policy.instructionFiles.every(name => /^[A-Za-z0-9_][A-Za-z0-9_.-]{0,63}$/.test(name) && name !== '.' && name !== '..'), id, 'instruction files must be distinct basenames');
+  }
+  if (adapter.console !== undefined) {
+    check(plain(adapter.console), id, 'console must be an object');
+    only(adapter.console, Object.keys(CONSOLE_DEFAULTS), id, 'console');
+    for (const [key, value] of Object.entries(adapter.console)) check(typeof value === 'boolean', id, `console.${key} must be a boolean`);
+    check(adapter.console.mobileModelChoices !== true || adapter.console.modelChoices === true, id, 'mobile model choices need model choices');
+    check(adapter.console.modelChoices !== true || catalog !== null, id, 'model choices need a CLI');
+  }
   if (catalog !== null) {
     check(plain(catalog), id, 'catalog must be an object or null');
     only(catalog, ['name', 'command', 'aliases', 'install', 'docs', 'auth', 'native', 'windowsBuild'], id, 'catalog');
@@ -71,7 +100,7 @@ function validate(adapter, file) {
 }
 
 function load(loader = id => require(`./${id}.cjs`)) {
-  const adapters = ORDER.map(id => validate(loader(id), id));
+  const adapters = ORDER.map(id => deepFreeze(validate(loader(id), id)));
   const claimed = new Map();
   for (const adapter of adapters) for (const accountId of adapter.usage.accountIds || []) {
     check(!claimed.has(accountId), adapter.id, `account ${accountId} is already claimed by ${claimed.get(accountId)}`);
@@ -94,6 +123,20 @@ function deriveCatalog(adapters) {
     if (launch.unrestricted) entry.unrestricted = [...launch.unrestricted];
     return entry;
   });
+}
+
+function deriveConsoleFeatures(adapters) {
+  return new Map(adapters.filter(adapter => adapter.catalog).map(adapter => {
+    const console = { ...CONSOLE_DEFAULTS, ...adapter.console };
+    const { launch } = adapter;
+    return [adapter.id, deepFreeze({
+      model: console.modelChoices || !!launch.modelFlag,
+      modelChoices: console.modelChoices,
+      mobileModelChoices: console.mobileModelChoices,
+      liveModelMenu: console.liveModelMenu,
+      permissions: console.permissions || !!launch.unrestricted?.length
+    })];
+  }));
 }
 
 function deriveCapabilities(adapters) {
@@ -122,13 +165,20 @@ function deriveUsageSources(adapters) {
 }
 
 const adapters = load();
+const consoleFeatureMap = deriveConsoleFeatures(adapters);
+const consoleFeatures = deepFreeze(Object.fromEntries(consoleFeatureMap));
+const NO_CONSOLE_FEATURES = deepFreeze({ model: false, modelChoices: false, mobileModelChoices: false, liveModelMenu: false, permissions: false });
+const consoleFeaturesFor = id => consoleFeatureMap.get(id) || NO_CONSOLE_FEATURES;
 const catalog = deriveCatalog(adapters);
 const capabilities = deriveCapabilities(adapters);
 const usageSources = deriveUsageSources(adapters);
 const usageProviders = Object.values(usageSources).filter(source => source.reader).map(source => source.provider);
+const screenProfiles = deepFreeze(deriveScreenProfiles(adapters));
 const byId = id => adapters.find(adapter => adapter.id === id) || null;
+const sessionPolicies = new Map(adapters.map(adapter => [adapter.id, deepFreeze({ ...SESSION_DEFAULTS, ...adapter.session })]));
+const sessionPolicy = id => sessionPolicies.get(id) || SESSION_DEFAULTS;
 const usageSource = id => typeof id === 'string' && Object.hasOwn(usageSources, id) ? usageSources[id] : null;
 // A fixed account (such as Strata's local route) can have its own usage state.
 const sourceForAccount = account => Object.values(usageSources).find(source => source.accountIds.includes(account?.id)) || usageSource(account?.provider);
 
-module.exports = { adapters, catalog, capabilities, usageSources, usageProviders, byId, usageSource, sourceForAccount, validate, load, deriveCatalog, deriveCapabilities, deriveUsageSources, NO_PROFILE_REASON };
+module.exports = { ids: Object.freeze([...ORDER]), adapters, catalog, capabilities, consoleFeatures, consoleFeaturesFor, usageSources, usageProviders, screenProfiles, byId, usageSource, sourceForAccount, validate, load, deriveCatalog, deriveCapabilities, deriveUsageSources, deriveScreenProfiles, sessionPolicy, NO_PROFILE_REASON };

@@ -7,40 +7,7 @@ const ACTIVE = new Set(['planning', 'reviewing-plan', 'building', 'implementing'
 const SUB_ACTIVE = new Set(['implementing', 'checking', 'reviewing']);
 const idPattern = /^[a-z0-9-]{1,32}$/;
 
-// Globs deliberately have a small, explicit grammar. Both validation and the
-// ownership guard use this matcher, including **/, character classes and braces.
-function globRegex(pattern) {
-  let source = '', braces = 0;
-  for (let i = 0; i < pattern.length; i++) {
-    const c = pattern[i];
-    if (c === '*') {
-      if (pattern[i + 1] === '*') { i++; if (pattern[i + 1] === '/') { i++; source += '(?:.*/)?'; } else source += '.*'; }
-      else source += '[^/]*';
-    } else if (c === '?') source += '[^/]';
-    else if (c === '[') {
-      const end = pattern.indexOf(']', i + 1);
-      if (end < 0 || end === i + 1) throw new Error('Unclosed or empty character class.');
-      const value = pattern.slice(i + 1, end);
-      if (value.includes('/') || value.includes('[') || value.includes('\\')) throw new Error('Invalid character class.');
-      source += `(?!/)[${value.startsWith('!') ? '^' + value.slice(1) : value}]`; i = end;
-    } else if (c === '{') { braces++; source += '(?:'; }
-    else if (c === '}') { if (!braces--) throw new Error('Unmatched brace.'); source += ')'; }
-    else if (c === ',' && braces) source += '|';
-    else source += c.replace(/[.+^$()|\\\]]/g, '\\$&');
-  }
-  if (braces) throw new Error('Unclosed brace.');
-  return new RegExp(`^${source}$`, 'i');
-}
-function validGlob(value) {
-  if (typeof value !== 'string' || !value || value.length > 500 || value.includes('..') || /[\x00-\x1f\\:]/.test(value) || value.startsWith('/') || value.startsWith('-') || value.startsWith('!') || value.split('/').some(part => !part || part === '.' || part.toLowerCase() === '.git')) return false;
-  try { globRegex(value); return true; } catch { return false; }
-}
-function ownsFile(subtask, file) { return subtask.owns.some(pattern => globRegex(pattern).test(file.replaceAll('\\', '/'))); }
-function overlap(a, b) {
-  const prefix = value => value.split(/[*?[{]/, 1)[0].toLowerCase();
-  const left = prefix(a), right = prefix(b);
-  return left.startsWith(right) || right.startsWith(left);
-}
+const { validGlob, ownsFile, overlap } = require('./task-ownership.cjs');
 function sizeFromRating(difficulty, complexity) {
   const highest = Math.max(difficulty, complexity);
   if (highest <= 2) return 'small';
@@ -339,7 +306,7 @@ class SplitTasks {
       if (!fs.existsSync(sub.workFolder)) {
         let existing = false; try { await loop.git(job.repo, ['rev-parse', '--verify', `refs/heads/${sub.branch}`]); existing = true; } catch {}
         await loop.git(job.repo, existing ? ['worktree', 'add', sub.workFolder, sub.branch] : ['worktree', 'add', sub.workFolder, '-b', sub.branch, sub.baseline]);
-        require('./task-loop.cjs').linkDependencies(job.repo, sub.workFolder);
+        require('./task-checkout.cjs').linkDependencies(job.repo, sub.workFolder);
       }
       if (!ACTIVE.has(job.state)) return;
       Object.assign(sub, { repo: job.repo, workflow: 'worktree', contracts: job.plan.contracts, maxRounds: sub.implementer?.model === 'strata/local' && job.maxRoundsExplicit === false ? 1 : job.maxRounds, timeLimitMinutes: job.timeLimitMinutes, deadlineAt: job.deadlineAt, startedAt: sub.startedAt || started, baselineUntracked: [], baselineUntrackedState: {} });

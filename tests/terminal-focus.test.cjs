@@ -1,6 +1,6 @@
 'use strict';
 const test = require('node:test'), assert = require('node:assert/strict');
-const fs = require('node:fs'), os = require('node:os'), path = require('node:path'), vm = require('node:vm');
+const fs = require('node:fs'), os = require('node:os'), path = require('node:path');
 const { Sessions } = require('../electron/sessions.cjs');
 
 function fixture(t, provider, height = 2) {
@@ -51,11 +51,11 @@ test('Codex typing, other terminal replies and paste contents reach the process 
   assert.throws(() => sessions.write(item.id, 'x'.repeat(65537)), /Terminal input is too large/);
 });
 
-// Exercise the renderer's existing fit loop without importing the browser app.
-const app = fs.readFileSync(path.join(__dirname, '../src/app.js'), 'utf8');
-const fitSource = app.slice(app.indexOf('function fitVisible() {'), app.indexOf('const SCREENSHOT_DRAG'));
+// Exercise the renderer's fit loop directly; console/terminal-fit.js has no DOM imports.
+const fitModule = import('../src/console/terminal-fit.js');
 
-test('unchanged fractional grid heights and cached dimensions do not resize on a repaint', t => {
+test('unchanged fractional grid heights and cached dimensions do not resize on a repaint', async t => {
+  const { fitRecords } = await fitModule;
   t.mock.timers.enable({ apis: ['setTimeout'] });
   for (const height of [1, 2]) {
     const { sessions, item, resizes } = fixture(t, 'codex', height);
@@ -68,12 +68,9 @@ test('unchanged fractional grid heights and cached dimensions do not resize on a
     const record = { id: item.id, term, follow: true,
       node: { clientWidth: 600, clientHeight: Math.round(pixelHeight), closest: () => true, getClientRects: () => [{ height: pixelHeight }] },
       fit: { fit() { fits.push('fit'); term.resize(70, Math.floor(pixelHeight / cellHeight)); } } };
-    const fitVisible = vm.runInNewContext(fitSource + '\nfitVisible;', {
-      windowMoving: false, layoutMotion: { active: false }, state: { mode: 'dashboard' }, page: 'consoles', expandedId: null,
-      terminals: new Map([[item.id, record]]), devicePixelRatio: 1.25, clearTimeout, setTimeout,
-      clearTerminalAnchor() {}, keepFollowing() {},
-      call(method, payload) { calls.push(method); sessions.resize(payload.id, payload.cols, payload.rows); return Promise.resolve(); }
-    });
+    const terminals = new Map([[item.id, record]]);
+    const call = (method, payload) => { calls.push(method); sessions.resize(payload.id, payload.cols, payload.rows); return Promise.resolve(); };
+    const fitVisible = () => fitRecords([record], { terminals, call, pixelRatio: 1.25 });
     fitVisible(); t.mock.timers.tick(250);
     const rows = term.rows;
     assert.equal(fits.length, 1); assert.equal(calls.length, 1); assert.equal(resizes.length, 1);

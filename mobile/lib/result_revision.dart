@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import 'main.dart' show pink;
+import 'dock_style.dart' show pink;
 
 Map? resultRevision(Map item) => (item['gitEnd'] ?? item['git']) as Map?;
 
@@ -26,7 +26,7 @@ String revisionLabel(Map? git) {
   final head =
       branch ??
       (git?['detached'] == true ? 'Detached HEAD' : 'Branch unavailable');
-  return '$head · $hash${git?['dirty'] == true ? ' · Uncommitted changes' : ''}';
+  return '$head, $hash${git?['dirty'] == true ? ', Uncommitted changes' : ''}';
 }
 
 class ResultRevision extends StatelessWidget {

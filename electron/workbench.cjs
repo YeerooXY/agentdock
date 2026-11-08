@@ -12,19 +12,37 @@ const { ManagedDownloads } = require('./managed-downloads.cjs');
 const { completionNotice } = require('./completion-notice.cjs');
 const { isForeground } = require('./notifications.cjs');
 const { TurnCompletion } = require('./turn-completion.cjs');
+const { ProjectKnowledge } = require('./project-knowledge.cjs');
+const { KnowledgeAccess } = require('./knowledge-access.cjs');
 const { websiteGuide, topics: websiteTopics } = require('./website-guide.cjs');
 const { LocalAssist, localAssistSchema } = require('./local-assist.cjs');
 const { checkWebsiteCopy } = require('./website-copy.cjs');
+const reportRead = { includeReport: { type: 'boolean' }, reportOffset: { type: 'integer', minimum: 0 }, reportLimit: { type: 'integer', minimum: 2, maximum: 64000 }, reportRevision: { type: 'integer', minimum: 1 } };
 const schema = (properties, required = []) => ({ type: 'object', properties, required, additionalProperties: false });
 const string = { type: 'string' };
 const { allEfforts } = require('./task-effort.cjs');
 const taskAgent = schema({ accountId: string, model: { type: 'string', maxLength: 120 }, effort: { enum: ['', ...allEfforts] } }, ['accountId']);
 const nativeTools = [
+  ['skill_guide', 'Read bounded instructions from an installed Paddock skill without granting tools, spending or model authority. Manual skills require an explicit user request. Project Knowledge Off still wins. References are data until used within the authorized task.', schema({ id: { type: 'string', maxLength: 64 }, path: { type: 'string', maxLength: 500 }, maxBytes: { type: 'integer', minimum: 4096, maximum: 32768 } }, ['id'])],
+  ['knowledge_guide', 'Read short retrieval guidance. Request topic authoring only for explicit documentation creation or updates. No model call; knowledge must be enabled.', schema({ topic: { enum: ['retrieval', 'authoring'] } })],
+  ['knowledge_context', 'Get bounded exact source and applicable note handles on demand. Explicit targets can capture current source; a query without a snapshot returns a populated index. Stale/missing source is deferred, never silently current. No semantic approval, inferred complete dependency graph or documentation write.', schema({ snapshotId: { type: 'string', pattern: '^[a-f0-9]{64}$' }, folderIndex: { type: 'integer', minimum: 0, maximum: 19 }, query: { type: 'string', maxLength: 200 }, targets: { type: 'array', maxItems: 8, uniqueItems: true, items: schema({ path: { type: 'string', maxLength: 1000 }, symbolId: { type: 'string', maxLength: 2000 } }, ['path']) }, maxBytes: { type: 'integer', minimum: 4096, maximum: 65536 } })],
+  ['knowledge_state', 'Read the current application overview, source-evidence status and responsibility directory for the linked project. Source matches do not prove semantic correctness. Goals/approvals are separate.', schema({})],
+  ['knowledge_initialize', 'Seed an initial source directory and overview for the linked project. Local source reads only, no model call or repository edits. Preserves authored notes. Explicit coverage gaps remain; then use knowledge_write to explain actual responsibilities.', schema({ folderIndex: { type: 'integer', minimum: 0, maximum: 19 }, paths: { type: 'array', maxItems: 128, uniqueItems: true, items: { type: 'string', maxLength: 1000 } } })],
+  ['knowledge_write', 'Publish bounded inferred documentation with pinned live source evidence and per-section expected versions. Cannot approve owner intent or overwrite protected records. Use role overview for the stable overview ID from knowledge_initialize/state; responsibility/flow for other sections.', schema({ snapshotId: { type: 'string', pattern: '^[a-f0-9]{64}$' }, operationId: { type: 'string', pattern: '^[a-zA-Z0-9_-]{1,100}$' }, sections: { type: 'array', minItems: 1, maxItems: 16, items: schema({ id: { type: 'string', pattern: '^[a-z][a-z0-9_:-]{0,95}$' }, expectedVersion: { type: 'integer', minimum: 0 }, role: { enum: ['overview', 'responsibility', 'flow'] }, title: { type: 'string', maxLength: 240 }, summary: { type: 'string', maxLength: 8192 }, sources: { type: 'array', minItems: 1, maxItems: 32, items: schema({ path: { type: 'string', maxLength: 1000 }, anchor: { type: 'string', maxLength: 512 } }, ['path']) }, links: { type: 'array', maxItems: 32, uniqueItems: true, items: { type: 'string', pattern: '^[a-z][a-z0-9_:-]{0,95}$' } } }, ['id', 'expectedVersion', 'role', 'title', 'summary', 'sources']) } }, ['snapshotId', 'operationId', 'sections'])],
   ['check_website_copy', 'Check supplied rendered visible text for known generic slogans, website demo labels, promotional reversals and possible encoding errors. Deterministic; no model call or file edits. Return evidence and line positions. This is a narrow check, not proof of complete rule compliance or factual accuracy.', schema({ text: { type: 'string', maxLength: 100000 } }, ['text'])],
   ['local_assist', 'Run one bounded text request on the configured local Strata server: extract facts, draft a component, critique supplied text or propose creative compositions. No tools, file edits, automatic retries or cloud fallback. Supply only relevant text (up to 24000 characters). Default 2048 output tokens, reasoning none, 90-second deadline. Reuse requestId only for the same request in this turn; the last 128 requests are deduplicated until app restart. Output requires caller verification. No Tasks or Results entry is created; usage goes to the API ledger.', localAssistSchema],
+  ['knowledge_adopt_map', "Adopt a proposed responsibility map from a JSON file inside this project's saved folder. Validates all declared observed source hashes against a pinned selection. Writes only inferred/proposed references, preserves owner intent and rejects existing foreign/retired IDs. Does not execute repository scripts or approve project plans.", schema({ folderIndex: { type: 'integer', minimum: 0, maximum: 19 }, mapPath: { type: 'string', maxLength: 1000 } }, ['mapPath'])],
+  ['knowledge_resolve', "Resolve section suggestions and source declarations. Numeric addresses require the current directoryViewId; durable links use stable IDs. Unmapped symbols return coverage gaps.", schema({ query: { type: 'string', maxLength: 200 }, snapshotId: { type: 'string', pattern: '^[a-f0-9]{64}$' }, directoryViewId: { type: 'string', pattern: '^[a-f0-9]{64}$' }, addresses: { type: 'array', maxItems: 32, items: { type: 'string', pattern: '^[1-9][0-9]*$' } } })],
+  ['knowledge_bundle', "Assemble requested complete saved sections and exact pinned source declarations within a UTF-8 response budget. remainingSources and knowledge.remainingIds are explicit deferred context. No inferred call-graph completeness.", schema({ ids: { type: 'array', maxItems: 16, items: { type: 'string' } }, snapshotId: { type: 'string', pattern: '^[a-f0-9]{64}$' }, sources: { type: 'array', maxItems: 16, items: { type: 'object', additionalProperties: false, properties: { path: { type: 'string', maxLength: 1000 }, symbolId: { type: 'string', maxLength: 2000 } }, required: ['path'] } }, maxBytes: { type: 'integer', minimum: 4096, maximum: 262144 } })],
+  ['knowledge_source_capture', "Capture immutable exact UTF-8 sources from a saved project folder without executing code. Reads source contents; private names, detected secrets, links, invalid text and large files are excluded explicitly. Default selection is bounded and may be partial. Does not call a model.", schema({ folderIndex: { type: 'integer', minimum: 0, maximum: 19 }, paths: { type: 'array', minItems: 1, maxItems: 512, uniqueItems: true, items: { type: 'string', maxLength: 1000 } }, maxFiles: { type: 'integer', minimum: 1, maximum: 512 } })],
+  ['knowledge_source_resolve', "Find syntax declarations in a pinned project source snapshot. JavaScript/TypeScript syntax index only; unsupported languages retain exact-file fallback. No type/call graph completeness claim.", schema({ snapshotId: { type: 'string', pattern: '^[a-f0-9]{64}$' }, query: { type: 'string', maxLength: 200 }, cursor: { type: 'integer', minimum: 0 }, limit: { type: 'integer', minimum: 1, maximum: 100 } }, ['snapshotId'])],
+  ['knowledge_source_extract', "Read a whole exact declaration or file from a pinned snapshot. Hashes, UTF-8 byte offsets and coverage are returned. Over-budget source is deferred whole, never silently truncated. Knowledge must be enabled and the root must still belong to this project.", schema({ snapshotId: { type: 'string', pattern: '^[a-f0-9]{64}$' }, path: { type: 'string', maxLength: 1000 }, symbolId: { type: 'string', maxLength: 2000 }, maxBytes: { type: 'integer', minimum: 1024, maximum: 262144 } }, ['snapshotId', 'path'])],
+  ['knowledge_inventory', "Create or refresh a bounded local metadata inventory for one saved folder of this console's project. Project knowledge must be enabled. No model call or source-content read. Records an unverified inventory summary; does not generate architecture contracts.", schema({ folderIndex: { type: 'integer', minimum: 0, maximum: 19 } })],
+  ['knowledge_directory', "Read a paged directory of persisted knowledge sections for this console's linked project. Metadata only: source inventory, semantic truth and actual source freshness are not verified. Continue with nextCursor; cursors reject changed revisions. Reads do not initialize or modify projects.", schema({ cursor: { type: 'string', maxLength: 512 }, limit: { type: 'integer', minimum: 1, maximum: 100 } })],
+  ['knowledge_read', "Read complete persisted knowledge sections by stable ID for this console's linked project. Pass the directory revision to pin the read. maxBytes is a UTF-8 response budget, not a token estimate. remainingIds and requiredBytes indicate deferred whole sections; no semantic prose is truncated. decompositionRequired flags records exceeding the maximum read budget. recorded fields retain their original claims, with explicit unverified source/semantic assurance.", schema({ ids: { type: 'array', minItems: 1, maxItems: 32, uniqueItems: true, items: { type: 'string', pattern: '^[a-z][a-z0-9_:-]{0,95}$' } }, revision: { type: 'integer', minimum: 0 }, maxBytes: { type: 'integer', minimum: 2048, maximum: 262144 } }, ['ids'])],
   ['task_candidates', 'List available task accounts, funding types, allowance freshness, suggested assignments and project folders. Any connected console can use these task tools. A saved local Strata connection appears as opencode:strata with model strata/local; its server must be running. Local accounts need no cloud sign-in. Discover accounts before start_task.', schema({ title: string, criteria: string, size: { enum: ['small','medium','large'] } })],
-  ['task_status', 'Read task progress, checks, review findings and changes. Use the id returned by start_task and the same repo (defaults to the calling console folder). Wait for the task to finish before editing its files; inspect its diff and verification before accepting its work.', schema({ id: string, repo: string }, ['id'])],
-  ['close_task', 'Close a task this console started once it has stopped: it leaves the Tasks list and attention counts, and its report stays in Results. Use after task_status for a failed, superseded or replaced task, with a short reason the owner can read. A task with no live worker console (queued or waiting for an account) is stopped first; one with a running worker console needs the owner to stop it.', schema({ id: string, reason: { type: 'string', minLength: 1, maxLength: 300 }, repo: string }, ['id', 'reason'])],
+  ['task_status', 'Read task progress, checks, review findings and changes. Use detail for the full view and waitSeconds to wait up to 45 seconds. Use the id returned by start_task and the same repo (defaults to the calling console folder).', schema({ id: string, repo: string, detail: { type: 'boolean' }, waitSeconds: { type: 'integer', minimum: 0, maximum: 45 }, ...reportRead }, ['id'])],
+  ['close_task', 'Close a task this console started once it has stopped: it leaves the Tasks list and attention counts; its technical record stays in execution history. Use after task_status for a failed, superseded or replaced task, with a short reason the owner can read. A task with no live worker console (queued or waiting for an account) is stopped first; one with a running worker console needs the owner to stop it.', schema({ id: string, reason: { type: 'string', minLength: 1, maxLength: 300 }, repo: string }, ['id', 'reason'])],
   ['start_task', 'Start an agent task. Use title and criteria to describe the goal and acceptance criteria. repo defaults to the calling console folder. Progress shows on the Tasks page, where a split plan may need the user\'s approval before work starts. Use task_candidates for each account’s supported effort settings. Choose installed account IDs; split tasks can use configured routing defaults. Checks run in the task folder. workflow defaults to current; a separate worktree requires the user\'s request. Agents may use subscription or API credits.', schema({ title: { type: 'string', minLength: 1, maxLength: 200 }, criteria: { type: 'string', minLength: 1, maxLength: 12000 }, repo: string, implementer: taskAgent, planner: taskAgent, reviewer: { anyOf: [taskAgent, { type: 'null' }] }, split: { type: 'boolean' }, checks: { type: 'string', maxLength: 4000 }, workflow: { enum: ['current','worktree'] }, maxRounds: { type: 'integer', minimum: 1, maximum: 5 }, timeLimitMinutes: { type: 'integer', minimum: 5, maximum: 120 } }, ['title','criteria'])],
   ['download_tool_repository', 'Download an authorized public GitHub tool repository into Paddock’s managed downloads folder and record its location for manual cleanup at uninstall. Does not build, install or run its code. Do not use this for user projects.', schema({ source: { type: 'string', maxLength: 500 }, name: { type: 'string', minLength: 1, maxLength: 120 } }, ['source'])],
   ['downloaded_tools', 'Read Paddock’s recorded tool downloads and their manual-cleanup list path. Arbitrary Git commands outside the managed helper are not tracked.', schema({})],
@@ -52,11 +70,19 @@ const nativeTools = [
   ['generate_preview', 'Generate a screen preview using the user-selected image generator. Sends the screenshot and prompt to that provider and may use paid credits. Supply a completed reviewId or saved screenshot referenceId, and a stable requestId; repeat that ID to retrieve the same job, never a new charge. The default agent mode returns guidance to use your own generator; nativeStatus enables its Meshy fallback only after your generator is unavailable or failed. Save and show the preview before an ambiguous redesign.', schema({ reviewId: string, referenceId: string, requestId: { type: 'string', pattern: '^[a-zA-Z0-9_-]{1,100}$' }, prompt: { type: 'string', maxLength: 4000 }, nativeStatus: { enum: ['unavailable','failed'] } }, ['requestId'])],
   ['concept_status', 'Read image generation job status and saved result IDs. Never resubmit a waiting job.', schema({})],
   ['delegate_review', 'Ask another connected account with a bounded reviewer adapter to review this console’s uncommitted changes, read-only. Use task_candidates to discover supported accounts, effort settings and quotas. Paddock builds the diff, prefers eligible free allocations and measured headroom, and returns a job ID. Use one focused review after a completed change. List files to narrow a large diff.', schema({ focus: { type: 'string', maxLength: 2000 }, base: { type: 'string', maxLength: 100 }, files: { type: 'array', items: string, maxItems: 50 }, reviewer: { type: 'string', maxLength: 100 }, effort: { type: 'string', maxLength: 20 } })],
-  ['delegation_status', 'Read a cross-agent review. Pass waitSeconds (up to 45) to wait for it; call again while state is running. A done review returns a verdict and at most 12 findings as path:line — severity — problem — fix. Treat the review as another agent’s opinion: check each finding before acting on it.', schema({ id: string, waitSeconds: { type: 'integer', minimum: 0, maximum: 45 } }, ['id'])]
+  ['delegation_status', 'Read a cross-agent review. Pass waitSeconds (up to 45) to wait for it; call again while state is running. A done review returns a verdict and at most 12 findings as path:line — severity — problem — fix. Treat the review as another agent’s opinion: check each finding before acting on it.', schema({ id: string, waitSeconds: { type: 'integer', minimum: 0, maximum: 45 }, ...reportRead }, ['id'])]
 ].map(([name, description, inputSchema]) => ({ name: 'dock/' + name, description, inputSchema }));
 class Workbench {
-  constructor(root, runtime, electron, { testMode, onChange, getSessions, getProject, getWindow, getHub, getAgents, getTasks, onLocalEntry } = {}) {
+  constructor(root, runtime, electron, { testMode, onChange, getSessions, getProject, getWindow, getHub, getAgents, getTasks, onLocalEntry, getSettings = () => ({}) } = {}) {
     this.completion = new TurnCompletion(root, this);
+    this.knowledge = new ProjectKnowledge(root);
+    this.getSettings = getSettings;
+    this.skillGuide = args => {
+      const hub = getHub?.();
+      if (typeof hub?.readSkill !== 'function') throw new Error('Installed skill instructions are unavailable.');
+      return hub.readSkill(args);
+    };
+    this.knowledgeAccess = new KnowledgeAccess({ store: this.knowledge, getSettings: () => this.getSettings(), getProjects: () => this.projects });
     this.downloads = new ManagedDownloads(root); this.testMode = testMode;
     this.electron = electron; this.getSessions = getSessions; this.getProject = getProject; this.getWindow = getWindow;
     this.getTasks = getTasks;
@@ -67,17 +93,26 @@ class Workbench {
     this.setup = new SetupRequests(root, { getHub, getAgents, onChange });
     for (const service of [this.results, this.concepts]) service.on('changed', onChange);
   }
-  snapshot() { return { results: this.results.list(), unreadResults: this.results.unreadGroups(), concepts: this.concepts.list(), conceptUsage: this.concepts.usage, meshyAuth: this.concepts.auth, setupRequests: this.setup.items }; }
+  snapshot() { return { knowledgeEpoch: this.knowledgeAccess.upkeep?.epoch || 0, results: this.results.list(), unreadResults: this.results.unreadGroups(), concepts: this.concepts.list(), conceptUsage: this.concepts.usage, meshyAuth: this.concepts.auth, setupRequests: this.setup.items }; }
   // Cross-agent review tools are listed only while the user has them turned on.
-  tools() { return this.delegation?.getSettings()?.delegationEnabled === true ? nativeTools : nativeTools.filter(tool => !tool.name.startsWith('dock/delegat')); }
+  tools(owner) {
+    const session = owner ? this.getSessions?.()?.items.get(owner) || this.turns?.session(owner) : null;
+    return nativeTools.filter(tool => (!tool.name.startsWith('dock/delegat') || this.delegation?.getSettings()?.delegationEnabled === true) &&
+      (!tool.name.startsWith('dock/knowledge_') || (session ? this.knowledgeAccess?.enabled(session.projectId) === true : ['read', 'automatic'].includes(this.getSettings?.()?.knowledgeMode))));
+  }
   async invoke(name, args, owner) {
     const session = owner ? this.getSessions().items.get(owner) || this.turns?.session(owner) : null;
     if (owner && !session?.alive) throw new Error('This console is no longer open.');
+    if (session?.taskId && ['dock/knowledge_initialize', 'dock/knowledge_write'].includes(name)) {
+      const parent = this.getTasks?.()?.jobs.get(session.taskId), job = parent?.subtasks?.find(item => item.id === session.sliceId) || parent;
+      if (!job || !['implementing', 'building'].includes(job.state)) throw Error('Documentation writes are unavailable to planning/review workers.');
+    }
     // Study conversations normally have no tracked turn. Mutating work must
     // acquire one before choosing output context or changing project state.
     if (owner && [
       'dock/save_result', 'dock/start_task', 'dock/project_progress', 'dock/project_decision',
       'dock/propose_project', 'dock/propose_project_plan', 'dock/add_later_feature',
+      'dock/knowledge_initialize', 'dock/knowledge_write',
       'dock/download_tool_repository', 'dock/prepare_setup', 'dock/review_page',
       'dock/review_check', 'dock/delete_review', 'dock/meshy_concept',
       'dock/generate_preview', 'dock/delegate_review'
@@ -87,6 +122,39 @@ class Workbench {
     switch (name) {
       case 'dock/check_website_copy': return checkWebsiteCopy(args.text);
       case 'dock/local_assist': return this.localAssist.run(args, context);
+      case 'dock/skill_guide': {
+        if (args.id === 'project-documentation' && !this.knowledgeAccess.enabled(session?.projectId)) throw new Error('Project Knowledge is off or no project is linked.');
+        return this.skillGuide(args);
+      }
+      case 'dock/knowledge_directory':
+      case 'dock/knowledge_guide':
+      case 'dock/knowledge_context':
+      case 'dock/knowledge_state':
+      case 'dock/knowledge_initialize':
+      case 'dock/knowledge_write':
+      case 'dock/knowledge_adopt_map':
+      case 'dock/knowledge_resolve':
+      case 'dock/knowledge_bundle':
+      case 'dock/knowledge_source_capture':
+      case 'dock/knowledge_source_resolve':
+      case 'dock/knowledge_source_extract':
+      case 'dock/knowledge_read':
+      case 'dock/knowledge_inventory': {
+        if (!session?.projectId || !this.projects?.get(session.projectId)) throw new Error('Link this console to an existing project first.');
+        if (name === 'dock/knowledge_guide') return this.knowledgeAccess.guide(session.projectId, args);
+        if (name === 'dock/knowledge_context') return this.knowledgeAccess.context(session.projectId, args);
+        if (name === 'dock/knowledge_state') return this.knowledgeAccess.state(session.projectId);
+        if (name === 'dock/knowledge_initialize') return this.knowledgeAccess.initialize(session.projectId, args);
+        if (name === 'dock/knowledge_write') return this.knowledgeAccess.write(session.projectId, args);
+        if (name === 'dock/knowledge_adopt_map') return this.knowledgeAccess.adopt(session.projectId, args);
+        if (name === 'dock/knowledge_resolve') return this.knowledgeAccess.resolve(session.projectId, args);
+        if (name === 'dock/knowledge_bundle') return this.knowledgeAccess.bundle(session.projectId, args);
+        if (name === 'dock/knowledge_source_capture') return this.knowledgeAccess.sourceCapture(session.projectId, args);
+        if (name === 'dock/knowledge_source_resolve') return this.knowledgeAccess.sourceResolve(session.projectId, args);
+        if (name === 'dock/knowledge_source_extract') return this.knowledgeAccess.sourceRead(session.projectId, args);
+        if (name === 'dock/knowledge_inventory') return this.knowledgeAccess.capture(session.projectId, args);
+        return name === 'dock/knowledge_directory' ? this.knowledgeAccess.directory(session.projectId, args) : this.knowledgeAccess.read(session.projectId, args);
+      }
       case 'dock/task_candidates': {
         const tasks = this.getTasks?.();
         if (!tasks) throw new Error('Tasks are unavailable.');
@@ -95,14 +163,15 @@ class Workbench {
       case 'dock/task_status': {
         const tasks = this.getTasks?.();
         if (!tasks) throw new Error('Tasks are unavailable.');
-        return tasks.status(args.id, args.repo ?? session?.cwd ?? context.project ?? this.getProject());
+        return tasks.status(args.id, args.repo ?? session?.cwd ?? context.project ?? this.getProject(), args);
       }
       case 'dock/close_task': {
         const tasks = this.getTasks?.();
         if (!tasks) throw new Error('Tasks are unavailable.');
         // An agent closes only tasks its own console started; others stay with the owner.
         const job = await tasks.status(args.id, args.repo ?? session?.cwd ?? context.project ?? this.getProject());
-        if (!session?.id || job.originConsoleId !== session.id) throw new Error('Only the console that started this task can close it. The owner can close it on the Tasks page.');
+        const ownsTask = job.originConsoleKey ? !!session?.consoleKey && job.originConsoleKey === session.consoleKey : !!session?.id && job.originConsoleId === session.id;
+        if (!ownsTask) throw new Error('Only the console that started this task can close it. The owner can close it on the Tasks page.');
         // A task with no live worker console (queued or waiting for an account)
         // is stopped first; a live worker still needs the owner's Stop.
         const live = (this.getSessions()?.list?.() || []).some(item => item.taskId === args.id && item.processAlive);
@@ -119,7 +188,7 @@ class Workbench {
         const tasks = this.getTasks?.();
         if (!tasks) throw new Error('Tasks are unavailable.');
         if (owner) await this.turns?.begin(owner);
-        const job = await tasks.start({ ...args, repo: args.repo ?? session?.cwd ?? context.project ?? this.getProject(), ...(session?.projectId ? { projectId: session.projectId } : {}), originConsoleId: session?.id || null });
+        const job = await tasks.start({ ...args, repo: args.repo ?? session?.cwd ?? context.project ?? this.getProject(), ...(session?.projectId ? { projectId: session.projectId } : {}), originConsoleId: session?.id || null, originConsoleKey: session?.consoleKey || null });
         const turn = this.turns?.active.get(owner);
         if (turn) { (turn.taskIds ||= []).push(job.id); this.completion.invalidate(owner); }
         return { id: job.id };
@@ -191,7 +260,7 @@ class Workbench {
         if (!this.delegation) throw new Error('Cross-agent reviews are unavailable.');
         return this.delegation.start(args, { sessionId: session?.id, provider: session?.provider, cwd: session?.cwd, consoleName: session?.name || '', context });
       }
-      case 'dock/delegation_status': return this.delegation?.status(args.id, { waitSeconds: args.waitSeconds, sessionId: session?.id || null });
+      case 'dock/delegation_status': return this.delegation?.status(args.id, { ...args, sessionId: session?.id || null });
       case 'dock/concept_status': return this.concepts.list().map(job => {
         let file = null; if (job.resultId) { try { file = this.results.path(job.resultId); } catch {} }
         return { ...job, file };

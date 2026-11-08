@@ -5,6 +5,7 @@
 const { EventEmitter } = require('node:events');
 const { SLICES, SLICE_NAMES, PHONE_SLICES, toCollection, fromCollection, emptyCollection, assertNoSecrets } = require('./state-protocol.cjs');
 const { freezeJson, jsonEqual, collectionChange } = require('./state-store.cjs');
+const { screenProfiles } = require('./providers/index.cjs');
 
 const pick = (source, fields) => {
   const out = {};
@@ -52,7 +53,7 @@ function phoneProject(project) {
   return { id: project.id, name: project.name || '', color: project.color || null, status: project.status || 'active',
     progress: project.progress ? pick(project.progress, ['done', 'total']) : null, lastActiveAt: project.lastActiveAt ?? project.createdAt ?? null };
 }
-const windowFields = ['key', 'label', 'scope', 'modelGroup', 'minutes', 'usedPercent', 'unlimited', 'used', 'total', 'unit', 'remaining', 'resetsAt', 'resetLabel'];
+const windowFields = ['key', 'label', 'scope', 'modelGroup', 'minutes', 'usedPercent', 'unlimited', 'notApplicable', 'used', 'total', 'unit', 'remaining', 'resetsAt', 'resetLabel'];
 const checkFields = ['status', 'checkedAt', 'observedAt', 'message', 'stale', 'staleReason', 'failure', 'reason'];
 // One row per account. Status and staleness come from the server's UsageCheck
 // (electron/usage-reading.cjs); the phone never computes freshness. A null
@@ -76,7 +77,7 @@ const phonePrompt = item => pick(item, ['id', 'name', 'text', 'projectId', 'crea
 // slice -> { deps, build(state) }. A projection slice is rebuilt only when one
 // of its dependencies changed in a store commit.
 const PHONE = Object.freeze({
-  shell: { ...PHONE_SLICES.shell, build: state => ({ capacity: (state.shell?.grid?.columns || 3) * (state.shell?.grid?.rows || 3), version: state.shell?.version || null }) },
+  shell: { ...PHONE_SLICES.shell, build: state => ({ capacity: (state.shell?.grid?.columns || 3) * (state.shell?.grid?.rows || 3), version: state.shell?.version || null, agentProfiles: screenProfiles }) },
   sessions: { ...PHONE_SLICES.sessions, build: state => mapCollection(state.sessions, phoneSession, item => !item.dismissed) },
   queues: { ...PHONE_SLICES.queues, build: state => {
     const out = {};
@@ -166,7 +167,7 @@ function slicesFromLegacy(raw, onError = (slice, error) => { throw error; }) {
     skills: () => (toCollection(raw.skills?.packs || [], { meta: { busy: raw.skills?.busy } })),
     usage: () => ({ limits: raw.limits, usageAccounts: raw.usageAccounts, usageChecks: raw.usageChecks, refreshing: raw.refreshing, lastRefresh: raw.lastRefresh, accountError: raw.accountError }),
     usageHistory: () => ({ recent: raw.recent, messages: raw.messages, ledger: raw.ledger, summary: raw.summary }),
-    results: () => (toCollection(workbench.results || [], { meta: { unread: workbench.unreadResults } })),
+    results: () => (toCollection(workbench.results || [], { meta: { unread: workbench.unreadResults, ...(workbench.knowledgeEpoch !== undefined ? { knowledgeEpoch: workbench.knowledgeEpoch } : {}) } })),
     imageJobs: () => (raw.workbench ? { concepts: workbench.concepts, conceptUsage: workbench.conceptUsage, meshyAuth: withoutCode(workbench.meshyAuth) } : null),
     setupRequests: () => (toCollection(workbench.setupRequests || [])),
     tools: () => ({ shared: raw.shared, integrations: raw.integrations, toolCatalog: raw.toolCatalog, toolLimits: raw.toolLimits }),
@@ -190,7 +191,7 @@ function legacySnapshot(state, ephemeral = {}) { return require('./state-snapsho
 // pages keep reading one map. v2-only slices (tasks, usage, results) are added.
 function phoneLegacyState(values, extras = {}) {
   const list = slice => fromCollection(values[slice]);
-  return { ...extras, capacity: values.shell?.capacity ?? 9, sessions: list('sessions'), queues: values.queues ?? {}, prompts: list('prompts'),
+  return { ...extras, capacity: values.shell?.capacity ?? 9, agentProfiles: values.shell?.agentProfiles ?? null, sessions: list('sessions'), queues: values.queues ?? {}, prompts: list('prompts'),
     tasks: list('tasks'), usage: list('usage') };
 }
 

@@ -1,5 +1,6 @@
 ﻿'use strict';
 const { cells, gridSize } = require('./console-layout.cjs');
+const { sessionPolicy } = require('./providers/index.cjs');
 
 // Presentation only. Workers and their processes are owned by the task runner.
 class WorkerPlacement {
@@ -76,6 +77,6 @@ function consoleCapabilities(item, owners, bridge = false) {
   const worker = !!item.taskId;
   return { worker, ownerManaged: !!owners?.records?.get(item.consoleKey)?.ownerManaged,
     close: !worker, switch: !worker, setup: !worker, manage: !worker, queue: !worker,
-    ...(worker && bridge ? { steering: item.steeringSupported === true && ['codex', 'claude', 'kiro'].includes(item.provider), stopWorker: true } : {}) };
+    ...(worker && bridge ? { steering: item.steeringSupported === true && sessionPolicy(item.provider).steering, stopWorker: true } : {}) };
 }
 module.exports = { WorkerPlacement, consoleCapabilities };

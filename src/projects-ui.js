@@ -1,8 +1,10 @@
+import { projectWorkspaceController } from './pages/project-workspace-controller.js';
 import { projectColor, projectDot } from './project-colors.js';
 import { projectActivity, attentionLabel } from './project-activity.js';
 import { projectPlanUI, milestoneLines, parseMilestones, waitingProposal } from './project-plan-ui';
 
-export function projectsUI({ call, getState, escape: e, icon, toast, renderPage, openNew, preview, openResult }) {
+export function projectsUI({ call, getState, escape: e, icon, toast, renderPage, openNew, preview, openResult, getPage = () => 'projects' }) {
+  const workspace = projectWorkspaceController({ call, getState, getPage, renderPage, escape: e, icon, toast, openResult });
   let query = '', category = '', status = 'open', opener, afterSave;
   const plan = projectPlanUI({ call, getState, escape: e, icon, toast, renderPage, openNew, preview });
   const dialog = document.createElement('dialog'); dialog.id = 'project-editor'; dialog.setAttribute('aria-labelledby', 'project-editor-title');
@@ -56,7 +58,7 @@ export function projectsUI({ call, getState, escape: e, icon, toast, renderPage,
       const milestoneRow = (m, i) => `<label title="${e(m.acceptance || '')}"><input type="checkbox" data-project-milestone="${i}" ${m.done ? 'checked' : ''}><span>${e(m.text)}</span></label>`;
       return `<article class="surface project-card" data-project-id="${e(p.id)}" style="--project-color:${projectColor(p)}">
         <header class="project-card-heading"><span class="project-card-icon" aria-hidden="true">${icon(p.category?.toLowerCase() === 'game' ? 'grid' : 'folder')}</span><span class="project-state" data-status="${e(p.status)}">${e(p.status)}</span></header>
-        <h2>${e(p.name)}</h2><p class="project-goals">${e(p.goals || 'No goals recorded.')}</p>
+        <h2>${e(p.name)}</h2><p class="project-goals">${e(p.lastProgress?.summary || p.goals || 'No goals recorded.')}</p>
         <div class="project-tags">${[p.category, ...p.folders.map(f => f.label)].filter(Boolean).slice(0, 3).map(tag => `<span>${e(tag)}</span>`).join('')}</div>
         <div class="project-activity"><span>${current.running} running</span>${current.consoles ? `<span>${current.consoles} console${current.consoles === 1 ? '' : 's'}</span>` : ''}${current.attention ? `<span class="project-attention">${attentionLabel(current.attention)}</span>` : ''}<time title="${current.lastActiveAt ? e(new Date(current.lastActiveAt).toLocaleString()) : ''}">Activity: ${since(current.lastActiveAt)}</time></div>
         ${current.latestResult ? `<button class="project-latest-result subtle" data-project-result="${e(current.latestResult.id)}" title="${e(current.latestResult.title)}">${icon('file')}<span>${e(current.latestResult.title)}</span></button>` : ''}
@@ -64,7 +66,7 @@ export function projectsUI({ call, getState, escape: e, icon, toast, renderPage,
         ${total ? `<div class="project-milestone-list" aria-label="${waiting ? 'Draft milestones' : 'Milestones'}">${p.milestones.slice(0, 4).map(milestoneRow).join('')}${total > 4 ? `<details class="project-milestones"><summary>${total - 4} more</summary>${p.milestones.slice(4).map((m, i) => milestoneRow(m, i + 4)).join('')}</details>` : ''}</div>` : '<p class="field-hint">No milestones recorded.</p>'}
         ${p.plan?.files?.error ? '<p class="form-error">Project files need attention.</p>' : ''}
         <footer class="project-card-footer"><time class="project-notes-date" title="${p.updatedAt ? e(new Date(p.updatedAt).toLocaleString()) : ''}">Details edited: ${since(p.updatedAt)}</time>
-          <div class="project-actions"><button class="secondary" data-project-plan="${e(p.id)}">${proposal ? 'Review proposal' : 'View project'}</button>
+          <div class="project-actions"><button class="secondary" data-project-inspect="${e(p.id)}">Open project</button>
           <details class="project-more"><summary aria-label="More actions for ${e(p.name)}">•••</summary><div class="project-more-content">
             <button class="secondary" data-project-open="${e(p.id)}">${icon('terminal')}Open console</button><button class="subtle" data-project-edit="${e(p.id)}">Edit project</button>
             ${p.nextStep ? `<div class="project-next"><span>Recorded next step</span><p>${e(p.nextStep)}</p></div>` : ''}
@@ -78,6 +80,7 @@ export function projectsUI({ call, getState, escape: e, icon, toast, renderPage,
 
   function refreshCards(force = false) {
     plan.refresh();
+    if (workspace.sync()) return;
     const proposalsHost = document.querySelector('#project-proposals');
     if (proposalsHost) { const value = JSON.stringify(proposals()); if (proposalsHost.dataset.fingerprint !== value) { proposalsHost.dataset.fingerprint = value; proposalsHost.innerHTML = proposalSection(); } }
     const host = document.querySelector('#project-cards'); if (!host) return;
@@ -97,8 +100,9 @@ export function projectsUI({ call, getState, escape: e, icon, toast, renderPage,
     if (focusId && focusSelector) host.querySelector(`[data-project-id="${CSS.escape(focusId)}"] ${focusSelector}`)?.focus({ preventScroll: true });
   }
   function render() {
+    const detail = workspace.render(); if (detail) return detail;
     const categories = [...new Set(projects().map(x => x.category).filter(Boolean))].sort();
-    return `<div class="page-heading"><h1>Projects</h1><button class="primary" data-project-new>${icon('plus')}New project</button></div><div id="project-proposals">${proposalSection()}</div><div class="project-filters"><label>Find a project<input data-project-search value="${e(query)}" type="search" placeholder="Name, goal or next step"></label><label>Category<select data-project-category><option value="">All categories</option>${categories.map(x => `<option ${x === category ? 'selected' : ''}>${e(x)}</option>`).join('')}</select></label><label>Status<select data-project-status>${[['open','Open projects'],['planning','Planning'],['active','Active'],['paused','Paused'],['complete','Complete'],['archived','Archived'],['','All projects']].map(([v, label]) => `<option value="${v}" ${v === status ? 'selected' : ''}>${label}</option>`).join('')}</select></label></div><div class="project-cards" id="project-cards">${cards()}</div>`;
+    return `<div class="page-heading"><h1>Projects</h1><div class="project-actions"><button class="subtle" data-page="tasks">Worker history</button><button class="secondary" data-page="results">All outputs</button><button class="primary" data-project-new>${icon('plus')}New project</button></div></div><div id="project-proposals">${proposalSection()}</div><div class="project-filters"><label>Find a project<input data-project-search value="${e(query)}" type="search" placeholder="Name, goal or next step"></label><label>Category<select data-project-category><option value="">All categories</option>${categories.map(x => `<option ${x === category ? 'selected' : ''}>${e(x)}</option>`).join('')}</select></label><label>Status<select data-project-status>${[['open','Open projects'],['planning','Planning'],['active','Active'],['paused','Paused'],['complete','Complete'],['archived','Archived'],['','All projects']].map(([v, label]) => `<option value="${v}" ${v === status ? 'selected' : ''}>${label}</option>`).join('')}</select></label></div><div class="project-cards" id="project-cards">${cards()}</div>`;
   }
   function edit(id, callback, trigger = document.activeElement, seed = {}) {
     const p = projects().find(x => x.id === id); opener = trigger; afterSave = callback;
@@ -193,5 +197,5 @@ export function projectsUI({ call, getState, escape: e, icon, toast, renderPage,
     const target = event.target.closest('[data-project-result]');
     if (target) openResult(target.dataset.projectResult).catch(error => toast(error.message, true));
   });
-  return { render, edit, refreshCards, reveal };
+  return { render, edit, refreshCards, reveal, showWorkspace: workspace.show, observeKnowledgePolicy: workspace.observePolicy };
 }

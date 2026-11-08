@@ -1,6 +1,7 @@
 'use strict';
 module.exports = {
   id: 'cursor',
+  settings: { strategy: 'cli' },
   catalog: {
     name: 'Cursor',
     command: 'agent',

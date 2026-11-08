@@ -2,6 +2,7 @@
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { catalog } = require('./cli-catalog.cjs');
+const { consoleFeaturesFor } = require('./providers/index.cjs');
 const { realRoot } = require('./platform.cjs');
 
 function consoleChoices(sessions, defaults) {
@@ -11,7 +12,7 @@ function consoleChoices(sessions, defaults) {
   return {
     defaultProvider: defaults.provider || '',
     defaultFolder: defaults.cwd || '',
-    agents: catalog.map(({ id, name }) => ({ id, name, installed: installed.has(id) })),
+    agents: catalog.map(({ id, name }) => ({ id, name, installed: installed.has(id), consoleFeatures: consoleFeaturesFor(id) })),
     projects: (sessions.projects?.list() || []).filter(x => x.status !== 'archived')
       .map(({ id, name, folders }) => ({ id, name, folders: folders.map(({ label, path }) => ({ label, path })) })),
     hosts: sessions.ssh?.listMobile() || [],

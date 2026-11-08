@@ -1,7 +1,8 @@
 'use strict';
 
-const frameStyles = ['normal', 'classic', 'blue', 'violet', 'void', 'gamer', 'redline', 'hot-pink', 'cyber', 'icy', 'fiery'];
-const lightingStyles = ['static', 'breathe', 'wave', 'spectrum', 'reactive'];
+const themeData = require('./generated/theme-data.cjs');
+const frameStyles = themeData.themeData.map(theme => theme.id);
+const lightingStyles = themeData.lightingStyles.map(([id]) => id);
 
 function updatedSlotTrims(current, payload, sessions, grid) {
   const slot = payload?.slot;

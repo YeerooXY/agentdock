@@ -16,7 +16,7 @@
   --theme-glow:color-mix(in srgb,var(--frame-b) 22%,transparent);
 }
 [data-frame=normal] {
-  --frame-a:#b9c6d8; --frame-b:#8392a8; --theme-surface:#090b10; --theme-header:#131720;
+  --theme-surface:#090b10; --theme-header:#131720;
   --frame-border:linear-gradient(#4c5668,#343d50); --theme-glow:transparent; --theme-pattern:none;
   --frame-shape:inset(0 round 7px); --inner-shape:inset(0 round 6px);
 }
@@ -38,15 +38,15 @@
   --theme-glow:color-mix(in srgb,var(--frame-b) calc(var(--redline-glow) * 1%),transparent);
 }
 [data-frame=cyber] {
-  --frame-a:#00e1ff; --frame-b:#cc55ff; --theme-surface:#080b17; --theme-header:rgb(14 22 41 / .94);
+  --theme-surface:#080b17; --theme-header:rgb(14 22 41 / .94);
   --theme-pattern:linear-gradient(#00e1ff09 1px,transparent 1px) 0 0 / 32px 32px,linear-gradient(90deg,#00e1ff09 1px,transparent 1px) 0 0 / 32px 32px,radial-gradient(ellipse at 100% 100%,#ac00f323,transparent 60%);
 }
 [data-frame=icy] {
-  --frame-a:#00e5ff; --frame-b:#80b8ff; --theme-surface:#05121e; --theme-header:rgb(11 34 53 / .94); --theme-text:#edfaff;
+  --theme-surface:#05121e; --theme-header:rgb(11 34 53 / .94); --theme-text:#edfaff;
   --theme-pattern:linear-gradient(135deg,#e1faff14 0 1px,transparent 1px 18px) left top/22px 22px no-repeat,linear-gradient(225deg,#d8f8ff12 0 1px,transparent 1px 18px) right top/22px 22px no-repeat,linear-gradient(45deg,#8fdcff10 0 1px,transparent 1px 18px) left bottom/22px 22px no-repeat,linear-gradient(315deg,#d8f8ff10 0 1px,transparent 1px 18px) right bottom/22px 22px no-repeat,linear-gradient(135deg,#e1faff09 0 8%,transparent 8% 88%,#50a0ff0c 88%),radial-gradient(ellipse at 0 0,#1ab9e31b,transparent 60%);
 }
 [data-frame=fiery] {
-  --frame-a:#ff773e; --frame-b:#ffb700; --theme-surface:#160906; --theme-header:rgb(43 18 9 / .94); --theme-text:#fff2ec;
+  --theme-surface:#160906; --theme-header:rgb(43 18 9 / .94); --theme-text:#fff2ec;
   --theme-pattern:radial-gradient(ellipse at 30% 120%,#ff45002b,transparent 65%),radial-gradient(ellipse at 95% 100%,#ffb70015,transparent 45%),repeating-linear-gradient(110deg,transparent 0 97px,#ff9a1308 98px 99px);
 }
 [data-frame=gamer] {

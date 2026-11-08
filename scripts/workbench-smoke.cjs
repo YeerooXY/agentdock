@@ -24,10 +24,42 @@ async function eventually(check, message='Timed out') {const end=Date.now()+4500
   // A responding server on another loopback address stands in for an outside site. macOS has only 127.0.0.1.
   if(process.platform!=='darwin'){awayServer=http.createServer((req,res)=>(awayHits++,res.end('<p id="left">Left Paddock</p>')));await new Promise(r=>awayServer.listen(0,'127.0.0.2',r));awayUrl=`http://127.0.0.2:${awayServer.address().port}/`;}
   const errors=[];
-  app=await electron.launch({ ...(executablePath ? { executablePath } : {}), args:[...(executablePath ? [] : [root]),'--smoke-test',`--data-dir=${profile}`],timeout:30000}); const page=await app.firstWindow(); page.setDefaultTimeout(15000); page.on('pageerror',e=>errors.push(e.message));
+  app=await electron.launch({ ...(executablePath ? { executablePath } : {}), env:{...process.env,PADDOCK_SKILLS_HOME:path.join(work,'agent-home')}, args:[...(executablePath ? [] : [root]),'--smoke-test',`--data-dir=${profile}`],timeout:30000}); const page=await app.firstWindow(); page.setDefaultTimeout(15000); page.on('pageerror',e=>errors.push(e.message));
   await page.waitForSelector('.session-grid');
   const capture = async filename => { await page.waitForFunction(() => document.querySelector('#content').getAnimations().every(x => x.playState === 'finished')); await page.screenshot({path:path.join(root,'artifacts',filename)}); };
   const call=(method,payload)=>page.evaluate(async([m,p])=>{const r=await window.dock.call(m,p);if(!r.ok)throw Error(r.error);return r.value;},[method,payload]);
+  await openPage(page, 'tools');
+  assert.equal(await page.locator('.skill-packs section[aria-label="Engineering skills"] [data-skill-pack]').count(), 4);
+  assert.equal(await page.locator('[data-skill-pack="project-documentation"] [data-skill-install]').textContent(), 'Install');
+  for (const id of ['pstack', 'ponytail', 'thermo-nuclear-code-quality-review']) {
+    const card = page.locator(`[data-skill-pack="${id}"]`);
+    assert.equal(await card.count(), 1);
+    assert.equal(await card.locator('[data-skill-install]').textContent(), 'Download and install');
+    assert.equal(await card.locator('[data-skill-details="setup"]').count(), 1);
+  }
+  await page.locator('[data-skill-pack="pstack"] [data-skill-details="folders"] summary').click();
+  const refresh = page.locator('[data-skill-refresh]');
+  await refresh.focus(); await page.keyboard.press('Enter');
+  await eventually(() => refresh.evaluate(el => document.activeElement === el && !el.disabled), 'Skill refresh lost keyboard focus');
+  assert.equal(await page.locator('[data-skill-pack="pstack"] [data-skill-details="folders"]').getAttribute('open'), '');
+  await page.keyboard.press('Space');
+  await eventually(() => refresh.evaluate(el => document.activeElement === el && !el.disabled), 'Repeated skill refresh lost keyboard focus');
+  await page.keyboard.press('Tab'); assert.notEqual(await page.evaluate(() => document.activeElement.tagName), 'BODY');
+  await page.keyboard.press('Shift+Tab'); assert.equal(await refresh.evaluate(el => document.activeElement === el), true);
+  await page.locator('[data-skill-pack="project-documentation"] [data-skill-install]').click();
+  const automatic = page.locator('[data-skill-automatic="project-documentation"]');
+  await eventually(() => automatic.isEnabled(), 'The installed skill did not expose its automatic-use switch');
+  assert.equal(await automatic.isChecked(), false);
+  await automatic.focus(); await page.keyboard.press('Space');
+  await eventually(async () => await automatic.isChecked() && await automatic.isEnabled() && await automatic.evaluate(el => document.activeElement === el), 'Automatic-use toggle lost focus or failed to save');
+  assert.equal(JSON.parse(fs.readFileSync(path.join(profile,'settings.json'),'utf8')).skillAuto['project-documentation'], true);
+  await page.keyboard.press('Tab'); assert.notEqual(await page.evaluate(() => document.activeElement.tagName), 'BODY');
+  await page.keyboard.press('Shift+Tab'); assert.equal(await automatic.evaluate(el => document.activeElement === el), true);
+  await page.keyboard.press('Space');
+  await eventually(async () => !await automatic.isChecked() && await automatic.isEnabled() && await automatic.evaluate(el => document.activeElement === el), 'Repeated automatic-use toggle lost focus');
+  await page.keyboard.press('Enter'); assert.equal(await automatic.isChecked(), false);
+  assert.equal(await automatic.evaluate(el => document.activeElement === el), true);
+  await openPage(page, 'consoles');
   const one=await call('session.create',{slot:1,provider:'shell',cwd:project,name:'Trader'}),two=await call('session.create',{slot:9,provider:'shell',cwd:project,name:'Game'});
   await call('slot.name',{slot:1,name:'Trader',sessionId:one.id});await call('slot.name',{slot:9,name:'Game',sessionId:two.id});
   await call('session.input',{id:one.id,data:shellCommand.shortPrompt(shellCommand.say('MOVE_MARKER_917'))+'\r'});

@@ -225,7 +225,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('New console'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('No project \u00b7 default folder'));
+    await tester.tap(find.text('No project (default folder)'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Game project').last);
     await tester.pumpAndSettle();

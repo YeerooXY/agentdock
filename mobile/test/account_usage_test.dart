@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -162,6 +164,17 @@ void main() {
       await tester.pumpWidget(const SizedBox());
     },
   );
+
+  testWidgets('weekly-exhausted five-hour window has no false allowance bar', (tester) async {
+    final fixture = jsonDecode(File('../tests/fixtures/state/dto/phone-usage-disabled.json').readAsStringSync()) as Map;
+    final windows = (fixture['output'] as Map)['windows'] as List;
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body: UsageWindow(window: windows.last as Map))));
+    expect(find.text('Not applicable'), findsOneWidget);
+    expect(find.text('Weekly limit reached'), findsOneWidget);
+    expect(find.text('Unknown'), findsNothing);
+    expect(find.textContaining('% left'), findsNothing);
+    expect(find.byKey(const ValueKey('usage-bar')), findsNothing);
+  });
 
   testWidgets('usage recovers when the PC reconnects', (tester) async {
     final client = UsageClient()..connected = false;

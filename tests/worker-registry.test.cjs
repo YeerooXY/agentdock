@@ -29,13 +29,15 @@ test('registry builds from migrated pools without altering assignments or enabli
 test('latest reading per shared account window controls admission and retains stale and unknown values', () => {
   const values = [reading('codex:a', 99, now - 100), reading('opencode:a', 20, now), reading('codex:a', 60, now, 'week'), reading('codex:a', 10, now - 1_800_001, 'day')];
   const usage = groupHeadroom(values, ['codex:a', 'opencode:a'], now);
-  assert.equal(usage.left, 1); assert.equal(usage.blocked, true); assert.equal(usage.status, 'stale');
+  assert.equal(usage.left, 1); assert.equal(usage.blocked, false); assert.equal(usage.status, 'stale');
   assert.equal(usage.windows.find(w => w.key === 'day').status, 'stale');
   values.push(reading('codex:a', null, now + 1, 'week'));
   assert.equal(groupHeadroom(values, ['codex:a'], now).left, 1);
   values.push(reading('codex:a', null, now, 'week'));
   assert.equal(groupHeadroom(values, ['codex:a'], now).status, 'unknown');
   values.push(reading('codex:a', 90, now, 'day'));
+  assert.equal(groupHeadroom(values, ['codex:a'], now).blocked, false);
+  values.push(reading('codex:a', 100, now, 'day'));
   assert.equal(groupHeadroom(values, ['codex:a'], now).blocked, true);
 });
 
@@ -113,6 +115,15 @@ test('local invocation limit applies across endpoints and refresh happens before
   assert.equal(calls, 1); assert.equal(result.worker.id, 'b');
   const fallback = await refreshAndRoute({ workers: remote, level: 'L2', now }, async () => { throw new Error('offline'); });
   assert.equal(fallback.usage.status, 'unknown');
-  const retained = await refreshAndRoute({ workers: remote, level: 'L2', now, limits: [reading('codex:a', 90)] }, async () => { throw new Error('offline'); });
+  const retained = await refreshAndRoute({ workers: remote, level: 'L2', now, limits: [reading('codex:a', 100)] }, async () => { throw new Error('offline'); });
   assert.equal(retained.worker.id, 'b');
+});
+
+
+test('a newer empty quota check invalidates prior headroom and a later valid check restores it', () => {
+  const earlier = reading('codex:a', 90, now - 100);
+  const missing = { accountId: 'codex:a', observedAt: now - 50, windows: [] };
+  const result = groupHeadroom([earlier, missing], ['codex:a'], now);
+  assert.equal(result.status, 'unknown'); assert.equal(result.left, null);
+  assert.equal(groupHeadroom([earlier, missing, reading('codex:a', 99)], ['codex:a'], now).left, 1);
 });

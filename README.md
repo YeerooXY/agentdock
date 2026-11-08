@@ -1,4 +1,4 @@
-﻿# Paddock
+# Paddock
 
 ## Downloads
 
@@ -47,19 +47,19 @@ This release is unsigned, so Windows may show an unknown-publisher or SmartScree
 
 ## Workspace
 
-Projects, Tasks, Results and Usage are available from the navigation strip. Agent account and routing settings are under **Settings ? Agents**. Click a file path in a console to preview supported files. The desktop file explorer, Code panels and embedded website Preview panels were removed in preview 30.
+Consoles, Projects, Usage and Settings are available from the navigation strip; separate Tasks and Results sidebar buttons have been removed. Projects owns Overview, Work, Outputs and Knowledge views, while advanced Worker history and All outputs remain reachable from Projects. Agent account and routing settings are under **Settings → Agents**. Click a file path in a console to preview supported files. The desktop file explorer, Code panels and embedded website Preview panels were removed in preview 30.
 
-[Preview 30 changes and limitations](docs/release-preview30.md).
+See the [current state guide](docs/project-current-state.md) for mapped source entry points and architecture. [Preview 30 changes and limitations](docs/release-preview30.md).
 
 ## Android preview
 
-The native Android companion controls your PC consoles, shows Results and account usage, and receives optional completion alerts. The header shows the harness icon, chat name, connection status and PC name.
+The native Android companion controls your PC consoles, provides the Projects workspace (Overview, Work, Outputs, Knowledge) on workspace-capable hosts, shows account usage, and receives optional completion alerts. Connected to a workspace-capable host, Results is accessed through Projects and omitted from the bottom navigation bar; older PC hosts retain the separate Results navigation destination. The header shows the harness icon, chat name, connection status and PC name.
 
-Tap the thin blue-pink handle below the terminal to write a message. **Model** and **Effort** appear while chat is open; the down arrow collapses it and keeps your draft. Each console retains its draft, caret and reading position. The top **?** menu contains **Text & display**, **Copy text**, **Console links**, **Clear mobile history** and direct keyboard input. Wrapped text keeps terminal colors; its size is adjustable. Clearing history keeps the active terminal screen and the PC process running.
+Tap the thin blue-pink handle below the terminal to write a message. **Model** and **Effort** appear while chat is open; the down arrow collapses it and keeps your draft. Each console retains its draft, caret and reading position. The top **⋮** menu contains **Text & display**, **Copy text**, **Console links**, **Clear mobile history** and direct keyboard input. Wrapped text keeps terminal colors; its size is adjustable. Clearing history keeps the active terminal screen and the PC process running.
 
 The list button beside **Terminal keys** opens the console's **Queue**: **Queue the message box text** adds your draft, and queued messages can be reordered, sent now or removed. **Saved prompts** places a saved prompt in the message box without sending it. The queue itself runs on your PC.
 
-Tap the **chat name ? New console** to select a saved project/folder and an installed agent. Tap the current model or effort, make both choices, then press **Apply**. Browsing and cancelling send no terminal input. Effort can change while keeping the current model. Unknown menu layouts remain in the terminal. The message **+** attaches a project file or selected image. [Mobile controls](docs/mobile-controls.md).
+Tap the **chat name → New console** to select a saved project/folder and an installed agent. Tap the current model or effort, make both choices, then press **Apply**. Browsing and cancelling send no terminal input. Effort can change while keeping the current model. Unknown menu layouts remain in the terminal. The message **+** attaches a project file or selected image. [Mobile controls](docs/mobile-controls.md).
 
 Use **Settings → Devices** to name your phone, add computers and switch between saved PCs. Each PC keeps its pairing and address. On Windows, **Settings → Devices → Connect a phone → Connection** names the PC; **Pair phone** manages its paired phones. [Multiple-device setup](docs/android-setup.md#multiple-computers-and-phones).
 
@@ -303,18 +303,27 @@ API prompts, responses and terminal scrollback stay in memory. Agent CLIs and co
 
 ## Development
 
+See [Module boundaries](docs/module-boundaries.md) for source ownership and
+controller contracts.
+
 ```powershell
 npm ci
 npm run prepare:runtime
 npm run build
 npm start
 npm test
-npm run test:desktop
+npm run test:linux
 ```
 
 This is a local development build, not a signed installer. It uses Electron, xterm.js and ConPTY. Each console, MCP server and WSL distribution adds its own resource usage. Background tool connections are opened on demand and reused. Terminal buffers and recent-log scans are bounded.
 
 After a build, `npm test` also checks the renderer bundle: xterm.js has its own chunk, the application chunk stays under 400 kB and no chunk exceeds 500 kB. Raise these limits in `tests/bundle-budget.test.cjs` deliberately, or move a page behind a dynamic import.
+
+`npm run build` checks generated theme data, phone provider profiles and desktop,
+backend and mobile import boundaries before bundling. See
+[Theme authoring](docs/theme-authoring.md) for palette and effect changes.
+`npm run test:linux` requires Docker and runs desktop checks on a virtual display.
+CI also runs native desktop checks on Windows and macOS.
 
 Validation includes real Windows encryption, nine live shell consoles, HUD/fullscreen persistence, installed agent startup, MCP subprocess/loopback integration, HTTP credential bindings, all three model tool loops with mocked responses, form failures and narrow layouts. Agent-specific checks depend on the CLIs installed on the test machine. Tests use temporary data and never submit paid model requests. Screenshots and reports are in `artifacts` and stay out of Git.
 

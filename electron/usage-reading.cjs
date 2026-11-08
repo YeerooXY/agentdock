@@ -5,7 +5,7 @@
 // UsageReading { accountId, provider, accountLabel|null, plan|null, source, method, observedAt,
 //   precision: exact|rounded, windows: UsageWindow[], credits? }
 // UsageWindow { key, label, scope: account|model-group, modelGroup|null, minutes|null,
-//   usedPercent|null, unlimited, used?, total?, unit?, resetsAt|null, resetLabel|null }
+//   usedPercent|null, unlimited, notApplicable?, used?, total?, unit?, resetsAt|null, resetLabel|null }
 // UsageCheck { accountId, provider, status, checkedAt, observedAt|null, message,
 //   stale, staleReason|null, failure?, reason?, lastReading|null, lastReadings }
 //
@@ -33,6 +33,9 @@ function normalizeWindow(raw) {
     resetsAt: finite(raw?.resetsAt) ? raw.resetsAt : null, resetLabel: text(raw?.resetLabel)
   };
   for (const key of ['used', 'total']) if (!finite(window[key])) delete window[key];
+  if (raw?.notApplicable === true) {
+    window.notApplicable = true; window.usedPercent = null; window.resetsAt = null;
+  } else delete window.notApplicable;
   if (typeof window.unit !== 'string') delete window.unit;
   return window;
 }

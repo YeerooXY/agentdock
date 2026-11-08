@@ -1,6 +1,8 @@
 'use strict';
 module.exports = {
   id: 'opencode',
+  settings: { strategy: 'cli' },
+  console: { modelChoices: true, liveModelMenu: true },
   catalog: {
     name: 'OpenCode',
     command: 'opencode',

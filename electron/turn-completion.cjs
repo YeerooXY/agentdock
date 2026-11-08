@@ -55,7 +55,8 @@ class TurnCompletion {
       const job = tasks?.jobs?.get(id);
       // A task closed with a reason (dock/close_task or the Tasks page) is resolved.
       if (job?.dismissedAt && !require('./task-plan.cjs').ACTIVE.has(job.state)) continue;
-      if (!job || !['passed', 'accepted'].includes(job.state) || (job.state !== 'accepted' && job.unresolved?.length) || job.reportError || !job.resultId) throw new Error(`Task ${id} is unfinished or needs attention. Inspect dock/task_status; close a failed or replaced task with dock/close_task before completing this turn.`);
+      const recorded = tasks?.hasRecordedOutcome ? tasks.hasRecordedOutcome(job) : !!job?.resultId;
+      if (!job || !['passed', 'accepted'].includes(job.state) || (job.state !== 'accepted' && job.unresolved?.length) || job.reportError || !recorded) throw new Error(`Task ${id} is unfinished or needs attention. Inspect dock/task_status; close a failed or replaced task with dock/close_task before completing this turn.`);
     }
     if (turn.completionInvalidated) throw new Error('This turn changed after its completion check. Repeat dock/finish_turn with the current outcome.');
     return record;
@@ -79,9 +80,15 @@ class TurnCompletion {
     turn.completionInvalidated = false;
     try {
       // Refresh delegated verification before deciding whether the parent is done.
-      for (const id of turn.taskIds || []) await wb.getTasks?.()?.refresh?.(id);
+      for (const id of turn.taskIds || []) {
+        const tasks = wb.getTasks?.();
+        await tasks?.refresh?.(id);
+        const job = tasks?.jobs?.get(id);
+        if (job && ['passed', 'accepted'].includes(job.state) && tasks.hasRecordedOutcome && (job.reportError || !tasks.hasRecordedOutcome(job))) await tasks.record(job);
+      }
       this.validate(owner, record);
-      record.tasks = (turn.taskIds || []).map(id => { const job = wb.getTasks().jobs.get(id); return { id, state: job.state, resultId: job.resultId, acceptedIssues: job.state === 'accepted' ? job.unresolved || [] : [] }; });
+      record.tasks = (turn.taskIds || []).map(id => { const job = wb.getTasks().jobs.get(id); return { id, state: job.state, resultId: job.resultId || null,
+        ...(job.executionHistory ? { executionHistory: job.executionHistory } : {}), acceptedIssues: job.state === 'accepted' ? job.unresolved || [] : [] }; });
       if (record.projectId && record.outcome === 'changed') wb.projects.recordOutcome(record.projectId, record);
       fs.mkdirSync(this.dir, { recursive: true }); atomicJson(path.join(this.dir, turn.id + '.json'), record);
       return record;

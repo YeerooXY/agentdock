@@ -1,5 +1,13 @@
 # Paddock
 
+- Plan around the user scenario and impact; reuse existing helpers, data shapes and transaction flows. Justify mechanisms beyond explicit requirements without hypothetical cases or inflated briefs.
+- Extend existing flows; explain material extra mechanisms and reused helpers in the normal completion summary. Review claims against code and the same behavior checks, seeking behavior-preserving deletion before splits; preserve boundary, data-loss, security and accessibility safeguards. Line counts are clues, not objectives.
+
+- File size and review preference, 8 November 2026: aim for 150–300 lines in a typical handwritten production module. At 400–500 lines, review whether responsibilities should separate. Files over 500 lines need a clear reason to stay together; files over 1,000 lines trigger a structural review. Count the whole file, including comments and blank lines. Generated files, fixtures and declarative data need separate treatment.
+- Reviews should seek behavior-preserving deletions first: remove unnecessary boilerplate, duplicated logic, speculative options and wrappers before splitting responsibilities. A split should make the code easier to understand. Keep cohesive code together when splitting would make it harder to follow; preserve correctness, security, validation, error handling and accessibility. Avoid adding wrappers or compressing formatting to meet a line target. Apply these targets to new and touched code; unrelated large files do not authorize a cleanup sweep.
+
+- Reasoning preference, 8 November 2026: use medium reasoning by default for implementation from a clear plan and routine review. High may be warranted for the first substantive plan. Later high effort requires a concrete blocker or failed check and a stated escalation reason. Preserve explicit owner choices and unsupported-provider limits.
+
 Local Windows desktop app. Keep user-facing copy short, direct and factual. Preserve any applicable parent writing instructions.
 
 - Wording correction, 2 November 2026: no decorative em dashes or middle-dot separators in website headings, status text or metadata. Use spacing, semantic grouping or ordinary sentences. Remove atmospheric footer jokes and congratulatory empty-state filler. Omit redundant filter subtitles; put secondary storage explanations behind a clearly named details control. Review rendered empty, completed and error states as well as the initial screen.
@@ -23,3 +31,5 @@ Local Windows desktop app. Keep user-facing copy short, direct and factual. Pres
 - Never run paid model requests during tests. Use mocked HTTP and temporary data directories.
 - Hide/collapse must preserve sessions. Killing sessions requires an explicit UI action.
 - Use npm run build, npm test and npm run test:desktop for relevant changes. Run desktop tests headless with npm run test:linux (Docker) so no windows open on the user's screen; GitHub Actions runs them on Windows and macOS.
+- Background verification, 5 November 2026: restart preflight must stay hidden, including failure paths. Do not raise or focus Paddock or open visible test windows for later checks. Use logs and headless checks; foreground verification requires the user's request.
+- Restarts are one-shot by default. Long-running restart supervision requires an explicit duration from the user; hidden restart helpers must not open terminal windows.
