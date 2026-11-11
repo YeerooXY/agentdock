@@ -289,6 +289,8 @@ test('phone sessions carry the v1 fields the app reads', () => {
   const dto = J.phoneSession(item);
   assert.deepEqual(dto.remote, { hostId: 'h', name: 'box', folder: '/srv', tmux: false });
   assert.deepEqual(dto.requestedSettings, item.requestedSettings);
+  assert.equal(dto.completionMissing, false);
+  assert.equal(J.phoneSession({ ...item, completionMissing: true }).completionMissing, true);
   assert.deepEqual(J.PHONE.queues.build({ queues: { s9: { paused: false, entries: [{ id: 'q', text: 't', createdAt: 1, ownerRequested: true, extra: 'x' }] } } }),
     { s9: { paused: false, entries: [{ id: 'q', text: 't', createdAt: 1, ownerRequested: true }] } });
 });

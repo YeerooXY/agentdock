@@ -159,6 +159,37 @@ void main() {
     },
   );
 
+  testWidgets('arrows form an inverted T and modifiers apply to one key', (
+    tester,
+  ) async {
+    final c = FakeDock();
+    addTearDown(c.dispose);
+    await openKeys(tester, c);
+    final up = tester.getCenter(find.text('Up')),
+        left = tester.getCenter(find.text('Left')),
+        down = tester.getCenter(find.text('Down')),
+        right = tester.getCenter(find.text('Right'));
+    expect(up.dy, lessThan(down.dy));
+    expect(left.dy, down.dy);
+    expect(right.dy, down.dy);
+    expect(left.dx, lessThan(down.dx));
+    expect(down.dx, lessThan(right.dx));
+    expect((up.dx - down.dx).abs(), lessThan(1));
+    await tester.tap(find.text('Ctrl'));
+    await tester.tap(find.text('Shift'));
+    await tester.pumpAndSettle();
+    expect(c.inputs, isEmpty);
+    await tester.tap(find.text('Up'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Up'));
+    await tester.pumpAndSettle();
+    expect(c.inputs.map((x) => x['data']), ['\x1b[1;6A', '\x1b[A']);
+    await tester.tap(find.text('Shift'));
+    await tester.tap(find.text('Tab'));
+    await tester.pumpAndSettle();
+    expect(c.inputs.last['data'], '\x1b[Z');
+  });
+
   for (final size in [const Size(320, 740), const Size(852, 393)]) {
     testWidgets('key sheet reflows with large text and keyboard at $size', (
       tester,

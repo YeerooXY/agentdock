@@ -41,7 +41,7 @@ function mobileSession(item, sessions) {
     switching, purpose, draftSupported, worktree, taskId, sliceId, steeringState, steeringSupported, switchMethod } = item;
   return { id, slot, name, provider, alive, state, cols, rows, consoleKey, projectId, remote, updatedAt, providerSessionId, switchMethod: switchMethod || 'none',
     model: modelId || model || null, modelName: model || null, effort: effort || null, settingsAt: settingsAt || null,
-    requestedSettings: requestedSettings || null,
+    requestedSettings: requestedSettings || null, completionMissing: item.completionMissing === true,
     launchId: launchId || null, accountId: accountId || null, accountLabel: accountLabel || null,
     switchTargets: switchTargets || [], switching: !!switching, purpose: purpose || 'agent', taskId: taskId || null,
     sliceId: sliceId || null, steeringState: steeringState || null, steeringSupported: steeringSupported === true,

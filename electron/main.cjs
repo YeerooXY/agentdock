@@ -664,7 +664,7 @@ app.whenReady().then(() => guardStartup(async () => {
   sessions.on('attention', session => {
     if (session.state === 'ready' && !session.taskId && !session.remote && session.purpose === 'agent' && !['shell', 'cmd'].includes(session.provider)) {
       try { workbench.completion.check(session.id); }
-      catch { session = { ...session, state: 'attention', summary: 'Completion check missing. The agent must record its outcome with dock/finish_turn.' }; sessions.signal(session.id, 'question'); }
+      catch { session = { ...session, state: 'attention', summary: 'Completion check missing. The agent must record its outcome with dock/finish_turn.' }; sessions.signal(session.id, 'question', true); }
     }
     workbench.alerts.send(completionNotice({ key: `${session.id}:${session.updatedAt}:${session.state}`, title: session.name + (session.state === 'ready' ? ' is ready' : ' needs you'), message: session.summary || '', kind: session.state === 'ready' ? 'ready' : 'question' }, { sessionId: session.id, consoleKey: session.consoleKey || session.id, turnId: session.turnId }, workbench.results.list()));
   });

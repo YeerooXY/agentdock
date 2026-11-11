@@ -101,6 +101,7 @@ class _UpdatePanelState extends State<UpdatePanel> {
   List<String> abis = [];
   Map<String, dynamic>? release;
   bool busy = false;
+  final checkFocus = FocusNode(), downloadFocus = FocusNode();
 
   Future<void> openDownload(String url) async {
     try {
@@ -137,7 +138,16 @@ class _UpdatePanelState extends State<UpdatePanel> {
     }
   }
 
+  @override
+  void dispose() {
+    checkFocus.dispose();
+    downloadFocus.dispose();
+    super.dispose();
+  }
+
   Future<void> check() async {
+    // A disabled or replaced button drops focus; hand it to the new action.
+    final focused = checkFocus.hasFocus;
     setState(() {
       busy = true;
       message = '';
@@ -185,7 +195,7 @@ class _UpdatePanelState extends State<UpdatePanel> {
           release = next;
           message = next == null
               ? 'You’re up to date.'
-              : 'Version ${next['version']} · ${(next['size'] / 1024 / 1024).ceil()} MB';
+              : 'Version ${next['version']} (${(next['size'] / 1024 / 1024).ceil()} MB)';
         });
       }
     } catch (error) {
@@ -198,7 +208,15 @@ class _UpdatePanelState extends State<UpdatePanel> {
       }
     } finally {
       client.close(force: true);
-      if (mounted) setState(() => busy = false);
+      if (mounted) {
+        setState(() => busy = false);
+        if (focused) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            (release == null ? checkFocus : downloadFocus).requestFocus();
+          });
+        }
+      }
     }
   }
 
@@ -226,18 +244,36 @@ class _UpdatePanelState extends State<UpdatePanel> {
           padding: const EdgeInsets.only(bottom: 10),
           child: Text(message),
         ),
-      OutlinedButton.icon(
-        onPressed: busy ? null : check,
-        icon: const Icon(Icons.refresh),
-        label: Text(busy ? 'Checking…' : 'Check for updates'),
+      // One action slot: Download update takes the place of Check for updates.
+      AnimatedSwitcher(
+        duration: MediaQuery.disableAnimationsOf(context)
+            ? Duration.zero
+            : const Duration(milliseconds: 220),
+        transitionBuilder: (child, animation) => FadeTransition(
+          opacity: animation,
+          child: SizeTransition(sizeFactor: animation, child: child),
+        ),
+        layoutBuilder: (currentChild, previousChildren) => Stack(
+          alignment: Alignment.centerLeft,
+          children: [...previousChildren, ?currentChild],
+        ),
+        child: release == null
+            ? OutlinedButton.icon(
+                key: const ValueKey('check-update'),
+                focusNode: checkFocus,
+                onPressed: busy ? null : check,
+                icon: const Icon(Icons.refresh),
+                label: Text(busy ? 'Checking…' : 'Check for updates'),
+              )
+            : FilledButton.icon(
+                key: const ValueKey('download-update'),
+                focusNode: downloadFocus,
+                onPressed: () => openDownload(release!['url'] as String),
+                icon: const Icon(Icons.download_outlined),
+                label: const Text('Download update'),
+              ),
       ),
       if (release != null) ...[
-        const SizedBox(height: 16),
-        FilledButton.icon(
-          onPressed: () => openDownload(release!['url'] as String),
-          icon: const Icon(Icons.download_outlined),
-          label: const Text('Download update'),
-        ),
         const SizedBox(height: 8),
         const Text(
           'Open the downloaded APK to install. Your pairing stays saved.',
