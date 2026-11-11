@@ -1,4 +1,4 @@
-﻿# Mobile controls
+# Mobile controls
 
 Android preview. Install a compatible APK over your current app to retain pairing and drafts. Updates download from GitHub without a connection to your PC. Do not uninstall or clear app data first.
 
@@ -6,7 +6,7 @@ Android preview. Install a compatible APK over your current app to retain pairin
 
 The header contains the harness icon, chat name and dropdown, status dot, monitor icon and PC name. Claude and Codex icons are bundled locally. Green pulses while connected and idle, blue indicates work, and red indicates a disconnected or ended console. Status also has an accessibility label. Reduced-motion settings disable the pulse.
 
-The reply box stays open beneath the terminal. An empty draft has three lines ready for typing and grows within the existing height limit. Model and effort share one control in its bottom row. Terminal keys and Send sit together on the right. Switching consoles restores that console’s draft, caret and reading position without opening the keyboard.
+The compact message pill stays open beneath the terminal and grows within the existing height limit. Terminal keys, attachments, model/effort and dictation sit beside it. The latest-image shortcut sits inside its right edge, with Send beside the pill. Switching consoles restores that console’s draft, caret and reading position without opening the keyboard.
 
 Tap the chat name to switch consoles or choose **New console**. New consoles can use a saved project, project subfolder and installed harness. Project selection needs a PC version that advertises that capability; older hosts explain the required update.
 
@@ -22,7 +22,7 @@ The top **More options (⋮)** menu provides:
 - **Close console:** asks before stopping that console.
 - **App updates** and **Reconnect**.
 
-In the reply box, **+ → Files** inserts a relative path into the draft. It does not upload the file. **+ → Image** opens Android's image picker, uploads the selected image to the local console's project and inserts its path. Send submits the draft. Android 14+ can offer the picker after a screenshot; no screenshot is sent automatically. Upload limits and SSH restrictions remain unchanged.
+In the reply box, **+ → Files** inserts a relative path into the draft. It does not upload the file. **+ → Image** opens Android's image picker, uploads the selected image to the local console's project and inserts its path. Send submits the draft. The thumbnail shortcut attaches the latest image accessible through Android photo permissions, regardless of folder or age. Photo access is requested only after tapping it; denied access opens the image picker. Nothing is uploaded automatically. Upload limits and SSH restrictions remain unchanged.
 
 ## Model and effort
 
@@ -80,3 +80,5 @@ node scripts/mobile-controls-adb.cjs pair
 The helper refuses physical devices. Create `artifacts/mobile-controls/stop` to stop the fixture; it also expires after 45 minutes. Fixture model selection proves transport and UI behavior, not provider account entitlement or every installed CLI version.
 
 Saved prompts are available under **+ → Saved prompts**. Using one only edits the draft. Paddock has no separate message queue; direct input follows the CLI’s behavior.
+
+Dictation opens the phone’s speech service and inserts its result at the draft caret. Review or edit it before sending. The speech service may process audio online. Cancellation leaves the draft unchanged; changing the draft or console discards the pending result. Paddock stores no voice recording.

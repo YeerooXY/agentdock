@@ -4,12 +4,12 @@
 
 | Device | Download |
 | --- | --- |
-| Windows 10/11 (64-bit Intel or AMD) | **[Windows installer](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.41/Paddock-0.6.0-preview.41-Setup-x64.exe)** |
-| Android (ARM64, most phones) | **[Android APK](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.41/Paddock-0.6.0-preview.41-Android-arm64.apk)** |
-| Android (ARMv7, older 32-bit phones) | [Android ARMv7 APK](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.41/Paddock-0.6.0-preview.41-Android-armv7.apk) |
-| Android (x64) | [Android x64 APK](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.41/Paddock-0.6.0-preview.41-Android-x64.apk) |
+| Windows 10/11 (64-bit Intel or AMD) | **[Windows installer](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.42/Paddock-0.6.0-preview.42-Setup-x64.exe)** |
+| Android (ARM64, most phones) | **[Android APK](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.42/Paddock-0.6.0-preview.42-Android-arm64.apk)** |
+| Android (ARMv7, older 32-bit phones) | [Android ARMv7 APK](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.42/Paddock-0.6.0-preview.42-Android-armv7.apk) |
+| Android (x64) | [Android x64 APK](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.42/Paddock-0.6.0-preview.42-Android-x64.apk) |
 
-[Preview.41 release notes](https://github.com/YeerooXY/agentdock/releases/tag/v0.6.0-preview.41)
+[Preview.42 release notes](https://github.com/YeerooXY/agentdock/releases/tag/v0.6.0-preview.42)
 
 A desktop app for Windows, Linux and macOS: agent consoles, projects, shared tools and usage tracking. Linux and macOS installers come from the next release; until then, run Paddock from source on those systems.
 
@@ -56,7 +56,7 @@ See the [current state guide](docs/project-current-state.md) for mapped source e
 
 The native Android companion controls your PC consoles, provides the Projects workspace (Overview, Work, Outputs, Knowledge) on workspace-capable hosts, shows account usage, and receives optional completion alerts. Connected to a workspace-capable host, Results is accessed through Projects and omitted from the bottom navigation bar; older PC hosts retain the separate Results navigation destination. The header shows the harness icon, chat name, connection status and PC name.
 
-The reply box is open below the terminal with three lines ready for typing. Its bottom row contains attachments, one model/effort control, Terminal keys and Send. Each console retains its draft, caret and reading position. The top More options menu contains display, copy, links, history and direct keyboard controls.
+The message pill sits below the terminal beside Terminal keys, attachments, one model/effort control and dictation. Its image shortcut attaches the latest accessible phone image. Send submits the draft. Each console retains its draft, caret and reading position. The top More options menu contains display, copy, links, history and direct keyboard controls.
 
 **+ → Saved prompts** inserts a saved prompt into the reply box without sending it. Messages go directly to the CLI; Paddock does not maintain a separate message queue.
 

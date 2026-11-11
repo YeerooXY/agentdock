@@ -78,20 +78,11 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
     changes = Listenable.merge([c, attachments]);
     c.addListener(syncProjectAccess);
     attachments.watchScreenshots(() {
-      Future<void>.delayed(const Duration(seconds: 2), () async {
-        if (!await attachments.checkRecentShot(run) && mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: const Text('Attach this screenshot?'),
-              action: SnackBarAction(
-                label: 'Attach',
-                onPressed: () => attachments.checkRecentShot(run, ask: true),
-              ),
-            ),
-          );
-        }
+      Future<void>.delayed(const Duration(seconds: 2), () {
+        if (mounted) unawaited(attachments.checkLatestImage(run));
       });
     });
+    unawaited(attachments.checkLatestImage(run));
   }
 
   @override
@@ -126,7 +117,7 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       c.setForeground(true);
-      unawaited(attachments.checkRecentShot(run));
+      unawaited(attachments.checkLatestImage(run));
     }
     if ([
       AppLifecycleState.paused,
@@ -451,7 +442,8 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
                     sheets.liveControls(context, action),
                 onTerminalKeys: () => sheets.terminalKeys(context),
                 onAttach: (action) => consoleAction(action, session),
-                onAttachRecent: () => attachments.attachRecentShot(run),
+                onAttachRecent: () => attachments.attachLatestImage(run),
+                onDictate: () => composer.dictate(run),
                 onSend: () =>
                     composer.send(run, onConsolePage: () => onConsolePage),
               ),

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../console_drafts.dart';
 import '../../dock_client.dart';
@@ -35,6 +36,45 @@ class ComposerController extends ChangeNotifier {
   /// Draft key of the selected console, or null with no console.
   String? draftKey;
   bool sending = false;
+  bool dictating = false;
+
+  /// Uses the phone's speech screen and inserts editable text at the caret.
+  Future<void> dictate(RunAction run) async {
+    if (sending || dictating || draftKey == null) return;
+    final key = draftKey, draft = editor.value;
+    dictating = true;
+    _changed();
+    await run(() async {
+      String? text;
+      try {
+        text = await const MethodChannel('agentdock/dictation')
+            .invokeMethod<String>('start');
+      } on MissingPluginException {
+        throw StateError('Voice typing is unavailable on this phone.');
+      }
+      if (_disposed || text == null || text.trim().isEmpty) return;
+      if (draftKey != key || editor.value != draft) {
+        throw StateError('Draft changed. Dictate the message again.');
+      }
+      final start = draft.selection.isValid
+          ? draft.selection.start
+          : draft.text.length;
+      final end = draft.selection.isValid
+          ? draft.selection.end
+          : draft.text.length;
+      editor.value = TextEditingValue(
+        text: draft.text.replaceRange(start, end, text),
+        selection: TextSelection.collapsed(offset: start + text.length),
+      );
+      edited();
+      focus.requestFocus();
+    });
+    if (!_disposed) {
+      dictating = false;
+      _changed();
+      if (draftKey == key) focus.requestFocus();
+    }
+  }
 
   /// Set when a file path was inserted for a specific console. Sending to any
   /// other console, PC or connection is refused.
@@ -115,7 +155,7 @@ class ComposerController extends ChangeNotifier {
     RunAction run, {
     required bool Function() onConsolePage,
   }) async {
-    if (sending || editor.text.trim().isEmpty) return;
+    if (sending || dictating || editor.text.trim().isEmpty) return;
     final staged = stagedCommandTarget;
     if (staged != null && !(onConsolePage() && staged.isCurrent(client))) {
       await run(() async {

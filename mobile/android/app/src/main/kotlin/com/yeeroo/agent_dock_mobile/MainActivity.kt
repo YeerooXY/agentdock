@@ -6,6 +6,7 @@ import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
     private var media: DockMedia? = null
+    private var dictation: DockDictation? = null
     private var notificationPermission: MethodChannel.Result? = null
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         if (requestCode == 7411) {
@@ -15,9 +16,10 @@ class MainActivity : FlutterActivity() {
     }
     override fun onStart() { super.onStart(); media?.start() }
     override fun onStop() { media?.stop(); super.onStop() }
+    override fun onDestroy() { dictation?.cancel(); super.onDestroy() }
     @Deprecated("Android activity result compatibility")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: android.content.Intent?) {
-        if (media?.result(requestCode, resultCode, data) != true) super.onActivityResult(requestCode, resultCode, data)
+        if (media?.result(requestCode, resultCode, data) != true && dictation?.result(requestCode, resultCode, data) != true) super.onActivityResult(requestCode, resultCode, data)
     }
     override fun provideFlutterEngine(context: android.content.Context): FlutterEngine =
         (application as DockApplication).dockEngine
@@ -25,6 +27,7 @@ class MainActivity : FlutterActivity() {
     override fun configureFlutterEngine(engine: FlutterEngine) {
         super.configureFlutterEngine(engine)
         media = DockMedia(this, MethodChannel(engine.dartExecutor.binaryMessenger, "agentdock/media")).also { it.listen() }
+        dictation = DockDictation(this, MethodChannel(engine.dartExecutor.binaryMessenger, "agentdock/dictation"))
         MethodChannel(engine.dartExecutor.binaryMessenger, "agentdock/permissions").setMethodCallHandler { call, result ->
             if (call.method != "notifications") result.notImplemented()
             else if (android.os.Build.VERSION.SDK_INT < 33 || checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) == android.content.pm.PackageManager.PERMISSION_GRANTED) result.success(true)

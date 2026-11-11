@@ -10,7 +10,7 @@ import 'widget_test.dart' show FakeDock;
 void main() {
   for (final width in [320.0, 393.0]) {
     for (final scale in [1.0, 2.0]) {
-      testWidgets('expanded reply box and aligned actions at $width / $scale', (
+      testWidgets('messenger pill and aligned actions at $width / $scale', (
         tester,
       ) async {
         tester.view.physicalSize = Size(width, 852);
@@ -29,8 +29,9 @@ void main() {
         await tester.pumpWidget(DockApp(client: c));
         await tester.pumpAndSettle();
         final field = find.byType(TextField).last;
-        expect(tester.widget<TextField>(field).minLines, 3);
-        expect(tester.getSize(field).height, greaterThan(72));
+        expect(tester.widget<TextField>(field).minLines, 1);
+        expect(tester.getSize(field).width, lessThan(width / 2));
+        expect(tester.getSize(field).height, lessThan(90));
         expect(tester.testTextInput.isVisible, isFalse);
         expect(find.byKey(const ValueKey('enter-chat')), findsNothing);
         expect(find.byTooltip('Collapse chat'), findsNothing);
@@ -40,8 +41,8 @@ void main() {
         final send = tester.getRect(find.byType(DockSendButton));
         final keys = tester.getRect(find.byTooltip('Terminal keys'));
         expect(send.center.dy, closeTo(keys.center.dy, 1));
-        expect(send.right, lessThanOrEqualTo(box.right));
-        expect(send.bottom, lessThanOrEqualTo(box.bottom));
+        expect(send.left, greaterThanOrEqualTo(box.right));
+        expect(send.bottom, lessThanOrEqualTo(box.bottom + 1));
         expect(keys.center.dx, lessThan(send.center.dx));
         await tester.enterText(field, 'Draft stays here');
         await tester.pump();
@@ -54,7 +55,7 @@ void main() {
           'Draft stays here',
         );
         expect(c.inputs, isEmpty);
-        final model = find.text('Sonnet 5.5  High');
+        final model = find.byIcon(Icons.tune);
         Focus.of(tester.element(model)).requestFocus();
         await tester.pump();
         for (final key in [
