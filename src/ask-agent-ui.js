@@ -59,7 +59,7 @@ export function askAgentUI({ call, getState, targets, pasteContext, selection, s
       side: r.diff && r.file.before != null && r.file.after != null && r.file.mode !== 'file' ? 'after' : undefined };
     let sending = false, pending = null;
     const node = surface(r, 'dialog', 'Ask agent', () => sending);
-    node.innerHTML = `<strong>Ask agent…</strong><p>${e(snapshot.file)}:${snapshot.from}-${snapshot.to}<br>${e(snapshot.folder)}${snapshot.branch ? ` @ ${e(snapshot.branch)}` : ''}${snapshot.side ? ' · diff after side' : ''}</p><pre tabindex="0" aria-label="Selected code">${e(snapshot.text)}</pre><label>Instruction<textarea rows="3"></textarea></label><div class="ask-actions">${['Explain this', 'Look for a bug', 'Propose a fix'].map(x => `<button type="button" data-note="${x}">${x}</button>`).join('')}</div><label>Destination<select aria-label="Destination console"></select></label><p data-mismatch role="status"></p><p class="form-error" role="alert"></p><div data-stale hidden><p>The file changed since you selected this.</p><button type="button" data-keep>Keep captured version</button><button type="button" data-reselect>Reselect</button></div><div class="ask-actions"><button type="button" data-draft>Add to draft</button><button type="button" data-queue>Queue</button><button type="button" data-cancel>Cancel</button></div>`;
+    node.innerHTML = `<strong>Ask agent…</strong><p>${e(snapshot.file)}:${snapshot.from}-${snapshot.to}<br>${e(snapshot.folder)}${snapshot.branch ? ` @ ${e(snapshot.branch)}` : ''}${snapshot.side ? ' · diff after side' : ''}</p><pre tabindex="0" aria-label="Selected code">${e(snapshot.text)}</pre><label>Instruction<textarea rows="3"></textarea></label><div class="ask-actions">${['Explain this', 'Look for a bug', 'Propose a fix'].map(x => `<button type="button" data-note="${x}">${x}</button>`).join('')}</div><label>Destination<select aria-label="Destination console"></select></label><p data-mismatch role="status"></p><p class="form-error" role="alert"></p><div data-stale hidden><p>The file changed since you selected this.</p><button type="button" data-keep>Keep captured version</button><button type="button" data-reselect>Reselect</button></div><div class="ask-actions"><button type="button" data-draft>Add to draft</button><button type="button" data-cancel>Cancel</button></div>`;
     const heading = node.querySelector('strong');
     heading.id = `ask-agent-heading-${r.id}`;
     heading.textContent = 'Ask agent';
@@ -80,7 +80,6 @@ export function askAgentUI({ call, getState, targets, pasteContext, selection, s
       const chosen = list.find(x => x.id === target.value);
       node.querySelector('[data-mismatch]').textContent = chosen && cwdKey(chosen.cwd) !== key ? `Different project folder: ${chosen.cwd}` : '';
       node.querySelector('[data-draft]').disabled = sending || !chosen;
-      node.querySelector('[data-queue]').disabled = sending || !busy(chosen);
     }
     r.updateAsk = update;
     target.addEventListener('change', () => { choices.set(key, target.value); update(); });
@@ -101,11 +100,9 @@ export function askAgentUI({ call, getState, targets, pasteContext, selection, s
         }
         const chosen = targets().find(x => x.id === target.value);
         if (!chosen) throw new Error('Choose an open agent console.');
-        if (kind === 'queue' && !busy(chosen)) throw new Error('Queue is available while the console is working.');
         const text = formatAskContext({ ...snapshot, note: note.value, stale: keep });
         choices.set(key, chosen.id);
-        if (kind === 'queue') await call('queue.add', { id: chosen.id, text });
-        else await pasteContext(chosen.id, text);
+        await pasteContext(chosen.id, text);
         r.node.querySelector('[data-code-error]').textContent = '';
         if (r.ask === node) close(r);
       } catch (failure) { error.textContent = failure.message; }
@@ -116,7 +113,6 @@ export function askAgentUI({ call, getState, targets, pasteContext, selection, s
       if (button.dataset.note) { note.value = button.dataset.note; note.focus({ preventScroll: true }); }
       else if (button.hasAttribute('data-cancel')) close(r);
       else if (button.hasAttribute('data-draft')) void send('draft');
-      else if (button.hasAttribute('data-queue')) void send('queue');
       else if (button.hasAttribute('data-keep') && pending) void send(pending, true);
       else if (button.hasAttribute('data-reselect')) {
         try {

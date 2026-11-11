@@ -60,10 +60,10 @@ const STATE_MESSAGES = new Set(['hello', 'subscribe', 'ack', 'resync', 'pong']);
 // Phone fields that are not slices yet. v2 phones get them in `extras` frames.
 const EXTRA_FIELDS = ['connection', 'previews', 'projects', 'imageJobs', 'imageJobsRunning', 'capabilities', 'alerts', 'unreadResults', 'resultVersion'];
 class MobileCompanion extends EventEmitter {
-  constructor(root, safeStorage, { sessions, results, alerts, queue, prompts, getUsage, getUsageTurns, refreshUsage, getDefaults, getModels, getSettings, toolsStatus = false, getKey, codePanel, networkScript, program, network, worktrees, endMobileSession, concepts, redactImageText, testMode = false, isTailnet = isTailscale, stateSync = null, getTasks = null, knowledge = null } = {}) {
+  constructor(root, safeStorage, { sessions, results, alerts, prompts, getUsage, getUsageTurns, refreshUsage, getDefaults, getModels, getSettings, toolsStatus = false, getKey, codePanel, networkScript, program, network, worktrees, endMobileSession, concepts, redactImageText, testMode = false, isTailnet = isTailscale, stateSync = null, getTasks = null, knowledge = null } = {}) {
     super(); this.file = path.join(root, 'mobile.json'); this.crypto = safeStorage;
     this.getTasks = getTasks; this.knowledge = knowledge;
-    this.queue = queue; this.prompts = prompts; this.worktrees = worktrees; this.endMobileSession = endMobileSession; this.concepts = concepts; this.redactImageText = redactImageText;
+    this.prompts = prompts; this.worktrees = worktrees; this.endMobileSession = endMobileSession; this.concepts = concepts; this.redactImageText = redactImageText;
     this.sessions = sessions; this.results = results; this.getUsage = getUsage; this.getDefaults = getDefaults; this.testMode = testMode;
     this.preview = new MobilePreview(sessions);
     // Opt-in protocol 2: {history, enabled(), options?} (electron/state-sync.cjs).
@@ -123,7 +123,7 @@ class MobileCompanion extends EventEmitter {
       this.liveAlerts = [...this.liveAlerts.slice(-49), { id: item.id, title: item.title, message: String(item.message || '').slice(0, 200), kind: item.kind, at: item.at, sessionId: item.sessionId || null }];
       this.scheduleState();
     };
-    sessions.on('output', this.output); sessions.on('resize', this.resized); sessions.on('changed', this.changed); results.on('changed', this.changed); alerts?.on('notification', this.notification); queue?.on('changed', this.changed); prompts?.on?.('changed', this.changed);
+    sessions.on('output', this.output); sessions.on('resize', this.resized); sessions.on('changed', this.changed); results.on('changed', this.changed); alerts?.on('notification', this.notification); prompts?.on?.('changed', this.changed);
     sessions.projects?.on?.('changed', this.changed); concepts?.on?.('changed', this.changed);
   }
   available() { return this.crypto.isEncryptionAvailable() && this.crypto.getSelectedStorageBackend?.() !== 'basic_text'; }
@@ -293,13 +293,13 @@ class MobileCompanion extends EventEmitter {
   publicState() {
     const extras = this.extrasState();
     const { connection, previews, projects, imageJobs, imageJobsRunning, capabilities, alerts, unreadResults, resultVersion } = extras;
-    return { connection, previews, projects, imageJobs, imageJobsRunning, capabilities, agentProfiles: screenProfiles, capacity: (this.sessions.grid?.columns || 3) * (this.sessions.grid?.rows || 3), sessions: this.sessions.list().filter(x => !x.dismissed).map(item => mobileSession(item, this.sessions)), queues: this.queue?.snapshot() || {}, prompts: this.prompts?.list() || [], alerts, unreadResults, resultVersion };
+    return { connection, previews, projects, imageJobs, imageJobsRunning, capabilities, agentProfiles: screenProfiles, capacity: (this.sessions.grid?.columns || 3) * (this.sessions.grid?.rows || 3), sessions: this.sessions.list().filter(x => !x.dismissed).map(item => mobileSession(item, this.sessions)), queues: {}, prompts: this.prompts?.list() || [], alerts, unreadResults, resultVersion };
   }
   extrasState() {
     const localUrl = `https://${this.config.host}:${this.config.port}`;
     const connection = { url: localUrl };
     connection.name = this.name;
-    return { connection, previews: (this.sessions.codePanels?.() || []).filter(p => p.kind === 'web').map(({ id, name, url, state, phoneAllowed }) => ({ id, name, url, state, phoneAllowed: phoneAllowed === true })), projects: (typeof this.sessions.projects?.list === 'function' ? this.sessions.projects.list() || [] : []).filter(x => x.status !== 'archived').map(({ id, name, color }) => ({ id, name, ...(color ? { color } : {}), ...(this.knowledge ? { knowledgeMode: this.knowledge.enabled(id) ? this.knowledge.automatic(id) ? 'automatic' : 'read' : 'off', knowledgeVersion: this.knowledge.upkeep?.epoch || 0 } : {}) })), imageJobs: this.concepts ? imageJobs(this.concepts, this.redactImageText) : [], imageJobsRunning: !!this.concepts?.items.some(x => ['submitting', 'waiting', 'downloading'].includes(x.state)), capabilities: [...(this.concepts ? ['image.jobs'] : []), ...(this.toolsStatus ? ['tools.status'] : []), ...(typeof this.getUsageTurns === 'function' ? ['usage.turns'] : []), ...(mobileProjects.available(this.sessions.projects) ? ['projects.read', ...(this.knowledge ? ['projects.workspace'] : [])] : []), 'code.read', 'results.thumbnails', 'results.actions', 'console.agents', ...(this.worktrees && this.endMobileSession ? ['console.worktree'] : []), 'console.files', 'console.close', 'console.projects', 'console.models', ...(typeof this.sessions.switchSettings === 'function' ? ['console.settings'] : []), 'console.ssh', 'console.manage', 'console.switch', 'console.setup', 'alerts.direct', 'console.attachments', ...(this.queue ? ['console.queue'] : []), ...(this.prompts ? ['prompts', 'prompts.edit'] : []), ...(this.sessions.workerBridge ? ['worker.submit', 'worker.stop'] : []), ...(this.stateV2() ? ['state.v2'] : []), ...(typeof this.getTasks === 'function' ? ['tasks.actions'] : [])], alerts: this.liveAlerts, unreadResults: this.results.unreadGroups(), resultVersion: digest(this.results.list().map(x => x.id + ':' + x.seenAt + ':' + x.changeCount).join(',')).slice(0, 16) };
+    return { connection, previews: (this.sessions.codePanels?.() || []).filter(p => p.kind === 'web').map(({ id, name, url, state, phoneAllowed }) => ({ id, name, url, state, phoneAllowed: phoneAllowed === true })), projects: (typeof this.sessions.projects?.list === 'function' ? this.sessions.projects.list() || [] : []).filter(x => x.status !== 'archived').map(({ id, name, color }) => ({ id, name, ...(color ? { color } : {}), ...(this.knowledge ? { knowledgeMode: this.knowledge.enabled(id) ? this.knowledge.automatic(id) ? 'automatic' : 'read' : 'off', knowledgeVersion: this.knowledge.upkeep?.epoch || 0 } : {}) })), imageJobs: this.concepts ? imageJobs(this.concepts, this.redactImageText) : [], imageJobsRunning: !!this.concepts?.items.some(x => ['submitting', 'waiting', 'downloading'].includes(x.state)), capabilities: [...(this.concepts ? ['image.jobs'] : []), ...(this.toolsStatus ? ['tools.status'] : []), ...(typeof this.getUsageTurns === 'function' ? ['usage.turns'] : []), ...(mobileProjects.available(this.sessions.projects) ? ['projects.read', ...(this.knowledge ? ['projects.workspace'] : [])] : []), 'code.read', 'results.thumbnails', 'results.actions', 'console.agents', ...(this.worktrees && this.endMobileSession ? ['console.worktree'] : []), 'console.files', 'console.close', 'console.projects', 'console.models', ...(typeof this.sessions.switchSettings === 'function' ? ['console.settings'] : []), 'console.ssh', 'console.manage', 'console.switch', 'console.setup', 'alerts.direct', 'console.attachments', ...(this.prompts ? ['prompts', 'prompts.edit'] : []), ...(this.sessions.workerBridge ? ['worker.submit', 'worker.stop'] : []), ...(this.stateV2() ? ['state.v2'] : []), ...(typeof this.getTasks === 'function' ? ['tasks.actions'] : [])], alerts: this.liveAlerts, unreadResults: this.results.unreadGroups(), resultVersion: digest(this.results.list().map(x => x.id + ':' + x.seenAt + ':' + x.changeCount).join(',')).slice(0, 16) };
   }
   scheduleState() {
     if (!this.server || this.stateTimer) return;
@@ -375,7 +375,7 @@ class MobileCompanion extends EventEmitter {
       sessions: this.sessions, knowledge: this.knowledge, results: this.results, attachments: this.attachments, code: this.code, concepts: this.concepts,
       authorized: client => client.ws.readyState === WebSocket.OPEN && this.clients.has(client) && this.private.devices.includes(client.device),
       defaults: () => this.getDefaults(), worktrees: () => this.worktrees, endMobileSession: () => this.endMobileSession,
-      queue: () => this.queue, prompts: () => this.prompts, publicState: () => this.publicState(), persist: () => this.persist(),
+      prompts: () => this.prompts, publicState: () => this.publicState(), persist: () => this.persist(),
       renameDevice: (client, name) => this.rename({ id: client.device.id, name }),
       settings: () => this.getSettings, toolsStatus: () => this.toolsStatus,
       hasModels: () => typeof this.getModels === 'function', models: (...args) => this.getModels(...args),

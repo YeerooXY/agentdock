@@ -117,33 +117,46 @@ void main() {
     );
   });
 
-  test('wrapped prose collapses trailing skipped cells but keeps other gaps', () {
-    final terminal = Terminal()..resize(66, 8);
-    terminal.write(
-      'the only\r\nblocker and\r\nkeep\x1b[3Cblocking  now\r\n'
-      '${'x' * 64}  continued',
-    );
-    terminal.buffer.lines[1].isWrapped = true;
-    terminal.buffer.lines[2].isWrapped = true;
-    expect(terminal.buffer.lines[0].getCodePoint(65), 0);
-    final expected =
-        'the only blocker and keep   blocking  now\n${'x' * 64}  continued';
-    expect(terminalReadingText(terminal), expected);
-    expect(terminalReadingSpan(terminal, terminalTheme).toPlainText(), expected);
-  });
+  test(
+    'wrapped prose collapses trailing skipped cells but keeps other gaps',
+    () {
+      final terminal = Terminal()..resize(66, 8);
+      terminal.write(
+        'the only\r\nblocker and\r\nkeep\x1b[3Cblocking  now\r\n'
+        '${'x' * 64}  continued',
+      );
+      terminal.buffer.lines[1].isWrapped = true;
+      terminal.buffer.lines[2].isWrapped = true;
+      expect(terminal.buffer.lines[0].getCodePoint(65), 0);
+      final expected =
+          'the only blocker and keep   blocking  now\n${'x' * 64}  continued';
+      expect(terminalReadingText(terminal), expected);
+      expect(
+        terminalReadingSpan(terminal, terminalTheme).toPlainText(),
+        expected,
+      );
+    },
+  );
 
-  test('wrapped status after collapsed rules starts a line with its indent', () {
-    final terminal = Terminal()..resize(66, 8);
-    terminal.write(
-      '${'-' * 66}\r\n${'_' * 66}\r\n'
-      '\x1b[3CPaddock | Fable 5.2 | context 12%',
-    );
-    terminal.buffer.lines[2].isWrapped = true;
-    expect(terminal.buffer.lines[2].getCodePoint(0), 0);
-    final expected = '${'-' * ruleWidth}\n   Paddock | Fable 5.2 | context 12%';
-    expect(terminalReadingText(terminal), expected);
-    expect(terminalReadingSpan(terminal, terminalTheme).toPlainText(), expected);
-  });
+  test(
+    'wrapped status after collapsed rules starts a line with its indent',
+    () {
+      final terminal = Terminal()..resize(66, 8);
+      terminal.write(
+        '${'-' * 66}\r\n${'_' * 66}\r\n'
+        '\x1b[3CPaddock | Fable 5.2 | context 12%',
+      );
+      terminal.buffer.lines[2].isWrapped = true;
+      expect(terminal.buffer.lines[2].getCodePoint(0), 0);
+      final expected =
+          '${'-' * ruleWidth}\n   Paddock | Fable 5.2 | context 12%';
+      expect(terminalReadingText(terminal), expected);
+      expect(
+        terminalReadingSpan(terminal, terminalTheme).toPlainText(),
+        expected,
+      );
+    },
+  );
 
   test('model labels name GPT and Claude models', () {
     expect(modelLabel('gpt-6.1-terra'), '6.1 Terra');
@@ -272,7 +285,9 @@ void main() {
     expect(created['agent'], 'claude');
   });
 
-  testWidgets('model and effort controls follow the console switch method', (tester) async {
+  testWidgets('model and effort controls follow the console switch method', (
+    tester,
+  ) async {
     final c = FakeDock();
     addTearDown(c.dispose);
     final session = (c.state['sessions'] as List).first as Map;
@@ -280,15 +295,18 @@ void main() {
     await tester.pumpWidget(DockApp(client: c));
     await enterChat(tester);
     await tester.pumpAndSettle();
-    expect(find.byTooltip('Model and effort'), findsNothing, reason: 'the PC cannot apply a change for this console');
+    expect(
+      find.byTooltip('Model and effort'),
+      findsNothing,
+      reason: 'the PC cannot apply a change for this console',
+    );
     session['switchMethod'] = 'resume';
     c.notifyListeners();
     await tester.pumpAndSettle();
     expect(find.byTooltip('Model and effort'), findsOneWidget);
     await tester.tap(find.byTooltip('Model and effort'));
     await tester.pumpAndSettle();
-    expect(find.text('Model: unknown'), findsOneWidget);
-    expect(find.text('Effort: unknown'), findsOneWidget);
+    expect(find.text('Model & effort'), findsOneWidget);
   });
 
   testWidgets('live controls refuse keys after reconnect', (tester) async {
@@ -299,7 +317,6 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('Model and effort'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Model: unknown'));
     await tester.pumpAndSettle();
     c.generation++;
     c.notifyListeners();
@@ -327,7 +344,6 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('Model and effort'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Model: unknown'));
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
     await tester.pumpAndSettle();

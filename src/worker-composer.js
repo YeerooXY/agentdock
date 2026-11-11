@@ -7,7 +7,7 @@ export function workerComposer({ call, escape: e, toast }) {
     if (!form) {
       form = document.createElement('form'); form.dataset.workerComposer = session.id;
       form.className = 'worker-composer';
-      form.innerHTML = `<label>Worker message<textarea rows="2" maxlength="16000" aria-label="Worker message for ${e(session.name)}"></textarea></label><button type="submit" class="secondary">Queue</button><span role="status" aria-live="polite"></span>`;
+      form.innerHTML = `<label>Worker message<textarea rows="2" maxlength="16000" aria-label="Worker message for ${e(session.name)}"></textarea></label><button type="submit" class="secondary">Send</button><span role="status" aria-live="polite"></span>`;
       const input = form.querySelector('textarea'); input.value = drafts.get(session.consoleKey) || '';
       input.addEventListener('input', () => drafts.set(session.consoleKey, input.value));
       form.addEventListener('submit', async event => {

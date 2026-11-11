@@ -833,21 +833,6 @@ class DockClient extends ChangeNotifier implements ConsoleScope {
 
   bool get canEditPrompts => supports('prompts.edit');
 
-  Future<void> refreshQueue() async {
-    final pin = activePC, transportGeneration = generation;
-    final snapshot = await request('state');
-    if (!connected || activePC != pin || generation != transportGeneration) {
-      return;
-    }
-    if (snapshot is! Map) return;
-    state = {
-      ...state,
-      'queues': snapshot['queues'],
-      'prompts': snapshot['prompts'],
-    };
-    notifyListeners();
-  }
-
   Future<void> subscribe() async {
     if (!connected) return;
     final view = screens.putIfAbsent(selected, () => makeScreen(selected));

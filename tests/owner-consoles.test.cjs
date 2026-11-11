@@ -28,7 +28,6 @@ test('a failed critical save is retried immediately on the next identical intera
 const { workerRegistry, routeWorker } = require('../electron/worker-registry.cjs');
 const { TaskLoop } = require('../electron/task-loop.cjs');
 const { Sessions } = require('../electron/sessions.cjs');
-const { MessageQueue } = require('../electron/message-queue.cjs');
 
 function fixture(t, ownerOptions = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'paddock-owner-'));
@@ -375,38 +374,9 @@ test('typed and pasted input count; terminal protocol reports and queued deliver
   sessions.write('a', '\x1b[200~pasted text\x1b[201~');
   assert.equal(f.owners.records.get('key').lastInteractionAt, f.now());
   sessions.write('a', '\r'); assert.equal(f.owners.records.get('key').ownerTurn, true);
-  const queue = new MessageQueue(sessions, { submitDelay: 0, wait: () => Promise.resolve() });
-  const entry = queue.add('a', 'queued owner text', { ownerRequested: true }); const touched = f.owners.records.get('key').lastInteractionAt;
-  f.advance(100); await queue.send('a', entry.id);
-  assert.equal(f.owners.records.get('key').lastInteractionAt, touched);
-  assert.equal(f.owners.records.get('key').pendingSubmission, false);
   assert.ok(writes.length > 0);
 });
 
-test('legacy worker queues cannot bypass steering or refresh owner recency', async t => {
-  const f = fixture(t);
-  const sessions = new Sessions(f.root, { pty: { spawn() { assert.fail('No process launch'); } } });
-  sessions.items.set('a', { id: 'a', consoleKey: 'key', launchId: 'launch', taskId: 'task', accountId: 'codex:a', purpose: 'agent', provider: 'codex', state: 'active', alive: true, terminal: { write() {} } });
-  f.owners.bind(sessions);
-  f.owners.heartbeat([{ consoleKey: 'key', launchId: 'launch' }]);
-  const queue = new MessageQueue(sessions, { submitDelay: 0, wait: () => Promise.resolve() });
-  assert.throws(() => queue.add('a', 'automatic message'), /worker composer/);
-  let record = f.owners.records.get('key');
-  assert.equal(record.ownerManaged, false); assert.equal(record.lastInteractionAt, null);
-  assert.equal(record.pendingSubmission, false); assert.equal(f.owners.reservations().size, 0);
-  await assert.rejects(queue.send('a', 'old-entry'), /worker composer/);
-  assert.equal(record.ownerTurn, false); assert.equal(record.lastInteractionAt, null);
-  assert.throws(() => queue.add('a', 'owner submission', { ownerRequested: true }), /worker composer/);
-  sessions.ownerInteraction('a', 'click');
-  record = f.owners.records.get('key');
-  assert.equal(record.ownerManaged, true); assert.equal(record.lastInteractionAt, f.now()); assert.equal(record.pendingSubmission, false);
-  const touched = record.lastInteractionAt; f.advance(RECENT_MS + 1);
-  f.owners.heartbeat([{ consoleKey: 'key', launchId: 'launch' }]);
-  assert.throws(() => queue.add('a', 'background follow-up'), /worker composer/);
-  assert.equal(record.lastInteractionAt, touched); assert.equal(record.ownerManaged, true);
-  assert.equal(record.pendingSubmission, false); assert.equal(record.ownerTurn, false);
-  assert.equal(f.owners.reservations().size, 0);
-});
 
 test('TaskLoop admission waits for owner capacity, persists reason and holds unconfirmed process slots', async t => {
   const f = fixture(t); f.register('owner', { ownerCreated: true }); f.touch('owner', 'typing', { draft: true });

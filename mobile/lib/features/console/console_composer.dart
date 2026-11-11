@@ -10,7 +10,7 @@ import '../../state_models.dart';
 import 'attachment_controller.dart';
 import 'composer_controller.dart';
 
-/// The composer area below a console in chat mode: model and queue tools,
+/// The reply box below a console: message controls,
 /// screenshot offer, notices and the message field.
 class ConsoleChatPanel extends StatelessWidget {
   const ConsoleChatPanel({
@@ -20,7 +20,6 @@ class ConsoleChatPanel extends StatelessWidget {
     required this.composer,
     required this.attachments,
     required this.onLiveControls,
-    required this.onQueue,
     required this.onTerminalKeys,
     required this.onAttach,
     required this.onAttachRecent,
@@ -32,7 +31,6 @@ class ConsoleChatPanel extends StatelessWidget {
   final ComposerController composer;
   final AttachmentController attachments;
   final ValueChanged<String> onLiveControls;
-  final VoidCallback onQueue;
   final VoidCallback onTerminalKeys;
 
   /// `files` or `image`.
@@ -51,38 +49,6 @@ class ConsoleChatPanel extends StatelessWidget {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10),
-          child: Row(
-            children: [
-              Expanded(
-                child: _ModelEffortMenu(
-                  client: c,
-                  session: session,
-                  enabled: c.connected && !sending,
-                  onSelected: onLiveControls,
-                ),
-              ),
-              if (c.supports('console.queue') &&
-                  (typed.purpose ?? 'agent') == 'agent' &&
-                  !['shell', 'custom'].contains(typed.provider))
-                _QueueButton(
-                  count: _queuedCount(typed.id),
-                  onPressed: c.connected && !sending ? onQueue : null,
-                ),
-              IconButton(
-                tooltip: 'Terminal keys',
-                onPressed: c.connected && !sending ? onTerminalKeys : null,
-                icon: Icon(Icons.keyboard_alt_outlined, color: blue),
-              ),
-              IconButton(
-                tooltip: 'Collapse chat',
-                onPressed: composer.leaveChatMode,
-                icon: Icon(Icons.keyboard_arrow_down, color: pink),
-              ),
-            ],
-          ),
-        ),
         if (attachments.recentShot case final shot?)
           _RecentShotChip(
             shot: shot,
@@ -155,6 +121,12 @@ class ConsoleChatPanel extends StatelessWidget {
         _ComposerField(
           session: typed,
           composer: composer,
+          client: c,
+          sessionMap: session,
+          onLiveControls: onLiveControls,
+          onTerminalKeys: c.connected && !sending && typed.taskId == null
+              ? onTerminalKeys
+              : null,
           attachEnabled:
               c.connected &&
               !sending &&
@@ -172,11 +144,6 @@ class ConsoleChatPanel extends StatelessWidget {
       ],
     );
   }
-
-  int _queuedCount(String id) =>
-      ((((client.state['queues'] as Map?)?[id] as Map?)?['entries']) as List? ??
-              [])
-          .length;
 }
 
 /// Model and effort share one icon so the console keeps its height. They
@@ -189,76 +156,35 @@ class _ModelEffortMenu extends StatelessWidget {
     required this.enabled,
     required this.onSelected,
   });
-
   final DockClient client;
   final Map<String, dynamic> session;
   final bool enabled;
   final ValueChanged<String> onSelected;
-
   @override
-  Widget build(BuildContext context) {
-    final id = session['id'] as String;
-    final provider = (session['provider'] as String).toLowerCase();
-    return ListenableBuilder(
-      listenable: client.terminalSignal(id),
-      builder: (context, _) {
-        final selection = client.agentSelection(id);
-        final method =
-            session['switchMethod'] as String? ??
-            (['claude', 'codex'].contains(provider) ? 'resume' : 'none');
-        if (method != 'resume') return const SizedBox.shrink();
-        final model = selection.model == null
-            ? 'Model: unknown'
-            : 'Model: ${modelLabel(selection.model!)}${selection.pending ? ' (selected)' : ''}';
-        final effort = selection.effort == null
-            ? selection.pending
-                  ? 'Effort: default (selected)'
-                  : 'Effort: unknown'
-            : 'Effort: ${effortLabel(selection.effort!)}${selection.pending ? ' (selected)' : ''}';
-        return Row(
-          children: [
-            Expanded(
-              child: Text(
-                [
-                  if (selection.model != null) modelLabel(selection.model!),
-                  if (selection.effort != null) effortLabel(selection.effort!),
-                  if (selection.pending) '(selected)',
-                ].join('  '),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            PopupMenuButton<String>(
-              tooltip: 'Model and effort',
-              enabled: enabled,
-              icon: Icon(Icons.tune, color: blue),
-              onSelected: onSelected,
-              itemBuilder: (_) => [
-                PopupMenuItem(value: 'Model', child: Text(model)),
-                PopupMenuItem(value: 'Effort', child: Text(effort)),
-              ],
-            ),
-          ],
-        );
-      },
-    );
-  }
-}
-
-class _QueueButton extends StatelessWidget {
-  const _QueueButton({required this.count, required this.onPressed});
-  final int count;
-  final VoidCallback? onPressed;
-
-  @override
-  Widget build(BuildContext context) => IconButton(
-    tooltip: 'Queue',
-    onPressed: onPressed,
-    icon: Badge(
-      isLabelVisible: count > 0,
-      label: Text('$count'),
-      child: Icon(Icons.playlist_play, color: blue),
-    ),
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: client.terminalSignal(session['id'] as String),
+    builder: (context, _) {
+      final provider = (session['provider'] as String).toLowerCase();
+      final method =
+          session['switchMethod'] as String? ??
+          (['claude', 'codex'].contains(provider) ? 'resume' : 'none');
+      if (method != 'resume' || session['taskId'] != null) {
+        return const SizedBox.shrink();
+      }
+      final selection = client.agentSelection(session['id'] as String);
+      final label = [
+        selection.model == null ? 'Model' : modelLabel(selection.model!),
+        if (selection.effort != null) effortLabel(selection.effort!),
+        if (selection.pending) '(selected)',
+      ].join('  ');
+      return Tooltip(
+        message: 'Model and effort',
+        child: TextButton(
+          onPressed: enabled ? () => onSelected('Model') : null,
+          child: Text(label, maxLines: 2, overflow: TextOverflow.ellipsis),
+        ),
+      );
+    },
   );
 }
 
@@ -304,148 +230,106 @@ class _RecentShotChip extends StatelessWidget {
 class _ComposerField extends StatelessWidget {
   const _ComposerField({
     required this.session,
+    required this.sessionMap,
+    required this.client,
     required this.composer,
     required this.attachEnabled,
     required this.onAttach,
     required this.onSend,
+    required this.onTerminalKeys,
+    required this.onLiveControls,
   });
-
   final Session session;
+  final Map<String, dynamic> sessionMap;
+  final DockClient client;
   final ComposerController composer;
   final bool attachEnabled;
-  final ValueChanged<String> onAttach;
-  final VoidCallback? onSend;
+  final ValueChanged<String> onAttach, onLiveControls;
+  final VoidCallback? onSend, onTerminalKeys;
 
   @override
   Widget build(BuildContext context) => Padding(
     padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
-    child: Row(
-      crossAxisAlignment: CrossAxisAlignment.end,
-      children: [
-        Expanded(
-          child: ConstrainedBox(
-            constraints: BoxConstraints(
-              maxHeight: min(
-                MediaQuery.textScalerOf(context).scale(16) * 1.4 * 8.5 + 24,
-                max(72, MediaQuery.sizeOf(context).height * .35),
+    child: ListenableBuilder(
+      listenable: composer.focus,
+      builder: (context, _) => InputDecorator(
+        key: const ValueKey('reply-box'),
+        isFocused: composer.focus.hasFocus,
+        decoration: const InputDecoration(contentPadding: EdgeInsets.all(6)),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: min(
+                  MediaQuery.textScalerOf(context).scale(16) * 1.4 * 8.5 + 24,
+                  max(96, MediaQuery.sizeOf(context).height * .35),
+                ),
+              ),
+              child: TextField(
+                controller: composer.editor,
+                scrollController: composer.scroll,
+                focusNode: composer.focus,
+                onChanged: (_) => composer.edited(),
+                minLines: 3,
+                maxLines: null,
+                style: const TextStyle(fontSize: 16, height: 1.4),
+                textInputAction: TextInputAction.newline,
+                autocorrect: false,
+                enableSuggestions: false,
+                decoration: InputDecoration(
+                  hintText: session.taskId != null
+                      ? 'Worker message'
+                      : 'Message',
+                  contentPadding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
+                  filled: false,
+                  border: InputBorder.none,
+                  enabledBorder: InputBorder.none,
+                  focusedBorder: InputBorder.none,
+                ),
               ),
             ),
-            child: TextField(
-              controller: composer.editor,
-              scrollController: composer.scroll,
-              focusNode: composer.focus,
-              onChanged: (_) => composer.edited(),
-              minLines: 1,
-              maxLines: null,
-              style: const TextStyle(fontSize: 16, height: 1.4),
-              textInputAction: TextInputAction.newline,
-              autocorrect: false,
-              enableSuggestions: false,
-              decoration: InputDecoration(
-                hintText: session.taskId != null ? 'Worker message' : 'Message',
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 14,
-                  vertical: 12,
-                ),
-                isDense: true,
-                suffixIcon: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    PopupMenuButton<String>(
-                      tooltip: 'Attach',
-                      icon: Icon(Icons.add, color: blue),
-                      enabled: attachEnabled,
-                      onSelected: onAttach,
-                      itemBuilder: (_) => [
-                        const PopupMenuItem(
-                          value: 'files',
-                          child: Text('Files'),
-                        ),
-                        if (session.remote == null)
-                          const PopupMenuItem(
-                            value: 'image',
-                            child: Text('Image'),
-                          ),
-                      ],
-                    ),
-                    // Inside the field, so the composer uses the full width.
-                    Padding(
-                      padding: const EdgeInsets.only(right: 6),
-                      child: DockSendButton(
-                        compact: true,
-                        onPressed: onSend,
-                        sending: composer.sending,
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                PopupMenuButton<String>(
+                  tooltip: 'Attach',
+                  icon: Icon(Icons.add, color: blue),
+                  enabled: attachEnabled,
+                  onSelected: onAttach,
+                  itemBuilder: (_) => [
+                    const PopupMenuItem(value: 'files', child: Text('Files')),
+                    if (session.remote == null)
+                      const PopupMenuItem(value: 'image', child: Text('Image')),
+                    if (client.supports('prompts'))
+                      const PopupMenuItem(
+                        value: 'prompts',
+                        child: Text('Saved prompts'),
                       ),
-                    ),
                   ],
                 ),
-              ),
+                Expanded(
+                  child: _ModelEffortMenu(
+                    client: client,
+                    session: sessionMap,
+                    enabled: client.connected && !composer.sending,
+                    onSelected: onLiveControls,
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'Terminal keys',
+                  onPressed: onTerminalKeys,
+                  icon: Icon(Icons.keyboard_alt_outlined, color: blue),
+                ),
+                DockSendButton(
+                  compact: true,
+                  onPressed: onSend,
+                  sending: composer.sending,
+                ),
+              ],
             ),
-          ),
+          ],
         ),
-      ],
-    ),
-  );
-}
-
-/// Opens chat mode. The handle glows while a draft is saved.
-class EnterChatHandle extends StatelessWidget {
-  const EnterChatHandle({
-    super.key,
-    required this.hasDraft,
-    required this.onTap,
-  });
-
-  final bool hasDraft;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) => Semantics(
-    button: true,
-    label: hasDraft ? 'Enter chat mode, draft saved' : 'Enter chat mode',
-    child: InkWell(
-      key: const ValueKey('enter-chat'),
-      onTap: onTap,
-      child: SizedBox(
-        height: 40,
-        width: double.infinity,
-        child: Center(
-          child: Container(
-            width: 96,
-            height: 4,
-            decoration: BoxDecoration(
-              gradient: LinearGradient(colors: [blue, pink]),
-              borderRadius: BorderRadius.circular(4),
-              boxShadow: hasDraft
-                  ? [
-                      BoxShadow(
-                        color: pink.withValues(alpha: .35),
-                        blurRadius: 8,
-                      ),
-                    ]
-                  : null,
-            ),
-          ),
-        ),
-      ),
-    ),
-  );
-}
-
-/// Terminal keys shortcut shown below the console outside chat mode.
-class TerminalKeysButton extends StatelessWidget {
-  const TerminalKeysButton({super.key, required this.onPressed});
-  final VoidCallback? onPressed;
-
-  @override
-  Widget build(BuildContext context) => Align(
-    alignment: Alignment.centerRight,
-    child: Tooltip(
-      message: 'Terminal keys',
-      child: TextButton.icon(
-        onPressed: onPressed,
-        icon: const Icon(Icons.keyboard_alt_outlined, size: 20),
-        label: const Text('Terminal keys'),
       ),
     ),
   );

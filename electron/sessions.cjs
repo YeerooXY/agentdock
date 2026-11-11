@@ -228,7 +228,7 @@ class Sessions extends EventEmitter {
   switchSettings(payload) { return this.getAccountSwitching().switchSettings(payload); }
   switchAccount(payload, settingsSelection) { return this.getAccountSwitching().switchAccount(payload, settingsSelection); }
 
-  write(id, data, { draft = false, queued = false } = {}) {
+  write(id, data, { draft = false } = {}) {
     const item = this.items.get(id);
     ordinaryConsole(item);
     if (isPanel(item)) throw new Error(`This is a read-only ${item.kind === 'web' ? 'preview' : item.kind} panel.`);
@@ -236,11 +236,11 @@ class Sessions extends EventEmitter {
     if (item.switching) throw new Error('This console is switching accounts. Your composer draft stays on the phone until switching finishes.');
     if (typeof data !== 'string' || data.length > 65536) throw new Error('Terminal input is too large.');
     if (!sessionPolicy(item.provider).focusReports && (data === '\x1b[I' || data === '\x1b[O')) return;
-    if (!draft && !queued && data && (!data.startsWith('\x1b') || data.startsWith('\x1b[200~'))) {
+    if (!draft && data && (!data.startsWith('\x1b') || data.startsWith('\x1b[200~'))) {
       this.ownerInteraction(id, 'typing', { ownerTurn: /[\r\n]/.test(data) || undefined });
     }
     item.terminal.write(data);
-    if (!draft && !queued && !data.startsWith('\x1b')) item.lastInputAt = Date.now();
+    if (!draft && !data.startsWith('\x1b')) item.lastInputAt = Date.now();
     if (!draft && /[\r\n]/.test(data)) this.projects?.touch(item.projectId);
     if (!draft && /[\r\n]/.test(data) && cliAgents.has(item.provider) && !item.remote) { item.state = 'active'; item.updatedAt = Date.now(); this.emit('changed'); }
   }

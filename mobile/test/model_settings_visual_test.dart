@@ -112,7 +112,6 @@ void main() {
       );
       await tester.tap(find.byTooltip('Model and effort'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Model: test-model-a'));
       await tester.pumpAndSettle();
       expect(find.byType(LiveAgentControls), findsOneWidget);
       await effort(tester);

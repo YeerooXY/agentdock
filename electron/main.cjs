@@ -50,7 +50,6 @@ const { CodePanel } = require('./code-panel.cjs');
 const { Screenshots, clipboardReader } = require('./screenshots.cjs');
 const { endMobileSession } = require('./session-end.cjs');
 const { Worktrees } = require('./worktrees.cjs');
-const { MessageQueue } = require('./message-queue.cjs');
 const { PromptLibrary } = require('./prompt-library.cjs');
 const { isLocal } = require('./web-preview.cjs');
 const { userDataPath } = require('./user-data.cjs');
@@ -87,7 +86,7 @@ else app.setPath('userData', userDataPath(app.getPath('appData'), app.getPath('u
 const secondInstance = !app.requestSingleInstanceLock() && !testMode;
 if (secondInstance) app.quit();
 let knowledgeUpkeep, window, tray, vault, sessions, workspace, projects, messageUsage, updates, account, root, settings, ledger, notifications, hub, integrations, mcpCatalog, workbench, cliSetup, skillPacks, turns, mobile, workPower, ssh, screenshots, accounts, draftBridge;
-let codePanel, worktrees, messageQueue, prompts, tasks;
+let codePanel, worktrees, prompts, tasks;
 let ownerConsoles, capacityReservations;
 let mode = 'dashboard', quitting = false, refreshing = false, lastRefresh = 0, apiBusy = false, subscriptionUsage, usageRefresh, usageRefreshBackground = false, credentialSwitch;
 let modeTarget = null, modeTask, modeSequence = 0, transitioning = false;
@@ -219,7 +218,7 @@ function snapshot() {
   return built;
 }
 function serviceSnapshot() {
-  return { platform: process.platform, mode, transitioning, trayHidden, sessions: sessions?.list() || [], codePanels: sessions?.codePanels() || [], queues: messageQueue?.snapshot() || {}, prompts: prompts?.list() || [], codeRevision: codePanel?.revision || 0, limits, accounts: accounts?.allChoices() || [], accountProviders: accounts?.providers() || [], recent, accountError, refreshing, lastRefresh, agents: (cliSetup?.snapshot() || []).map(agent => ({ ...(agent.id === 'opencode' && !openCodeAvailable ? { ...agent, installed: false } : agent), consoleFeatures: consoleFeaturesFor(agent.id) })), agentSetupBusy: !!cliSetup?.running, skills: skillPacks?.snapshot() || { packs: [], busy: false },
+  return { platform: process.platform, mode, transitioning, trayHidden, sessions: sessions?.list() || [], codePanels: sessions?.codePanels() || [], queues: {}, prompts: prompts?.list() || [], codeRevision: codePanel?.revision || 0, limits, accounts: accounts?.allChoices() || [], accountProviders: accounts?.providers() || [], recent, accountError, refreshing, lastRefresh, agents: (cliSetup?.snapshot() || []).map(agent => ({ ...(agent.id === 'opencode' && !openCodeAvailable ? { ...agent, installed: false } : agent), consoleFeatures: consoleFeaturesFor(agent.id) })), agentSetupBusy: !!cliSetup?.running, skills: skillPacks?.snapshot() || { packs: [], busy: false },
     usageAccounts: usageAccounts(), usageChecks: subscriptionUsage?.snapshot() || [], delegations: workbench?.delegation?.snapshot() || [], tasks: tasks?.snapshot() || [],
     sshHosts: ssh?.list() || [], capabilities, projects: projects?.list() || [], projectProposals: projects?.proposals || [], messages: [...(messageUsage?.items || []), ...apiMessages(ledger || [])].sort((a,b) => b.at - a.at).slice(0, 200), mobile: mobile?.snapshot(), workbench: workbench?.snapshot(), vault: { available: vault?.available() || false, entries: vault?.list() || [] },
     ledger: ledger || [], summary: ledgerSummary(ledger || []), shared: hub?.snapshot(), updates: updates?.snapshot(), grid: sessions?.grid || settings?.grid, settings, storageError, workspaceError, shortcutAvailable, safeMode, startupNotices: crash.notices,
@@ -641,10 +640,8 @@ app.whenReady().then(() => guardStartup(async () => {
   codePanel = new CodePanel(sessions, { onChange: publish, getProjects: () => projects.list(), getSecrets: () => vault.list().flatMap(x => { try { return [vault.get(x.id)]; } catch { return []; } }) });
   turns.codePanel = codePanel;
   turns.on('tracking-error', ({ owner, message }) => workbench.alerts.send({ title: 'Code capture needs attention', message, sessionId: owner, kind: 'error' }));
-  messageQueue = new MessageQueue(sessions);
-  messageQueue.on('changed', publish); prompts.on('changed', publish);
-  messageQueue.on('error', ({ id, message }) => workbench.alerts.send({ key: 'queue:' + id + ':' + Date.now(), title: (sessions.items.get(id)?.name || 'Console') + ': queued message not sent', message, sessionId: id, kind: 'error' }));
-  mobile = new MobileCompanion(root, safeStorage, { codePanel, sessions, concepts: workbench.concepts, redactImageText: value => hub.redact(value), results: workbench.results, alerts: workbench.alerts, queue: messageQueue, prompts, getUsage: usageSnapshot, getUsageTurns: () => [...(messageUsage?.items || []), ...apiMessages(ledger || [])], refreshUsage: refreshLimits, getDefaults: () => ({ ...settings.consoleDefaults, permissions: settings.agentPermissions }), worktrees, endMobileSession: (id, choice, valid) => endMobileSession(id, choice, valid, { sessions, getSettings: () => settings, persistSettings, worktrees }), getModels: modelChoices, toolsStatus: true, getSettings: () => { const shared = hub.snapshot(), keys = vault.list(); return { shared, keys, integrations: integrations.snapshot(shared.connections, keys), setupRequests: workbench.snapshot().setupRequests, redact: value => hub.redact(value) }; }, stateSync: { history: phoneHistory, enabled: stateV2Enabled }, getTasks: () => tasks, knowledge: workbench.knowledgeAccess, getKey: id => vault.get(id), networkScript: app.isPackaged ? path.join(process.resourcesPath, 'mobile-network.ps1') : path.join(__dirname, 'mobile-network.ps1'), program: process.execPath, testMode });
+  prompts.on('changed', publish);
+  mobile = new MobileCompanion(root, safeStorage, { codePanel, sessions, concepts: workbench.concepts, redactImageText: value => hub.redact(value), results: workbench.results, alerts: workbench.alerts, prompts, getUsage: usageSnapshot, getUsageTurns: () => [...(messageUsage?.items || []), ...apiMessages(ledger || [])], refreshUsage: refreshLimits, getDefaults: () => ({ ...settings.consoleDefaults, permissions: settings.agentPermissions }), worktrees, endMobileSession: (id, choice, valid) => endMobileSession(id, choice, valid, { sessions, getSettings: () => settings, persistSettings, worktrees }), getModels: modelChoices, toolsStatus: true, getSettings: () => { const shared = hub.snapshot(), keys = vault.list(); return { shared, keys, integrations: integrations.snapshot(shared.connections, keys), setupRequests: workbench.snapshot().setupRequests, redact: value => hub.redact(value) }; }, stateSync: { history: phoneHistory, enabled: stateV2Enabled }, getTasks: () => tasks, knowledge: workbench.knowledgeAccess, getKey: id => vault.get(id), networkScript: app.isPackaged ? path.join(process.resourcesPath, 'mobile-network.ps1') : path.join(__dirname, 'mobile-network.ps1'), program: process.execPath, testMode });
   mobile.on('changed', publish);
   mobile.on('pairing-requested', () => { if (settings.notifications && !testMode) notifications?.show({ title: 'Approve a phone?', message: 'Compare the codes on your PC and phone before allowing access.', destination: 'phone-pairing' }); });
   if (!testMode) void startupStep('Phone connection', () => mobile.start(), { optional: true }).catch(() => {});
@@ -790,7 +787,7 @@ app.whenReady().then(() => guardStartup(async () => {
   const desktopCommands = createDesktopCommands({
     app, dialog, shell, nativeImage, clipboard, Menu, crash, testMode, safeMode, root,
     mobile, workbench, tasks, sessions, projects, screenshots, accounts, worktrees, cliSetup, codePanel,
-    messageQueue, prompts, ownerConsoles, codexAccounts, credentialSwitch, hub, workspace, turns, skillPacks, ssh,
+    prompts, ownerConsoles, codexAccounts, credentialSwitch, hub, workspace, turns, skillPacks, ssh,
     vault, integrations, mcpCatalog, updates,
     getWindow: () => window, getSettings: () => settings, persistSettings, publish,
     getLimits: () => limits, setLimits: value => { limits = value; }, setStorageError: value => { storageError = value; },

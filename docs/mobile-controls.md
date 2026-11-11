@@ -6,7 +6,7 @@ Android preview. Install a compatible APK over your current app to retain pairin
 
 The header contains the harness icon, chat name and dropdown, status dot, monitor icon and PC name. Claude and Codex icons are bundled locally. Green pulses while connected and idle, blue indicates work, and red indicates a disconnected or ended console. Status also has an accessibility label. Reduced-motion settings disable the pulse.
 
-Tap the thin blue-pink handle beneath the terminal to enter chat. The confirmed model and effort appear above the message field while chat is open, for example **6.1 Sol · Medium**. Unreported settings show **Model unknown** or **Effort unknown**. The down arrow collapses chat without discarding the draft. Switching consoles starts collapsed; reopening a saved draft restores its reading position. Tap the field to continue writing. An empty field occupies one line and grows to at most 8.5 text lines, with a smaller cap in landscape.
+The reply box stays open beneath the terminal. An empty draft has three lines ready for typing and grows within the existing height limit. Model and effort share one control in its bottom row. Terminal keys and Send sit together on the right. Switching consoles restores that console’s draft, caret and reading position without opening the keyboard.
 
 Tap the chat name to switch consoles or choose **New console**. New consoles can use a saved project, project subfolder and installed harness. Project selection needs a PC version that advertises that capability; older hosts explain the required update.
 
@@ -22,13 +22,13 @@ The top **More options (⋮)** menu provides:
 - **Close console:** asks before stopping that console.
 - **App updates** and **Reconnect**.
 
-Inside chat, **+ → Files** inserts a relative path into the draft. It does not upload the file. **+ → Image** opens Android's image picker, uploads the selected image to the local console's project and inserts its path. Send submits the draft. Android 14+ can offer the picker after a screenshot; no screenshot is sent automatically. Upload limits and SSH restrictions remain unchanged.
+In the reply box, **+ → Files** inserts a relative path into the draft. It does not upload the file. **+ → Image** opens Android's image picker, uploads the selected image to the local console's project and inserts its path. Send submits the draft. Android 14+ can offer the picker after a screenshot; no screenshot is sent automatically. Upload limits and SSH restrictions remain unchanged.
 
 ## Model and effort
 
-Tap either current value to open **Model & effort**. Choose the model and effort locally, then tap **Apply**. Opening, browsing, cancelling, swiping away and closing an unchanged selection send no terminal input. To change **6.1 Sol Medium → Max**, keep the model and change only effort.
+Tap the model/effort control to open **Model & effort**. Make both choices in that sheet, then tap **Apply**. Browsing or cancelling sends no terminal input.
 
-Codex choices come from the PC's model catalog, with supported effort metadata when available. Claude uses its documented model aliases and effort levels; availability depends on the model. Applying requires an idle agent with no menu open. Text already typed in the PC prompt (one row) is cleared with Ctrl+E, Ctrl+U, then typed back after the change, or after a failed attempt. A multi-line prompt draft blocks Apply until you send or delete it. If a menu step fails, Paddock presses Esc to close the menu it opened, so the PC is not left on the model screen. The phone chat draft is never touched. After Apply, it drives recognized numbered CLI menus with an active selection and an Enter/Escape footer. Unsupported layouts stay in the terminal. Reopen the chooser after resolving an unrecognized dialog. Other harnesses retain direct terminal input.
+Choices and supported effort levels come from the PC. Applying reloads the selected saved conversation while preserving its draft. An active turn or real CLI prompt can block the change. A failed change keeps the original console available; pending values remain marked until confirmed.
 
 Each selected row waits for the CLI to acknowledge navigation before sending the next key. A changed connection, computer, console or menu stops the operation. Requests are never replayed after reconnect. Unknown confirmation or billing dialogs stay in the terminal for the user; Paddock does not approve them automatically.
 
@@ -78,3 +78,5 @@ node scripts/mobile-controls-adb.cjs pair
 ```
 
 The helper refuses physical devices. Create `artifacts/mobile-controls/stop` to stop the fixture; it also expires after 45 minutes. Fixture model selection proves transport and UI behavior, not provider account entitlement or every installed CLI version.
+
+Saved prompts are available under **+ → Saved prompts**. Using one only edits the draft. Paddock has no separate message queue; direct input follows the CLI’s behavior.

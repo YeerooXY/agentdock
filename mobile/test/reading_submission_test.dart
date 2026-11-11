@@ -203,7 +203,7 @@ void main() {
       addTearDown(c.dispose);
       await tester.pumpWidget(DockApp(client: c));
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('enter-chat')));
+      await tester.tap(find.byType(TextField).last);
       await tester.pumpAndSettle();
       const message = 'The complete prompt\nwith a second line and Unicode 中文';
       final field = find.byType(TextField).last;
@@ -266,7 +266,7 @@ void main() {
       c.screens['two'] = c.makeScreen('two');
       await c.select('two');
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('enter-chat')));
+      await tester.tap(find.byType(TextField).last);
       await tester.pumpAndSettle();
       expect(find.byTooltip('View sent message'), findsNothing);
     },
