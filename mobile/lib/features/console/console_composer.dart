@@ -55,12 +55,13 @@ class ConsoleChatPanel extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 10),
           child: Row(
             children: [
-              const Spacer(),
-              _ModelEffortMenu(
-                client: c,
-                session: session,
-                enabled: c.connected && !sending,
-                onSelected: onLiveControls,
+              Expanded(
+                child: _ModelEffortMenu(
+                  client: c,
+                  session: session,
+                  enabled: c.connected && !sending,
+                  onSelected: onLiveControls,
+                ),
               ),
               if (c.supports('console.queue') &&
                   (typed.purpose ?? 'agent') == 'agent' &&
@@ -90,6 +91,43 @@ class ConsoleChatPanel extends StatelessWidget {
                 : null,
             onDeleted: () => attachments.dismiss(shot['id'] as int),
           ),
+        if (composer.draftKey case final key?)
+          if (c.drafts.lastSent(key).isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Row(
+                children: [
+                  const Text('Sent'),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      c.drafts.lastSent(key),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'View sent message',
+                    icon: const Icon(Icons.expand_more),
+                    onPressed: () => showDialog<void>(
+                      context: context,
+                      builder: (context) => AlertDialog(
+                        title: const Text('Sent message'),
+                        content: SingleChildScrollView(
+                          child: SelectableText(c.drafts.lastSent(key)),
+                        ),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(context),
+                            child: const Text('Close'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
         if (c.inputError.isNotEmpty || c.drafts.error.isNotEmpty)
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -177,14 +215,29 @@ class _ModelEffortMenu extends StatelessWidget {
                   ? 'Effort: default (selected)'
                   : 'Effort: unknown'
             : 'Effort: ${effortLabel(selection.effort!)}${selection.pending ? ' (selected)' : ''}';
-        return PopupMenuButton<String>(
-          tooltip: 'Model and effort',
-          enabled: enabled,
-          icon: Icon(Icons.tune, color: blue),
-          onSelected: onSelected,
-          itemBuilder: (_) => [
-            PopupMenuItem(value: 'Model', child: Text(model)),
-            PopupMenuItem(value: 'Effort', child: Text(effort)),
+        return Row(
+          children: [
+            Expanded(
+              child: Text(
+                [
+                  if (selection.model != null) modelLabel(selection.model!),
+                  if (selection.effort != null) effortLabel(selection.effort!),
+                  if (selection.pending) '(selected)',
+                ].join('  '),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            PopupMenuButton<String>(
+              tooltip: 'Model and effort',
+              enabled: enabled,
+              icon: Icon(Icons.tune, color: blue),
+              onSelected: onSelected,
+              itemBuilder: (_) => [
+                PopupMenuItem(value: 'Model', child: Text(model)),
+                PopupMenuItem(value: 'Effort', child: Text(effort)),
+              ],
+            ),
           ],
         );
       },

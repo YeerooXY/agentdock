@@ -59,6 +59,16 @@ class AccountSwitching {
     throw new Error('The CLI composer did not reach a stable prompt. Keep the original console open and try again.');
   }
 
+  // The CLI can ask before it resumes a large conversation. Choosing its default
+  // Resume is what the owner already confirmed when applying the change.
+  async answerResumePrompt(session, strategy) {
+    const answer = strategy.resumePromptAnswer(plainTerminalText(session.buffer.slice(-6000)));
+    if (!answer) return;
+    const sequence = session.sequence;
+    session.terminal.write(answer);
+    await this.waitForOutputIdle(session, { afterSequence: sequence });
+  }
+
   async nativeDraft(session, mode, text) {
     const pending = this.host.getDraftBridge().request(session.id, session.launchId, mode, text);
     session.terminal.write('\x07');
@@ -161,15 +171,19 @@ class AccountSwitching {
     if (target.profile && !target.loginCompletedAt) throw new Error(`Sign in to ${target.label} before switching to it.`);
     const strategy = settingsAdapter(source.provider);
     const operation = (async () => {
-      let staged = null, stageLaunchId = null, committed = false;
+      let staged = null, stageLaunchId = null, committed = false, step = 'waiting for running tool calls';
+      const startedAt = Date.now();
       source.switching = true; source.switchTargetId = target.id; h.emit('changed');
       try {
         await h.getHub()?.waitForLaunchCalls?.(id, launchId);
+        step = 'reading the model list';
         if (h.items.get(id) !== source || !source.alive || source.dismissed || !source.switching || source.state === 'active' || (!pendingCheckOnly() && (source.state === 'attention' || h.isBusy(id)))) throw new Error(settingsSelection ? 'Finish the current task before applying settings. The original console is still running.' : 'Finish the current task before switching accounts. The original console is still running.');
         const selection = settingsSelection ? resolveSelection(await h.getModels(source.provider, source.accountId), settingsSelection, source) : null;
         if (h.items.get(id) !== source || !source.alive || source.dismissed || source.launchId !== launchId) throw new Error('This console changed. Reopen the model choices.');
+        step = 'reading the current draft';
         const draft = await this.captureNativeDraft(source);
         strategy.checkDraft(draft, 'source', { hasClaudeEditorContext });
+        step = 'finding the saved conversation';
         const currentSource = h.items.get(id);
         if (currentSource !== source || !source.alive || source.dismissed || !source.switching || source.launchId !== launchId || source.state === 'active' || (!pendingCheckOnly() && (source.state === 'attention' || h.isBusy(id)))) throw new Error('The console changed while Paddock was checking it. The original console is still running.');
         const liveTarget = h.getAccounts().getAccount(target.id, source.provider);
@@ -186,27 +200,36 @@ class AccountSwitching {
         const raw = { provider: source.provider, cwd: source.cwd, name: source.name, nameMode: source.nameMode, projectId: source.projectId, slot: source.slot, width: source.width, height: source.height, consoleKey: source.consoleKey, permissions: source.permissions, model: source.launchModel,
           ...(selection ? {} : { effort: source.launchEffort ?? null }), worktree: source.worktree };
         stageLaunchId = crypto.randomUUID();
+        step = 'starting the new console';
         staged = await h.launcher.createOne(raw, {
           resumeId: source.providerSessionId, resumePath, accountId: target.id, sessionId: source.id, launchId: stageLaunchId, stage: true, resumeModel, resumeEffort: selection?.effort ?? null,
           cancelCheck: () => h.items.get(id) !== source || !source.alive || source.dismissed || !source.switching || source.launchId !== launchId
         });
         const stageSession = h.pendingStages.get(stageLaunchId);
         if (!stageSession) throw new Error('The selected account console could not be started. Keep the original console open.');
+        step = 'waiting for the new console to settle';
         await this.waitForOutputIdle(stageSession);
+        step = 'answering the resume question';
+        await this.answerResumePrompt(stageSession, strategy);
+        step = 'confirming the saved conversation opened';
         await this.awaitResumeIdentity(stageSession, source.providerSessionId);
         if (selection) {
           delete stageSession.model; delete stageSession.modelId; delete stageSession.effort; delete stageSession.settingsAt;
           stageSession.requestedSettings = { ...selection, at: Date.now(), status: 'awaiting-provider' };
           stageSession.launchEffort = selection.effort;
         }
+        step = 'checking the new console draft';
         const targetDraft = await this.captureNativeDraft(stageSession);
         strategy.checkDraft(targetDraft, 'target', { hasClaudeEditorContext });
         if (targetDraft !== '') throw new Error('The selected account opened with a draft already present. Keep the original console open.');
         const marker = `PDK${crypto.randomUUID().replaceAll('-', '')}`;
+        step = 'restoring the draft';
         await this.nativeDraft(stageSession, 'restore', draft + marker);
         await this.removeNativeDraftMarker(stageSession, marker);
+        step = 'verifying the restored draft';
         const restored = await this.captureNativeDraft(stageSession);
         if (restored !== draft) throw new Error('The selected account could not confirm the exact unsent draft. Keep the original console open.');
+        step = 'final checks';
         if (h.items.get(id) !== source || !source.alive || source.dismissed || !source.switching || source.launchId !== launchId || source.state === 'active' || (!pendingCheckOnly() && (source.state === 'attention' || h.isBusy(id)))) throw new Error(`The console changed while Paddock was ${settingsSelection ? 'applying settings' : 'switching accounts'}. The original console is still running.`);
         const finalTarget = h.getAccounts().getAccount(target.id, source.provider);
         if (finalTarget.id !== liveTarget.id || finalTarget.provider !== source.provider || (finalTarget.profile && !finalTarget.loginCompletedAt)) throw new Error('The selected account changed. The original console is still running.');
@@ -237,6 +260,8 @@ class AccountSwitching {
           h.getHub()?.revoke(stageSession.id, stageSession.launchId); h.getDraftBridge()?.unregister(stageSession.id, stageSession.launchId);
           try { stageSession.terminal.kill(); } catch {}
         }
+        // Name the step so a failed change can be traced without a screenshot of the terminal.
+        if (settingsSelection && error instanceof Error) error.message += ` (Step: ${step}, after ${Math.round((Date.now() - startedAt) / 1000)}s.)`;
         throw error;
       } finally {
         if (!committed && h.items.get(id) === source) { source.switching = false; delete source.switchTargetId; h.emit('changed'); }
