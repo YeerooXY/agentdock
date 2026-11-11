@@ -127,6 +127,8 @@ test('CLI callbacks write only state and usage metadata, including real zero per
   const event = readJson(path.join(temp, 'events', `${session}.${launchId}.state.json`));
   assert.equal(event.state, 'attention'); assert.match(event.summary, /Completion check/); assert.equal(event.providerSessionId, 'thread'); assert.ok(!JSON.stringify(event).includes('PRIVATE_'));
   const input = { session_id: 'claude-id', rate_limits: { five_hour: { used_percentage: 0, resets_at: 1800000000 } }, context_window: { used_percentage: 20, total_input_tokens: 60, total_output_tokens: 10 }, model: { display_name: 'Test' }, transcript_path: 'PRIVATE_TRANSCRIPT_PATH' };
+  const line = spawnSync(process.execPath, [helper, 'statusline'], { env, input: JSON.stringify({ ...input, effort: { level: 'high' } }), windowsHide: true, encoding: 'utf8' });
+  assert.equal(line.status, 0); assert.equal(line.stdout, 'Paddock | Test, high | context 20%');
   assert.equal(spawnSync(process.execPath, [helper, 'statusline'], { env, input: JSON.stringify(input), windowsHide: true }).status, 0);
   const usage = readJson(path.join(temp, 'events', `${session}.${launchId}.usage.json`));
   assert.equal(usage.usage.total, 70); assert.equal(usage.limits.windows[0].usedPercent, 0); assert.ok(!JSON.stringify(usage).includes('PRIVATE_'));

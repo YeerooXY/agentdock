@@ -41,7 +41,7 @@ async function accept(raw) {
       const u = input.context_window;
       if (u && Number.isFinite(u.total_input_tokens) && Number.isFinite(u.total_output_tokens)) event.usage = { input: u.total_input_tokens, output: u.total_output_tokens, total: u.total_input_tokens + u.total_output_tokens };
       atomicJson(eventFile('usage'), event);
-      process.stdout.write(`Paddock | ${event.model || 'Claude'}${event.contextPercent === null ? '' : ` | context ${Math.round(event.contextPercent)}%`}`);
+      process.stdout.write(`Paddock | ${event.model || 'Claude'}${event.effort ? `, ${event.effort}` : ''}${event.contextPercent === null ? '' : ` | context ${Math.round(event.contextPercent)}%`}`);
     } else {
       const name = input.hook_event_name || mode;
       const statuses = { 'codex-notify': 'ready', SessionStart: 'open', Stop: 'ready', UserPromptSubmit: 'active', PermissionRequest: 'attention', Notification: 'attention', StopFailure: 'error', SessionEnd: 'ended' };

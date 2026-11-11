@@ -166,6 +166,7 @@ class ComposerController extends ChangeNotifier {
     _changed();
     await run(() async {
       await client.submit(text);
+      if (sentKey != null) client.drafts.recordSent(sentKey, text);
       if (sentKey != null && client.drafts.get(sentKey) == text) {
         client.drafts.set(sentKey, '');
       }

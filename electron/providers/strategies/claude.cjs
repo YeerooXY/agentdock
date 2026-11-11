@@ -46,6 +46,10 @@ function claudeAdapter() {
       const error = new Error(`Turn off "Show last response in external editor" in Claude Code before switching. ${stage === 'source' ? 'The current console and draft are still running.' : 'Keep the original console open.'}`);
       error.code = 'claude-editor-context'; throw error;
     },
+    // A large conversation resumed on a model with a cold prompt cache opens a
+    // dialog whose default choice is Resume. The composer ignores keys until it is
+    // answered, so the replacement console cannot capture a draft behind it.
+    resumePromptAnswer: text => /Resume\s*this\s*conversation\?/.test(text) && /[❯>]\s*1\.\s*Resume/.test(text) ? '\r' : null,
     resumePath: ({ target, history, selection }) => path.join(target.configDir, 'projects', selection ? history.relative : history.path),
     launchArgs(ctx) {
       const { resumeId, resumePath, resumeModel, resumeEffort, permissions, node, helper,

@@ -27,6 +27,9 @@ const commonRuntime = Object.freeze({
   confirmResumeIdentity: (deps, session, expectedId, timeout) => deps.awaitEventIdentity(session, expectedId, timeout),
   // Throws when a captured draft cannot move to the replacement console.
   checkDraft() {},
+  // The keys that answer a question the CLI asks before it opens a resumed
+  // conversation, from the plain text of its screen, or null when none is shown.
+  resumePromptAnswer: () => null,
   resumeModel: async ({ source }) => source.modelId || source.model || null,
   resumePath: () => null,
   // A clearer message for a failed replacement, or null to keep the original.

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:xterm/xterm.dart';
@@ -25,8 +26,14 @@ class TerminalReadingView extends StatefulWidget {
 }
 
 class _TerminalReadingViewState extends State<TerminalReadingView> {
+  // Bound text layout on long chats; every retained row remains pageable.
+  static const _pageRows = 120;
   final _scroll = ScrollController();
+  final _readingFocus = FocusNode();
   TextSpan _span = const TextSpan();
+  int? _pageEnd;
+  BufferLine? _anchor;
+  int _start = 0, _end = 0, _bufferLength = 0;
   Timer? _timer;
   bool _selecting = false;
   bool _pending = false;
@@ -37,7 +44,8 @@ class _TerminalReadingViewState extends State<TerminalReadingView> {
   @override
   void initState() {
     super.initState();
-    _span = terminalReadingSpan(widget.terminal, widget.theme);
+    _restorePage();
+    _span = _readPage();
     _scroll.addListener(_savePlace);
     widget.terminal.addListener(_changed);
     _restorePlace();
@@ -51,11 +59,60 @@ class _TerminalReadingViewState extends State<TerminalReadingView> {
       widget.terminal.addListener(_changed);
       _timer?.cancel();
       _selecting = _pending = false;
-      _span = terminalReadingSpan(widget.terminal, widget.theme);
+      _restorePage();
+      _span = _readPage();
       _restorePlace();
     } else if (oldWidget.theme != widget.theme) {
-      _span = terminalReadingSpan(widget.terminal, widget.theme);
+      _span = _readPage();
     }
+  }
+
+  TextSpan _readPage() {
+    final length = widget.terminal.buffer.lines.length;
+    _bufferLength = length;
+    _end = min(_pageEnd ?? length, length);
+    _start = max(0, _end - _pageRows);
+    _anchor = length > 0 ? widget.terminal.buffer.lines[_start] : null;
+    return terminalReadingSpan(
+      widget.terminal,
+      widget.theme,
+      start: _start,
+      end: _end,
+    );
+  }
+
+  void _restorePage() {
+    final end = widget.positions?.position(widget.positionKey, 'readingEnd');
+    _pageEnd = end != null && end >= 0 ? end.toInt() : null;
+  }
+
+  void _movePage(int direction) {
+    final lines = widget.terminal.buffer.lines;
+    var start = 0;
+    // Scrollback can roll while a page is frozen. Locate its original row.
+    for (var y = 0; y < lines.length; y++) {
+      if (identical(lines[y], _anchor)) {
+        start = y;
+        break;
+      }
+    }
+    final end = direction < 0
+        ? max(1, start)
+        : start + (_end - _start) + _pageRows;
+    _showPage(end >= lines.length ? null : end);
+  }
+
+  void _showPage(int? end) {
+    setState(() {
+      _pageEnd = end;
+      _pending = _selecting = false;
+      _atEnd = true;
+      _span = _readPage();
+    });
+    widget.positions?.remember(widget.positionKey, 'readingEnd', end ?? -1);
+    _followEnd();
+    // Page controls may become disabled; keep keyboard focus in the reader.
+    _readingFocus.requestFocus();
   }
 
   void _savePlace() {
@@ -91,12 +148,17 @@ class _TerminalReadingViewState extends State<TerminalReadingView> {
     if (_timer?.isActive == true) return;
     _timer = Timer(const Duration(milliseconds: 150), () {
       if (!mounted) return;
-      if (_selecting) {
+      if (widget.terminal.buffer.lines.length < _bufferLength) {
+        _pageEnd = null;
+        _pending = _selecting = false;
+        _atEnd = true;
+      }
+      if (_selecting || _pageEnd != null || !_atEnd) {
         if (!_pending) setState(() => _pending = true);
         return;
       }
-      // One scan of the buffer: the span carries the same text and styles.
-      final span = terminalReadingSpan(widget.terminal, widget.theme);
+      // Convert only the current page; older rows do not enter text layout.
+      final span = _readPage();
       if (_span.compareTo(span) == RenderComparison.identical) return;
       final following =
           !_scroll.hasClients || _scroll.position.extentAfter < 24;
@@ -110,12 +172,31 @@ class _TerminalReadingViewState extends State<TerminalReadingView> {
     widget.terminal.removeListener(_changed);
     _timer?.cancel();
     _scroll.dispose();
+    _readingFocus.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) => Column(
     children: [
+      if (widget.terminal.buffer.lines.length > _pageRows)
+        Wrap(
+          children: [
+            TextButton(
+              onPressed: _start > 0 ? () => _movePage(-1) : null,
+              child: const Text('Earlier'),
+            ),
+            TextButton(
+              onPressed: _pageEnd != null ? () => _movePage(1) : null,
+              child: const Text('Later'),
+            ),
+            IconButton(
+              tooltip: 'Latest output',
+              onPressed: _pageEnd != null ? () => _showPage(null) : null,
+              icon: const Icon(Icons.vertical_align_bottom),
+            ),
+          ],
+        ),
       if (_pending)
         Align(
           alignment: Alignment.centerRight,
@@ -123,11 +204,7 @@ class _TerminalReadingViewState extends State<TerminalReadingView> {
             icon: const Icon(Icons.refresh, size: 18),
             label: const Text('Show new output'),
             onPressed: () {
-              setState(() {
-                _selecting = _pending = false;
-                _span = terminalReadingSpan(widget.terminal, widget.theme);
-              });
-              _followEnd();
+              _showPage(null);
             },
           ),
         ),
@@ -149,6 +226,7 @@ class _TerminalReadingViewState extends State<TerminalReadingView> {
                 width: double.infinity,
                 child: SelectableText.rich(
                   _span,
+                  focusNode: _readingFocus,
                   key: ValueKey(widget.positionKey),
                   // Native selection handles and Copy; selection never requests
                   // terminal input or sends anything to the PC.
