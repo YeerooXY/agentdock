@@ -117,6 +117,34 @@ void main() {
     );
   });
 
+  test('wrapped prose collapses trailing skipped cells but keeps other gaps', () {
+    final terminal = Terminal()..resize(66, 8);
+    terminal.write(
+      'the only\r\nblocker and\r\nkeep\x1b[3Cblocking  now\r\n'
+      '${'x' * 64}  continued',
+    );
+    terminal.buffer.lines[1].isWrapped = true;
+    terminal.buffer.lines[2].isWrapped = true;
+    expect(terminal.buffer.lines[0].getCodePoint(65), 0);
+    final expected =
+        'the only blocker and keep   blocking  now\n${'x' * 64}  continued';
+    expect(terminalReadingText(terminal), expected);
+    expect(terminalReadingSpan(terminal, terminalTheme).toPlainText(), expected);
+  });
+
+  test('wrapped status after collapsed rules starts a line with its indent', () {
+    final terminal = Terminal()..resize(66, 8);
+    terminal.write(
+      '${'-' * 66}\r\n${'_' * 66}\r\n'
+      '\x1b[3CPaddock | Fable 5.2 | context 12%',
+    );
+    terminal.buffer.lines[2].isWrapped = true;
+    expect(terminal.buffer.lines[2].getCodePoint(0), 0);
+    final expected = '${'-' * ruleWidth}\n   Paddock | Fable 5.2 | context 12%';
+    expect(terminalReadingText(terminal), expected);
+    expect(terminalReadingSpan(terminal, terminalTheme).toPlainText(), expected);
+  });
+
   test('model labels name GPT and Claude models', () {
     expect(modelLabel('gpt-6.1-terra'), '6.1 Terra');
     expect(modelLabel('claude-opus-5-5'), 'Opus 5.5');

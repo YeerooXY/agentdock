@@ -1,7 +1,7 @@
 'use strict';
 const path = require('node:path');
 const { commonRuntime, envValue } = require('./common.cjs');
-const WSL_AGENT_VARIABLES = ['PADDOCK_DATA_DIR', 'PADDOCK_SESSION_ID', 'PADDOCK_LAUNCH_ID', 'PADDOCK_ACCOUNT_ID', 'PADDOCK_BRIDGE_URL', 'PADDOCK_BRIDGE_TOKEN', 'PADDOCK_INSTRUCTIONS/p', 'PADDOCK_MCP_CONFIG/p'];
+const WSL_AGENT_VARIABLES = ['PADDOCK_DATA_DIR', 'PADDOCK_SESSION_ID', 'PADDOCK_LAUNCH_ID', 'PADDOCK_ACCOUNT_ID', 'PADDOCK_BRIDGE_URL', 'PADDOCK_BRIDGE_TOKEN', 'PADDOCK_INSTRUCTIONS/p', 'PADDOCK_MCP_CONFIG/p', 'CLAUDE_CODE_NO_FLICKER'];
 function claudeAdapter() {
   return {
     ...commonRuntime,
@@ -19,6 +19,9 @@ function claudeAdapter() {
     },
     applyEnvironment(env, { account, wsl, tempRoot, bridge, purpose, wslPath }) {
       const editorTemp = tempRoot && bridge;
+      // Fullscreen rendering draws on the alternate screen, which keeps no
+      // scrollback: the phone and the PC scrollbar would show one screen only.
+      if (purpose === 'agent') env.CLAUDE_CODE_NO_FLICKER = '0';
       if (editorTemp) env.CLAUDE_CODE_TMPDIR = wsl ? wslPath(tempRoot) : tempRoot;
       if (!wsl) return;
       if (account?.profile) {

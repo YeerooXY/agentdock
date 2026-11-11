@@ -24,6 +24,7 @@ class _TerminalKeysState extends State<TerminalKeys> {
       chat = session?['providerSessionId'];
   late final Terminal? terminal = c.screens[id]?.terminal;
   final reply = TextEditingController();
+  final mods = <String>{};
   bool busy = false;
   String error = '';
 
@@ -71,6 +72,7 @@ class _TerminalKeysState extends State<TerminalKeys> {
     try {
       // One acknowledged input, pinned to the original console. Never replay.
       await c.input(value, id: id);
+      mods.clear();
     } catch (_) {
       if (mounted) {
         error = 'Could not confirm delivery. Check the terminal before trying again.';
@@ -81,9 +83,30 @@ class _TerminalKeysState extends State<TerminalKeys> {
   }
 
   Widget keyButton(String label, String value) => OutlinedButton(
-    onPressed: current && !busy ? () => send(value) : null,
+    onPressed: current && !busy ? () => send(withModifiers(value)) : null,
     child: Text(label),
   );
+
+  Widget arrow(String label, String value) => OutlinedButton(
+    onPressed: current && !busy ? () => send(withModifiers(value)) : null,
+    child: FittedBox(fit: BoxFit.scaleDown, child: Text(label)),
+  );
+
+  /// xterm encoding: arrows carry 1+Shift(1)+Alt(2)+Ctrl(4); Alt prefixes Esc.
+  String withModifiers(String value) {
+    final shift = mods.contains('Shift'),
+        alt = mods.contains('Alt'),
+        ctrl = mods.contains('Ctrl');
+    if (!shift && !alt && !ctrl) return value;
+    final cursor = RegExp(r'^\x1b[\[O]([A-D])$').firstMatch(value);
+    if (cursor != null) {
+      return '\x1b[1;${1 + (shift ? 1 : 0) + (alt ? 2 : 0) + (ctrl ? 4 : 0)}${cursor[1]}';
+    }
+    if (value == '\t' && shift) return '\x1b[Z';
+    if (value == '\x1b' || value == '\x03') return value;
+    if (value == ' ' && ctrl) return '\x00';
+    return alt ? '\x1b$value' : value;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -151,20 +174,53 @@ class _TerminalKeysState extends State<TerminalKeys> {
                 ),
               const SizedBox(height: 12),
               if (busy) const LinearProgressIndicator(),
+              // Keyboard order: Esc, Tab, modifiers, Space, Enter. A modifier
+              // applies to the next key only; choosing one sends nothing.
               Wrap(
                 spacing: 8,
                 runSpacing: 8,
                 children: [
-                  keyButton('Up', '${prefix}A'),
-                  keyButton('Down', '${prefix}B'),
-                  keyButton('Enter', '\r'),
                   keyButton('Esc', '\x1b'),
-                  keyButton('Left', '${prefix}D'),
-                  keyButton('Right', '${prefix}C'),
                   keyButton('Tab', '\t'),
+                  for (final m in const ['Ctrl', 'Shift', 'Alt'])
+                    FilterChip(
+                      label: Text(m),
+                      selected: mods.contains(m),
+                      onSelected: current && !busy
+                          ? (on) => setState(
+                              () => on ? mods.add(m) : mods.remove(m),
+                            )
+                          : null,
+                    ),
                   keyButton('Space', ' '),
+                  keyButton('Enter', '\r'),
                   keyButton('Ctrl+C', '\x03'),
                 ],
+              ),
+              const SizedBox(height: 12),
+              // Arrows as an inverted T.
+              Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 300),
+                  child: Column(
+                    children: [
+                      SizedBox(
+                        width: 100,
+                        child: arrow('Up', '${prefix}A'),
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(child: arrow('Left', '${prefix}D')),
+                          const SizedBox(width: 8),
+                          Expanded(child: arrow('Down', '${prefix}B')),
+                          const SizedBox(width: 8),
+                          Expanded(child: arrow('Right', '${prefix}C')),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
               ),
               const SizedBox(height: 16),
               TextField(

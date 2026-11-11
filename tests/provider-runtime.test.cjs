@@ -108,16 +108,16 @@ test('Claude strategy resolves its install, editor folder and WSL environment', 
 
   const native = {};
   strategy.applyEnvironment(native, { wsl: false, tempRoot: 'temp', bridge: {}, purpose: 'agent', wslPath });
-  assert.deepEqual(native, { CLAUDE_CODE_TMPDIR: 'temp' });
+  assert.deepEqual(native, { CLAUDE_CODE_NO_FLICKER: '0', CLAUDE_CODE_TMPDIR: 'temp' }, 'agent consoles keep terminal scrollback');
   const unbridged = {};
-  strategy.applyEnvironment(unbridged, { wsl: false, tempRoot: 'temp', bridge: null, purpose: 'agent', wslPath });
+  strategy.applyEnvironment(unbridged, { wsl: false, tempRoot: 'temp', bridge: null, purpose: 'setup', wslPath });
   assert.deepEqual(unbridged, {});
 
   const configDir = path.resolve('profile');
   const agent = { CLAUDE_CONFIG_DIR: configDir, WSLENV: 'KEEP/p:PADDOCK_OLD' };
   strategy.applyEnvironment(agent, { account: { profile: true }, wsl: true, tempRoot: null, bridge: null, purpose: 'agent', wslPath });
   assert.equal(agent.CLAUDE_CONFIG_DIR, wslPath(configDir));
-  assert.deepEqual(agent.WSLENV.split(':'), ['KEEP/p', 'PADDOCK_OLD', 'PADDOCK_DATA_DIR', 'PADDOCK_SESSION_ID', 'PADDOCK_LAUNCH_ID', 'PADDOCK_ACCOUNT_ID', 'PADDOCK_BRIDGE_URL', 'PADDOCK_BRIDGE_TOKEN', 'PADDOCK_INSTRUCTIONS/p', 'PADDOCK_MCP_CONFIG/p', 'CLAUDE_CONFIG_DIR/p']);
+  assert.deepEqual(agent.WSLENV.split(':'), ['KEEP/p', 'PADDOCK_OLD', 'PADDOCK_DATA_DIR', 'PADDOCK_SESSION_ID', 'PADDOCK_LAUNCH_ID', 'PADDOCK_ACCOUNT_ID', 'PADDOCK_BRIDGE_URL', 'PADDOCK_BRIDGE_TOKEN', 'PADDOCK_INSTRUCTIONS/p', 'PADDOCK_MCP_CONFIG/p', 'CLAUDE_CODE_NO_FLICKER', 'CLAUDE_CONFIG_DIR/p']);
   const setup = { WSLENV: 'KEEP/p:paddock_old/p' };
   strategy.applyEnvironment(setup, { wsl: true, purpose: 'setup', wslPath });
   assert.equal(setup.WSLENV, 'KEEP/p', 'setup consoles never forward Paddock variables');

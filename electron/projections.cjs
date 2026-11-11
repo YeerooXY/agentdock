@@ -31,7 +31,7 @@ function phoneSession(item) {
     requestedSettings: item.requestedSettings && typeof item.requestedSettings === 'object' ? pick(item.requestedSettings, ['model', 'resolvedModel', 'effort', 'at', 'status']) : null,
     launchId: item.launchId || null, accountId: item.accountId || null, accountLabel: item.accountLabel || null, switchMethod: item.switchMethod || 'none',
     switchTargets: (item.switchTargets || []).map(target => pick(target, ['id', 'label', 'ready'])),
-    switching: !!item.switching, purpose: item.purpose || 'agent', taskId: item.taskId || null, sliceId: item.sliceId || null,
+    switching: !!item.switching, completionMissing: item.completionMissing === true, purpose: item.purpose || 'agent', taskId: item.taskId || null, sliceId: item.sliceId || null,
     steeringState: item.steeringState || null, steeringSupported: item.steeringSupported === true,
     consoleCapabilities: item.consoleCapabilities || null, draftSupported: item.draftSupported === true,
     switchOffer: item.switchOffer ? pick(item.switchOffer, ['key', 'targetAccountId', 'targetLabel', 'usedPercent', 'minutes', 'resetsAt']) : null,

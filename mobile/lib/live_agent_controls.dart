@@ -43,7 +43,9 @@ class _LiveAgentControlsState extends State<LiveAgentControls> {
       session['consoleKey'] == consoleKey;
   bool get current => sameChat && session['launchId'] == launch;
   bool get idle =>
-      ['open', 'ready', 'idle'].contains(session['state']) &&
+      (['open', 'ready', 'idle'].contains(session['state']) ||
+          session['state'] == 'attention' &&
+              session['completionMissing'] == true) &&
       session['switching'] != true &&
       session['taskId'] == null &&
       session['remote'] == null;

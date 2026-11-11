@@ -682,6 +682,26 @@ test('idle settings reject missing consent, busy/stale sessions and unavailable 
 });
 
 
+test('settings bypass only a missing completion check while account switches stay blocked', async t => {
+  const f = await fixture(t), source = await f.sessions.create({ provider: 'codex', cwd: f.workspace }, { accountId: f.first.id });
+  await new Promise(resolve => setTimeout(resolve, 5)); f.sessions.scanEvents();
+  const original = f.sessions.items.get(source.id);
+  const request = { id: source.id, launchId: source.launchId, model: 'test-model', effort: 'high', confirmConversationReload: true };
+  f.sessions.isBusy = () => true;
+  original.state = 'attention';
+  await assert.rejects(f.sessions.switchSettings(request), /idle/);
+  original.state = 'ready';
+  await assert.rejects(f.sessions.switchSettings(request), /applying settings/);
+  f.sessions.signal(source.id, 'question', true);
+  await assert.rejects(f.sessions.switchAccount({ id: source.id, launchId: source.launchId, targetAccountId: f.second.id }), /Finish the current task before switching accounts/);
+  const result = await f.sessions.switchSettings(request);
+  assert.equal(result.requestedSettings.model, 'test-model');
+  assert.equal(result.requestedSettings.effort, 'high');
+  assert.equal(result.requestedSettings.status, 'awaiting-provider');
+  assert.equal(f.sessions.items.get(source.id).completionMissing, undefined);
+  assert.equal(original.terminal.killed, true);
+});
+
 test('a failed same-account model resume keeps the original console and draft', async t => {
   const f = await fixture(t, { failSameResume: true }), source = await f.sessions.create({ provider: 'codex', cwd: f.workspace }, { accountId: f.first.id });
   await new Promise(resolve => setTimeout(resolve, 5)); f.sessions.scanEvents();
@@ -701,4 +721,39 @@ test('Claude idle settings resume the original transcript in the same profile', 
   assert.equal(result.accountId, f.firstClaude.id); assert.equal(result.providerSessionId, threadId);
   assert.equal(result.requestedSettings.model, 'opus'); assert.equal(result.requestedSettings.effort, 'high');
   assert.equal(f.sessions.items.get(source.id).terminal.draft, 'Claude draft'); assert.equal(original.terminal.killed, true);
+  const replacement = f.sessions.items.get(source.id), saved = () => f.sessions.savedConsoles().find(x => x.consoleKey === source.consoleKey).selection;
+  assert.deepEqual(saved(), { model: 'opus', resolvedModel: 'claude-opus-test' });
+  Object.assign(replacement, { model: 'Opus', modelId: 'claude-opus-test', settingsAt: Date.now() + 1000 });
+  assert.deepEqual(saved(), { model: 'opus', resolvedModel: 'claude-opus-test' }, 'the provider confirming the selection keeps it');
+  Object.assign(replacement, { model: 'Sonnet', modelId: 'claude-sonnet-4-5', settingsAt: Date.now() + 2000 });
+  assert.equal(saved(), undefined, 'a newer, different provider report replaces the selection');
+});
+
+test('a restored console resumes with the model chosen through idle settings', async t => {
+  const f = await fixture(t), source = await f.sessions.create({ provider: 'codex', cwd: f.workspace }, { accountId: f.first.id });
+  await new Promise(resolve => setTimeout(resolve, 5)); f.sessions.scanEvents();
+  f.sessions.items.get(source.id).state = 'ready';
+  await f.sessions.switchSettings({ id: source.id, launchId: source.launchId, model: 'test-model', effort: 'high', confirmConversationReload: true });
+  // The rollout still names the earlier model until the next turn.
+  Object.assign(f.sessions.items.get(source.id), { model: 'gpt-5.2-codex', modelId: 'gpt-5.2-codex', effort: 'low', settingsAt: Date.now() - 60000 });
+  const entry = f.sessions.savedConsoles().find(x => x.consoleKey === source.consoleKey);
+  assert.deepEqual(entry.selection, { model: 'test-model', resolvedModel: 'test-model' });
+  const launchArgs = launchId => JSON.parse(fs.readFileSync(path.join(f.root, 'records', launchId + '.json'))).args;
+  const modelArgs = args => args.includes('--model') ? args.slice(args.indexOf('--model'), args.indexOf('--model') + 2) : [];
+
+  f.sessions.end(source.id);
+  const restored = await f.sessions.restore(entry);
+  assert.equal(restored.restoreError, undefined);
+  assert.ok(launchArgs(restored.launchId).includes('resume'));
+  assert.deepEqual(modelArgs(launchArgs(restored.launchId)), ['--model', 'test-model'], 'a restore that reapplies effort must also reapply the selected model');
+  assert.equal(restored.model, undefined, 'launch args do not prove effective inference settings');
+  assert.equal(restored.requestedSettings.model, 'test-model'); assert.equal(restored.requestedSettings.effort, 'high');
+  assert.equal(restored.requestedSettings.status, 'awaiting-provider');
+  const again = f.sessions.savedConsoles().find(x => x.consoleKey === source.consoleKey);
+  assert.deepEqual(again.selection, entry.selection, 'the selection survives a second restart');
+
+  f.sessions.end(restored.id);
+  const tampered = await f.sessions.restore({ ...again, selection: { model: '--dangerously-bypass-approvals-and-sandbox' } });
+  assert.deepEqual(modelArgs(launchArgs(tampered.launchId)), [], 'an invalid saved model never reaches the command line');
+  assert.equal(tampered.requestedSettings, undefined);
 });

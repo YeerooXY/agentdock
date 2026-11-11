@@ -26,7 +26,6 @@ class TerminalReadingView extends StatefulWidget {
 
 class _TerminalReadingViewState extends State<TerminalReadingView> {
   final _scroll = ScrollController();
-  String _text = '';
   TextSpan _span = const TextSpan();
   Timer? _timer;
   bool _selecting = false;
@@ -38,7 +37,6 @@ class _TerminalReadingViewState extends State<TerminalReadingView> {
   @override
   void initState() {
     super.initState();
-    _text = terminalReadingText(widget.terminal);
     _span = terminalReadingSpan(widget.terminal, widget.theme);
     _scroll.addListener(_savePlace);
     widget.terminal.addListener(_changed);
@@ -53,7 +51,6 @@ class _TerminalReadingViewState extends State<TerminalReadingView> {
       widget.terminal.addListener(_changed);
       _timer?.cancel();
       _selecting = _pending = false;
-      _text = terminalReadingText(widget.terminal);
       _span = terminalReadingSpan(widget.terminal, widget.theme);
       _restorePlace();
     } else if (oldWidget.theme != widget.theme) {
@@ -98,18 +95,12 @@ class _TerminalReadingViewState extends State<TerminalReadingView> {
         if (!_pending) setState(() => _pending = true);
         return;
       }
-      final next = terminalReadingText(widget.terminal);
+      // One scan of the buffer: the span carries the same text and styles.
       final span = terminalReadingSpan(widget.terminal, widget.theme);
-      if (_text == next &&
-          _span.compareTo(span) == RenderComparison.identical) {
-        return;
-      }
+      if (_span.compareTo(span) == RenderComparison.identical) return;
       final following =
           !_scroll.hasClients || _scroll.position.extentAfter < 24;
-      setState(() {
-        _text = next;
-        _span = span;
-      });
+      setState(() => _span = span);
       if (following) _followEnd();
     });
   }
@@ -134,7 +125,6 @@ class _TerminalReadingViewState extends State<TerminalReadingView> {
             onPressed: () {
               setState(() {
                 _selecting = _pending = false;
-                _text = terminalReadingText(widget.terminal);
                 _span = terminalReadingSpan(widget.terminal, widget.theme);
               });
               _followEnd();

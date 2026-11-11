@@ -22,6 +22,16 @@ const { AccountSwitching } = require('./account-switching.cjs');
 const { sessionPolicy } = require('./providers/index.cjs');
 
 const isPanel = item => ['code', 'web', 'review'].includes(item?.kind);
+const MODEL_ID = /^[a-zA-Z0-9][a-zA-Z0-9._:/\[\]@+-]{0,199}$/;
+// A model applied through switchSettings stays with the console across restores
+// until the provider reports a different one (an in-CLI change or a fallback).
+function selectedModel(item) {
+  const chosen = item.requestedSettings;
+  if (!item.providerSessionId || item.remote || item.remoteHostId || settingsAdapter(item.provider).switchMethod !== 'resume' || !MODEL_ID.test(chosen?.model || '')) return null;
+  const reported = item.modelId || item.model;
+  if (reported && item.settingsAt > chosen.at && ![chosen.model, chosen.resolvedModel].includes(reported)) return null;
+  return { model: chosen.model, resolvedModel: MODEL_ID.test(chosen.resolvedModel || '') ? chosen.resolvedModel : chosen.model };
+}
 function validateConsoleDefaults(raw) {
   if (!providers.includes(raw?.provider)) throw new Error('Choose an agent or shell.');
   const cwd = String(raw.cwd || '').trim();
@@ -156,18 +166,30 @@ class Sessions extends EventEmitter {
       command: x.command || '', model: x.launchModel || '', effort: x.launchEffort ?? null, accountId: cliAgents.has(x.provider) ? x.accountId || defaultId(x.provider) : null, providerSessionId: sessionPolicy(x.provider).persistConversation ? x.providerSessionId : null, claudeTarget: x.claudeTarget,
       ...(x.remote ? { remoteHostId: x.remote.hostId, remoteFolder: x.remote.folder } : {}),
       ...(x.worktree ? { worktree: x.worktree } : {}),
-      ...(x.playtimeDataDir ? { playtimeDataDir: x.playtimeDataDir } : {})
+      ...(x.playtimeDataDir ? { playtimeDataDir: x.playtimeDataDir } : {}),
+      ...(selectedModel(x) ? { selection: selectedModel(x) } : {})
     })).sort((a, b) => a.slot - b.slot);
   }
   async restore(entry, { recoverAntigravity = false } = {}) {
     if (['code', 'web'].includes(entry.kind) || ['code', 'web'].includes(entry.provider)) return null;
     if (entry.projectId && this.projects && !this.projects.get(entry.projectId)) entry = { ...entry, projectId: null, ...(entry.nameMode === 'project' ? { name: '', nameMode: 'folder' } : {}) };
+    // A plain resume does not reapply a model chosen through switchSettings, so
+    // the saved selection is passed again. The saved file is validated as untrusted.
+    const pin = selectedModel({ ...entry, requestedSettings: entry.selection });
     try {
       if (recoverAntigravity && entry.provider === 'antigravity' && !entry.providerSessionId) entry = { ...entry, providerSessionId: cachedAntigravityConversation(entry.cwd, this.agentHome) };
-      return await this.create({ ...entry, permissions: entry.permissions === 'system' ? 'default' : entry.permissions }, { resumeId: entry.providerSessionId, claudeTarget: entry.claudeTarget, accountId: entry.accountId });
+      const opened = await this.create({ ...entry, permissions: entry.permissions === 'system' ? 'default' : entry.permissions }, { resumeId: entry.providerSessionId, claudeTarget: entry.claudeTarget, accountId: entry.accountId, resumeModel: pin?.model || null });
+      const item = pin && this.items.get(opened?.id);
+      if (!item) return opened;
+      // Launch arguments do not prove the effective model.
+      delete item.model; delete item.modelId; delete item.settingsAt;
+      item.requestedSettings = { ...pin, effort: item.launchEffort ?? null, at: Date.now(), status: 'awaiting-provider' };
+      this.emit('changed');
+      return this.list().find(x => x.id === item.id);
     } catch (error) {
       const id = crypto.randomUUID();
       const item = { ...entry, launchModel: entry.model || '', id, alive: false, state: 'error', restoreError: error.message, buffer: `Could not reopen this console.\r\n${error.message}\r\n`, sequence: 0, cols: 110, rows: 30, createdAt: Date.now(), updatedAt: Date.now(), terminal: null };
+      if (pin) item.requestedSettings = pin;
       this.items.set(id, item); this.emit('changed');
       return this.list().find(x => x.id === id);
     }
@@ -227,9 +249,9 @@ class Sessions extends EventEmitter {
     if (!item || !this.ownerConsoles) return;
     this.ownerConsoles.interaction(item.consoleKey, item.launchId || item.id, kind, { ...flags, trusted: true });
   }
-  signal(id, kind) {
+  signal(id, kind, completionMissing = false) {
     const item = this.items.get(id); if (!item?.alive || !['ready', 'question', 'error'].includes(kind)) return;
-    item.state = kind === 'question' ? 'attention' : kind; item.updatedAt = Date.now(); this.emit('changed');
+    item.state = kind === 'question' ? 'attention' : kind; item.completionMissing = kind === 'question' && completionMissing === true; item.updatedAt = Date.now(); this.emit('changed');
   }
   resize(id, cols, rows) {
     const item = this.items.get(id); if (!item?.alive) return;
