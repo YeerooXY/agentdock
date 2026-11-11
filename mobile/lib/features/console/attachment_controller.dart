@@ -4,8 +4,7 @@ import 'package:flutter/services.dart';
 import '../../dock_client.dart';
 import 'composer_controller.dart';
 
-/// Image attachments for the composer: the photo picker and the offer to
-/// attach a recent screenshot.
+/// Image attachments for the composer: the photo picker and latest phone image.
 ///
 /// An image is uploaded only to the PC and console that were selected when
 /// it was chosen. The picker can background the app and reconnect; a changed
@@ -25,9 +24,8 @@ class AttachmentController extends ChangeNotifier {
   /// Whether the console page is showing in a mounted home screen.
   final bool Function() onConsolePage;
 
-  /// The newest screenshot (taken in the last five minutes) offered as a chip.
-  Map? recentShot;
-  final dismissedShots = <int>{};
+  /// The newest image accessible through Android photo permissions.
+  Map? latestImage;
   bool attaching = false;
   bool _disposed = false;
 
@@ -50,29 +48,22 @@ class AttachmentController extends ChangeNotifier {
     });
   }
 
-  /// Offers the newest screenshot. With [ask], requests photo access first
-  /// and attaches the screenshot directly, or opens the picker if denied.
-  Future<bool> checkRecentShot(RunAction run, {bool ask = false}) async {
-    if (!onConsolePage() || client.selected.isEmpty || !supported) {
+  /// Refreshes the thumbnail without requesting permission or uploading.
+  Future<bool> checkLatestImage(RunAction run) async {
+    if (_disposed ||
+        !onConsolePage() ||
+        client.selected.isEmpty ||
+        !supported) {
       return false;
     }
     try {
-      if (ask && await media.invokeMethod<bool>('allowRecent') != true) {
-        await pickImage(run);
-        return true;
-      }
-      final found = await media.invokeMethod<Map>('recent', {'seconds': 300});
-      if (_disposed || found == null) return false;
-      if (found['permission'] != true) {
-        if (ask) await pickImage(run);
-        return ask;
-      }
-      final id = found['id'] as int?;
-      final shot = id == null || dismissedShots.contains(id) ? null : found;
-      recentShot = shot;
+      final found = await media.invokeMethod<Map>('latest');
+      if (_disposed) return false;
+      latestImage = found?['permission'] == true && found?['id'] != null
+          ? found
+          : null;
       _changed();
-      if (ask && shot != null) await attachRecentShot(run);
-      return shot != null;
+      return latestImage != null;
     } on PlatformException {
       return false;
     } on MissingPluginException {
@@ -80,21 +71,20 @@ class AttachmentController extends ChangeNotifier {
     }
   }
 
-  Future<void> attachRecentShot(RunAction run) async {
-    final id = recentShot?['id'] as int?;
-    if (id == null) return;
-    await attachImage(
-      run,
-      () => media.invokeMethod<Uint8List>('recentImage', {'id': id}),
-    );
-    if (!_disposed && !attaching) dismiss(id);
-  }
-
-  void dismiss(int id) {
-    dismissedShots.add(id);
-    recentShot = null;
-    _changed();
-  }
+  Future<void> attachLatestImage(RunAction run) => attachImage(run, () async {
+    // Resolve again on tap: another app may have saved a newer image.
+    if (await media.invokeMethod<bool>('allowRecent') != true) {
+      return media.invokeMethod<Uint8List>('pick');
+    }
+    final found = await media.invokeMethod<Map>('latest');
+    final id = found?['id'] as int?;
+    if (id == null) return media.invokeMethod<Uint8List>('pick');
+    if (!_disposed) {
+      latestImage = found;
+      _changed();
+    }
+    return media.invokeMethod<Uint8List>('recentImage', {'id': id});
+  });
 
   Future<void> pickImage(RunAction run) =>
       attachImage(run, () => media.invokeMethod<Uint8List>('pick'));
@@ -103,7 +93,7 @@ class AttachmentController extends ChangeNotifier {
     RunAction run,
     Future<Uint8List?> Function() source,
   ) async {
-    if (attaching || composer.sending) return;
+    if (attaching || composer.sending || composer.dictating) return;
     if (!supported) {
       await run(() async {
         throw StateError('Update Paddock on the PC to attach images.');

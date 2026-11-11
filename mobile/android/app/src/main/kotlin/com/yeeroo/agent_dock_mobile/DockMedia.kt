@@ -22,7 +22,7 @@ class DockMedia(private val activity: MainActivity, private val channel: MethodC
         Build.VERSION.SDK_INT >= 33 -> arrayOf(Manifest.permission.READ_MEDIA_IMAGES)
         else -> arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
     }
-    // Full or user-selected photo access both allow reading recent screenshots.
+    // Full or user-selected photo access both allow reading accessible images.
     private fun canRead() = readPermissions.any { activity.checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }
     private var captureCallback: Activity.ScreenCaptureCallback? = null
     fun listen() {
@@ -37,17 +37,16 @@ class DockMedia(private val activity: MainActivity, private val channel: MethodC
                         activity.startActivityForResult(intent, 7410)
                     } catch (_: Exception) { pending = null; result.error("picker", "No image picker is available.", null) }
                 }
-                "recent" -> {
+                "latest" -> {
                     if (!canRead()) { result.success(mapOf("permission" to false)); return@setMethodCallHandler }
-                    val seconds = (call.argument<Int>("seconds") ?: 300).coerceIn(10, 3600)
                     Thread {
-                        val found = try { recentScreenshot(seconds) } catch (_: Exception) { null }
+                        val found = try { latestImage() } catch (_: Exception) { null }
                         activity.runOnUiThread { result.success(found ?: mapOf("permission" to true)) }
                     }.start()
                 }
                 "recentImage" -> {
                     val id = call.argument<Number>("id")?.toLong()
-                    if (id == null || !canRead()) { result.error("image", "The screenshot is no longer available.", null); return@setMethodCallHandler }
+                    if (id == null || !canRead()) { result.error("image", "The image is no longer available.", null); return@setMethodCallHandler }
                     deliver(ContentUris.withAppendedId(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, id), result)
                 }
                 "allowRecent" -> {
@@ -85,19 +84,14 @@ class DockMedia(private val activity: MainActivity, private val channel: MethodC
         permission = null
         return true
     }
-    // Newest image in a Screenshots folder added within the last [seconds].
-    private fun recentScreenshot(seconds: Int): Map<String, Any>? {
-        val since = System.currentTimeMillis() / 1000 - seconds
-        val columns = mutableListOf(MediaStore.Images.Media._ID, MediaStore.Images.Media.DATE_ADDED, MediaStore.Images.Media.DISPLAY_NAME)
-        if (Build.VERSION.SDK_INT >= 29) columns.add(MediaStore.Images.Media.RELATIVE_PATH)
+    // Newest accessible phone image, regardless of folder or age.
+    private fun latestImage(): Map<String, Any>? {
+        val columns = arrayOf(MediaStore.Images.Media._ID, MediaStore.Images.Media.DATE_ADDED)
         activity.contentResolver.query(
-            MediaStore.Images.Media.EXTERNAL_CONTENT_URI, columns.toTypedArray(),
-            "${MediaStore.Images.Media.DATE_ADDED} >= ?", arrayOf(since.toString()),
-            "${MediaStore.Images.Media.DATE_ADDED} DESC",
+            MediaStore.Images.Media.EXTERNAL_CONTENT_URI, columns, null, null,
+            "${MediaStore.Images.Media.DATE_ADDED} DESC, ${MediaStore.Images.Media._ID} DESC",
         )?.use { cursor ->
-            while (cursor.moveToNext()) {
-                val place = (if (Build.VERSION.SDK_INT >= 29) cursor.getString(3) ?: "" else "") + "/" + (cursor.getString(2) ?: "")
-                if (!place.contains("screenshot", ignoreCase = true)) continue
+            if (cursor.moveToFirst()) {
                 val id = cursor.getLong(0)
                 val found = mutableMapOf<String, Any>("permission" to true, "id" to id, "at" to cursor.getLong(1) * 1000)
                 if (Build.VERSION.SDK_INT >= 29) try {
@@ -105,7 +99,7 @@ class DockMedia(private val activity: MainActivity, private val channel: MethodC
                     val output = ByteArrayOutputStream()
                     try { thumb.compress(Bitmap.CompressFormat.PNG, 100, output) } finally { thumb.recycle() }
                     found["thumbnail"] = output.toByteArray()
-                } catch (_: Exception) { /* Show the chip without a preview. */ }
+                } catch (_: Exception) { /* Use the image icon without a preview. */ }
                 return found
             }
         }

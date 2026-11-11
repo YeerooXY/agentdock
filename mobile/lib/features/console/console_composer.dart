@@ -11,7 +11,7 @@ import 'attachment_controller.dart';
 import 'composer_controller.dart';
 
 /// The reply box below a console: message controls,
-/// screenshot offer, notices and the message field.
+/// latest-image shortcut, notices and the message field.
 class ConsoleChatPanel extends StatelessWidget {
   const ConsoleChatPanel({
     super.key,
@@ -24,6 +24,7 @@ class ConsoleChatPanel extends StatelessWidget {
     required this.onAttach,
     required this.onAttachRecent,
     required this.onSend,
+    required this.onDictate,
   });
 
   final DockClient client;
@@ -36,27 +37,19 @@ class ConsoleChatPanel extends StatelessWidget {
   /// `files` or `image`.
   final ValueChanged<String> onAttach;
 
-  /// Attaches the offered recent screenshot.
+  /// Attaches the latest accessible phone image.
   final VoidCallback onAttachRecent;
-  final VoidCallback onSend;
+  final VoidCallback onSend, onDictate;
 
   @override
   Widget build(BuildContext context) {
     final c = client;
     final typed = Session.fromJson(session);
-    final sending = composer.sending;
+    final sending = composer.sending || composer.dictating;
     final steering = typed.consoleCapabilities?['steering'] == true;
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        if (attachments.recentShot case final shot?)
-          _RecentShotChip(
-            shot: shot,
-            onPressed: c.connected && !sending && !attachments.attaching
-                ? onAttachRecent
-                : null,
-            onDeleted: () => attachments.dismiss(shot['id'] as int),
-          ),
         if (composer.draftKey case final key?)
           if (c.drafts.lastSent(key).isNotEmpty)
             Padding(
@@ -133,6 +126,9 @@ class ConsoleChatPanel extends StatelessWidget {
               !attachments.attaching &&
               typed.taskId == null,
           onAttach: onAttach,
+          attachments: attachments,
+          onAttachRecent: onAttachRecent,
+          onDictate: !sending && c.connected ? onDictate : null,
           onSend:
               c.connected &&
                   !sending &&
@@ -177,53 +173,15 @@ class _ModelEffortMenu extends StatelessWidget {
         if (selection.effort != null) effortLabel(selection.effort!),
         if (selection.pending) '(selected)',
       ].join('  ');
-      return Tooltip(
-        message: 'Model and effort',
-        child: TextButton(
+      return Semantics(
+        label: label,
+        child: IconButton(
+          tooltip: 'Model and effort',
           onPressed: enabled ? () => onSelected('Model') : null,
-          child: Text(label, maxLines: 2, overflow: TextOverflow.ellipsis),
+          icon: const Icon(Icons.tune),
         ),
       );
     },
-  );
-}
-
-class _RecentShotChip extends StatelessWidget {
-  const _RecentShotChip({
-    required this.shot,
-    required this.onPressed,
-    required this.onDeleted,
-  });
-  final Map shot;
-  final VoidCallback? onPressed;
-  final VoidCallback onDeleted;
-
-  @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
-    child: Align(
-      alignment: Alignment.centerLeft,
-      child: InputChip(
-        key: const ValueKey('recent-screenshot'),
-        avatar: shot['thumbnail'] is Uint8List
-            ? ClipRRect(
-                borderRadius: BorderRadius.circular(4),
-                child: Image.memory(
-                  shot['thumbnail'] as Uint8List,
-                  fit: BoxFit.cover,
-                  gaplessPlayback: true,
-                ),
-              )
-            : const Icon(Icons.screenshot_outlined),
-        label: Text(
-          'Attach screenshot, ${TimeOfDay.fromDateTime(DateTime.fromMillisecondsSinceEpoch(shot['at'] as int)).format(context)}',
-          overflow: TextOverflow.ellipsis,
-        ),
-        onPressed: onPressed,
-        deleteButtonTooltipMessage: 'Dismiss',
-        onDeleted: onDeleted,
-      ),
-    ),
   );
 }
 
@@ -238,6 +196,9 @@ class _ComposerField extends StatelessWidget {
     required this.onSend,
     required this.onTerminalKeys,
     required this.onLiveControls,
+    required this.attachments,
+    required this.onAttachRecent,
+    required this.onDictate,
   });
   final Session session;
   final Map<String, dynamic> sessionMap;
@@ -245,91 +206,170 @@ class _ComposerField extends StatelessWidget {
   final ComposerController composer;
   final bool attachEnabled;
   final ValueChanged<String> onAttach, onLiveControls;
-  final VoidCallback? onSend, onTerminalKeys;
+  final VoidCallback? onSend, onTerminalKeys, onDictate;
+  final VoidCallback onAttachRecent;
+  final AttachmentController attachments;
 
   @override
   Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
-    child: ListenableBuilder(
-      listenable: composer.focus,
-      builder: (context, _) => InputDecorator(
-        key: const ValueKey('reply-box'),
-        isFocused: composer.focus.hasFocus,
-        decoration: const InputDecoration(contentPadding: EdgeInsets.all(6)),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ConstrainedBox(
-              constraints: BoxConstraints(
-                maxHeight: min(
-                  MediaQuery.textScalerOf(context).scale(16) * 1.4 * 8.5 + 24,
-                  max(96, MediaQuery.sizeOf(context).height * .35),
-                ),
-              ),
-              child: TextField(
-                controller: composer.editor,
-                scrollController: composer.scroll,
-                focusNode: composer.focus,
-                onChanged: (_) => composer.edited(),
-                minLines: 3,
-                maxLines: null,
-                style: const TextStyle(fontSize: 16, height: 1.4),
-                textInputAction: TextInputAction.newline,
-                autocorrect: false,
-                enableSuggestions: false,
-                decoration: InputDecoration(
-                  hintText: session.taskId != null
-                      ? 'Worker message'
-                      : 'Message',
-                  contentPadding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
-                  filled: false,
-                  border: InputBorder.none,
-                  enabledBorder: InputBorder.none,
-                  focusedBorder: InputBorder.none,
-                ),
-              ),
-            ),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                PopupMenuButton<String>(
-                  tooltip: 'Attach',
-                  icon: Icon(Icons.add, color: blue),
-                  enabled: attachEnabled,
-                  onSelected: onAttach,
-                  itemBuilder: (_) => [
-                    const PopupMenuItem(value: 'files', child: Text('Files')),
-                    if (session.remote == null)
-                      const PopupMenuItem(value: 'image', child: Text('Image')),
-                    if (client.supports('prompts'))
-                      const PopupMenuItem(
-                        value: 'prompts',
-                        child: Text('Saved prompts'),
-                      ),
-                  ],
-                ),
-                Expanded(
-                  child: _ModelEffortMenu(
-                    client: client,
-                    session: sessionMap,
-                    enabled: client.connected && !composer.sending,
-                    onSelected: onLiveControls,
+    padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
+    child: IconButtonTheme(
+      data: IconButtonThemeData(
+        style: IconButton.styleFrom(
+          minimumSize: const Size(40, 48),
+          maximumSize: const Size(40, 48),
+          padding: EdgeInsets.zero,
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          foregroundColor: blue,
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          IconButton(
+            tooltip: 'Terminal keys',
+            onPressed: onTerminalKeys,
+            icon: const Icon(Icons.keyboard_alt_outlined),
+          ),
+          SizedBox(
+            width: 40,
+            height: 48,
+            child: PopupMenuButton<String>(
+              tooltip: 'Attach',
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 40, minHeight: 48),
+              icon: Icon(Icons.add_photo_alternate_outlined, color: blue),
+              enabled: attachEnabled,
+              onSelected: onAttach,
+              itemBuilder: (_) => [
+                const PopupMenuItem(value: 'files', child: Text('Files')),
+                if (session.remote == null)
+                  const PopupMenuItem(value: 'image', child: Text('Image')),
+                if (client.supports('prompts'))
+                  const PopupMenuItem(
+                    value: 'prompts',
+                    child: Text('Saved prompts'),
                   ),
-                ),
-                IconButton(
-                  tooltip: 'Terminal keys',
-                  onPressed: onTerminalKeys,
-                  icon: Icon(Icons.keyboard_alt_outlined, color: blue),
-                ),
-                DockSendButton(
-                  compact: true,
-                  onPressed: onSend,
-                  sending: composer.sending,
-                ),
               ],
             ),
-          ],
-        ),
+          ),
+          _ModelEffortMenu(
+            client: client,
+            session: sessionMap,
+            enabled:
+                client.connected && !composer.sending && !composer.dictating,
+            onSelected: onLiveControls,
+          ),
+          IconButton(
+            tooltip: 'Dictate',
+            onPressed: onDictate,
+            icon: Icon(composer.dictating ? Icons.mic : Icons.mic_none),
+          ),
+          Expanded(
+            child: ListenableBuilder(
+              listenable: composer.focus,
+              builder: (context, _) => InputDecorator(
+                key: const ValueKey('reply-box'),
+                isFocused: composer.focus.hasFocus,
+                decoration: InputDecoration(
+                  contentPadding: const EdgeInsets.only(left: 10),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(24),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(24),
+                    borderSide: BorderSide(
+                      color: Theme.of(context).dividerColor,
+                    ),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(24),
+                    borderSide: BorderSide(color: blue),
+                  ),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Expanded(
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(
+                          maxHeight: min(
+                            MediaQuery.textScalerOf(context).scale(16) *
+                                    1.4 *
+                                    8.5 +
+                                24,
+                            max(96, MediaQuery.sizeOf(context).height * .35),
+                          ),
+                        ),
+                        child: TextField(
+                          controller: composer.editor,
+                          scrollController: composer.scroll,
+                          focusNode: composer.focus,
+                          onChanged: (_) => composer.edited(),
+                          minLines: 1,
+                          maxLines: null,
+                          style: const TextStyle(fontSize: 16, height: 1.4),
+                          textInputAction: TextInputAction.newline,
+                          autocorrect: false,
+                          enableSuggestions: false,
+                          decoration: InputDecoration(
+                            hintText: session.taskId != null
+                                ? 'Worker message'
+                                : 'Message',
+                            hintMaxLines: 1,
+                            contentPadding: const EdgeInsets.symmetric(
+                              vertical: 12,
+                            ),
+                            filled: false,
+                            border: InputBorder.none,
+                            enabledBorder: InputBorder.none,
+                            focusedBorder: InputBorder.none,
+                          ),
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      key: const ValueKey('latest-image'),
+                      tooltip: 'Attach latest phone image',
+                      onPressed:
+                          attachEnabled &&
+                              session.remote == null &&
+                              attachments.supported
+                          ? onAttachRecent
+                          : null,
+                      icon: attachments.latestImage?['thumbnail'] is Uint8List
+                          ? ClipRRect(
+                              borderRadius: BorderRadius.circular(6),
+                              child: Image.memory(
+                                attachments.latestImage!['thumbnail']
+                                    as Uint8List,
+                                width: 28,
+                                height: 28,
+                                fit: BoxFit.cover,
+                                gaplessPlayback: true,
+                                errorBuilder: (_, _, _) =>
+                                    const Icon(Icons.image_outlined),
+                              ),
+                            )
+                          : const Icon(Icons.image_outlined),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          SizedBox(
+            width: 40,
+            height: 48,
+            child: Center(
+              child: DockSendButton(
+                compact: true,
+                onPressed: onSend,
+                sending: composer.sending,
+              ),
+            ),
+          ),
+        ],
       ),
     ),
   );

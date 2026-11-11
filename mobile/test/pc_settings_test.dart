@@ -368,12 +368,12 @@ void main() {
     c.state['sessions'][0].addAll({'model': 'gpt-6.1-sol', 'effort': 'medium'});
     await tester.pumpWidget(DockApp(client: c));
     await tester.pumpAndSettle();
-    expect(find.text('6.1 Sol  Medium'), findsOneWidget);
+    expect(find.bySemanticsLabel('6.1 Sol  Medium'), findsOneWidget);
     expect(find.byTooltip('Model and effort'), findsOneWidget);
     c.state['sessions'][0]['effort'] = 'max';
     c.notifyListeners();
     await tester.pumpAndSettle();
-    expect(find.text('6.1 Sol  Max'), findsOneWidget);
+    expect(find.bySemanticsLabel('6.1 Sol  Max'), findsOneWidget);
     expect(c.inputs, isEmpty);
   });
 }
