@@ -5,6 +5,16 @@ const panelsModule = import('../src/console/panels.js');
 const providersModule = import('../src/ui/providers.js');
 const formatModule = import('../src/ui/format.js');
 
+test('desktop messages go directly to the terminal with no queue actions', async () => {
+  const writes = [];
+  const handlers = require('../electron/desktop-session-commands.cjs').desktopSessionCommands({
+    sessions: { write: (id, text) => writes.push([id, text]) }
+  });
+  assert.deepEqual(Object.keys(handlers).filter(method => method.startsWith('queue.')), []);
+  await handlers['session.input']({ id: 'selected', data: 'direct input' });
+  assert.deepEqual(writes, [['selected', 'direct input']]);
+});
+
 test('account menus follow the served switch capability rather than provider names', async () => {
   const { accountSwitchMenu } = await import('../src/console/account-menu.js');
   const session = { id: 'sample', provider: 'future', switchMethod: 'resume', draftSupported: true,

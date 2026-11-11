@@ -10,7 +10,7 @@ import 'widget_test.dart' show FakeDock, enterChat;
 Future<void> openKeys(WidgetTester tester, FakeDock c) async {
   await tester.pumpWidget(DockApp(client: c));
   await tester.pumpAndSettle();
-  await tester.tap(find.text('Terminal keys'));
+  await tester.tap(find.byTooltip('Terminal keys'));
   await tester.pumpAndSettle();
 }
 

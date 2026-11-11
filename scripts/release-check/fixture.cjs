@@ -35,16 +35,6 @@ async function installBridge(context, state, record, origin) {
         moved.slot = payload.slot;
         return changed(moved);
       }
-      case 'queue.move': case 'queue.remove': case 'queue.edit': case 'queue.add': case 'queue.pause': {
-        const queue = state.queues[payload.id] ||= { paused: false, entries: [] };
-        const i = queue.entries.findIndex(x => x.id === payload.entryId);
-        if (method === 'queue.move') { const [entry] = queue.entries.splice(i, 1); queue.entries.splice(i + payload.offset, 0, entry); }
-        if (method === 'queue.remove') queue.entries.splice(i, 1);
-        if (method === 'queue.edit') queue.entries[i].text = payload.text;
-        if (method === 'queue.add') queue.entries.push({ id: `added-${queue.entries.length}`, text: payload.text, createdAt: Date.now() });
-        if (method === 'queue.pause') queue.paused = payload.paused;
-        return changed(queue);
-      }
       case 'code.create': case 'web.create': {
         const panel = { id: method === 'code.create' ? 'code-one' : 'web-one', kind: method === 'code.create' ? 'code' : 'web', alive: true, state: 'open', slot: 3, width: 1, height: 1, name: 'Review panel', cwd: 'C:\\Workspace', codeSourceKey: 'console-0', url: f.webUrl?.startsWith('/') ? origin + f.webUrl : f.webUrl || '' };
         state.codePanels.push(panel); return changed(panel);

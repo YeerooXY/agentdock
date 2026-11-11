@@ -40,7 +40,6 @@ const code = async page => {
   if (await page.locator('[data-code-path]').count()) await page.locator('.code-panel .cm-content').waitFor();
 };
 const plan = async page => { await openPage(page, 'projects'); await page.locator('[data-project-plan]').first().click(); };
-const queue = async page => { await grid(page); await page.locator('[data-queue-open]').first().click(); };
 const previewResult = async page => {
   await openPage(page, 'results'); await openResultFolder(page); await page.locator('[data-wb=preview]').first().click();
   await page.waitForFunction(() => { const preview = document.querySelector('#result-preview'); return preview && preview.textContent !== 'Loading…'; });
@@ -70,7 +69,6 @@ item('2.2', '#console-chooser', async page => { await grid(page); await page.loc
 item('2.3', '.session-card[data-console-id="console-0"]', grid, [c('long', 'Long name and folder', s => { s.sessions[0].name = long; s.sessions[0].cwd += long; }), ...['active', 'ready', 'attention', 'error', 'ended'].map(status => c(status, `Console status: ${status}`, s => { s.sessions[0].state = status; s.sessions[0].alive = status !== 'ended'; }))]);
 item('2.4', '#console-color-dialog', click('[data-frame-slot="1"]'), [...themes.map(theme => c(theme, `Console trim: ${theme}`, s => { s.settings.slotTrims = { 1: theme }; })), c('reset', 'Reset to default', s => { s.settings.slotTrims = {}; })]);
 item('2.5', '#consoles-page', grid, [c('mixed', 'Mixed sizes at this window width', s => { s.sessions[0].width = 2; s.sessions[1].slot = 3; }), c('swap', 'Move onto an occupied slot', () => {}, async page => { await page.locator('[data-console-drag="console-0"]').focus(); await page.keyboard.press('Alt+2'); })]);
-item('2.6', '#queue-panel', queue, [c('empty', 'Empty queue'), ...[false, true].map(paused => c(paused ? 'paused' : 'twenty', paused ? 'Paused queue' : 'Twenty queued messages', s => { s.queues['console-0'] = { paused, entries: Array.from({ length: 20 }, (_, i) => ({ id: `q-${i}`, text: `Message ${i + 1}: inspect the import screen.`, createdAt: now })) }; })), c('edit', 'Edit, reorder and remove', s => { s.queues['console-0'] = { paused: false, entries: [0, 1, 2].map(i => ({ id: `q-${i}`, text: `Message ${i}`, createdAt: now })) }; }, async page => { await page.locator('[data-queue-move="1"]').first().click(); await page.locator('[data-queue-remove]').first().click(); await page.locator('[data-queue-edit]').first().click(); }), c('long', 'Long queued message', s => { s.queues['console-0'] = { paused: false, entries: [{ id: 'long', text: long.repeat(10), createdAt: now }] }; }), manual('delivery', 'Send after a turn ends; send failure', 'Turn completion and delivery require a real agent process.')]);
 item('2.7', '#consoles-page', grid, [c('banner', 'Project suggestion', s => { s.settings.suggestProjects = true; consoles(s, 1); }), ...['stop'].map(action => c(action, action === 'stop' ? "Don't ask again" : 'Dismiss suggestion', s => { s.settings.suggestProjects = true; consoles(s, 1); }, click(`[data-project-${action}]`))), c('long', 'Long console name', s => { s.settings.suggestProjects = true; consoles(s, 1); s.sessions[0].name = long; })]);
 item('2.8', '.settings-content', nav('tools'), [c('none', 'No setup requests'), c('several', 'Several setup requests', s => { s.workbench.setupRequests = Array.from({ length: 5 }, (_, i) => ({ id: `setup-${i}`, kind: 'tool', consoleName: 'Review console', config: { id: `tool-${i}`, name: `Tool ${i + 1}`, command: 'synthetic-tool', args: [] } })); }), c('key', 'Key needed', s => { s.workbench.setupRequests = [{ id: 'key', kind: 'key', consoleName: long, config: { id: 'review-key', name: 'Review tool key' } }]; }), manual('apply', 'Apply setup and handle a connection failure', 'Tool startup and credential binding require the backend.')]);
 item('2.9', '#consoles-page', grid, [c('none', 'No screenshot'), ...['local', 'wsl', 'ssh'].map(kind => c(kind, `Latest screenshot: ${kind} console`, s => { s._fixture.screenshot = true; s._fixture.destination = kind; if (kind === 'ssh') s.sessions[0].remoteHostId = 'host'; if (kind === 'wsl') s.sessions[0].provider = 'wsl'; })), manual('paste', 'Paste locally, translate WSL path, refuse SSH', 'Clipboard files and path translation require the desktop backend.')]);
@@ -145,14 +143,6 @@ registry['2.5'].cases.push(
     await page.waitForFunction(() => !document.body.classList.contains('console-resizing'));
   })
 );
-// Keep queue delivery evidence as well as the open composer state.
-registry['2.12'].cases.push(c('queued', 'Queue selected code while busy', s => { s.sessions[0].state = 'active'; }, async page => {
-  await page.locator('.ask-agent-dialog [data-queue]').click();
-  await page.locator('.ask-agent-dialog').waitFor({ state: 'detached' });
-  await page.locator('[data-queue-open]').first().click();
-  await page.locator('#queue-panel .queue-list li[data-entry]').waitFor();
-}));
-registry['2.12'].cases.at(-1).main = '#queue-panel';
 // The composer already positions itself in the viewport. A capture-time scroll can
 // dismiss it in WebKit, especially after closing its destination removes a terminal.
 registry['2.12'].cases.find(x => x.id === 'closed').scrollMain = false;

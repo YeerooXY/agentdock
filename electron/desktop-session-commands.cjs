@@ -16,7 +16,7 @@ const { NO_VALUE } = require('./command-result.cjs');
 
 function desktopSessionCommands(h) {
   const { sessions, accounts, projects, worktrees, getSettings, persistSettings, publish, dialog, getWindow, cliSetup,
-    codePanel, messageQueue, prompts, clipboard, Menu, screenshots, shell, workbench, ownerConsoles, codexAccounts,
+    codePanel, prompts, clipboard, Menu, screenshots, shell, workbench, ownerConsoles, codexAccounts,
     credentialSwitch, root, getLimits, setLimits, setStorageError, limitAccountId } = h;
   return {
     'setup.validate': async payload => validateConsoleDefaults(payload),
@@ -100,12 +100,6 @@ function desktopSessionCommands(h) {
     'session.retry': async payload => sessions.retry(payload),
     'session.releaseToHub': async payload => { ownerConsoles.release(payload?.consoleKey, payload?.launchId); return NO_VALUE; },
     'session.input': async payload => { sessions.write(payload?.id, payload?.data); return NO_VALUE; },
-    'queue.add': async payload => messageQueue.add(payload?.id, payload?.text, { ownerRequested: true }),
-    'queue.edit': async payload => { messageQueue.edit(payload?.id, payload?.entryId, payload?.text); return NO_VALUE; },
-    'queue.remove': async payload => { messageQueue.remove(payload?.id, payload?.entryId); return NO_VALUE; },
-    'queue.move': async payload => { messageQueue.move(payload?.id, payload?.entryId, payload?.offset); return NO_VALUE; },
-    'queue.pause': async payload => { messageQueue.pause(payload?.id, payload?.paused === true); return NO_VALUE; },
-    'queue.send': async payload => { await messageQueue.sendNow(payload?.id, payload?.entryId); return NO_VALUE; },
     'prompt.save': async payload => prompts.save(payload),
     'prompt.remove': async payload => { prompts.remove(payload); return NO_VALUE; },
     'clipboard.write': async payload => {

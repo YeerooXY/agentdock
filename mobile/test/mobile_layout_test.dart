@@ -1,94 +1,99 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:agent_dock_mobile/main.dart';
-import 'package:agent_dock_mobile/agent_identity.dart';
+import 'package:agent_dock_mobile/dock_style.dart';
+import 'package:agent_dock_mobile/live_agent_controls.dart';
 
-import 'widget_test.dart' show FakeDock, enterChat;
+import 'widget_test.dart' show FakeDock;
 
 void main() {
-  for (final provider in ['codex', 'claude']) {
-    testWidgets(
-      '$provider header uses bundled icon only and chat starts collapsed',
-      (tester) async {
-        tester.view.physicalSize = const Size(360, 800);
+  for (final width in [320.0, 393.0]) {
+    for (final scale in [1.0, 2.0]) {
+      testWidgets('expanded reply box and aligned actions at $width / $scale', (
+        tester,
+      ) async {
+        tester.view.physicalSize = Size(width, 852);
         tester.view.devicePixelRatio = 1;
+        tester.platformDispatcher.textScaleFactorTestValue = scale;
         addTearDown(tester.view.resetPhysicalSize);
         addTearDown(tester.view.resetDevicePixelRatio);
+        addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
         final c = FakeDock();
         addTearDown(c.dispose);
-        c.state['sessions'][0]['provider'] = provider;
+        c.state['sessions'][0].addAll({
+          'model': 'claude-sonnet-5-5',
+          'effort': 'high',
+        });
+        c.state['capabilities'] = ['console.queue'];
         await tester.pumpWidget(DockApp(client: c));
-        expect(find.text(AgentIdentity.of(provider).name), findsNothing);
-        expect(find.byType(AgentMark), findsOneWidget);
-        final icon = tester.widget<Image>(
-          find.descendant(
-            of: find.byType(AgentMark),
-            matching: find.byType(Image),
-          ),
-        );
+        await tester.pumpAndSettle();
+        final field = find.byType(TextField).last;
+        expect(tester.widget<TextField>(field).minLines, 3);
+        expect(tester.getSize(field).height, greaterThan(72));
+        expect(tester.testTextInput.isVisible, isFalse);
+        expect(find.byKey(const ValueKey('enter-chat')), findsNothing);
+        expect(find.byTooltip('Collapse chat'), findsNothing);
+        expect(find.byTooltip('Queue'), findsNothing);
+        expect(find.byTooltip('Model and effort'), findsOneWidget);
+        final box = tester.getRect(find.byKey(const ValueKey('reply-box')));
+        final send = tester.getRect(find.byType(DockSendButton));
+        final keys = tester.getRect(find.byTooltip('Terminal keys'));
+        expect(send.center.dy, closeTo(keys.center.dy, 1));
+        expect(send.right, lessThanOrEqualTo(box.right));
+        expect(send.bottom, lessThanOrEqualTo(box.bottom));
+        expect(keys.center.dx, lessThan(send.center.dx));
+        await tester.enterText(field, 'Draft stays here');
+        await tester.pump();
+        await tester.tap(find.byTooltip('Terminal keys'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byTooltip('Close terminal keys'));
+        await tester.pumpAndSettle();
         expect(
-          (icon.image as AssetImage).assetName,
-          AgentIdentity.logo(provider),
+          tester.widget<TextField>(field).controller!.text,
+          'Draft stays here',
         );
-        expect(find.byTooltip('Model and effort'), findsNothing);
-        expect(find.byType(TextField), findsNothing);
-        expect(find.byTooltip('Agent commands'), findsNothing);
-        expect(find.text('Enter'), findsNothing);
-        expect(find.byIcon(Icons.desktop_windows), findsOneWidget);
-        expect(
-          tester.getSize(find.byKey(const ValueKey('enter-chat'))).height,
-          greaterThanOrEqualTo(40),
-        );
-      },
-    );
+        expect(c.inputs, isEmpty);
+        final model = find.text('Sonnet 5.5  High');
+        Focus.of(tester.element(model)).requestFocus();
+        await tester.pump();
+        for (final key in [
+          LogicalKeyboardKey.enter,
+          LogicalKeyboardKey.space,
+        ]) {
+          await tester.sendKeyEvent(key);
+          await tester.pumpAndSettle();
+          expect(find.byType(LiveAgentControls), findsOneWidget);
+          await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+          await tester.pumpAndSettle();
+          expect(
+            FocusManager.instance.primaryFocus,
+            isNot(isA<FocusScopeNode>()),
+          );
+          await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+          await tester.sendKeyDownEvent(LogicalKeyboardKey.shift);
+          await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+          await tester.sendKeyUpEvent(LogicalKeyboardKey.shift);
+          await tester.pump();
+        }
+        expect(c.inputs, isEmpty);
+        expect(tester.takeException(), isNull);
+      });
+    }
   }
-  testWidgets(
-    'collapse retains draft and hides model row until explicitly reopened',
-    (tester) async {
-      final c = FakeDock();
-      addTearDown(c.dispose);
-      await tester.pumpWidget(DockApp(client: c));
-      await enterChat(tester);
-      await tester.enterText(find.byType(TextField), 'Draft belongs here');
-      await tester.pump();
-      expect(find.byTooltip('Model and effort'), findsOneWidget);
-      await tester.tap(find.byTooltip('Collapse chat'));
-      await tester.pumpAndSettle();
-      expect(find.byType(TextField), findsNothing);
-      expect(find.byTooltip('Model and effort'), findsNothing);
-      expect(tester.testTextInput.isVisible, false);
-      await tester.drag(
-        find.byKey(const ValueKey('terminal-reading-scroll')),
-        const Offset(0, 100),
-      );
-      await tester.pumpAndSettle();
-      expect(tester.testTextInput.isVisible, false);
-      await enterChat(tester);
-      expect(find.text('Draft belongs here'), findsOneWidget);
-      expect(c.inputs, isEmpty);
-    },
-  );
-  testWidgets(
-    'composer starts small and stops growing at eight and a half lines',
-    (tester) async {
-      tester.view.physicalSize = const Size(393, 852);
-      tester.view.devicePixelRatio = 1;
-      addTearDown(tester.view.resetPhysicalSize);
-      addTearDown(tester.view.resetDevicePixelRatio);
-      final c = FakeDock();
-      addTearDown(c.dispose);
-      await tester.pumpWidget(DockApp(client: c));
-      await enterChat(tester);
-      final field = find.byType(TextField);
-      final small = tester.getSize(field).height;
-      await tester.enterText(field, List.filled(40, 'a long draft').join('\n'));
-      await tester.pumpAndSettle();
-      expect(tester.getSize(field).height, greaterThan(small));
-      expect(
-        tester.getSize(field).height,
-        lessThanOrEqualTo(16 * 1.4 * 8.5 + 24),
-      );
-      expect(tester.takeException(), isNull);
-    },
-  );
+  testWidgets('long drafts grow within the existing limit', (tester) async {
+    final c = FakeDock();
+    addTearDown(c.dispose);
+    await tester.pumpWidget(DockApp(client: c));
+    await tester.pumpAndSettle();
+    final field = find.byType(TextField).last,
+        initial = tester.getSize(find.byType(TextField).last).height;
+    await tester.enterText(field, List.filled(40, 'a long draft').join('\n'));
+    await tester.pumpAndSettle();
+    expect(tester.getSize(field).height, greaterThan(initial));
+    expect(
+      tester.getSize(field).height,
+      lessThanOrEqualTo(16 * 1.4 * 8.5 + 24),
+    );
+  });
 }

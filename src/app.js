@@ -17,7 +17,7 @@ import { workbenchUI } from './workbench-ui.js';
 import { toolFeatures, syncIntegrationJobs } from './tool-features.js';
 import { projectsUI } from './projects-ui.js';
 import { consoleProjects } from './console-projects.js';
-import { consoleQueue } from './console-queue.js';
+import { consolePrompts } from './console-prompts.js';
 import { workerComposer } from './worker-composer.js';
 import { reviewPanelUI } from './review-panel-ui.js';
 import { taskLoopUI } from './task-loop-ui.js';
@@ -62,7 +62,7 @@ let renderedView = null, viewAnimation, pageBeforeSettings = 'consoles';
 let bareFullscreen = false, fullscreenPending = false; // set when F11, not a console expansion, entered fullscreen
 const getState = () => state, getPage = () => view.page;
 // Feature modules created at the end of startup.
-let reviewPanels, setup, workbench, layoutMotion, phone, projects, projectChats, messageQueue, imageGenerator, updates, taskLoops, remoteHosts, vim;
+let reviewPanels, setup, workbench, layoutMotion, phone, projects, projectChats, savedPrompts, imageGenerator, updates, taskLoops, remoteHosts, vim;
 const viewFade = [{ opacity: 0, transform: 'translateY(4px)' }, { opacity: 1, transform: 'translateY(0)' }], viewFadeTiming = { duration: 160, easing: 'cubic-bezier(.22,1,.36,1)' };
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
 document.addEventListener('visibilitychange', () => { document.body.dataset.visualPaused = String(document.hidden); });
@@ -124,7 +124,7 @@ const names = slotNames({ call, toast, getState });
 const accountMenuActions = installAccountMenus({ call, toast });
 const grid = consoleGrid({
   getState, view: readView, clearExpanded: () => { view.expandedId = null; }, appearance, terminals, workerComposers, names, providerName, readyIcon, reducedMotion, applySidebar, lightingChanged: lights.changed,
-  panels: { reviewPanels: () => reviewPanels, projectChats: () => projectChats, messageQueue: () => messageQueue, motion: () => layoutMotion }
+  panels: { reviewPanels: () => reviewPanels, projectChats: () => projectChats, savedPrompts: () => savedPrompts, motion: () => layoutMotion }
 });
 const usage = usagePage({ getState, call, toast, providerName, renderPage, openNewAccount: provider => accounts.openNewAccount(provider) });
 const tools = toolsPage({ getState, receiveState: receive, call, toast, getPage, renderPage, navigate: navigatePage, imageGenerator: () => imageGenerator, submitForm });
@@ -526,7 +526,7 @@ reviewPanels = reviewPanelUI({ call, getState, escape, icon, resizeHandles, toas
 phone = mobileUI({ call, escape, icon, getState, toast, navigate: navigatePage });
 projects = projectsUI({ call, getState, escape, icon, toast, renderPage, openNew, preview: value => openFile(null, value), openResult: id => workbench.openResult(id), getPage });
 projectChats = consoleProjects({ call, getState, getView: () => ({ page: view.page, selectedId: view.selectedId }), projects, navigate: navigatePage, escape, icon, toast });
-messageQueue = consoleQueue({ call, getState, escape, icon, toast, paste: (id, text) => terminals.paste(id, text), agentProviders: () => (state?.agents || []).map(x => x.id) });
+savedPrompts = consolePrompts({ call, getState, escape, icon, toast, paste: (id, text) => terminals.paste(id, text), agentProviders: () => (state?.agents || []).map(x => x.id) });
 imageGenerator = imageGenerationUI({ call, getState, escape, toast });
 remoteHosts = sshUI({ call, escape, getState, toast, render: renderPage });
 updates = updatesUI({ call, getState, escape, icon, toast });

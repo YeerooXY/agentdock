@@ -851,28 +851,15 @@ test('a saved Firebase sender key and phone registrations are erased on load', (
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
 
-test('a phone queues messages only for the console it has open', async t => {
-  const { MessageQueue } = require('../electron/message-queue.cjs');
+test('removed queue methods cannot send messages from a phone', async t => {
   const f = await fixture(t), paired = await f.pair(), c = client(f, paired.data.token);
-  t.after(() => c.ws.terminate());
-  Object.assign(f.sessions.items.get('console-1'), { provider: 'codex', purpose: 'agent', state: 'active' });
-  Object.assign(f.sessions.items.get('console-2'), { provider: 'codex', purpose: 'agent', state: 'active' });
-  f.m.queue = new MessageQueue(f.sessions);
-  await once(c.ws, 'open');
-  await c.wait(x => x.type === 'state');
-  await assert.rejects(c.call('queue.add', { id: 'console-1', text: 'hi' }), /Select an open console/);
+  t.after(() => c.ws.terminate()); await once(c.ws, 'open');
   await c.call('subscribe', { id: 'console-1' });
-  const entry = await c.call('queue.add', { id: 'console-1', text: 'Run the tests' });
-  await assert.rejects(c.call('queue.add', { id: 'console-2', text: 'elsewhere' }), /Select an open console/);
-  assert.deepEqual(f.m.publicState().queues['console-1'].entries.map(x => x.text), ['Run the tests']);
-  assert.ok(f.m.publicState().capabilities.includes('console.queue'));
-  await c.call('queue.edit', { id: 'console-1', entryId: entry.id, text: 'Run all tests' });
-  assert.equal(f.m.publicState().queues['console-1'].entries[0].text, 'Run all tests');
-  await assert.rejects(c.call('queue.edit', { id: 'console-2', entryId: entry.id, text: 'Wrong console' }), /Select an open console/);
-  await c.call('queue.send', { id: 'console-1', entryId: entry.id });
-  await assert.rejects(c.call('queue.edit', { id: 'console-1', entryId: entry.id, text: 'Too late' }), /already sent or removed/);
-  assert.deepEqual(f.sessions.writes.map(x => x.data), ['Run all tests', '\r']);
-  assert.equal(f.m.publicState().queues['console-1'], undefined);
+  assert.ok(!f.m.publicState().capabilities.includes('console.queue'));
+  for (const method of ['queue.add','queue.edit','queue.move','queue.remove','queue.pause','queue.send']) {
+    await assert.rejects(c.call(method, { id: 'console-1', text: 'must not send' }));
+  }
+  assert.deepEqual(f.sessions.writes, []);
 });
 
 test('phone prompt editing requires a prompt library', async t => {

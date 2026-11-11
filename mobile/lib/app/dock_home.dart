@@ -217,6 +217,8 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(const SnackBar(content: Text('Mobile history cleared')));
+      case 'prompts':
+        unawaited(sheets.savedPrompts(context));
       case 'files':
         unawaited(sheets.pickFile(context));
       case 'image':
@@ -411,14 +413,12 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
     return LayoutBuilder(
       builder: (context, constraints) => SingleChildScrollView(
         child: SizedBox(
-          height: !composer.chatMode
-              ? constraints.maxHeight
-              : max(
-                  constraints.maxHeight,
-                  MediaQuery.viewInsetsOf(context).bottom > 0
-                      ? 200 + MediaQuery.textScalerOf(context).scale(64)
-                      : 160 + MediaQuery.textScalerOf(context).scale(32),
-                ),
+          height: max(
+            constraints.maxHeight,
+            MediaQuery.viewInsetsOf(context).bottom > 0
+                ? 200 + MediaQuery.textScalerOf(context).scale(64)
+                : 160 + MediaQuery.textScalerOf(context).scale(32),
+          ),
           child: Column(
             children: [
               Expanded(
@@ -442,32 +442,19 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
                 client: c,
                 onTerminalKeys: () => sheets.terminalKeys(context),
               ),
-              if (!composer.chatMode)
-                TerminalKeysButton(
-                  onPressed: c.connected && !composer.sending
-                      ? () => sheets.terminalKeys(context)
-                      : null,
-                ),
-              if (composer.chatMode)
-                ConsoleChatPanel(
-                  client: c,
-                  session: session,
-                  composer: composer,
-                  attachments: attachments,
-                  onLiveControls: (action) =>
-                      sheets.liveControls(context, action),
-                  onQueue: () => sheets.messageQueue(context),
-                  onTerminalKeys: () => sheets.terminalKeys(context),
-                  onAttach: (action) => consoleAction(action, session),
-                  onAttachRecent: () => attachments.attachRecentShot(run),
-                  onSend: () =>
-                      composer.send(run, onConsolePage: () => onConsolePage),
-                )
-              else
-                EnterChatHandle(
-                  hasDraft: composer.editor.text.isNotEmpty,
-                  onTap: composer.enterChatMode,
-                ),
+              ConsoleChatPanel(
+                client: c,
+                session: session,
+                composer: composer,
+                attachments: attachments,
+                onLiveControls: (action) =>
+                    sheets.liveControls(context, action),
+                onTerminalKeys: () => sheets.terminalKeys(context),
+                onAttach: (action) => consoleAction(action, session),
+                onAttachRecent: () => attachments.attachRecentShot(run),
+                onSend: () =>
+                    composer.send(run, onConsolePage: () => onConsolePage),
+              ),
             ],
           ),
         ),

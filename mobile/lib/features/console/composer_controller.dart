@@ -9,7 +9,7 @@ import 'command_target.dart';
 /// Runs an action and reports its failure to the user.
 typedef RunAction = Future<void> Function(Future<dynamic> Function() action);
 
-/// The console composer: per-console drafts, chat mode, sending and staged
+/// The console composer: per-console drafts, sending and staged
 /// command targets.
 ///
 /// Each console launch key has its own draft, caret and scroll position. A
@@ -35,7 +35,6 @@ class ComposerController extends ChangeNotifier {
   /// Draft key of the selected console, or null with no console.
   String? draftKey;
   bool sending = false;
-  bool chatMode = false;
 
   /// Set when a file path was inserted for a specific console. Sending to any
   /// other console, PC or connection is refused.
@@ -91,7 +90,6 @@ class ComposerController extends ChangeNotifier {
                 .clamp(0, value.length),
       ),
     );
-    chatMode = false;
     focus.unfocus();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_disposed && draftKey == key && scroll.hasClients) {
@@ -106,41 +104,6 @@ class ComposerController extends ChangeNotifier {
     });
     stagedCommandTarget = null;
     releaseTerminal();
-  }
-
-  void enterChatMode() {
-    final key = draftKey;
-    final offset = key == null ? null : client.drafts.position(key, 'composer');
-    if (!chatMode) {
-      chatMode = true;
-      _changed();
-    }
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_disposed || !chatMode || key != draftKey) return;
-      // Reopening a draft is also a reading action. Let the next field tap
-      // focus it, so Flutter does not jump from saved scrollback to the caret.
-      if (editor.text.isEmpty) focus.requestFocus();
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!_disposed &&
-            chatMode &&
-            key == draftKey &&
-            offset != null &&
-            scroll.hasClients) {
-          scroll.jumpTo(
-            offset.toDouble().clamp(0, scroll.position.maxScrollExtent),
-          );
-        }
-      });
-    });
-  }
-
-  void leaveChatMode() {
-    releaseTerminal();
-    focus.unfocus();
-    if (chatMode) {
-      chatMode = false;
-      _changed();
-    }
   }
 
   /// Typing by hand invalidates a staged target.
@@ -227,11 +190,6 @@ class ComposerController extends ChangeNotifier {
       selection: TextSelection.collapsed(offset: cursorOffset),
     );
     stagedCommandTarget = null;
-  }
-
-  /// Clears the draft after it was queued, if [key]'s console is still open.
-  void clearQueued(String? key) {
-    if (!_disposed && draftKey == key) editor.clear();
   }
 
   /// Picks up draft edits made on another page, such as Code.

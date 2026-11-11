@@ -4,12 +4,12 @@
 
 | Device | Download |
 | --- | --- |
-| Windows 10/11 (64-bit Intel or AMD) | **[Windows installer](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.40/Paddock-0.6.0-preview.40-Setup-x64.exe)** |
-| Android (ARM64, most phones) | **[Android APK](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.40/Paddock-0.6.0-preview.40-Android-arm64.apk)** |
-| Android (ARMv7, older 32-bit phones) | [Android ARMv7 APK](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.40/Paddock-0.6.0-preview.40-Android-armv7.apk) |
-| Android (x64) | [Android x64 APK](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.40/Paddock-0.6.0-preview.40-Android-x64.apk) |
+| Windows 10/11 (64-bit Intel or AMD) | **[Windows installer](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.41/Paddock-0.6.0-preview.41-Setup-x64.exe)** |
+| Android (ARM64, most phones) | **[Android APK](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.41/Paddock-0.6.0-preview.41-Android-arm64.apk)** |
+| Android (ARMv7, older 32-bit phones) | [Android ARMv7 APK](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.41/Paddock-0.6.0-preview.41-Android-armv7.apk) |
+| Android (x64) | [Android x64 APK](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.41/Paddock-0.6.0-preview.41-Android-x64.apk) |
 
-[Preview.40 release notes](https://github.com/YeerooXY/agentdock/releases/tag/v0.6.0-preview.40)
+[Preview.41 release notes](https://github.com/YeerooXY/agentdock/releases/tag/v0.6.0-preview.41)
 
 A desktop app for Windows, Linux and macOS: agent consoles, projects, shared tools and usage tracking. Linux and macOS installers come from the next release; until then, run Paddock from source on those systems.
 
@@ -56,9 +56,9 @@ See the [current state guide](docs/project-current-state.md) for mapped source e
 
 The native Android companion controls your PC consoles, provides the Projects workspace (Overview, Work, Outputs, Knowledge) on workspace-capable hosts, shows account usage, and receives optional completion alerts. Connected to a workspace-capable host, Results is accessed through Projects and omitted from the bottom navigation bar; older PC hosts retain the separate Results navigation destination. The header shows the harness icon, chat name, connection status and PC name.
 
-Tap the thin blue-pink handle below the terminal to write a message. **Model** and **Effort** appear while chat is open; the down arrow collapses it and keeps your draft. Each console retains its draft, caret and reading position. The top **⋮** menu contains **Text & display**, **Copy text**, **Console links**, **Clear mobile history** and direct keyboard input. Wrapped text keeps terminal colors; its size is adjustable. Clearing history keeps the active terminal screen and the PC process running.
+The reply box is open below the terminal with three lines ready for typing. Its bottom row contains attachments, one model/effort control, Terminal keys and Send. Each console retains its draft, caret and reading position. The top More options menu contains display, copy, links, history and direct keyboard controls.
 
-The list button beside **Terminal keys** opens the console's **Queue**: **Queue the message box text** adds your draft, and queued messages can be reordered, sent now or removed. **Saved prompts** places a saved prompt in the message box without sending it. The queue itself runs on your PC.
+**+ → Saved prompts** inserts a saved prompt into the reply box without sending it. Messages go directly to the CLI; Paddock does not maintain a separate message queue.
 
 Tap the **chat name → New console** to select a saved project/folder and an installed agent. Tap the current model or effort, make both choices, then press **Apply**. Browsing and cancelling send no terminal input. Effort can change while keeping the current model. Unknown menu layouts remain in the terminal. The message **+** attaches a project file or selected image. [Mobile controls](docs/mobile-controls.md).
 
@@ -136,7 +136,7 @@ The folder button above the grid changes the launch folder for new consoles. You
 
 Hold **+** for a moment, or right-click it, to choose a project, name, agent, model and folder for that panel. You can create a project from this chooser too. **Options** has a permission override and **Work in a new Git worktree**. These choices apply only to that console; a regular click still uses your saved defaults. Escape or Cancel closes the chooser without opening anything. This also works in the HUD. With a keyboard, hold Space or press Shift+Enter on a plus button.
 
-**Queue messages while an agent works.** Hover an agent console and click the list button in its bottom-right corner. Type a message and press **Queue** (Ctrl+Enter). When the agent finishes its turn, Paddock types the first queued message and presses Enter; the rest wait for later turns, one per turn. Typing in that console after a turn finishes skips sending for that turn, so your own reply goes first. Edit, reorder, **Send now** or remove queued messages, or **Pause sending**. **Type now** puts the text in the console without pressing Enter. Queues are kept in memory: ending the console or quitting Paddock clears them, and nothing is sent after a restart. Sending needs the agent's status reporting (Codex, Claude Code and agents that call dock/notify); without it, use **Send now**.
+**Saved prompts.** The document button on an agent console opens its prompt library. Save reusable text or type it into the console draft, then press Enter there to send it. Messages entered directly follow the CLI’s own input behavior.
 
 **Saved prompts** keep wording you reuse. In the queue panel, type a message, choose **Save as prompt** and name it; optionally limit it to the console's project. **Use** puts a saved prompt in the message box. Prompts are stored in `prompts.json` in Paddock's data folder.
 

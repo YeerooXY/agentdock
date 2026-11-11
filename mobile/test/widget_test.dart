@@ -131,12 +131,12 @@ class FakeDock extends DockClient {
 }
 
 Future<void> enterChat(WidgetTester tester) async {
-  final handle = find.byKey(const ValueKey('enter-chat'));
-  if (handle.evaluate().isNotEmpty) {
-    await tester.ensureVisible(handle);
-    await tester.tap(handle);
-    await tester.pumpAndSettle();
+  final field = find.byType(TextField).last;
+  await tester.ensureVisible(field);
+  if (tester.widget<TextField>(field).controller!.text.isEmpty) {
+    await tester.tap(field);
   }
+  await tester.pumpAndSettle();
 }
 
 Future<void> consoleAction(WidgetTester tester, String action) async {

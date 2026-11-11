@@ -69,7 +69,7 @@ void main() {
       addTearDown(c.dispose);
       await tester.pumpWidget(DockApp(client: c));
       await tester.pump();
-      await tester.tap(find.byKey(const ValueKey('enter-chat')));
+      await tester.tap(find.byType(TextField).last);
       await tester.pumpAndSettle();
       final shell = BuildCounts.of('shell');
       await tester.enterText(find.byType(TextField).last, 'abc');
