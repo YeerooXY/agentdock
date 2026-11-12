@@ -245,11 +245,6 @@ class _ComposerField extends StatelessWidget {
                 const PopupMenuItem(value: 'files', child: Text('Files')),
                 if (session.remote == null)
                   const PopupMenuItem(value: 'image', child: Text('Image')),
-                if (client.supports('prompts'))
-                  const PopupMenuItem(
-                    value: 'prompts',
-                    child: Text('Saved prompts'),
-                  ),
               ],
             ),
           ),

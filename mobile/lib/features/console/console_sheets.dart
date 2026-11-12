@@ -3,14 +3,13 @@ import 'package:flutter/material.dart';
 import '../../console_actions.dart';
 import '../../dock_client.dart';
 import '../../live_agent_controls.dart';
-import '../../saved_prompts_sheet.dart';
 import '../../terminal_keys.dart';
 import '../../terminal_links.dart';
 import '../../terminal_reading.dart';
 import 'command_target.dart';
 import 'composer_controller.dart';
 
-/// Bottom sheets opened from a console: files, copy, links, saved prompts, terminal
+/// Bottom sheets opened from a console: files, copy, links, terminal
 /// keys and live model controls.
 class ConsoleSheets {
   ConsoleSheets({
@@ -120,24 +119,6 @@ class ConsoleSheets {
               client.selected == id &&
               client.screen?.terminal == screen.terminal,
         ),
-      ),
-    );
-  }
-
-  Future<void> savedPrompts(BuildContext context) async {
-    releaseInput();
-    final key = composer.draftKey;
-    await showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      isScrollControlled: true,
-      useSafeArea: true,
-      builder: (_) => SavedPromptsSheet(
-        client: client,
-        draft: composer.editor.text,
-        draftSelection: composer.editor.selection,
-        onUsePrompt: (text, cursorOffset) =>
-            composer.usePrompt(key, text, cursorOffset),
       ),
     );
   }

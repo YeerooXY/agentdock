@@ -79,6 +79,5 @@ node scripts/mobile-controls-adb.cjs pair
 
 The helper refuses physical devices. Create `artifacts/mobile-controls/stop` to stop the fixture; it also expires after 45 minutes. Fixture model selection proves transport and UI behavior, not provider account entitlement or every installed CLI version.
 
-Saved prompts are available under **+ → Saved prompts**. Using one only edits the draft. Paddock has no separate message queue; direct input follows the CLI’s behavior.
 
 Dictation opens the phone’s speech service and inserts its result at the draft caret. Review or edit it before sending. The speech service may process audio online. Cancellation leaves the draft unchanged; changing the draft or console discards the pending result. Paddock stores no voice recording.

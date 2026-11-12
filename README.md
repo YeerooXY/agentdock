@@ -58,7 +58,7 @@ The native Android companion controls your PC consoles, provides the Projects wo
 
 The message pill sits below the terminal beside Terminal keys, attachments, one model/effort control and dictation. Its image shortcut attaches the latest accessible phone image. Send submits the draft. Each console retains its draft, caret and reading position. The top More options menu contains display, copy, links, history and direct keyboard controls.
 
-**+ → Saved prompts** inserts a saved prompt into the reply box without sending it. Messages go directly to the CLI; Paddock does not maintain a separate message queue.
+Messages go directly to the CLI; Paddock does not maintain a separate message queue.
 
 Tap the **chat name → New console** to select a saved project/folder and an installed agent. Tap the current model or effort, make both choices, then press **Apply**. Browsing and cancelling send no terminal input. Effort can change while keeping the current model. Unknown menu layouts remain in the terminal. The message **+** attaches a project file or selected image. [Mobile controls](docs/mobile-controls.md).
 
@@ -133,10 +133,6 @@ Click a panel's title to name it, for example **Trader** or **Robonslaught**. On
 The folder button above the grid changes the launch folder for new consoles. You can also choose it in **Settings → Console defaults**, alongside the agent, optional name and custom command. Preferences are stored for each Windows user. On a new computer the initial folder is that user's Projects folder, or their home folder if Projects does not exist.
 
 Hold **+** for a moment, or right-click it, to choose a project, name, agent, model and folder for that panel. You can create a project from this chooser too. **Options** has a permission override and **Work in a new Git worktree**. These choices apply only to that console; a regular click still uses your saved defaults. Escape or Cancel closes the chooser without opening anything. This also works in the HUD. With a keyboard, hold Space or press Shift+Enter on a plus button.
-
-**Saved prompts.** The document button on an agent console opens its prompt library. Save reusable text or type it into the console draft, then press Enter there to send it. Messages entered directly follow the CLI’s own input behavior.
-
-**Saved prompts** keep wording you reuse. In the queue panel, type a message, choose **Save as prompt** and name it; optionally limit it to the console's project. **Use** puts a saved prompt in the message box. Prompts are stored in `prompts.json` in Paddock's data folder.
 
 A worktree console gets its own branch (`paddock/<name>-<id>`) and folder inside Paddock's data folder, started from the current commit of the chosen folder's repository, so agents working in parallel do not overwrite each other. The console opens in the same subfolder. Its header shows a branch icon; hover it for the branch and path, and wide consoles also show the branch name. When you end the console, **End and remove worktree** appears only if the worktree has no uncommitted changes; the branch and its commits stay in the repository for you to merge. A worktree with uncommitted changes is always kept. Worktrees are available for consoles on this PC, not SSH hosts.
 

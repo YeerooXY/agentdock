@@ -801,8 +801,6 @@ class DockClient extends ChangeNotifier implements ConsoleScope {
     throw failure ?? StateError('The PC could not be reached.');
   }
 
-  bool get canEditPrompts => supports('prompts.edit');
-
   Future<void> subscribe() async {
     if (!connected) return;
     final view = screens.putIfAbsent(selected, () => makeScreen(selected));
