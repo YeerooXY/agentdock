@@ -7,7 +7,7 @@ const markdown = new Marked({ gfm: true, renderer: {
   // Reports must not make network requests simply because someone previews them.
   // Task lists are read-only here; a labelled mark reads better than a disabled, unlabelled checkbox.
   checkbox: ({ checked }) => `<span class="markdown-task" role="img" aria-label="${checked ? 'Done' : 'Not done'}">${checked ? '☑' : '☐'}</span> `,
-  image: ({ text }) => `<span class="markdown-image">Image: ${escape(text || 'see saved images in Results')}</span>`,
+  image: ({ text }) => `<span class="markdown-image">Image: ${escape(text || 'open the image separately')}</span>`,
   link({ href, tokens }) {
     const label = this.parser.parseInline(tokens);
     try {

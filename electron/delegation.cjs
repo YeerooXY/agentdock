@@ -13,12 +13,12 @@ const { programLaunch } = require('./platform.cjs');
 const { names, isNativeWorker, workerLaunch, workerInput, workerPrompt, workerReply, workerProgress } = require('./provider-workers.cjs');
 const { launchArgs: effortLaunchArgs } = require('./task-effort.cjs');
 const { claudeTokens } = require('./native-token-usage.cjs');
-const { fundingFromLimits } = require('./account-funding.cjs');
+const { accountAllowance } = require('./task-routing.cjs');
 const { ExecutionHistory } = require('./execution-history.cjs');
 
 const REVIEWERS = Object.keys(names);
 const MAX_DIFF = 150_000, MAX_REPLY = 6000, MAX_FOCUS = 2000, MAX_FILES = 50;
-const MAX_PER_HOUR = 20, FRESH_MS = 30 * 60_000, FULL_PERCENT = 100;
+const MAX_PER_HOUR = 20;
 
 function git(cwd, args, run = execFile) {
   const safeArgs = args[0] === 'diff' ? ['diff', '--no-textconv', '--no-ext-diff', ...args.slice(1)] : args;
@@ -71,43 +71,6 @@ function reviewBrief({ focus, changes }) {
     changes.omitted ? `\n${changes.omitted} private or generated file(s) were left out of this review.` : '',
     changes.diff ? `\nDiff against ${changes.base}:\n\`\`\`diff\n${changes.diff}\n\`\`\`` : ''
   ].filter(line => line !== '').join('\n');
-}
-
-// Measured headroom for one account. Unknown usage is never treated as free.
-function headroom(limits, accountId, now) {
-  const fresh = (limits || []).filter(item => item.accountId === accountId && Number.isFinite(item.observedAt) && now - item.observedAt <= FRESH_MS)
-    .flatMap(item => Array.isArray(item.windows) ? item.windows : []).filter(w => Number.isFinite(w.usedPercent));
-  if (!fresh.length) return { known: false };
-  const used = Math.max(...fresh.map(w => w.usedPercent));
-  const soon = fresh.filter(w => Number.isFinite(w.resetsAt) && w.resetsAt > now).sort((a, b) => a.resetsAt - b.resetsAt)[0];
-  return { known: true, left: Math.max(0, 100 - used), resetsAt: soon?.resetsAt || null };
-}
-
-function hours(ms) { const h = Math.round(ms / 3_600_000); return h < 1 ? 'under an hour' : h === 1 ? '1 hour' : `${h} hours`; }
-
-// Chooses the reviewer with the most measured room, preferring a different
-// vendor than the caller for an independent second opinion.
-function pickReviewer({ candidates, limits, callerProvider, requested, now = Date.now(), rules = {} }) {
-  let pool = candidates;
-  if (requested && requested !== 'auto') {
-    pool = candidates.filter(c => c.id === requested || c.provider === requested);
-    if (!pool.length) throw new Error(`${requested} is not an allowed, installed reviewer. Allowed: ${candidates.map(c => c.id).join(', ') || 'none'}.`);
-  } else {
-    pool = pool.filter(c => fundingFromLimits(c, limits, rules) !== 'metered');
-    const free = pool.filter(c => fundingFromLimits(c, limits, rules) === 'free' && !(headroom(limits, c.id, now).left <= 100 - FULL_PERCENT));
-    if (rules.preferFree !== false && free.length) pool = free;
-  }
-  const scored = pool.map(choice => {
-    const room = headroom(limits, choice.id, now), other = choice.provider !== callerProvider;
-    const resetsSoon = room.known && room.resetsAt && room.resetsAt - now < 12 * 3_600_000 && room.left >= 30;
-    const score = (room.known ? room.left : 40) + (other ? 30 : 0) + (resetsSoon ? 10 : 0);
-    const reasons = [other ? `a different vendor from ${names[callerProvider] || 'the caller'}` : 'the same vendor as the caller',
-      room.known ? `${Math.round(room.left)}% left${room.resetsAt ? `, resets in ${hours(room.resetsAt - now)}` : ''}` : 'usage unknown'];
-    return { choice, room, score, why: `${choice.label}: ${reasons.join(', ')}.` };
-  }).filter(item => !(item.room.known && item.room.left <= 100 - FULL_PERCENT));
-  if (!scored.length) throw new Error('Every allowed reviewer is at or above 100% of its limit. Try again after a reset.');
-  scored.sort((a, b) => b.score - a.score);
-  return scored[0];
 }
 
 // Briefs use stdin or a private prompt file, never command arguments.
@@ -241,9 +204,9 @@ function killTree(child) {
 }
 
 class Delegation extends EventEmitter {
-  constructor(root, { admission, getSettings, candidates, getLimits, environment, prepareAccount = async () => {}, releaseAccount = () => {}, saveResult, openPanel, panelOpen = () => false, spawnProcess = spawn, run = execFile, now = Date.now, testMode = false } = {}) {
+  constructor(root, { admission, getSettings, candidates, getLimits, environment, prepareAccount = async () => {}, releaseAccount = () => {}, openPanel, panelOpen = () => false, spawnProcess = spawn, run = execFile, now = Date.now, testMode = false } = {}) {
     super();
-    Object.assign(this, { getSettings, candidates, getLimits, environment, prepareAccount, releaseAccount, saveResult, openPanel, panelOpen, spawnProcess, run, now, testMode });
+    Object.assign(this, { getSettings, candidates, getLimits, environment, prepareAccount, releaseAccount, openPanel, panelOpen, spawnProcess, run, now, testMode });
     this.executionHistory = new ExecutionHistory(root, { now });
     this.admission = admission || require('./scheduler.cjs').getScheduler(root, { getSettings });
     this.dir = path.join(root, 'delegations'); this.jobs = new Map(); this.children = new Map(); this.finishers = new Map(); this.started = [];
@@ -252,7 +215,7 @@ class Delegation extends EventEmitter {
     return [...this.jobs.values()].sort((a, b) => b.startedAt - a.startedAt)
       .map(job => ({ job, open: !!job.panelId && this.panelOpen(job.panelId) }))
       .filter(({ job, open }, index) => job.state === 'running' || index < 20 || open)
-      .map(({ job: { id, state, reviewer, why, consoleName, startedAt, finishedAt, verdict, error, resultId, executionHistory, reportError, log, panelId, noFreeSlot, queueReason, queuePosition }, open }) => ({ id, state, reviewer, why, consoleName, startedAt, finishedAt, verdict, error, resultId, executionHistory, reportError, log: state === 'running' || open ? [...(log || [])] : [], panelId, noFreeSlot, queueReason, queuePosition }));
+      .map(({ job: { id, state, reviewer, why, consoleName, startedAt, finishedAt, verdict, error, executionHistory, reportError, log, panelId, noFreeSlot, queueReason, queuePosition }, open }) => ({ id, state, reviewer, why, consoleName, startedAt, finishedAt, verdict, error, executionHistory, reportError, log: state === 'running' || open ? [...(log || [])] : [], panelId, noFreeSlot, queueReason, queuePosition }));
   }
   allowed() {
     const settings = this.getSettings() || {};
@@ -267,15 +230,18 @@ class Delegation extends EventEmitter {
     const hourAgo = this.now() - 3_600_000; this.started = this.started.filter(at => at > hourAgo);
     if (this.started.length >= MAX_PER_HOUR) throw new Error('The hourly review limit was reached. Try again later.');
     const focus = String(args.focus || '').slice(0, MAX_FOCUS);
+    const choice = this.allowed().find(candidate => candidate.id === args.reviewer);
+    if (!choice) throw new Error('Choose an allowed, signed-in reviewer account.');
+    const allowance = accountAllowance(choice.id, this.getLimits(), this.now());
+    if (allowance.blocked) throw new Error('The selected reviewer has reached its account limit.');
+    const effort = effortLaunchArgs(choice.provider, args.effort).evidence.requested;
     const changes = await collectChanges(caller.cwd, { base: args.base || 'HEAD', files: cleanFiles(args.files) }, this.run);
-    const picked = pickReviewer({ candidates: this.allowed(), limits: this.getLimits(), callerProvider: caller.provider, requested: args.reviewer, now: this.now(), rules: this.getSettings().routing });
-    const effort = effortLaunchArgs(picked.choice.provider, args.effort).evidence.requested;
     const id = randomUUID(), folder = path.join(this.dir, id);
     fs.mkdirSync(folder, { recursive: true });
     const brief = reviewBrief({ focus, changes }), outFile = path.join(folder, 'reply.md');
-    const job = { id, state: 'running', reviewer: { accountId: picked.choice.id, provider: picked.choice.provider, label: picked.choice.label, effort, requestedEffort: effort }, why: picked.why,
+    const job = { id, state: 'running', reviewer: { accountId: choice.id, provider: choice.provider, label: choice.label, effort, requestedEffort: effort }, why: `Selected reviewer account. Usage ${allowance.status}.`,
       callerSessionId: caller.sessionId, consoleName: caller.consoleName || '', context: caller.context, cwd: caller.cwd, focus, files: changes.files.length + changes.untracked.length,
-      startedAt: this.now(), finishedAt: null, verdict: null, text: '', error: '', usage: null, resultId: null, waiters: [], log: [], panelId: null, noFreeSlot: false };
+      startedAt: this.now(), finishedAt: null, verdict: null, text: '', error: '', usage: null, waiters: [], log: [], panelId: null, noFreeSlot: false };
     this.jobs.set(id, job); this.started.push(job.startedAt);
     if (this.getSettings()?.delegationPanels !== false && this.openPanel) {
       try { job.panelId = this.openPanel(job)?.id || null; } catch {}
@@ -369,10 +335,10 @@ class Delegation extends EventEmitter {
       ...(includeReport ? { report: this.executionHistory.read('review', job.id, { offset: reportOffset, limit: reportLimit, revision: reportRevision }) } : {}) };
     if (job.state === 'running') return { ...out, queueReason: job.queueReason, queuePosition: job.queuePosition, next: 'Call dock/delegation_status again with waitSeconds to keep waiting.' };
     if (job.state === 'failed' || job.state === 'stopped') return { ...out, error: job.error };
-    return { ...out, verdict: job.verdict, review: job.text.length > MAX_REPLY ? job.text.slice(0, MAX_REPLY) + '\n[shortened; the full review is retained in execution history]' : job.text, usage: job.usage, resultId: job.resultId };
+    return { ...out, verdict: job.verdict, review: job.text.length > MAX_REPLY ? job.text.slice(0, MAX_REPLY) + '\n[shortened; the full review is retained in execution history]' : job.text, usage: job.usage };
   }
   stop(id) { this.finishers.get(String(id))?.({ state: 'stopped', error: 'Stopped by the user.' }); }
   stopAll() { for (const id of [...this.finishers.keys()]) this.stop(id); }
 }
 
-module.exports = { Delegation, collectChanges, reviewBrief, pickReviewer, reviewerLaunch, parseReply, headroom, cleanFiles, REVIEWERS, progressLines, progressLog, appendLog, progressStream, killTree, redactText, git };
+module.exports = { Delegation, collectChanges, reviewBrief, reviewerLaunch, parseReply, cleanFiles, REVIEWERS, progressLines, progressLog, appendLog, progressStream, killTree, redactText, git };

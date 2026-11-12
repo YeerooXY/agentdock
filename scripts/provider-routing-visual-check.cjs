@@ -1,4 +1,5 @@
 'use strict';
+const { installStateTransport } = require('./state-test-transport.cjs');
 // Synthetic routing settings only; no live provider calls.
 const { chromium, webkit, devices } = require('playwright');
 const fs = require('node:fs'), path = require('node:path'), http = require('node:http'), assert = require('node:assert/strict');
@@ -26,7 +27,8 @@ const profiles = [['pc', chromium, { viewport: { width: 1440, height: 1000 } }],
         if (method === 'settings') { calls.push(payload); Object.assign(state.settings, payload); }
         return { ok: true, value: method === 'state' ? state : method === 'session.buffer' ? { data: '', sequence: 0 } : method === 'settings' ? state.settings : [] };
       });
-      await context.addInitScript(() => { window.dock = { call: (m,p) => window.fixtureCall(m,p), onState: fn => window.fixtureState = fn, onOutput: () => {}, onSelect: () => {}, onNotice: () => {} }; });
+      await installStateTransport(context);
+await context.addInitScript(() => { window.dock = { call: (m,p) => window.fixtureCall(m,p), get state() { return window.fixtureStateTransport; }, onOutput: () => {}, onSelect: () => {}, onNotice: () => {} }; });
       page = await context.newPage(); page.on('pageerror', e => errors.push(e.message));
       await page.goto(`http://127.0.0.1:${server.address().port}`);
       await page.locator('.sidebar-bottom [data-page=settings]').click(); await page.locator('.settings-navigation [data-page=agent-settings]').click();

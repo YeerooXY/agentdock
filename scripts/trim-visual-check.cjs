@@ -1,4 +1,5 @@
 'use strict';
+const { installStateTransport } = require('./state-test-transport.cjs');
 // Real renderer, synthetic state, no agent processes or paid requests.
 const { chromium, webkit, devices } = require('playwright');
 const fs = require('node:fs'), path = require('node:path'), http = require('node:http'), assert = require('node:assert/strict');
@@ -40,7 +41,8 @@ let browser; const rows = [];
         if (method === 'session.buffer') return { ok: true, value: { data: 'Console appearance test fixture\r\n\r\n> Reviewing the current workspace.\r\n  Saved changes stay in this project.\r\n\r\nPS C:\\Projects> ', sequence: 0 } };
         return { ok: true, value: [] };
       });
-      await context.addInitScript(() => { window.dock = { call: (m, p) => window.fixtureCall(m, p), onState: fn => window.fixtureState = fn, onOutput: () => {}, onSelect: () => {}, onNotice: () => {} }; });
+      await installStateTransport(context);
+await context.addInitScript(() => { window.dock = { call: (m, p) => window.fixtureCall(m, p), get state() { return window.fixtureStateTransport; }, onOutput: () => {}, onSelect: () => {}, onNotice: () => {} }; });
       page = await context.newPage(); page.on('pageerror', error => errors.push(error.message)); page.setDefaultTimeout(10000);
       await page.goto(`http://127.0.0.1:${server.address().port}`); await page.locator('.session-grid').waitFor();
       await page.addScriptTag({ url: '/_axe.js' });

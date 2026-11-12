@@ -141,7 +141,7 @@ void main() {
   );
 
   testWidgets(
-    'detail shows read-only milestones, recent notes and all plan states',
+    'detail shows read-only milestones, recent notes without guided planning',
     (tester) async {
       final client = ProjectsDock();
       addTearDown(client.dispose);
@@ -153,34 +153,22 @@ void main() {
       expect(find.byIcon(Icons.check_box_outlined), findsOneWidget);
       expect(find.byIcon(Icons.check_box_outline_blank), findsOneWidget);
       expect(find.byType(Checkbox), findsNothing);
-      await tester.scrollUntilVisible(find.text('Roadmap: Empty'), 250);
+      await tester.scrollUntilVisible(find.text('Latest progress note'), 250);
       expect(find.text('Latest progress note'), findsOneWidget);
-      expect(find.text('Revision 7'), findsOneWidget);
-      expect(find.text('Brief: Approved'), findsOneWidget);
-      expect(find.text('Research: Proposal waiting'), findsOneWidget);
-      expect(find.text('Setup: Not needed'), findsOneWidget);
-      expect(find.text('Roadmap: Empty'), findsOneWidget);
       expect(client.payloads.last, {'id': 'phone'});
     },
   );
 
-  testWidgets('detail lists approved decisions and how many await the PC', (
-    tester,
-  ) async {
+  testWidgets('detail lists saved approved decisions', (tester) async {
     final client = ProjectsDock();
     addTearDown(client.dispose);
     client.project['decisions'] = [
       {'text': 'Use Godot 4, not Unity', 'reason': 'Smaller builds'},
     ];
-    client.project['decisionsWaiting'] = 2;
     await showProjects(tester, client);
     await openDetail(tester);
     await tester.scrollUntilVisible(find.text('Use Godot 4, not Unity'), 250);
     expect(find.text('Smaller builds'), findsOneWidget);
-    expect(
-      find.text('2 proposed by agents. Review them in Projects on your PC.'),
-      findsOneWidget,
-    );
   });
 
   testWidgets('linked console tap selects it and returns to Console', (
@@ -656,37 +644,40 @@ void workspaceTests() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('new host nests work outputs and knowledge under Projects', (
-    tester,
-  ) async {
-    final client = WorkspaceDock();
-    addTearDown(client.dispose);
-    await tester.pumpWidget(DockApp(client: client));
-    await tester.pumpAndSettle();
-    expect(find.widgetWithText(NavigationDestination, 'Results'), findsNothing);
-    await tester.tap(find.widgetWithText(NavigationDestination, 'Projects'));
-    await tester.pumpAndSettle();
-    expect(find.text('All outputs'), findsNothing);
-    expect(find.text('Worker history'), findsOneWidget);
-    await tester.tap(find.text('Phone companion').first);
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Work').first);
-    await tester.pumpAndSettle();
-    expect(find.text('Useful worker brief'), findsOneWidget);
-    await tester.tap(find.text('Outputs').first);
-    await tester.pumpAndSettle();
-    expect(find.text('Requested design'), findsOneWidget);
-    await tester.tap(find.text('Knowledge').first);
-    await tester.pumpAndSettle();
-    expect(find.text('Input handling'), findsOneWidget);
-    await tester.tap(find.text('Input handling'));
-    await tester.pumpAndSettle();
-    expect(
-      find.textContaining('Input validation stays in the main process.'),
-      findsOneWidget,
-    );
-    expect(tester.takeException(), isNull);
-  });
+  testWidgets(
+    'Projects keeps work and knowledge without the removed output gallery',
+    (tester) async {
+      final client = WorkspaceDock();
+      addTearDown(client.dispose);
+      await tester.pumpWidget(DockApp(client: client));
+      await tester.pumpAndSettle();
+      expect(
+        find.widgetWithText(NavigationDestination, 'Results'),
+        findsNothing,
+      );
+      await tester.tap(find.widgetWithText(NavigationDestination, 'Projects'));
+      await tester.pumpAndSettle();
+      expect(find.text('All outputs'), findsNothing);
+      expect(find.text('Worker history'), findsOneWidget);
+      await tester.tap(find.text('Phone companion').first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Work').first);
+      await tester.pumpAndSettle();
+      expect(find.text('Useful worker brief'), findsOneWidget);
+      expect(find.text('Outputs'), findsNothing);
+      expect(find.text('Requested design'), findsNothing);
+      await tester.tap(find.text('Knowledge').first);
+      await tester.pumpAndSettle();
+      expect(find.text('Input handling'), findsOneWidget);
+      await tester.tap(find.text('Input handling'));
+      await tester.pumpAndSettle();
+      expect(
+        find.textContaining('Input validation stays in the main process.'),
+        findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
   testWidgets(
     'PC knowledge Off clears the phone view without reading stored sections',
     (tester) async {

@@ -42,19 +42,6 @@ test('project workspace root, heading, back, and planning controls', async () =>
   // Back button data-project-back
   assert.ok(html.includes('data-project-back'), 'back button has data-project-back');
 
-  // Planning button data-project-plan=id when plan exists
-  assert.ok(html.includes('data-project-plan="proj-123"'), 'plan button rendered when plan exists');
-
-  // When plan does not exist, planning button must be omitted
-  const projectWithoutPlan = {
-    id: 'proj-456',
-    name: 'Unplanned Project'
-  };
-  const htmlNoPlan = render({
-    project: projectWithoutPlan,
-    escape
-  });
-  assert.ok(!htmlNoPlan.includes('data-project-plan='), 'plan button omitted when plan is missing');
 });
 
 test('tabs buttons have data-project-tab and aria-pressed attributes', async () => {
@@ -65,19 +52,16 @@ test('tabs buttons have data-project-tab and aria-pressed attributes', async () 
   const defaultHtml = render({ project, escape });
   assert.ok(defaultHtml.includes('data-project-tab="overview" aria-pressed="true"'));
   assert.ok(defaultHtml.includes('data-project-tab="work" aria-pressed="false"'));
-  assert.ok(defaultHtml.includes('data-project-tab="outputs" aria-pressed="false"'));
   assert.ok(defaultHtml.includes('data-project-tab="knowledge" aria-pressed="false"'));
 
   // Active work tab
   const workHtml = render({ project, tab: 'work', escape });
   assert.ok(workHtml.includes('data-project-tab="overview" aria-pressed="false"'));
   assert.ok(workHtml.includes('data-project-tab="work" aria-pressed="true"'));
-  assert.ok(workHtml.includes('data-project-tab="outputs" aria-pressed="false"'));
   assert.ok(workHtml.includes('data-project-tab="knowledge" aria-pressed="false"'));
 
   // Active outputs tab
   const outputsHtml = render({ project, tab: 'outputs', escape });
-  assert.ok(outputsHtml.includes('data-project-tab="outputs" aria-pressed="true"'));
 
   // Active knowledge tab
   const knowledgeHtml = render({ project, tab: 'knowledge', escape });
@@ -108,9 +92,8 @@ test('scoping: tasks and outputs are strictly scoped to project.id', async () =>
   ];
 
   const outputsHtml = render({ project, outputs, tab: 'outputs', escape });
-  assert.ok(outputsHtml.includes('data-project-result="out-1"'), 'includes Alpha output');
-  assert.ok(outputsHtml.includes('Alpha Report'), 'includes Alpha report title');
-  assert.ok(!outputsHtml.includes('out-2'), 'excludes Gamma output');
+  assert.ok(!outputsHtml.includes('data-project-result='), 'no generic output gallery');
+    assert.ok(!outputsHtml.includes('out-2'), 'excludes Gamma output');
   assert.ok(!outputsHtml.includes('Gamma Report'), 'excludes Gamma report title');
   assert.ok(!outputsHtml.includes('out-3'), 'excludes output without project ID');
 });
@@ -181,7 +164,7 @@ test('escaping malicious data: untrusted values and attributes are safely escape
   // Outputs tab escaping
   const outputsHtml = render({ project: maliciousProject, outputs: maliciousOutputs, tab: 'outputs', escape });
   assert.ok(!outputsHtml.includes('<marquee>'), 'raw marquee tag not injected in outputs');
-  assert.ok(outputsHtml.includes('data-project-result="out-&quot;-1"'));
+  assert.ok(!outputsHtml.includes('data-project-result='));
 
   // Knowledge tab escaping
   const knowledgeHtml = render({
@@ -312,7 +295,7 @@ test('no task-resolution chores or unread badges, stop and report button behavio
 
   // Finished reports: data-project-task-report=id only when executionHistory/resultId exists
   assert.ok(html.includes('data-project-task-report="task-finished-with-history"'), 'has report button with executionHistory');
-  assert.ok(html.includes('data-project-task-report="task-finished-with-result"'), 'has report button with resultId');
+  assert.ok(!html.includes('data-project-task-report="task-finished-with-result"'), 'legacy Results report action is removed');
   assert.ok(!html.includes('data-project-task-report="task-finished-without-report"'), 'omits report button when neither exists');
 });
 
@@ -347,25 +330,6 @@ test('overview prioritizes lastProgress.summary then goals, nextStep, and folder
   assert.ok(nextStepIndex < foldersIndex, 'nextStep appears before folders');
 });
 
-test('outputs renders buttons with data-project-result and title/summary', async () => {
-  const { render, escape } = await setup();
-  const project = { id: 'proj-out', name: 'Outputs Project' };
-
-  const outputs = [
-    {
-      id: 'res-101',
-      projectId: 'proj-out',
-      title: 'Architecture Blueprint',
-      summary: 'Verified architectural patterns and constraints.'
-    }
-  ];
-
-  const html = render({ project, outputs, tab: 'outputs', escape });
-  assert.ok(html.includes('data-project-result="res-101"'));
-  assert.ok(html.includes('Architecture Blueprint'));
-  assert.ok(html.includes('Verified architectural patterns and constraints.'));
-});
-
 test('empty states are concise and factual without decorative dashes or filler', async () => {
   const { render, escape } = await setup();
   const emptyProject = { id: 'proj-empty', name: 'Empty' };
@@ -380,7 +344,7 @@ test('empty states are concise and factual without decorative dashes or filler',
 
   // Outputs empty
   const outputsHtml = render({ project: emptyProject, outputs: [], tab: 'outputs', escape });
-  assert.ok(outputsHtml.includes('No outputs for this project.'));
+  assert.ok(!outputsHtml.includes('data-project-tab="outputs"'));
 
   // Knowledge empty entries in read mode
   const knowledgeHtml = render({ project: emptyProject, knowledge: { items: [] }, mode: 'read', tab: 'knowledge', escape });

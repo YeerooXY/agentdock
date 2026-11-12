@@ -177,14 +177,11 @@ test('projects read RPCs advertise support, exclude archives and expose only sum
   assert.deepEqual(f.sessions.writes, []);
 });
 
-test('project detail trims recent notes and goals and summarizes planning without private context', async t => {
+test('project detail trims recent notes and goals and omits archived planning and private context', async t => {
   const f = await fixture(t), paired = await f.pair(), c = client(f, paired.data.token);
   t.after(() => c.ws.terminate()); await once(c.ws, 'open');
   const { Projects } = require('../electron/projects.cjs');
-  const planning = require('../electron/project-planning.cjs');
-  const store = new Projects(f.root), plan = planning.initial();
-  plan.revision = 7; plan.approvals.brief = 1; plan.skipped.research = 1;
-  plan.proposals.infrastructure = { section: 'infrastructure', data: { security: 'SECRET' } };
+  const store = new Projects(f.root), plan = { revision: 7, proposals: { infrastructure: { data: { security: 'SECRET' } } } };
   plan.references = [{ value: '/outside/secret', kind: 'file' }]; plan.files = { directory: '/outside/private' };
   store.items = [{ id: 'project', name: 'Phone', status: 'planning', goals: 'g'.repeat(3000), notes: 'old\n\nsecond\n\nthird\n\nfourth',
     milestones: [{ text: 'Overview', acceptance: 'Cards visible', done: true }], plan }];
@@ -194,23 +191,12 @@ test('project detail trims recent notes and goals and summarizes planning withou
   assert.equal(detail.goals.length, 2000);
   assert.equal(detail.notes, 'second\n\nthird\n\nfourth');
   assert.deepEqual(detail.milestones, [{ text: 'Overview', acceptance: 'Cards visible', done: true }]);
-  assert.deepEqual(detail.plan, { revision: 7, sections: [
-    { name: 'brief', revision: 7, state: 'approved' }, { name: 'research', revision: 7, state: 'not needed' },
-    { name: 'infrastructure', revision: 7, state: 'proposal waiting' }, { name: 'roadmap', revision: 7, state: 'empty' },
-  ] });
   assert.doesNotMatch(JSON.stringify(detail), /outside|SECRET|references|directory/);
   assert.equal(JSON.stringify(store.items), before);
   store.items[0].notes = 'old\n\n' + 'a'.repeat(2000) + '\n\n' + 'b'.repeat(2000) + '\n\nlatest';
   const trimmed = await c.call('projects.detail', { id: 'project' });
   assert.equal(trimmed.notes.length, 4000); assert.ok(trimmed.notes.endsWith('latest'));
   assert.ok(!trimmed.notes.includes('old'));
-  delete store.items[0].plan;
-  const legacy = await c.call('projects.detail', { id: 'project' });
-  assert.equal(legacy.plan.revision, null);
-  assert.ok(legacy.plan.sections.every(s => s.state === 'empty' && s.revision === null));
-  // Planning.context also handles plans saved with the original single proposal field.
-  plan.proposal = plan.proposals.infrastructure; delete plan.proposals; store.items[0].plan = plan;
-  assert.equal((await c.call('projects.detail', { id: 'project' })).plan.sections[2].state, 'proposal waiting');
 });
 
 test('projects read rejects unknown, archived and invalid ids and gates unsupported stores', async t => {
@@ -291,37 +277,6 @@ test('code reader lists only its project folders and retains the explorer entry 
   const list = await call(folders[0]);
   assert.equal(list.entries.length, 500); assert.equal(list.truncated, true);
   await assert.rejects(call(folders[2]), /inside this project/);
-});
-
-test('phone advertises result actions and bounded image previews with validated input', async t => {
-  const f = await fixture(t), paired = await f.pair(), c = client(f, paired.data.token);
-  t.after(() => c.ws.terminate()); await once(c.ws, 'open');
-  const capabilities = (await c.call('state')).capabilities;
-  assert.ok(capabilities.includes('results.thumbnails'));
-  assert.ok(capabilities.includes('results.actions'));
-  const image = f.results.add({ title: 'Landscape', buffer: Buffer.from('mock image'), ext: '.png' }, { trusted: true });
-  const resized = [];
-  f.results.nativeImage = { createFromPath: file => {
-    assert.equal(file, f.results.path(image.id));
-    return {
-      isEmpty: () => false, getSize: () => ({ width: 2400, height: 1200 }),
-      resize: size => { resized.push(size); return { toDataURL: () => 'data:image/png;base64,bW9jaw==' }; },
-    };
-  } };
-  assert.deepEqual(await c.call('results.preview', { id: image.id, thumbnail: true }), { image: 'data:image/png;base64,bW9jaw==' });
-  assert.ok(resized[0].width <= 400 && resized[0].height <= 400);
-  for (const id of [null, {}, '../outside', 42]) {
-    await assert.rejects(c.call('results.preview', { id, thumbnail: true }), /Choose a result/);
-  }
-  await assert.rejects(c.call('results.preview', { id: image.id, thumbnail: 'yes' }), /thumbnail option/);
-  await assert.rejects(c.call('results.preview', { id: crypto.randomUUID(), thumbnail: true }), /deleted/);
-  await assert.rejects(c.call('results.seen', { ids: image.id }), /Choose results/);
-  await assert.rejects(c.call('results.delete', { ids: image.id }), /Choose results/);
-  await c.call('results.seen', { ids: [image.id] });
-  assert.ok((await c.call('results.list')).find(x => x.id === image.id).seenAt);
-  const other = f.results.add({ title: 'Report', text: 'keep' });
-  assert.deepEqual(await c.call('results.delete', { ids: [image.id] }), { deleted: [image.id], failed: [] });
-  assert.deepEqual((await c.call('results.list')).map(x => x.id), [other.id]);
 });
 
 test('phone refresh starts the common account refresh and polling reads its progress', async t => {
@@ -463,24 +418,11 @@ test('phone manages live console metadata with pinned launch identity', async t 
   assert.deepEqual(snapshot.projects, [{ id: 'game', name: 'Game', color: '#ff0000' }, { id: 'other', name: 'Other' }]);
   const target = { id: session.id, consoleKey: session.consoleKey, launchId: session.launchId };
   await c.call('subscribe', { id: session.id });
-  // Production history is immutable. Model a mutable result store here to
-  // verify the RPC forwards the new name after the session rename succeeds.
-  const storedResult = { consoleKey: 'stable-console', consoleName: session.name };
-  const resultRenames = [];
-  t.mock.method(f.results, 'renameConsole', (consoleKey, name) => {
-    assert.equal(session.name, name);
-    resultRenames.push({ consoleKey, name });
-    if (storedResult.consoleKey === consoleKey) storedResult.consoleName = name;
-  });
   await c.call('console.rename', { ...target, name: ' Review ' });
   assert.equal(session.name, 'Review');
-  assert.equal(storedResult.consoleName, 'Review');
-  assert.deepEqual(resultRenames, [{ consoleKey: 'stable-console', name: 'Review' }]);
   const renameSession = f.sessions.rename;
   f.sessions.rename = () => { throw new Error('Rename failed.'); };
   await assert.rejects(c.call('console.rename', { ...target, name: 'Must not reach results' }), /Rename failed/);
-  assert.equal(storedResult.consoleName, 'Review');
-  assert.equal(resultRenames.length, 1);
   f.sessions.rename = renameSession;
   for (const name of ['', '   ', 'x'.repeat(65), 'two\nlines', null, 42]) {
     await assert.rejects(c.call('console.rename', { ...target, name }), /name/);

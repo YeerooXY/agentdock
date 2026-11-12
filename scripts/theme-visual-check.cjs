@@ -1,4 +1,5 @@
 'use strict';
+const { installStateTransport } = require('./state-test-transport.cjs');
 // Actual renderer and xterm, synthetic sessions. No model or live user data.
 const { chromium, webkit, devices } = require('playwright');
 const fs = require('node:fs'), path = require('node:path'), http = require('node:http'), assert = require('node:assert/strict');
@@ -42,7 +43,8 @@ let browser; const rows = [];
       if (method === 'session.buffer') return { ok: true, value: { data: '\x1b[36mTheme verification fixture\x1b[0m\r\n\r\n> Inspect the console theme.\r\n  Stars remain behind terminal text.\r\n\r\n\x1b[32mReady\x1b[0m   \x1b[33mWarning\x1b[0m   \x1b[31mError\x1b[0m\r\n\r\nPS C:\\Projects> ', sequence: 0, launchId: state.sessions.find(session => session.id === payload)?.launchId || null } };
       return { ok: true, value: [] };
     });
-    await context.addInitScript(() => { window.dock = { call: (m, p) => window.fixtureCall(m, p), onState: fn => window.fixtureState = fn, onOutput: () => {}, onSelect: () => {}, onNotice: () => {} }; });
+    await installStateTransport(context);
+await context.addInitScript(() => { window.dock = { call: (m, p) => window.fixtureCall(m, p), get state() { return window.fixtureStateTransport; }, onOutput: () => {}, onSelect: () => {}, onNotice: () => {} }; });
     page = await context.newPage(); page.on('pageerror', error => errors.push(error.message)); page.setDefaultTimeout(30000);
     await page.goto(`http://127.0.0.1:${server.address().port}`); await page.locator('.xterm-screen').first().waitFor();
     await page.addScriptTag({ url: '/_axe.js' });

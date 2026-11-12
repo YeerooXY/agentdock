@@ -1,4 +1,5 @@
 'use strict';
+const { installStateTransport } = require('./state-test-transport.cjs');
 // Isolated renderer check for recommended tools and per-tool limits.
 // Run test:desktop first to create the synthetic base.
 const { chromium } = require('playwright');
@@ -27,7 +28,8 @@ const server = http.createServer((req, res) => {
       state.toolLimits = { meshy: { models: ['meshy-6-lite', 'meshy-6', 'meshy-7', 'meshy-7.1'], unit: 'credits' }, stripe: { models: [], unit: 'paid calls' } };
       state.toolCatalog = require('../electron/mcp-catalog.cjs').catalog.map(item => ({ ...item, added: item.id === 'stripe', ready: false, job: null }));
       await context.exposeFunction('fixtureCall', (method, payload) => { calls.push([method, payload]); return { ok: true, value: method === 'state' ? state : method === 'session.buffer' ? { data: '', sequence: 0 } : [] }; });
-      await context.addInitScript(() => { window.dock = { call: (m, p) => window.fixtureCall(m, p), onState: fn => window.fixtureState = fn, onOutput: () => {}, onSelect: () => {} }; });
+      await installStateTransport(context);
+await context.addInitScript(() => { window.dock = { call: (m, p) => window.fixtureCall(m, p), get state() { return window.fixtureStateTransport; }, onOutput: () => {}, onSelect: () => {} }; });
       const page = await context.newPage(); page.on('pageerror', e => errors.push(e.message));
       await page.goto(`http://127.0.0.1:${server.address().port}`);
       await page.locator('[data-page=settings]').first().click(); await page.locator('.settings-navigation [data-page=tools]').click();

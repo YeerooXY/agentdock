@@ -1,4 +1,4 @@
-// One project identity for Results, Projects and activity counts.
+// One project identity for Projects and activity counts.
 // Windows and UNC paths compare case-insensitively; POSIX paths keep their case.
 export const normalizedPath = value => {
   const path = String(value || '').replaceAll('\\', '/').replace(/\/+$/, '');

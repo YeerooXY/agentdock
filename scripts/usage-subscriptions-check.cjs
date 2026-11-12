@@ -1,4 +1,5 @@
 'use strict';
+const { installStateTransport } = require('./state-test-transport.cjs');
 // Usage page lists only set-up subscriptions; the rest are added from "Add subscription". Four browser profiles, synthetic state.
 const { chromium, webkit, devices } = require(process.env.REVIEW_PLAYWRIGHT || 'playwright');
 const fs = require('node:fs'), path = require('node:path'), http = require('node:http');
@@ -28,7 +29,8 @@ const now = Date.now(), win = (minutes, usedPercent) => ({ minutes, usedPercent,
       if (method === 'settings') { Object.assign(state.settings, payload); setTimeout(() => page.evaluate(s => window.fixtureState(s), state).catch(() => {}), 5); }
       return { ok: true, value: method === 'state' ? state : method === 'session.buffer' ? { data: '', sequence: 0 } : method === 'settings' ? state.settings : [] };
     });
-    await context.addInitScript(() => { window.dock = { call: (m, p) => window.fixtureCall(m, p), onState: fn => window.fixtureState = fn, onOutput: () => {}, onSelect: () => {}, onNotice: () => {} }; });
+    await installStateTransport(context);
+await context.addInitScript(() => { window.dock = { call: (m, p) => window.fixtureCall(m, p), get state() { return window.fixtureStateTransport; }, onOutput: () => {}, onSelect: () => {}, onNotice: () => {} }; });
     page = await context.newPage(); page.on('pageerror', e => errors.push(`${name}: ${e.message}`));
     await page.goto(`http://127.0.0.1:${server.address().port}`);
     if (await page.locator('[data-page=usage]').first().isVisible()) await page.locator('[data-page=usage]').first().click();

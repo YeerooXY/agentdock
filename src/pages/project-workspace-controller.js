@@ -3,7 +3,7 @@ let renderProjectWorkspace, workspaceView;
 const loadWorkspace = () => workspaceView ||= import('./project-workspace.js').then(module => { renderProjectWorkspace = module.renderProjectWorkspace; });
 import { openExecutionReport } from '../ui/execution-report.js';
 
-export function projectWorkspaceController({ call, getState, getPage, renderPage, escape, icon, toast, openResult }) {
+export function projectWorkspaceController({ call, getState, getPage, renderPage, escape, icon, toast }) {
   let selected = '', tab = 'overview', knowledge = null, stamp = '', request = 0, policy = '', status = 'idle', errorText = '', knowledgeEpoch;
   const current = () => (getState().projects || []).find(project => project.id === selected);
   const mode = project => ['read', 'automatic'].includes(getState().settings.knowledgeMode) && ['inherit', 'read', 'automatic', undefined, null].includes(project?.knowledgeMode) ? 'read' : 'off';
@@ -34,14 +34,14 @@ export function projectWorkspaceController({ call, getState, getPage, renderPage
     const project = current(); if (!project) { selected = ''; return null; }
     observePolicy();
     if (mode(project) === 'read' && ['overview', 'knowledge'].includes(tab) && status === 'idle') queueMicrotask(() => loadKnowledge());
-    stamp = JSON.stringify([project, getState().tasks, getState().workbench?.results, policy, knowledge, status, errorText, tab]);
-    return renderProjectWorkspace({ project, tasks: scoped(getState().tasks || []), outputs: scoped(getState().workbench?.results || []),
+    stamp = JSON.stringify([project, getState().tasks, policy, knowledge, status, errorText, tab]);
+    return renderProjectWorkspace({ project, tasks: scoped(getState().tasks || []),
       knowledge, knowledgeStatus: status, knowledgeError: errorText, mode: mode(project), tab, escape, icon });
   }
   function sync() {
     observePolicy();
     if (!selected || getPage() !== 'projects') return false;
-    const next = JSON.stringify([current(), getState().tasks, getState().workbench?.results, policy, knowledge, status, errorText, tab]);
+    const next = JSON.stringify([current(), getState().tasks, policy, knowledge, status, errorText, tab]);
     if (next !== stamp) refresh();
     return true;
   }
@@ -108,7 +108,6 @@ export function projectWorkspaceController({ call, getState, getPage, renderPage
       if (button.dataset.projectTaskReport) {
         const job = scoped(getState().tasks || []).find(task => task.id === button.dataset.projectTaskReport && task.projectId === selected);
         if (job?.executionHistory) await openExecutionReport(page => call('execution.report', { kind: 'task', id: job.id, ...page }), button, () => document.querySelector('[data-project-tab="work"]'));
-        else if (job?.resultId) await openResult(job.resultId);
       }
     } catch (error) { toast(error.message, true); }
     finally {

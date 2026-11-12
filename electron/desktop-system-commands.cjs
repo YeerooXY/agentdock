@@ -7,16 +7,11 @@ const { catalog: cliCatalog } = require('./cli-catalog.cjs');
 const { NO_VALUE } = require('./command-result.cjs');
 
 function desktopSystemCommands(h) {
-  const { snapshot, stateV2Enabled, stateV2Flag, getDesktopLegacy, setDesktopLegacy, endDesktopV2, crash, workbench,
+  const { snapshot, workbench,
     sessions, testMode, dialog, getWindow, restart, updates, getApiBusy, setQuitting, app, shell, setMode,
     minimize, hideToTray, revealWindow, dragWindow, quit, refreshLimits } = h;
   return {
     'state': async () => snapshot(),
-    'state.protocol': async () => ({ protocol: 2, v2: stateV2Enabled(), flag: stateV2Flag }),
-    'state.legacy': async () => {
-      if (!getDesktopLegacy()) crash.log('WARN', 'Desktop state subscription unavailable; using full snapshots.');
-      endDesktopV2(); setDesktopLegacy(true); return snapshot();
-    },
     'meshy.auth': async () => { const auth = workbench.concepts.auth || { state: 'unchecked' }; return { ...auth }; },
     'restart.normal': async () => {
       if (sessions.list().some(item => item.alive) && !testMode) {

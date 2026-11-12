@@ -1,4 +1,5 @@
 'use strict';
+const { installStateTransport } = require('./state-test-transport.cjs');
 const { openPage } = require('./ui-navigation.cjs');
 // Browser-only view checks use fixture data; real PTYs/IPC are covered by layout-smoke.
 const { chromium, webkit, devices } = require('playwright');
@@ -58,9 +59,9 @@ const reports = [], browsers = new Set(), overflowProblems = [];
       else if (!['session.resize', 'session.input'].includes(method)) throw Error('Unexpected fixture call: ' + method);
       reads++; return { ok: true, value, state: ['session.layout', 'session.acknowledge', 'settings', 'mode', 'agents.install', 'setup.complete', 'workbench.results.seen'].includes(method) ? state : null };
     });
-    await context.addInitScript(() => {
-      let changed;
-      window.dock = { call: async (method, payload) => { const response = await window.fixtureCall(method, payload); if (response.state) changed?.(response.state); return response; }, onState: fn => { changed = fn; window.fixtureState = fn; }, onOutput: fn => window.fixtureOutput = fn, onSelect: () => {} };
+    await installStateTransport(context);
+await context.addInitScript(() => {
+      window.dock = { call: async (method, payload) => { const response = await window.fixtureCall(method, payload); if (response.state) window.fixtureState?.(response.state); return response; }, get state() { return window.fixtureStateTransport; }, onOutput: fn => window.fixtureOutput = fn, onSelect: () => {} };
     });
     const page = await context.newPage(); page.setDefaultTimeout(12000); page.on('pageerror', e => errors.push(e.message));
     await page.goto(`http://127.0.0.1:${server.address().port}`); await page.locator('.session-card:not(.empty)').first().waitFor();

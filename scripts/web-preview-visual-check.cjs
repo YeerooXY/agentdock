@@ -1,4 +1,5 @@
 'use strict';
+const { installStateTransport } = require('./state-test-transport.cjs');
 // The shipped renderer with fake IPC: a preview panel shows a local server,
 // reloads when its linked console finishes a turn, and the titlebar opens one.
 // Run after npm run build: node scripts/web-preview-visual-check.cjs
@@ -57,8 +58,9 @@ function makeState(sitePort) {
       if (method === 'web.url') { if (!/^(localhost|127\.0\.0\.1)/.test(payload.url)) throw new Error('Preview shows local servers only: localhost, 127.0.0.1 or [::1].'); state.codePanels.find(x => x.id === payload.id).url = 'http://' + payload.url + '/'; await publish(); }
       return { ok: true, value: null };
     });
-    await context.addInitScript(() => {
-      window.dock = { call: (m, p) => window.fixtureCall(m, p).then(r => r, e => { throw e; }), onState: c => { window.fixtureReceive = c; }, onOutput: c => { window.fixtureOutput = c; }, onSelect: c => { window.fixtureSelect = c; }, onNotice: c => { window.fixtureNotice = c; } };
+    await installStateTransport(context);
+await context.addInitScript(() => {
+      window.dock = { call: (m, p) => window.fixtureCall(m, p).then(r => r, e => { throw e; }), get state() { return window.fixtureStateTransport; }, onOutput: c => { window.fixtureOutput = c; }, onSelect: c => { window.fixtureSelect = c; }, onNotice: c => { window.fixtureNotice = c; } };
     });
     page = await context.newPage(); page.on('pageerror', error => errors.push(error.message));
     await page.goto(`http://127.0.0.1:${app.address().port}`);

@@ -43,6 +43,8 @@ const http = require('node:http');
 const { session } = require('electron');
 const root = '__ROOT__';
 const dist = path.join(root, 'dist');
+const { slicesFromLegacy } = require(path.join(root, 'electron/projections.cjs'));
+let stateSlices = [], stateBatch = 0;
 const out = '__OUT__';
 const readyFile = '__READY__';
 const themes = ${JSON.stringify(themes)};
@@ -79,7 +81,7 @@ ipcMain.handle('dock:call', async (_event, method) => {
   if (method === 'session.buffer') return { ok: true, value: { data: 'Synthetic benchmark console ready', sequence: 0 } };
   return { ok: true, value: [] };
 });
-function sendState() { if (win && !win.isDestroyed()) win.webContents.send('dock:state', structuredClone(state)); }
+function sendState() { if (win && !win.isDestroyed() && stateSlices.length) { const values=slicesFromLegacy(state); win.webContents.send('dock:v2', { type:'changes', epoch:'fixture', subscription:'fixture', batch:++stateBatch, changes:stateSlices.map(slice=>({slice,kind:'reset',rev:stateBatch,value:values[slice]})) }); } }
 function json(res, value) { res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' }); res.end(JSON.stringify(value)); }
 function readBody(req) { return new Promise((resolve, reject) => { let body = ''; req.setEncoding('utf8'); req.on('data', part => body += part); req.on('end', () => { try { resolve(JSON.parse(body || '{}')); } catch (error) { reject(error); } }); req.on('error', reject); }); }
 function mime(file) {
@@ -174,6 +176,14 @@ async function start() {
   win.webContents.on('console-message', (_event, level, message) => { if (level >= 2) rendererErrors.push(message); });
   win.webContents.on('render-process-gone', (_event, details) => rendererErrors.push('Renderer exited: ' + JSON.stringify(details)));
   win.webContents.on('did-fail-load', (_event, code, description, validatedURL, isMainFrame) => { if (isMainFrame && code !== -3) rendererErrors.push('Load failed ' + code + ' ' + description + ': ' + validatedURL); });
+  ipcMain.handle('dock:v2', (_event, message) => {
+    if (message.type === 'hello') {
+      stateSlices = message.slices;
+      win.webContents.send('dock:v2', { type:'welcome', epoch:'fixture', subscription:'fixture', slices:stateSlices });
+      sendState();
+    }
+    return true;
+  });
   await win.loadURL(localOrigin + '/');
   const pageReadyDeadline = Date.now() + 20000;
   while (Date.now() < pageReadyDeadline) {
@@ -202,7 +212,7 @@ app.on('window-all-closed', () => app.quit());
 const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('dock', {
   call: (method, payload) => ipcRenderer.invoke('dock:call', method, payload),
-  onState: callback => ipcRenderer.on('dock:state', (_event, state) => callback(state)),
+  state: { send: message => ipcRenderer.invoke('dock:v2', message), onMessage: callback => { const handler = (_event, message) => callback(message); ipcRenderer.on('dock:v2', handler); return () => ipcRenderer.removeListener('dock:v2', handler); } },
   onOutput: callback => ipcRenderer.on('dock:output', (_event, output) => callback(output)),
   onSelect: () => {}, onNotice: () => {},
 });

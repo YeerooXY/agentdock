@@ -50,15 +50,12 @@ Status key: **Not seen** · **Looks good** · **Needs work** · **Cut**
 |---|---|---|---|---|
 | 3.1 | Project list | Your projects with status and next step | None; 30 projects; long goals text | Not seen |
 | 3.2 | Project details/edit | Goals, folders, milestones | No folders; 10 milestones; all done | Not seen |
-| 3.3 | Plan sheet | Sections, proposals with before/after, approvals | Empty plan; a waiting proposal; "Not needed" sections | Not seen |
-| 3.4 | Reference board | Files, links and screenshots for a plan | 50 files; broken link; drag and drop | Not seen |
 
-### 4. Results
+### 4. Reviews and previews
 
 | # | Item | What it is | Extra cases | Status |
 |---|---|---|---|---|
-| 4.1 | Results gallery | Files agents saved, grouped by chat and prompt | Empty; 200 results; images, Markdown, code, ZIP | Not seen |
-| 4.2 | Result preview | Open one result | Large image; long report; deleted file | Not seen |
+| 4.2 | Image preview | Open a review or preview image | Large image; deleted file | Not seen |
 | 4.3 | Website reviews | Agent page reviews with checklist | Running; finished with findings; interrupted | Not seen |
 
 ### 5. Usage
@@ -100,7 +97,6 @@ Status key: **Not seen** · **Looks good** · **Needs work** · **Cut**
 | 9.5 | New console | Start an agent console from the phone | No agents; many accounts | Not seen |
 | 9.6 | Agent menu | Model, effort, account switch | Model list unavailable; switch while busy | Not seen |
 | 9.7 | Message queue and drafts | Queue messages, keep drafts | 20 queued; interrupted send (no replay) | Not seen |
-| 9.8 | Results | Saved results on the phone | Empty; images; long reports | Not seen |
 | 9.9 | Settings and themes | Phone appearance and preferences | All themes; lighting; stars; openings | Not seen |
 | 9.10 | PC settings and devices | Manage the PC and paired phones | Revoke this phone | Not seen |
 | 9.11 | Updates | App update check and install | Update available; same version; download fails | Not seen |

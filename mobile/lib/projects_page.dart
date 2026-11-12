@@ -7,7 +7,6 @@ import 'package:flutter/material.dart';
 import 'dock_client.dart';
 import 'dock_style.dart';
 import 'features/projects/project_workspace.dart';
-import 'results_page.dart';
 import 'tasks_page.dart';
 
 bool canReadProjects(DockClient client) =>
@@ -27,18 +26,6 @@ class ProjectsPage extends StatefulWidget {
 }
 
 class _ProjectsPageState extends State<ProjectsPage> {
-  static const sectionNames = {
-    'brief': 'Brief',
-    'research': 'Research',
-    'infrastructure': 'Setup',
-    'roadmap': 'Roadmap',
-  };
-  static const planStates = {
-    'approved': 'Approved',
-    'proposal waiting': 'Proposal waiting',
-    'not needed': 'Not needed',
-    'empty': 'Empty',
-  };
   static const statuses = {
     'planning': 'Planning',
     'active': 'Active',
@@ -308,7 +295,6 @@ class _ProjectsPageState extends State<ProjectsPage> {
               ProjectWorkspace(
                 project: detail!,
                 work: detail!['work'] as List? ?? [],
-                outputs: detail!['outputs'] as List? ?? [],
                 knowledge: knowledgeData,
                 tab: workspaceTab,
                 onTab: (tab) {
@@ -319,7 +305,6 @@ class _ProjectsPageState extends State<ProjectsPage> {
                     loadKnowledge();
                   }
                 },
-                onOpenOutput: openOutput,
                 onOpenReport: openReport,
                 onReadSection: readKnowledge,
                 onLoadMore: knowledgeData?['nextCursor'] != null
@@ -387,27 +372,7 @@ class _ProjectsPageState extends State<ProjectsPage> {
     }
   }
 
-  void openOutput(Map<String, dynamic> item) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) =>
-            ResultDetail(client: widget.client, item: item, ids: [item['id']]),
-      ),
-    );
-  }
-
   Future<void> openReport(Map<String, dynamic> task) async {
-    if (task['executionHistory'] == null && task['resultId'] != null) {
-      final item = <String, dynamic>{
-        'id': task['resultId'],
-        'title': task['title'],
-        'ext': '.md',
-        'kind': 'report',
-      };
-      openOutput(item);
-      return;
-    }
     await readText('projects.report', {
       'id': selected,
       'taskId': task['id'],
@@ -618,29 +583,11 @@ class _ProjectsPageState extends State<ProjectsPage> {
             ],
           ),
         ),
-      if ((project['decisionsWaiting'] as num? ?? 0) > 0)
-        Padding(
-          padding: const EdgeInsets.only(top: 8),
-          child: Text(
-            '${project['decisionsWaiting']} proposed by agents. Review them in Projects on your PC.',
-            style: TextStyle(color: pink),
-          ),
-        ),
     ],
     heading('Recent notes'),
     Text(
       '${project['notes'] ?? ''}'.isEmpty ? 'No notes.' : '${project['notes']}',
     ),
-    heading('Plan'),
-    if (project['plan']?['revision'] != null)
-      Text('Revision ${project['plan']['revision']}'),
-    for (final section in project['plan']?['sections'] as List? ?? [])
-      Padding(
-        padding: const EdgeInsets.only(top: 8),
-        child: Text(
-          '${sectionNames[section['name']] ?? section['name']}: ${planStates[section['state']] ?? section['state']}',
-        ),
-      ),
     heading('Linked consoles'),
     if ((project['consoles'] as List? ?? []).isEmpty)
       const Text('No live consoles.'),

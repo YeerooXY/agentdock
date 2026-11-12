@@ -37,10 +37,6 @@
       "kind": "collection",
       "writer": "projects"
     },
-    "projectProposals": {
-      "kind": "collection",
-      "writer": "projects"
-    },
     "accounts": {
       "kind": "collection",
       "writer": "accountProfiles"
@@ -60,10 +56,6 @@
     "usageHistory": {
       "kind": "value",
       "writer": "usage"
-    },
-    "results": {
-      "kind": "collection",
-      "writer": "workbench"
     },
     "imageJobs": {
       "kind": "value",
@@ -147,12 +139,6 @@
       "kind": "collection",
       "deps": [
         "usage"
-      ]
-    },
-    "results": {
-      "kind": "value",
-      "deps": [
-        "results"
       ]
     }
   },

@@ -1,4 +1,5 @@
 'use strict';
+const { installStateTransport } = require('./../state-test-transport.cjs');
 // In-memory IPC only. Never import main-process services or execute a real tool.
 const image = 'data:image/svg+xml;base64,' + Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="2400" height="1600"><rect width="2400" height="1600" fill="#17334b"/><text x="120" y="240" fill="white" font-size="90">Synthetic review image</text></svg>').toString('base64');
 async function installBridge(context, state, record, origin) {
@@ -67,11 +68,11 @@ async function installBridge(context, state, record, origin) {
         return fail(`Release fixture does not implement ${method}`);
     }
   });
-  await context.addInitScript(() => {
-    let receive;
+  await installStateTransport(context);
+await context.addInitScript(() => {
     window.dock = {
-      call: async (method, payload) => { const reply = await window.fixtureCall(method, payload); if (reply.state) receive?.(reply.state); return reply; },
-      onState: fn => { receive = fn; window.fixtureState = fn; },
+      call: async (method, payload) => { const reply = await window.fixtureCall(method, payload); if (reply.state) window.fixtureState?.(reply.state); return reply; },
+      get state() { return window.fixtureStateTransport; },
       onOutput: fn => { window.fixtureOutput = fn; },
       onSelect: fn => { window.fixtureSelect = fn; },
       onNotice: fn => { window.fixtureNotice = fn; }

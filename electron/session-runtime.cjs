@@ -96,7 +96,6 @@ class SessionEventRuntime {
           if (event.state && item.alive) {
             if (event.studyContinuation && !h.getHub()?.workbench?.completion?.canContinueStudy(item.id, event.turnId || null)) { changed = true; continue; }
             item.state = event.state; item.updatedAt = event.at;
-            item.completionMissing = event.state === 'attention' && /^Completion check missing/.test(event.summary || '');
             if (['ready', 'attention'].includes(event.state)) h.emit('attention', { ...h.listItem(item.id), turnId: event.turnId || null, summary: typeof event.summary === 'string' ? event.summary.slice(0, 200) : '' });
           }
           if (event.limits) h.emit('limits', event.limits);

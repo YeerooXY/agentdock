@@ -440,7 +440,8 @@ test('isolated preload ignores synthetic focus and sends only trusted flags and 
     document: { hasFocus: () => true, activeElement: target, addEventListener: (type, callback) => listeners.set(type, callback) },
     queueMicrotask, setInterval: callback => { heartbeat = callback; } };
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../electron/preload.cjs'), 'utf8'), context);
-  ipc.emit('dock:state', {}, { sessions: [{ id: 'a', consoleKey: 'key', launchId: 'launch' }] }); loaded();
+  ipc.emit('dock:v2', {}, { type: 'welcome', epoch: 'test' });
+  ipc.emit('dock:v2', {}, { type: 'changes', epoch: 'test', changes: [{ slice: 'sessions', kind: 'reset', value: { order: ['a'], byId: { a: { id: 'a', consoleKey: 'key', launchId: 'launch' } } } }] }); loaded();
   assert.equal(listeners.has('focusin'), false);
   listeners.get('keydown')({ isTrusted: false, type: 'keydown', key: 'x', target }); assert.equal(sent.length, 0);
   heartbeat(); assert.equal(sent.at(-1).payload.consoles[0].focused, false);

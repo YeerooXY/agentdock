@@ -1,4 +1,5 @@
 'use strict';
+const { installStateTransport } = require('./state-test-transport.cjs');
 const {chromium,webkit,devices}=require('playwright');
 const fs=require('node:fs'),path=require('node:path'),http=require('node:http'),assert=require('node:assert/strict');
 const root=path.resolve(__dirname,'..'),dist=path.join(root,'dist'),out=path.join(root,'artifacts/account-refresh');
@@ -25,7 +26,8 @@ state.limits=[{id:'codex',accountId:'codex:default',provider:'codex',name:'Codex
 state.usageAccounts=[{id:'codex:default',provider:'codex',label:'Codex',hasUsage:true},{id:'claude:default',provider:'claude',label:'Claude Code',hasUsage:true},{id:'kiro:default',provider:'kiro',label:'Kiro',hasUsage:true}];
 await context.route('**/*',r=>r.request().url().startsWith(origin)?r.continue():r.abort());
 await context.exposeFunction('fixtureCall',async(method,payload)=>{calls.push({method,payload});return {ok:true,value:method==='state'?state:method==='session.buffer'?{data:Array.from({length:600},(_,i)=>'history line '+String(i).padStart(4,'0')).join('\r\n')+'\r\n',sequence:0,launchId:session.launchId||null}:[]};});
-await context.addInitScript(()=>{window.dock={call:(m,p)=>window.fixtureCall(m,p),onState:fn=>window.fixtureState=fn,onOutput:fn=>window.fixtureOutput=fn,onSelect:()=>{},onNotice:()=>{}};});
+await installStateTransport(context);
+await context.addInitScript(()=>{window.dock={call:(m,p)=>window.fixtureCall(m,p),get state() { return window.fixtureStateTransport; },onOutput:fn=>window.fixtureOutput=fn,onSelect:()=>{},onNotice:()=>{}};});
 const page=await context.newPage();page.on('pageerror',e=>errors.push(e.message));await page.goto(origin);await page.locator('.xterm-rows').waitFor();await page.evaluate(()=>document.fonts.ready);
 const positions=()=>page.locator('#sidebar [data-page],.window-actions button').evaluateAll(es=>es.filter(e=>e.getClientRects().length).map(e=>({name:e.dataset.page||e.dataset.action,x:e.getBoundingClientRect().x,y:e.getBoundingClientRect().y})));
 const before=await positions();state.screenshot={name:'Fixture.png',at:Date.now(),thumb:'data:image/png;base64,'+fs.readFileSync(path.join(root,'assets/icon.png')).toString('base64')};await page.evaluate(s=>window.fixtureState(s),state);await page.locator('#screenshot-spot').waitFor({state:'visible'});assert.deepEqual(await positions(),before,'Screenshot arrival moves navigation');

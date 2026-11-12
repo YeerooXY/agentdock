@@ -3,31 +3,13 @@ const test = require('node:test'), assert = require('node:assert/strict');
 const fs = require('node:fs'), os = require('node:os'), path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { EventEmitter } = require('node:events');
-const { Delegation, collectChanges, pickReviewer, reviewerLaunch, cleanFiles, reviewBrief, parseReply } = require('../electron/delegation.cjs');
+const { Delegation, collectChanges, reviewerLaunch, cleanFiles, reviewBrief, parseReply } = require('../electron/delegation.cjs');
 const { Workbench } = require('../electron/workbench.cjs');
 
 const now = 1_800_000_000_000;
 const claude = { id: 'claude:default', provider: 'claude', label: 'Claude Code', executable: 'C:\\bin\\claude.exe' };
 const codex = { id: 'codex:default', provider: 'codex', label: 'Codex', executable: 'C:\\bin\\codex.exe' };
 const window = (usedPercent, hoursLeft = 3) => ({ minutes: 300, usedPercent, resetsAt: now + hoursLeft * 3_600_000 });
-
-test('the reviewer is the account with the most measured room, another vendor preferred', () => {
-  const limits = [{ accountId: 'claude:default', observedAt: now - 60_000, windows: [window(20)] }, { accountId: 'codex:default', observedAt: now - 60_000, windows: [window(40)] }];
-  const picked = pickReviewer({ candidates: [claude, codex], limits, callerProvider: 'claude', now });
-  assert.equal(picked.choice.id, 'codex:default');
-  assert.match(picked.why, /different vendor/); assert.match(picked.why, /60% left/);
-  // A nearly full account is skipped even when it is the other vendor.
-  const full = [{ ...limits[0] }, { accountId: 'codex:default', observedAt: now - 60_000, windows: [window(95)] }];
-  assert.equal(pickReviewer({ candidates: [claude, codex], limits: full, callerProvider: 'claude', now }).choice.id, 'claude:default');
-  // Stale or missing readings count as unknown, never as free.
-  const unknown = pickReviewer({ candidates: [codex], limits: [{ accountId: 'codex:default', observedAt: now - 3 * 3_600_000, windows: [window(5)] }], callerProvider: 'codex', now });
-  assert.match(unknown.why, /usage unknown/);
-  assert.equal(pickReviewer({ candidates: [claude, codex], limits, callerProvider: 'codex', requested: 'claude', now }).choice.id, 'claude:default');
-  assert.throws(() => pickReviewer({ candidates: [claude], limits, callerProvider: 'codex', requested: 'kiro', now }), /not an allowed/);
-  assert.equal(pickReviewer({ candidates: [codex], limits: full, callerProvider: 'claude', now }).choice.id, codex.id);
-  const exhausted = [{ accountId: codex.id, observedAt: now, windows: [window(100)] }];
-  assert.throws(() => pickReviewer({ candidates: [codex], limits: exhausted, callerProvider: 'claude', now }), /100%/);
-});
 
 test('reviewers start read-only, without Paddock tools, and read the brief from stdin', () => {
   const c = reviewerLaunch('claude', '/usr/bin/claude.exe', { outFile: 'x' }).args;
@@ -92,13 +74,19 @@ test('a review runs once per console and retains its verdict internally without 
   const run = (...args) => execFileSync('git', args, { cwd: repo, stdio: 'pipe' });
   run('init', '-q'); run('config', 'user.email', 't@example.com'); run('config', 'user.name', 'T');
   fs.writeFileSync(path.join(repo, 'a.js'), '1\n'); run('add', '.'); run('commit', '-qm', 'base'); fs.writeFileSync(path.join(repo, 'a.js'), '2\n');
-  const settings = { delegationEnabled: false }, saved = [], cli = fakeCli();
-  const delegation = new Delegation(root, { getSettings: () => settings, candidates: () => [claude, codex], getLimits: () => [], environment: (id, provider) => ({ ACCOUNT: id, PROVIDER: provider }),
+  const settings = { delegationEnabled: false }, saved = [], limits = [], cli = fakeCli();
+  const delegation = new Delegation(root, { getSettings: () => settings, candidates: () => [claude, codex], getLimits: () => limits, environment: (id, provider) => ({ ACCOUNT: id, PROVIDER: provider }),
     saveResult: async raw => { saved.push(raw); return { id: 'r1' }; }, spawnProcess: cli.spawnProcess, now: () => now });
   const caller = { sessionId: 's1', provider: 'claude', cwd: repo, consoleName: 'Builder', context: { project: repo } };
   await assert.rejects(delegation.start({}, caller), /turned? on|are off/);
   settings.delegationEnabled = true;
-  const started = await delegation.start({ focus: 'Off-by-one?' }, caller);
+  await assert.rejects(delegation.start({}, caller), /Choose an allowed/);
+  await assert.rejects(delegation.start({ reviewer: 'codex' }, caller), /Choose an allowed/);
+  limits.push({ accountId: codex.id, observedAt: now, windows: [window(100)] });
+  await assert.rejects(delegation.start({ reviewer: codex.id }, caller), /account limit/);
+  limits.length = 0;
+  assert.equal(cli.spawned.length, 0);
+  const started = await delegation.start({ reviewer: codex.id, focus: 'Off-by-one?' }, caller);
   assert.equal(started.state, 'running'); assert.equal(started.reviewer, 'Codex');
   assert.deepEqual(cli.spawned[0].options.env, { ACCOUNT: 'codex:default', PROVIDER: 'codex' });
   assert.match(cli.spawned[0].child.stdin.written, /Off-by-one\?/); assert.match(cli.spawned[0].child.stdin.written, /VERDICT: approve \| changes-requested/);
@@ -110,21 +98,21 @@ test('a review runs once per console and retains its verdict internally without 
   const waiting = delegation.status(started.id, { waitSeconds: 30, sessionId: 's1' });
   cli.spawned[0].child.emit('close', 0);
   const done = await waiting;
-  assert.equal(done.state, 'done'); assert.equal(done.verdict, 'changes-requested'); assert.match(done.review, /a\.js:1/); assert.equal(done.resultId, null);
+  assert.equal(done.state, 'done'); assert.equal(done.verdict, 'changes-requested'); assert.match(done.review, /a\.js:1/); assert.equal(done.resultId, undefined);
   assert.equal(saved.length, 0); assert.match(delegation.executionHistory.get('review', done.id).report, /Requested by Builder/);
   assert.equal(fs.existsSync(path.dirname(outFile)), false, 'the brief folder is removed');
   // Claude replies as JSON; a stop ends the run and is reported as stopped.
-  const second = await delegation.start({ reviewer: 'claude' }, caller);
+  const second = await delegation.start({ reviewer: claude.id }, caller);
   delegation.stop(second.id);
   assert.equal((await delegation.status(second.id)).state, 'stopped');
   assert.equal(cli.spawned[1].child.killed || process.platform === 'win32', true);
-  const third = await delegation.start({ reviewer: 'claude' }, caller);
+  const third = await delegation.start({ reviewer: claude.id }, caller);
   cli.spawned[2].child.stdout.emit('data', JSON.stringify({ result: 'VERDICT: approve\nFINDINGS:\n- none', usage: { input_tokens: 900, output_tokens: 40 }, num_turns: 2 }) + '\n');
   cli.spawned[2].child.emit('close', 0);
   const approved = await delegation.status(third.id, { waitSeconds: 5 });
   assert.equal(approved.verdict, 'approve'); assert.equal(approved.usage.outputTokens, 40);
   // A signed-out reviewer reports how to fix it.
-  const fourth = await delegation.start({ reviewer: 'claude' }, caller);
+  const fourth = await delegation.start({ reviewer: claude.id }, caller);
   cli.spawned[3].child.stderr.emit('data', 'Please run /login to sign in');
   cli.spawned[3].child.emit('close', 1);
   const failed = await delegation.status(fourth.id, { waitSeconds: 5 });

@@ -9,7 +9,7 @@ const { validateConsoleDefaults } = require('./sessions.cjs');
 const { NO_VALUE } = require('./command-result.cjs');
 
 function desktopSettingsCommands(h) {
-  const { getSettings, persistSettings, workspace, stateV2Enabled, endDesktopV2, mobile, turns, getMode, getWindow,
+  const { getSettings, persistSettings, workspace, stateV2Enabled, mobile, getMode, getWindow,
     publish, safeMode, cliSetup, skillPacks, sessions, getCapabilities, setCapabilities, hub, testMode, ssh, dialog } = h;
   return {
     'skills.refresh': async () => { const value = skillPacks.list(); publish(); return value; },
@@ -71,7 +71,6 @@ function desktopSettingsCommands(h) {
         next.restoreConsoles = payload.restoreConsoles;
       }
       if (typeof payload?.codexScrollback === 'boolean') next.codexScrollback = payload.codexScrollback;
-      if (typeof payload?.autoSaveResults === 'boolean') next.autoSaveResults = payload.autoSaveResults;
       if (typeof payload?.delegationEnabled === 'boolean') next.delegationEnabled = payload.delegationEnabled;
       if (typeof payload?.delegationPanels === 'boolean') next.delegationPanels = payload.delegationPanels;
       if (payload?.delegationProviders !== undefined) {
@@ -127,9 +126,8 @@ function desktopSettingsCommands(h) {
       workspace.setEnabled(next.restoreConsoles);
       const v2Was = stateV2Enabled();
       persistSettings(next);
-      if (v2Was && !stateV2Enabled()) { endDesktopV2(); for (const client of mobile.clients) if (client.v2) client.ws.close(1012, 'Reconnect'); }
-      if (!v2Was && stateV2Enabled()) h.setDesktopLegacy(true);
-      turns.setEnabled(getSettings().autoSaveResults === true); if (getMode() === 'hud') getWindow().setAlwaysOnTop(getSettings().hudAlwaysOnTop); publish(); return NO_VALUE;
+      if (v2Was && !stateV2Enabled()) { for (const client of mobile.clients) if (client.v2) client.ws.close(1012, 'Reconnect'); }
+      if (getMode() === 'hud') getWindow().setAlwaysOnTop(getSettings().hudAlwaysOnTop); publish(); return NO_VALUE;
     }
   };
 

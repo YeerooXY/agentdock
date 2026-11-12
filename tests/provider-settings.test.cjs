@@ -273,30 +273,6 @@ test('Claude WSL resume wraps in wsl.exe', { skip: process.platform !== 'win32' 
   }
 });
 
-test('Claude unrestricted with discussion appended', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pdk-claude-test-'));
-  try {
-    const discussion = 'Help me plan this project.';
-    const claudeInstall = { kind: 'native', path: '/usr/bin/claude' };
-    const result = settingsAdapter('claude').launchArgs(ctx({
-      provider: 'claude',
-      hub: false,
-      dir,
-      claudeInstall,
-      isWsl: false,
-      permissions: 'unrestricted',
-      discussion,
-      purpose: 'agent',
-      node: '/usr/bin/node',
-      helper: '/app/electron/agent-event.cjs'
-    }));
-    assert.ok(result.args.includes('--dangerously-skip-permissions'));
-    assert.equal(result.args[result.args.indexOf('--') + 1], discussion);
-    assert.deepEqual(result.env, {});
-  } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
-});
 
 test('Claude throws when executable not found', () => {
   assert.throws(

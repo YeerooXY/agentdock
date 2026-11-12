@@ -59,8 +59,7 @@ async function stop() { await call('quit'); await app.close(); app = null; }
   await call('session.input', { id: s.id, data: 'Write-Output $linkProbe\r' }); await until(async () => (await call('session.buffer', s.id)).data.includes('KEPT_AFTER_LINK'));
   assert.equal(fs.readFileSync(path.join(folder, 'keep.txt'), 'utf8'), 'Existing project file');
   checks.push('create a project from a live chat; folder prefilled; process and files preserved');
-  await call('projects.save', { ...p, revision: p.plan.revision, nextStep: 'Test the arena', milestones: [{ text: 'Playable arena', done: false }] });
-  for (const [section, changes] of [['brief',{audience:'Players',success:'Finish a wave'}],['research',{purpose:'personal',evidence:'Personal prototype'}],['infrastructure',{stack:'Godot',reason:'Small game',alternative:'Unity',tradeoff:'Existing Godot skills',hosting:'Local PC',data:'Local saves',security:'Offline only',operations:'Tests and backups'}],['roadmap',{scope:'Playable arena',milestones:[{text:'Playable arena',acceptance:'Can finish the arena',done:false}]}]]) { p=(await call('state')).projects[0]; await call('projects.plan.review',{id:p.id,revision:p.plan.revision,section,changes,action:'approve'}); }
+  await call('projects.save', { ...p, nextStep: 'Test the arena', milestones: [{ text: 'Playable arena', done: false }] });
   p=(await call('state')).projects[0];
   const bridgeFile = path.join(profile, 'bridge.json');
   await call('session.input', { id: s.id, data: `@{url=$env:PADDOCK_BRIDGE_URL;token=$env:PADDOCK_BRIDGE_TOKEN} | ConvertTo-Json -Compress | Set-Content -LiteralPath '${bridgeFile.replaceAll("'", "''")}'\r` });
@@ -73,14 +72,14 @@ async function stop() { await call('quit'); await app.close(); app = null; }
   assert.match(JSON.stringify(await bridge('dock_context')), /Ship a playable game/);
   const currentSession = async () => (await call('state')).sessions.find(x => x.id === s.id);
   p = (await call('state')).projects[0];
-  await call('projects.save', { ...p, revision: p.plan.revision, name: 'Arena project' });
+  await call('projects.save', { ...p, name: 'Arena project' });
   await until(async () => (await currentSession()).name === 'Arena project');
   assert.equal((await currentSession()).nameMode, 'project');
   assert.equal((await call('state')).settings.slotNames[s.slot], 'Arena project');
   assert.match(JSON.stringify(await bridge('dock_context')), /Arena project/);
   assert.match(fs.readFileSync(path.join(profile, 'sessions', s.id, 'PADDOCK.md'), 'utf8'), /Arena project/);
   await call('slot.name', { slot: s.slot, sessionId: s.id, name: 'Combat review' });
-  p = (await call('state')).projects[0]; await call('projects.save', { ...p, revision: p.plan.revision, name: 'Arena release' });
+  p = (await call('state')).projects[0]; await call('projects.save', { ...p, name: 'Arena release' });
   assert.equal((await currentSession()).name, 'Combat review');
   await panel.locator('[data-console-project]').click();
   const naming = page.locator('#console-project-form [name=useProjectName]'); assert.equal(await naming.isChecked(), false);
@@ -92,10 +91,7 @@ async function stop() { await call('quit'); await app.close(); app = null; }
   checks.push('project rename updates automatic titles and slot names; manual names persist; naming switch restores project title; context/file refresh without restarting the console');
   await page.locator(`[data-console-project="${s.id}"]`).click(); await page.locator('[data-project-view]').click();
   await page.locator('.project-card').waitFor();
-  await bridge('dock_call', { tool: 'dock/project_progress', arguments: { revision: p.plan.revision, milestone: 0, done: true, nextStep: 'Gather playtest feedback' } });
-  await until(async () => (await page.locator('.project-progress').textContent()).includes('1 / 1'));
-  assert.match(await page.locator('.project-next').textContent(), /Gather playtest feedback/);
-  checks.push('the same agent bridge reads project context; progress updates appear live in Projects');
+  checks.push('the same agent bridge reads project context; project links preserve the console');
   await page.locator('[data-page=settings]').click(); await page.locator('[data-setting=suggestProjects]').check();
   await until(async () => (await call('state')).settings.suggestProjects === true);
   await page.getByRole('button', { name: 'Close settings', exact: true }).click();

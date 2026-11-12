@@ -12,7 +12,7 @@ async function openPage(page, target) {
     await page.keyboard.press('Escape');
     await page.locator('body[data-settings-open]').waitFor({ state: 'detached' });
   }
-  if (['tasks', 'results'].includes(target)) {
+  if (target === 'tasks') {
     await page.locator('.sidebar [data-page="projects"]').click();
     const back = page.locator('[data-project-back]'); if (await back.count()) await back.click();
     await page.locator(`#content [data-page="${target}"]`).click();
@@ -20,8 +20,4 @@ async function openPage(page, target) {
   }
   await page.locator(`nav [data-page="${target}"]`).click();
 }
-async function openResultFolder(page) {
-  const folder = page.locator('[data-wb="project-folder"]').first();
-  if (await folder.count()) await folder.click();
-}
-module.exports = { openPage, openResultFolder };
+module.exports = { openPage };

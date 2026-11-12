@@ -1,4 +1,5 @@
 'use strict';
+const { installStateTransport } = require('./state-test-transport.cjs');
 const { openPage } = require('./ui-navigation.cjs');
 const { chromium, webkit, devices } = require('playwright');
 const fs = require('node:fs'), path = require('node:path'), http = require('node:http'), assert = require('node:assert/strict');
@@ -37,8 +38,9 @@ const reports = []; let browser;
       }
       return { ok: true, value: method === 'state' ? state : method === 'session.buffer' ? { data: '', sequence: 0 } : [] };
     });
-    await context.addInitScript(() => {
-      window.dock = { call:(m,p) => window.fixtureCall(m,p), onState:fn => window.fixtureState = fn, onOutput:()=>{}, onSelect:()=>{}, onNotice:()=>{} };
+    await installStateTransport(context);
+await context.addInitScript(() => {
+      window.dock = { call:(m,p) => window.fixtureCall(m,p), get state() { return window.fixtureStateTransport; }, onOutput:()=>{}, onSelect:()=>{}, onNotice:()=>{} };
     });
     page = await context.newPage(); page.on('pageerror', e => errors.push(e.message));
     await page.goto(`http://127.0.0.1:${server.address().port}`);

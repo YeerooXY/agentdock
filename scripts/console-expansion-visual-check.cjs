@@ -1,4 +1,5 @@
 'use strict';
+const { installStateTransport } = require('./state-test-transport.cjs');
 // The shipped renderer, synthetic launch-qualified sessions and fake IPC only.
 // Run after npm run build: node scripts/console-expansion-visual-check.cjs
 const { chromium, webkit, devices } = require('playwright');
@@ -70,7 +71,8 @@ let browser;
   for (const [name, type, options] of profiles) {
     browser = await type.launch({ headless: true });
     const context = await browser.newContext(options);
-    await context.addInitScript(() => {
+    await installStateTransport(context);
+await context.addInitScript(() => {
       localStorage.setItem('console-text-steps', JSON.stringify({ 'console-a': 3 }));
       const clearRect = CanvasRenderingContext2D.prototype.clearRect;
       CanvasRenderingContext2D.prototype.clearRect = function (...args) {
@@ -134,7 +136,7 @@ let browser;
     await context.addInitScript(() => {
       window.dock = {
         call: (method, payload) => window.fixtureCall(method, payload),
-        onState: callback => { window.fixtureReceive = callback; },
+        get state() { return window.fixtureStateTransport; },
         onOutput: callback => { window.fixtureOutput = callback; },
         onSelect: callback => { window.fixtureSelect = callback; },
         onNotice: callback => { window.fixtureNotice = callback; },

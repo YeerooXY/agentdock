@@ -75,12 +75,6 @@ class SessionLauncher {
     ensureOwnedDirectory(sessionsRoot, dir);
     const playtimeDataDir = raw.playtimeDataDir == null ? undefined : h.playtimeDirectory(raw.playtimeDataDir);
     const summary = purpose === 'agent' && h.getHub() ? h.getHub().summary({ knowledgeEnabled: h.getHub().knowledgeEnabled?.(raw.projectId) === true }) + (h.getProjects()?.chatSummary({ projectId: raw.projectId, name, cwd }) || '') + h.studyContext({ cwd, playtimeDataDir, purpose, provider: raw.provider, projectId: raw.projectId || null }) : '';
-    let discussion = '';
-    if (raw.planDiscussion && !resumeId) {
-      if (!['brief', 'research', 'infrastructure', 'roadmap'].includes(raw.planDiscussion)) throw new Error('Choose a planning section.');
-      h.getProjects()?.plan(raw.projectId, raw.planDiscussion);
-      discussion = `Call dock_context, then dock/project_plan for section ${raw.planDiscussion}. Help me plan this project through a conversation. Ask one focused question and wait for my answer. Discuss alternatives and explain recommendations. Do not edit code, initialize the project or add features. Submit a proposal only after we have discussed this section; I approve it in Projects.`;
-    }
     const summaryPath = purpose === 'agent' && h.getHub() ? path.join(dir, 'PADDOCK.md') : undefined;
     if (summaryPath) { fs.writeFileSync(summaryPath, summary, { mode: 0o600 }); h.contexts.set(id, summary); }
     const helper = h.getRuntime()?.event || path.join(__dirname, 'agent-event.cjs');
@@ -94,7 +88,7 @@ class SessionLauncher {
     const adapterCtx = {
       purpose, model, resumeId, resumePath, resumeModel, resumeEffort,
       permissions, account, node, helper, summary, summaryPath,
-      mcpConfig, dir, cwd, isWsl, claudeInstall, discussion,
+      mcpConfig, dir, cwd, isWsl, claudeInstall,
       hub: !!h.getHub(), codexScrollback: () => h.codexScrollback(),
       nativeCodex: () => h.nativeCodex(), programLaunch, prepareCli,
       cliAgents, agentHome: h.agentHome, cliSetup: h.getCliSetup(),
@@ -144,7 +138,6 @@ class SessionLauncher {
     const trackingWarning = typeof tracking === 'string' ? tracking : await tracking;
     if (cancelCheck?.()) { h.getHub()?.revoke(id, launchId); h.getDraftBridge()?.unregister(id, launchId); throw new Error('The console changed before the selected account could open. The original console is still available.'); }
     if (h.isStopping()) { h.getHub()?.revoke(id, launchId); h.getDraftBridge()?.unregister(id, launchId); throw new Error('Paddock is closing.'); }
-    strategy.appendDiscussion(args, { login, discussion });
     let terminal;
     try { terminal = h.pty.spawn(executable, args, { name: 'xterm-256color', cols: 110, rows: 30, cwd, env, useConpty: true }); }
     catch (error) { h.getHub()?.revoke(id, launchId); h.getDraftBridge()?.unregister(id, launchId); throw error; }

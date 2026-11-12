@@ -1,4 +1,5 @@
 'use strict';
+const { installStateTransport } = require('./state-test-transport.cjs');
 const { chromium, webkit, devices } = require('playwright');
 const fs = require('node:fs'), path = require('node:path'), http = require('node:http'), assert = require('node:assert/strict');
 const { openPage } = require('./ui-navigation.cjs');
@@ -28,7 +29,8 @@ let browser;
       if (method === 'integrations.setup') return { ok: false, error: 'Download verification failed. Try again.' };
       return { ok: true, value: method === 'session.buffer' ? { data: '', sequence: 0 } : [] };
     });
-    await context.addInitScript(() => { window.dock = { call: (m, p) => window.fixtureCall(m, p), onState: fn => window.fixtureState = fn, onOutput: () => {}, onSelect: () => {}, onNotice: () => {} }; });
+    await installStateTransport(context);
+await context.addInitScript(() => { window.dock = { call: (m, p) => window.fixtureCall(m, p), get state() { return window.fixtureStateTransport; }, onOutput: () => {}, onSelect: () => {}, onNotice: () => {} }; });
     const page = await context.newPage(); page.on('pageerror', e => errors.push(e.message));
     await page.goto(origin); await openPage(page, 'tools');
     const card = page.locator('[data-integration=upscayl]'); await card.scrollIntoViewIfNeeded(); await page.evaluate(() => document.fonts.ready);

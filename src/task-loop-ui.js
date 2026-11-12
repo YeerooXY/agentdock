@@ -1,7 +1,7 @@
 
 import { openExecutionReport } from './ui/execution-report.js';
 
-export function taskLoopUI({ call, getState, getPage, escape: e, renderPage, toast, openResult }) {
+export function taskLoopUI({ call, getState, getPage, escape: e, renderPage, toast }) {
   let choices = null, selected = '', detailStamp = '', listStamp = '', announcement = '', request = 0, bucket = '';
   const planDrafts = new Map();
   const running = job => ['planning', 'reviewing-plan', 'building', 'implementing', 'checking', 'reviewing'].includes(job.state);
@@ -20,9 +20,6 @@ export function taskLoopUI({ call, getState, getPage, escape: e, renderPage, toa
     .replace(/\s+/g, ' ').trim();
   const outcomeFor = job => {
     if (Object.hasOwn(job, 'outcome')) return job.outcome?.type === 'task' && job.outcome.taskId === job.id ? job.outcome : null;
-    const results = getState()?.workbench?.results || [];
-    const linked = results.find(item => item.id === job.resultId && item.outcome?.type === 'task' && item.outcome.taskId === job.id);
-    return (linked || results.find(item => item.taskId === job.id && item.outcome?.type === 'task'))?.outcome || null;
   };
   const verdict = (job, outcome) => {
     const value = outcome?.verdict || ({ passed: 'ready', accepted: 'ready', 'needs-you': 'needs-decision', interrupted: 'interrupted', stopped: 'interrupted', failed: 'failed' }[job.state]);
@@ -106,7 +103,7 @@ export function taskLoopUI({ call, getState, getPage, escape: e, renderPage, toa
   function result(job) {
     const outcome = outcomeFor(job), files = outcome?.changedFiles, checks = outcome?.checks;
     const openItems = (outcome?.unresolved || []).map(clean).filter(Boolean);
-    const outcomeText = clean(outcome?.outcome || (job.reportError ? 'The outcome could not be saved.' : job.resultId ? 'No structured outcome was saved for this task.' : 'The outcome is being saved.'));
+    const outcomeText = clean(outcome?.outcome || (job.reportError ? 'The outcome could not be saved.' : 'The outcome is being saved.'));
     const checkLabels = { passed: 'Passed', failed: 'Failed', stale: 'Out of date', 'not-run': 'Not run', none: 'No checks' };
     const checkState = { passed: 'passed', failed: 'failed', stale: 'stale', 'not-run': 'not-set', none: 'not-set' }[checks?.status] || 'not-set';
     const withIssues = openItems.length > 0 || checks?.status === 'failed' || (!outcome && job.unresolved?.length);
@@ -119,7 +116,7 @@ export function taskLoopUI({ call, getState, getPage, escape: e, renderPage, toa
       ${job.reportError ? `<p class="form-error">${e(clean(job.reportError))}</p>` : ''}${job.error ? `<p class="form-error">${e(clean(job.error))}</p>` : ''}
       <details class="task-result-details" data-task-details="result-details"><summary>Details</summary>
         ${job.repo !== job.workFolder ? `<p>Repository: <span class="task-folder">${e(job.repo)}</span></p>` : ''}<p class="task-folder">${e(job.workFolder)}</p><p>${job.workflow === 'worktree' ? 'Separate worktree' : 'Current branch'}${job.branch ? `, ${e(job.branch)}` : ''}</p><p class="field-hint">Revision: <code>${e(job.sourceRevision)}</code></p>
-        ${job.executionHistory || job.resultId ? `<div class="task-actions"><button type="button" data-task-action="report" data-id="${e(job.id)}">Open report</button></div>` : ''}${technical(job)}
+        ${job.executionHistory ? `<div class="task-actions"><button type="button" data-task-action="report" data-id="${e(job.id)}">Open report</button></div>` : ''}${technical(job)}
       </details>
     </article>`;
   }
@@ -264,7 +261,7 @@ export function taskLoopUI({ call, getState, getPage, escape: e, renderPage, toa
       }
       if (action === 'report') { const job = jobs().find(item => item.id === id);
         if (job?.executionHistory) await openExecutionReport(page => call('execution.report', { kind: 'task', id, ...page }), button, () => document.querySelector(`[data-task-action="select"][data-id="${id}"]`));
-        else if (job?.resultId) await openResult(job.resultId); }
+ }
     } catch (failure) { toast(failure.message, true); }
     finally { if (button.isConnected) { button.disabled = false; if (document.activeElement === document.body) button.focus({ preventScroll: true }); } }
   });

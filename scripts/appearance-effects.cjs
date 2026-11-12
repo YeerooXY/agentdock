@@ -1,4 +1,5 @@
 'use strict';
+const { installStateTransport } = require('./state-test-transport.cjs');
 
 // Capture real renderer openings and state transitions against a fake dock.
 // No CLI starts, account data or paid model requests are used.
@@ -77,10 +78,11 @@ function session(id, name, status = 'active') {
       if (method === 'session.acknowledge') return { ok: true };
       return { ok: true, value: [] };
     });
-    await context.addInitScript(() => {
+    await installStateTransport(context);
+await context.addInitScript(() => {
       window.dock = {
         call: (method, payload) => window.fixtureCall(method, payload),
-        onState: callback => { window.fixtureState = callback; },
+        get state() { return window.fixtureStateTransport; },
         onOutput: callback => { window.fixtureOutput = callback; },
         onSelect: () => {}, onNotice: () => {},
       };

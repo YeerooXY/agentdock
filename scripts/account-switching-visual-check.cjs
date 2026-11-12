@@ -1,4 +1,5 @@
 'use strict';
+const { installStateTransport } = require('./state-test-transport.cjs');
 // Isolated renderer review. Run npm run test:desktop first to create the fixture.
 const { chromium, webkit, devices } = require(process.env.REVIEW_PLAYWRIGHT || 'playwright');
 const fs = require('node:fs');
@@ -64,7 +65,8 @@ let browser;
     console.log('Checking ' + name);
     browser = await engine.launch();
     const context = await browser.newContext(options), state = fixtureState(), errors = [], external = [];
-    await context.addInitScript(initialState => {
+    await installStateTransport(context);
+await context.addInitScript(initialState => {
       window.__fixtureData = initialState;
       const fixtureConsoleId = initialState.sessions[0].id;
       const fixtureLaunchId = initialState.sessions[0].launchId;
@@ -119,7 +121,7 @@ let browser;
       };
       window.dock = {
         call: (method, payload) => window.__fixtureCall(method, payload),
-        onState: callback => { window.fixtureState = callback; },
+        get state() { return window.fixtureStateTransport; },
         onOutput: () => {}, onSelect: () => {}
       };
     }, state);

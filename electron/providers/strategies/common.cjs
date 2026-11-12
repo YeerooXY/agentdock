@@ -20,7 +20,6 @@ const commonRuntime = Object.freeze({
   // Skipping must stay synchronous: a launch with no await before its spawn is
   // what lets the next launch in the same tick see its slot.
   prepareTracking: () => '',
-  appendDiscussion() {},
   sessionFields: () => ({}),
   loginExecutable: ({ provider, agent, cliSetup, findProgram }) => cliSetup?.executable(provider) || findProgram(agent?.command),
   loginLaunch({ executable, args, programLaunch }) { return programLaunch(executable, args, { bypass: true }); },

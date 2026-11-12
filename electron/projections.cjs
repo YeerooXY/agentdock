@@ -31,7 +31,7 @@ function phoneSession(item) {
     requestedSettings: item.requestedSettings && typeof item.requestedSettings === 'object' ? pick(item.requestedSettings, ['model', 'resolvedModel', 'effort', 'at', 'status']) : null,
     launchId: item.launchId || null, accountId: item.accountId || null, accountLabel: item.accountLabel || null, switchMethod: item.switchMethod || 'none',
     switchTargets: (item.switchTargets || []).map(target => pick(target, ['id', 'label', 'ready'])),
-    switching: !!item.switching, completionMissing: item.completionMissing === true, purpose: item.purpose || 'agent', taskId: item.taskId || null, sliceId: item.sliceId || null,
+    switching: !!item.switching, purpose: item.purpose || 'agent', taskId: item.taskId || null, sliceId: item.sliceId || null,
     steeringState: item.steeringState || null, steeringSupported: item.steeringSupported === true,
     consoleCapabilities: item.consoleCapabilities || null, draftSupported: item.draftSupported === true,
     switchOffer: item.switchOffer ? pick(item.switchOffer, ['key', 'targetAccountId', 'targetLabel', 'usedPercent', 'minutes', 'resetsAt']) : null,
@@ -88,7 +88,6 @@ const PHONE = Object.freeze({
   projects: { ...PHONE_SLICES.projects, build: state => mapCollection(state.projects, phoneProject, item => item.status !== 'archived') },
   tasks: { ...PHONE_SLICES.tasks, build: state => mapCollection(state.tasks, phoneTask) },
   usage: { ...PHONE_SLICES.usage, build: state => phoneUsageAccounts(state.usage) },
-  results: { ...PHONE_SLICES.results, build: state => ({ unread: state.results?.meta?.unread ?? 0, count: state.results?.order?.length || 0 }) },
 });
 // The desktop sees every slice; secret-named fields never reach the store.
 const DESKTOP = Object.freeze(Object.fromEntries(SLICE_NAMES.map(slice => [slice, { kind: SLICES[slice].kind, deps: [slice], build: state => state[slice] }])));
@@ -161,14 +160,12 @@ function slicesFromLegacy(raw, onError = (slice, error) => { throw error; }) {
     tasks: () => (toCollection(raw.tasks || [])),
     delegations: () => (toCollection(raw.delegations || [])),
     projects: () => (toCollection(raw.projects || [])),
-    projectProposals: () => (toCollection(raw.projectProposals || [])),
     accounts: () => (toCollection(raw.accounts || [], { meta: { providers: raw.accountProviders } })),
     agents: () => (toCollection(raw.agents || [], { meta: { setupBusy: raw.agentSetupBusy } })),
     skills: () => (toCollection(raw.skills?.packs || [], { meta: { busy: raw.skills?.busy } })),
     usage: () => ({ limits: raw.limits, usageAccounts: raw.usageAccounts, usageChecks: raw.usageChecks, refreshing: raw.refreshing, lastRefresh: raw.lastRefresh, accountError: raw.accountError }),
     usageHistory: () => ({ recent: raw.recent, messages: raw.messages, ledger: raw.ledger, summary: raw.summary }),
-    results: () => (toCollection(workbench.results || [], { meta: { unread: workbench.unreadResults, ...(workbench.knowledgeEpoch !== undefined ? { knowledgeEpoch: workbench.knowledgeEpoch } : {}) } })),
-    imageJobs: () => (raw.workbench ? { concepts: workbench.concepts, conceptUsage: workbench.conceptUsage, meshyAuth: withoutCode(workbench.meshyAuth) } : null),
+    imageJobs: () => (raw.workbench ? { results: workbench.results || [], ...(workbench.knowledgeEpoch !== undefined ? { knowledgeEpoch: workbench.knowledgeEpoch } : {}), concepts: workbench.concepts, conceptUsage: workbench.conceptUsage, meshyAuth: withoutCode(workbench.meshyAuth) } : null),
     setupRequests: () => (toCollection(workbench.setupRequests || [])),
     tools: () => ({ shared: raw.shared, integrations: raw.integrations, toolCatalog: raw.toolCatalog, toolLimits: raw.toolLimits }),
     keyMetadata: () => (raw.vault),

@@ -2,7 +2,7 @@
 // Navigation and fixture shapes follow the visual checks in scripts/. No Electron IPC is used.
 const fs = require('node:fs');
 const path = require('node:path');
-const { openPage, openResultFolder } = require('../ui-navigation.cjs');
+const { openPage } = require('../ui-navigation.cjs');
 const themes = ['classic', 'blue', 'hot-pink', 'violet', 'void', 'redline', 'cyber', 'icy', 'fiery', 'gamer', 'normal'];
 const long = 'Release review project with a very long name and folder path '.repeat(5);
 const now = Date.now();
@@ -13,7 +13,6 @@ const click = selector => async page => page.locator(selector).first().click();
 const settings = (target, selector) => async page => { await openPage(page, target); if (selector) await page.locator(selector).scrollIntoViewIfNeeded(); };
 const project = (i = 0) => ({ id: `project-${i}`, name: `Project ${i + 1}`, category: 'App', status: 'active', goals: 'Import notes and practice questions.', nextStep: 'Review the import screen', folders: [{ path: 'C:\\Workspace' }], milestones: [], createdAt: now, lastActiveAt: now,
   plan: { revision: 1, brief: {}, research: {}, infrastructure: {}, scope: '', excluded: '', approvals: {}, skipped: {}, proposals: {}, references: [], laterFeatures: [] } });
-const result = (i = 0, ext = '.md') => ({ id: `result-${i}`, title: `Review file ${i + 1}`, kind: ext === '.png' ? 'image' : ext === '.js' ? 'code' : 'report', status: 'passed', ext, image: ext === '.png', size: 1024, at: now - i * 1000, consoleKey: 'console-0', consoleName: 'Review console', groupId: `turn-${Math.floor(i / 4)}`, turnId: `turn-${Math.floor(i / 4)}`, summary: 'Synthetic release review file.', project: 'C:\\Workspace', seenAt: null });
 function consoles(s, count) { const template = s.sessions[0]; s.sessions = Array.from({ length: count }, (_, i) => ({ ...template, id: `console-${i}`, consoleKey: `console-${i}`, slot: i + 1, width: 1, height: 1, provider: 'codex', purpose: 'agent', name: `Console ${i + 1}`, cwd: 'C:\\Workspace', alive: true, dismissed: false, state: 'ready', launchId: null, projectId: null })); }
 function limits(s, count = 2, percent = 38, stale = false) {
   s.usageAccounts = Array.from({ length: count }, (_, i) => ({ id: `codex:account-${i}`, provider: 'codex', label: `Account ${i + 1}`, hasUsage: true }));
@@ -38,11 +37,6 @@ const code = async page => {
   await grid(page); await page.locator('[data-code-action=create]').first().click(); await page.locator('.code-panel').waitFor();
   await page.locator('[data-code-caption]').filter({ hasText: /files?$/ }).waitFor();
   if (await page.locator('[data-code-path]').count()) await page.locator('.code-panel .cm-content').waitFor();
-};
-const plan = async page => { await openPage(page, 'projects'); await page.locator('[data-project-plan]').first().click(); };
-const previewResult = async page => {
-  await openPage(page, 'results'); await openResultFolder(page); await page.locator('[data-wb=preview]').first().click();
-  await page.waitForFunction(() => { const preview = document.querySelector('#result-preview'); return preview && preview.textContent !== 'Loading…'; });
 };
 const registry = {};
 function item(id, main, setup, cases) { registry[id] = { main, setup, cases }; }
@@ -94,12 +88,6 @@ item('2.17', '#explorer-pane', async page => { await grid(page); if (await page.
 registry['2.16'].cases[0].main = '#vim-help';
 item('3.1', '#content', nav('projects'), [c('empty', 'No projects', s => { s.projects = []; }), c('thirty', 'Thirty projects', s => { s.projects = Array.from({ length: 30 }, (_, i) => project(i)); }), c('long', 'Long names and goals', s => { s.projects[0].name = long; s.projects[0].goals = long.repeat(10); })]);
 item('3.2', '#project-editor', async page => { await openPage(page, 'projects'); await page.locator('[data-project-edit]').first().click(); }, [c('no-folders', 'No folders', s => { s.projects[0].folders = []; }), ...[false, true].map(done => c(done ? 'done' : 'ten', done ? 'All milestones done' : 'Ten milestones', s => { s.projects[0].milestones = Array.from({ length: 10 }, (_, i) => ({ text: `Milestone ${i + 1}`, done })); })), c('long', 'Long project details', s => { s.projects[0].goals = long.repeat(10); })]);
-item('3.3', '#project-plan', plan, [c('empty', 'Empty plan'), c('proposal', 'Waiting proposal with before and after', s => { s.projects[0].plan.proposals.brief = { section: 'brief', agent: 'Review agent', data: { goals: 'Import PDFs and practice questions offline.' } }; }), c('skipped', 'Sections marked Not needed', s => { s.projects[0].plan.skipped = { research: true, infrastructure: true }; }), c('error', 'Plan files could not be saved', s => { s.projects[0].plan.files = { error: 'Project folder is unavailable. Try saving again.' }; })]);
-item('3.4', '.plan-side', plan, [c('empty', 'Empty reference board'), c('fifty', 'Fifty reference files', s => { s.projects[0].plan.references = Array.from({ length: 50 }, (_, i) => ({ id: `ref-${i}`, kind: 'file', title: `Reference ${i + 1}.md`, value: `C:\\Workspace\\reference-${i}.md` })); }), c('long', 'Long reference path', s => { s.projects[0].plan.references = [{ id: 'long', kind: 'file', title: long, value: 'C:\\Workspace\\' + long }]; }), manual('broken', 'Broken external link', 'External links are blocked; check the target and recovery in the desktop app.'), manual('drop', 'Drag and drop reference files', 'Native dropped file paths require Electron.')]);
-item('4.1', '#content', nav('results'), [c('empty', 'No results'), c('two-hundred', 'Two hundred results, including images, Markdown, code and ZIP', s => { s.workbench.results = Array.from({ length: 200 }, (_, i) => result(i, ['.png', '.md', '.js', '.zip'][i % 4])); }), c('long', 'Long result titles', s => { s.workbench.results = [{ ...result(), title: long, summary: long }]; })]);
-item('4.2', '.wb-dialog', previewResult, [c('image', 'Large image', s => { s.workbench.results = [result(0, '.png')]; }), c('report', 'Long report', s => { s.workbench.results = [result()]; s._fixture.resultText = '# Review report\n\n' + (long + '\n\n').repeat(300); }), c('deleted', 'Deleted file', s => { s.workbench.results = [result()]; s._fixture.resultError = 'File no longer exists. Restore it or remove this result.'; })]);
-item('4.3', '#content', nav('results'), [c('finished', 'Finished review with findings', s => { s.workbench.results = [{ ...result(), title: 'Website review', reviewId: 'review-one', status: 'changes-requested' }]; s._fixture.resultText = '# Website review\n\n- [x] Navigation works\n- [ ] Form labels need review\n'; }, previewResult), manual('running', 'Review running', 'Live review progress is maintained by the review backend, not the gallery fixture.'), manual('interrupted', 'Review interrupted', 'Interrupt and resume require a real review process.')]);
-registry['4.3'].cases[0].main = '.wb-dialog';
 item('5.1', '.account-switch-settings', nav('usage'), [c('unknown', 'Unknown usage', s => { s.limits = []; s.usageAccounts.forEach(a => a.hasUsage = false); s.settings.usageShown = s.usageAccounts.map(a => a.id); }), c('stale', 'Stale usage', s => limits(s, 2, 50, true)), c('nearly-full', 'Nearly full account', s => limits(s, 2, 99)), c('many', 'Many accounts', s => limits(s, 20)), c('long', 'Long account labels', s => { s.accounts.forEach(a => a.label = long); s.usageAccounts.forEach(a => a.label = long); s.limits.forEach(a => a.name = long); }), c('offline', 'Usage refresh failed', s => { s.accountError = 'Offline. Usage could not be refreshed.'; limits(s, 2, 50, true); })]);
 item('5.2', '.ledger-panel', settings('usage', '.ledger-panel'), [c('empty', 'No API requests'), c('thousand', 'One thousand requests (latest 100 shown)', s => { s.ledger = Array.from({ length: 1000 }, (_, i) => ({ id: `request-${i}`, at: now - i * 1000, provider: 'openai', model: 'synthetic-model', usage: { input: 120, output: 30 }, status: i % 7 ? 'completed' : 'failed' })); }), c('long', 'Long model name', s => { s.ledger = [{ at: now, provider: 'openai', model: long, status: 'failed' }]; })]);
 item('5.3', '.delegation-settings', settings('usage', '.delegation-settings'), ['off', 'on', 'running', 'failed', 'stopped'].map(status => c(status, `Cross-agent reviews: ${status}`, s => { s.settings.delegationEnabled = status !== 'off'; s.settings.delegationProviders = ['claude', 'codex']; s.delegations = ['off', 'on'].includes(status) ? [] : [{ id: 'review', state: status, reviewer: { label: 'Claude Code' }, why: 'Synthetic reviewer selection.', consoleName: 'Review console', startedAt: now, error: status === 'failed' ? 'Reviewer exited without an answer.' : '' }]; })));
@@ -115,8 +103,7 @@ item('7.4', '.mobile-setup', async page => { await openPage(page, 'devices'); aw
 item('7.5', '.settings-content', nav('api-settings'), [c('none', 'No key'), manual('invalid', 'Invalid key', 'Key validation requires the provider; no network or model requests are made.')]);
 item('7.6', '.settings-content', nav('tools'), [c('missing', 'Keys missing'), c('saved', 'Saved key metadata', s => { s.vault.entries = [{ id: 'review-key', label: 'Review tool', provider: 'meshy', createdAt: now }]; const tool = s.integrations.find(x => x.id === 'meshy'); if (tool) tool.keyId = 'review-key'; }), c('failed', 'Tool failed', s => { s.integrations.forEach(x => { x.ready = false; x.job = { state: 'error', error: 'Tool failed to start. Check its setup.' }; }); }), c('long', 'Long tool name', s => { s.integrations[0].name = long; })]);
 item('7.7', '.settings-content', nav('instructions'), [c('empty', 'Empty shared instructions', s => { s.shared.instructions = ''; }), c('long', 'Very long instructions', s => { s.shared.instructions = ('Use the project folder and report test results.\n').repeat(1000); })]);
-item('8.1', '#consoles-page', grid, [c('states', 'Ready, needs you and error states', s => { consoles(s, 3); ['ready', 'attention', 'error'].forEach((state, i) => s.sessions[i].state = state); }), c('console', 'Completion alert opens its console', () => {}, async (page, s) => { await page.evaluate(id => window.fixtureNotice({ kind: 'ready', sessionId: id }), s.sessions[0].id); await page.locator('.console-expanded[data-console-id="console-0"]').waitFor(); }), c('result', 'Completion alert opens its result', s => { s.workbench.results = [result()]; }, async page => { await page.evaluate(() => window.fixtureNotice({ kind: 'ready', destination: 'results', resultId: 'result-0' })); await page.locator('.wb-dialog').waitFor(); }), manual('many', 'Many completion alerts at once', 'Native notification stacking and click routing require Electron and the OS.')]);
-registry['8.1'].cases.find(x => x.id === 'result').main = '.wb-dialog';
+item('8.1', '#consoles-page', grid, [c('states', 'Ready, needs you and error states', s => { consoles(s, 3); ['ready', 'attention', 'error'].forEach((state, i) => s.sessions[i].state = state); }), c('console', 'Completion alert opens its console', () => {}, async (page, s) => { await page.evaluate(id => window.fixtureNotice({ kind: 'ready', sessionId: id }), s.sessions[0].id); await page.locator('.console-expanded[data-console-id="console-0"]').waitFor(); }), manual('many', 'Many completion alerts at once', 'Native notification stacking and click routing require Electron and the OS.')]);
 
 // Ended sessions leave the grid. Capture the empty slot rather than wait for a removed header.
 registry['2.3'].cases.find(x => x.id === 'ended').main = '#consoles-page';
@@ -155,11 +142,6 @@ const hudCase = c('hud-renderer', 'HUD with alerts: renderer state', s => { s.se
   await page.locator('[data-action=hud]').click(); await page.locator('#hud').waitFor();
 });
 hudCase.main = '#hud'; registry['2.15'].cases.push(hudCase);
-const missingNotice = c('missing', 'Alert for a removed result', () => {}, async page => {
-  await page.evaluate(() => window.fixtureNotice({ kind: 'ready', destination: 'results', resultId: 'removed-result' }));
-  await page.locator('#toast.visible').waitFor();
-});
-missingNotice.main = '#toast'; registry['8.1'].cases.push(missingNotice);
 registry['7.4'].cases.push(manual('pair-real', 'Pair, reconnect and revoke a phone', 'Tailscale transport and credential revocation need the real desktop and phone apps.'));
 registry['7.3'].cases.find(x => x.id === 'fonts').label = 'Font fallback on desktop systems';
 registry['7.3'].cases.find(x => x.id === 'fonts').reason = 'The renderer uses a fixed font list; OS font fallback needs real Windows and macOS systems.';
@@ -171,7 +153,7 @@ for (const [id, step, count] of [['tiny', -1, 4], ['huge', 1, 10]]) {
   test.main = '.session-card[data-console-id="console-0"]'; registry['7.3'].cases.push(test);
 }
 // Common data extremes for pages whose own inventory cases do not cover them.
-for (const id of ['3.1', '3.2', '4.1', '7.1', '7.2', '7.3', '7.5', '7.7']) {
+for (const id of ['3.1', '3.2', '7.1', '7.2', '7.3', '7.5', '7.7']) {
   const test = c('storage-error', 'Local settings or data unavailable', s => { s.storageError = 'Local data could not be loaded. Close Paddock and check folder access.'; });
   test.main = '#content'; registry[id].cases.push(test);
 }

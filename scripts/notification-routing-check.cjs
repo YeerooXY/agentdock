@@ -1,4 +1,5 @@
 'use strict';
+const { installStateTransport } = require('./state-test-transport.cjs');
 const { openPage } = require('./ui-navigation.cjs');
 // Run after test:desktop to reuse its synthetic state. No production profile.
 const { chromium, webkit, devices } = require('playwright');
@@ -29,7 +30,8 @@ const rows = []; let browser;
       if (method === 'workbench.results.seen') { for (const item of state.workbench.results) if (payload.includes(item.id)) item.seenAt ||= Date.now(); return { ok: true }; }
       return { ok: true };
     });
-    await context.addInitScript(() => { window.dock = { call: (method, payload) => window.fixtureCall(method, payload), onState: fn => window.fixtureState = fn, onOutput() {}, onSelect() {}, onNotice: fn => window.fixtureNotice = fn }; });
+    await installStateTransport(context);
+await context.addInitScript(() => { window.dock = { call: (method, payload) => window.fixtureCall(method, payload), get state() { return window.fixtureStateTransport; }, onOutput() {}, onSelect() {}, onNotice: fn => window.fixtureNotice = fn }; });
     const page = await context.newPage(), errors = []; page.on('pageerror', e => errors.push(e.message));
     await page.goto(`http://127.0.0.1:${server.address().port}`); await page.locator('.session-grid').waitFor();
     await page.addScriptTag({ url: '/_axe.js' });

@@ -58,7 +58,6 @@ function mobileConsoleCommands(h) {
       const session = currentManagedSession(h, client, payload);
       if (typeof payload.name !== 'string' || !payload.name.trim() || payload.name.length > 64 || /[\x00-\x1f\x7f]/.test(payload.name)) throw new Error('Use a name from 1 to 64 characters, on one line.');
       h.sessions.rename(payload.id, payload.name.trim());
-      h.results.renameConsole(session.consoleKey, session.name);
       return true;
     },
     'console.project': async (client, payload) => {

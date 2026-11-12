@@ -1,4 +1,3 @@
-import { isOperationalResult } from '../results-model.js';
 // Project workspace: compact view of project work, outputs and knowledge.
 // Pure render function; controllers and event listeners are owned by the lead.
 
@@ -84,7 +83,7 @@ function renderOverview(project, e, knowledge, mode) {
 
 function renderTaskCard(task, e) {
   const isRunning = RUNNING_STATES.has(task.state);
-  const hasReport = Boolean(task.executionHistory || task.resultId);
+  const hasReport = Boolean(task.executionHistory);
   const implementer = taskImplementer(task);
 
   const actions = [];
@@ -123,19 +122,6 @@ function renderWork(tasks, projectId, e) {
     return '<p class="field-hint">No tasks for this project.</p>';
   }
   return `<div class="task-list">${scoped.map(task => renderTaskCard(task, e)).join('')}</div>`;
-}
-
-function renderOutputs(outputs, projectId, e) {
-  const scoped = (Array.isArray(outputs) ? outputs : []).filter(o => o && o.projectId === projectId && !isOperationalResult(o));
-  if (scoped.length === 0) {
-    return '<p class="field-hint">No outputs for this project.</p>';
-  }
-  return `<div class="project-outputs">${scoped.map(output =>
-    `<button type="button" class="surface output-card" data-project-result="${e(output.id)}">` +
-      `<strong>${e(output.title || 'Untitled output')}</strong>` +
-      (output.summary ? `<p>${e(output.summary)}</p>` : '') +
-    `</button>`
-  ).join('')}</div>`;
 }
 
 function renderKnowledge(project, knowledge, mode, e, status = 'ready', error = '') {
@@ -188,7 +174,6 @@ function renderKnowledge(project, knowledge, mode, e, status = 'ready', error = 
 export function renderProjectWorkspace({
   project,
   tasks = [],
-  outputs = [],
   knowledge = null,
   mode = 'off',
   knowledgeStatus = 'ready',
@@ -200,7 +185,7 @@ export function renderProjectWorkspace({
   const e = typeof escape === 'function' ? escape : defaultEscape;
   const renderIcon = (name, cls = '') => typeof icon === 'function' ? icon(name, cls) : '';
 
-  const activeTab = ['overview', 'work', 'outputs', 'knowledge'].includes(tab) ? tab : 'overview';
+  const activeTab = ['overview', 'work', 'knowledge'].includes(tab) ? tab : 'overview';
   const projectId = project?.id || '';
 
   const header = `<header class="page-heading project-workspace-header">` +
@@ -208,13 +193,11 @@ export function renderProjectWorkspace({
       `<button type="button" class="subtle" data-project-back>${renderIcon('arrow')}Back</button>` +
     `</div>` +
     `<h1 id="project-workspace-title" tabindex="-1">${e(project?.name || 'Project')}</h1>` +
-    (project?.plan ? `<div class="project-actions"><button type="button" class="secondary" data-project-plan="${e(projectId)}">Plan</button></div>` : '') +
   `</header>`;
 
   const tabsNav = `<nav class="project-workspace-tabs" aria-label="Project tabs">` +
     `<button type="button" data-project-tab="overview" aria-pressed="${activeTab === 'overview' ? 'true' : 'false'}">Overview</button>` +
     `<button type="button" data-project-tab="work" aria-pressed="${activeTab === 'work' ? 'true' : 'false'}">Work</button>` +
-    `<button type="button" data-project-tab="outputs" aria-pressed="${activeTab === 'outputs' ? 'true' : 'false'}">Outputs</button>` +
     `<button type="button" data-project-tab="knowledge" aria-pressed="${activeTab === 'knowledge' ? 'true' : 'false'}">Knowledge</button>` +
   `</nav>`;
 
@@ -222,9 +205,6 @@ export function renderProjectWorkspace({
   switch (activeTab) {
     case 'work':
       content = renderWork(tasks, projectId, e);
-      break;
-    case 'outputs':
-      content = renderOutputs(outputs, projectId, e);
       break;
     case 'knowledge':
       content = renderKnowledge(project, knowledge, mode, e, knowledgeStatus, knowledgeError);

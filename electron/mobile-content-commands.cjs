@@ -14,7 +14,7 @@ function mobileContentCommands(h) {
     'projects.list': async () => mobileProjects.readProjects(h.sessions),
     'projects.detail': async (_client, payload) => {
       const value = mobileProjects.readProjects(h.sessions, payload.id, true);
-      return h.knowledge ? { ...value, workspace: true, work: workspace.work(h, payload.id), outputs: workspace.outputs(h, payload.id), knowledge: { mode: h.knowledge.enabled(payload.id) ? h.knowledge.automatic(payload.id) ? 'automatic' : 'read' : 'off', ...(h.knowledge.enabled(payload.id) && typeof h.knowledge.state === 'function' ? { application: h.knowledge.state(payload.id) } : {}), items: [], status: 'idle' } } : value;
+      return h.knowledge ? { ...value, workspace: true, work: workspace.work(h, payload.id), knowledge: { mode: h.knowledge.enabled(payload.id) ? h.knowledge.automatic(payload.id) ? 'automatic' : 'read' : 'off', ...(h.knowledge.enabled(payload.id) && typeof h.knowledge.state === 'function' ? { application: h.knowledge.state(payload.id) } : {}), items: [], status: 'idle' } } : value;
     },
     'projects.knowledge': async (_client, payload) => workspace.knowledge(h, payload.id, payload),
     'projects.knowledge.read': async (_client, payload) => { workspace.project(h, payload.id); if (!h.knowledge?.enabled(payload.id)) throw Error('Project knowledge is off.'); return h.knowledge.read(payload.id, { ids: payload.ids, revision: payload.revision, maxBytes: 64000 }); },
@@ -49,16 +49,13 @@ function mobileContentCommands(h) {
       if (!resumableImageJob(job)) throw new Error('This image job cannot be resumed.');
       concepts.resume(job.id); return true;
     },
-    'results.list': async () => h.results.list().map(({ id, title, kind, status, summary, at, size, image, ext, groupId, sessionId, consoleKey, consoleName, seenAt, project, projectId, changeCount, git, gitEnd, outcome }) => ({ id, title, kind, status, summary, at, size, image, ext, groupId, sessionId, consoleKey, consoleName, seenAt, project, projectId, changeCount, git, gitEnd, ...(outcome ? { outcome } : {}) })),
-    'results.preview': async (_client, payload) => {
+    'images.preview': async (_client, payload) => {
       if (typeof payload.id !== 'string' || !/^[a-f0-9-]{36}$/.test(payload.id)) throw new Error('Choose a result.');
       if (payload.thumbnail !== undefined && typeof payload.thumbnail !== 'boolean') throw new Error('Invalid thumbnail option.');
       const value = await h.results.preview(payload.id, payload.thumbnail !== false, payload.entry);
       if (JSON.stringify(value).length > 3 * 1024 * 1024) throw new Error('This preview is too large. Open it on your PC.');
       return value;
     },
-    'results.seen': async (_client, payload) => h.results.markSeen(payload.ids),
-    'results.delete': async (_client, payload) => h.results.remove(payload.ids),
     'tasks.seen': async (_client, payload) => {
       const tasks = h.tasks();
       if (!tasks) throw new Error('Tasks are unavailable on this PC.');

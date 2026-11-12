@@ -53,7 +53,7 @@ test('any connected native provider is discoverable without a Codex account', ()
 });
 test('local precedes free, free precedes included, and exhausted or metered accounts are excluded', () => {
   const local = { id: 'opencode:strata', provider: 'opencode', model: 'strata/local', label: 'Local', local: true, readiness: 'ready', available: true };
-  const free = { id: 'copilot:default', provider: 'copilot', label: 'Free' }, included = { id: 'codex:default', provider: 'codex', label: 'Included' };
+  const free = { id: 'copilot:default', provider: 'copilot', label: 'Free', models: [{ id: 'gpt-6.1-terra', available: true, observedAt: 100 }] }, included = { id: 'codex:default', provider: 'codex', label: 'Included' };
   const rules = { ...defaults, accountFunding: { [free.id]: 'free', [included.id]: 'included' } };
   const limits = [{ accountId: free.id, observedAt: 100, windows: [{ usedPercent: 50 }] }, { accountId: included.id, observedAt: 100, windows: [{ usedPercent: 0 }] }];
   const route = candidates => suggestAssignment({ size: 'small', candidates, rules, limits, now: 100 });
@@ -74,11 +74,11 @@ test('funding is explicit or reported, survives migration, and never inferred fr
   assert.throws(() => validateRouting({ ...defaults, accountFunding: { 'grok:default': 'unlimited' } }), /funding/);
 });
 
-test('public candidates and the legacy review suggestion respect funding and sign-in', () => {
+test('public candidates and the discovered review suggestion respect funding and sign-in', () => {
   const candidates = [
     { id: 'opencode:strata', provider: 'opencode', local: true, model: 'strata/local', readiness: 'ready', available: true },
     { id: 'grok:default', provider: 'grok', funding: 'free', signedIn: false },
-    { id: 'copilot:default', provider: 'copilot', signedIn: true },
+    { id: 'copilot:default', provider: 'copilot', signedIn: true, models: [{ id: 'gpt-6.1-terra', available: true, observedAt: 100 }] },
     { id: 'codex:default', provider: 'codex', signedIn: true }
   ];
   const routing = { ...defaults, accountFunding: { 'copilot:default': 'free', 'codex:default': 'metered' } };

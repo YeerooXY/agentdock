@@ -1,4 +1,5 @@
 'use strict';
+const { installStateTransport } = require('./state-test-transport.cjs');
 const { chromium, webkit, devices } = require('playwright');
 const fs = require('node:fs'), path = require('node:path'), http = require('node:http'), assert = require('node:assert/strict');
 const root = path.resolve(__dirname, '..'), out = path.join(root, 'artifacts', 'power-check');
@@ -22,7 +23,8 @@ const report = []; let browser;
       if (method === 'settings') Object.assign(state.settings, payload);
       return { ok: true };
     });
-    await context.addInitScript(() => { window.dock = { call: (method, payload) => window.fixtureCall(method, payload), onState: () => {}, onOutput: () => {}, onSelect: () => {}, onNotice: () => {} }; });
+    await installStateTransport(context);
+await context.addInitScript(() => { window.dock = { call: (method, payload) => window.fixtureCall(method, payload), get state() { return window.fixtureStateTransport; }, onOutput: () => {}, onSelect: () => {}, onNotice: () => {} }; });
     const page = await context.newPage(), errors = []; page.on('pageerror', e => errors.push(e.message));
     await page.goto(`http://127.0.0.1:${server.address().port}`); await page.locator('.session-grid').waitFor();
     await page.locator('[data-page=settings]').click();

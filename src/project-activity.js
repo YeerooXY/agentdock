@@ -1,4 +1,3 @@
-import { isOperationalResult } from './results-model.js';
 import { projectResolver } from './project-identity.js';
 
 const runningStates = new Set(['planning', 'reviewing-plan', 'building', 'implementing', 'checking', 'reviewing']);
@@ -22,7 +21,7 @@ export const attentionLabel = count => `${count} ${count === 1 ? 'needs' : 'need
 export function projectActivity(state) {
   const projects = state.projects || [];
   const owner = projectResolver(projects);
-  const activity = new Map(projects.map(p => [p.id, { running: 0, attention: 0, consoles: 0, lastActiveAt: p.lastActiveAt || 0, latestResult: null }]));
+  const activity = new Map(projects.map(p => [p.id, { running: 0, attention: 0, consoles: 0, lastActiveAt: p.lastActiveAt || 0 }]));
   for (const item of state.sessions || []) {
     const current = activity.get(owner(item));
     if (current && item.alive && !item.kind && !item.taskId) current.consoles++;
@@ -35,13 +34,6 @@ export function projectActivity(state) {
     if (runningStates.has(item.state)) current.running++;
     if (needsAttention(item, newest.get(id))) current.attention++;
     current.lastActiveAt = Math.max(current.lastActiveAt, item.updatedAt || item.finishedAt || item.startedAt || 0);
-  }
-  for (const item of state.workbench?.results || []) {
-    if (isOperationalResult(item)) continue;
-    const current = activity.get(owner(item)); if (!current) continue;
-    const at = item.updatedAt || item.at || 0;
-    current.lastActiveAt = Math.max(current.lastActiveAt, at);
-    if (!current.latestResult || at > (current.latestResult.updatedAt || current.latestResult.at || 0)) current.latestResult = item;
   }
   return activity;
 }

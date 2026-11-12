@@ -4,7 +4,6 @@ const path = require('node:path');
 const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 const { randomUUID, createHash } = require('node:crypto');
-const { createTwoFilesPatch } = require('diff');
 const { EventEmitter } = require('node:events');
 const { gitInfo } = require('./git-context.cjs');
 const { ignoredCaptureFile, sameSnapshotFile } = require('./capture-files.cjs');
@@ -81,18 +80,11 @@ async function snapshot(project, { maxFiles = 10000, maxBytes = 32 * 1024 * 1024
   return { root, files, notes, complete, git };
 }
 class Turns extends EventEmitter {
-  constructor(results, { getSession, getSecrets = () => [], enabled = false } = {}) {
-    super(); this.results = results; this.getSession = getSession; this.getSecrets = getSecrets;
-    this.enabled = enabled;
+  constructor({ getSession } = {}) {
+    super(); this.getSession = getSession;
     this.active = new Map(); this.latest = new Map(); this.queues = new Map(); this.virtual = new Map();
   }
   session(owner) { return this.getSession?.(owner) || this.virtual.get(owner); }
-  setEnabled(enabled) {
-    this.enabled = enabled;
-    if (!enabled) for (const turn of this.active.values()) {
-      turn.capture = false; delete turn.baseline; turn.error = '';
-    }
-  }
   context(owner) {
     const s = this.session(owner); if (!s) return null;
     const turn = this.active.get(owner) || this.latest.get(owner);
@@ -105,7 +97,7 @@ class Turns extends EventEmitter {
   begin(owner) { return this.serial(owner, async () => {
     if (this.active.has(owner)) return this.active.get(owner).id;
     const session = this.session(owner); if (!session?.alive || session.remote) return null;
-    const turn = { id: randomUUID(), startedAt: Date.now(), consoleName: session.name, overlap: false, baseline: null, error: '', capture: this.enabled };
+    const turn = { id: randomUUID(), startedAt: Date.now(), consoleName: session.name, overlap: false };
     turn.context = { project: session.cwd, projectId: session.projectId || null, sessionId: session.id, consoleKey: session.consoleKey || session.id, consoleName: session.name };
     this.active.set(owner, turn);
     for (const [other, current] of this.active) {
@@ -113,74 +105,20 @@ class Turns extends EventEmitter {
       const a = path.resolve(current.context.project), b = path.resolve(turn.context.project);
       if (a === b || inside(a, b) || inside(b, a)) current.overlap = turn.overlap = true;
     }
-    if (turn.capture) {
-      try {
-        const baseline = await snapshot(session.cwd);
-        if (turn.capture && this.enabled) { turn.baseline = baseline; turn.git = baseline.git; }
-      } catch { if (turn.capture && this.enabled) turn.error = 'The project baseline could not be read.'; }
-    } else turn.git = await gitInfo(session.cwd);
     await this.codePanel?.begin(session, turn);
     this.emit('started', { owner, id: turn.id }); return turn.id;
   }); }
-  finish(owner, status = 'needs-review', expectedTurnId, verify) { return this.serial(owner, async () => {
+  finish(owner) { return this.serial(owner, async () => {
     const turn = this.active.get(owner);
-    if (expectedTurnId !== undefined && (turn || this.latest.get(owner))?.id !== expectedTurnId) throw new Error('A new task started before this response finished. Complete the current turn first.');
-    verify?.();
-    if (!turn) return null;
-    const context = this.context(owner), changes = [], notes = [...(turn.baseline?.notes || [])]; let endGit = turn.git || null;
-    if (turn.error) notes.push(turn.error);
-    if (turn.overlap) notes.push('Other consoles were active in this folder. Changes are a folder snapshot; authorship may overlap.');
-    try {
-      if (!turn.capture || !this.enabled) return turn.id;
-      if (turn.baseline) {
-        const baseline = turn.baseline;
-        const after = await snapshot(context.project);
-        if (!turn.capture || !this.enabled) return turn.id;
-        notes.push(...after.notes);
-        endGit = after.git;
-        if (turn.git?.branch !== endGit?.branch) notes.push('The Git branch changed during this turn.');
-        const redact = value => { for (const secret of this.getSecrets().filter(x => x && x.length > 5)) value = value.split(secret).join('[redacted]'); return value; };
-        let imageCount = 0, patchBytes = 0;
-        const diffDeadline = Date.now() + 3000;
-        for (const file of new Set([...baseline.files.keys(), ...after.files.keys()])) {
-          const before = baseline.files.get(file), next = after.files.get(file);
-          if (!before && !baseline.complete || !next && !after.complete) continue;
-          if (sameSnapshotFile(before, next)) continue;
-          if (changes.length >= 1000) { notes.push('Only the first 1,000 changed files are listed. Review the remaining changes in your project.'); break; }
-          const change = { file, type: !before ? 'added' : !next ? 'deleted' : 'modified', patch: null, omitted: before?.omitted || next?.omitted || null };
-          if (!change.omitted && patchBytes < 1200000 && Date.now() < diffDeadline) {
-            const patch = createTwoFilesPatch(file, file, before?.text || '', next?.text || '', '', '', { context: 3, timeout: Math.min(500, Math.max(1, diffDeadline - Date.now())) });
-            change.patch = typeof patch === 'string' ? redact(patch) : null;
-            if (change.patch === null) change.omitted = 'Diff calculation time limit reached';
-            else if (Buffer.byteLength(change.patch) > 200000) { change.patch = null; change.omitted = 'Diff exceeds 200 KB'; }
-            else patchBytes += Buffer.byteLength(change.patch);
-          } else if (!change.omitted) change.omitted = 'Turn diff limit reached';
-          changes.push(change);
-          if (next?.image && ++imageCount <= 20 && !this.results.items.some(x => x.groupId === turn.id && x.originalFile === file)) {
-            try { this.results.add({ file: path.join(context.project, file), title: path.basename(file), kind: 'screenshot', groupId: turn.id, originalFile: file }, context); } catch { notes.push(`Image not copied: ${file}.`); }
-          }
-        }
-      }
-      if (changes.length) {
-        const report = { version: 2, turnId: turn.id, startedAt: turn.startedAt, finishedAt: Date.now(), git: { before: turn.git || null, after: endGit }, attribution: turn.overlap ? 'overlapping-folder-activity' : 'folder-during-turn', notes: [...new Set(notes)], changes };
-        this.results.add({ text: JSON.stringify(report), ext: '.json', title: `${changes.length} changed ${changes.length === 1 ? 'file' : 'files'}`, kind: 'code', status, summary: turn.overlap ? 'Overlapping console activity' : 'Changes during this turn', groupId: turn.id }, context);
-      }
-    } catch { this.emit('tracking-error', { owner, message: 'This turn’s code changes could not be saved.' }); }
+    if (!turn) return this.latest.get(owner)?.id || null;
+    try { await this.codePanel?.finish(this.session(owner), turn); }
     finally {
-      try {
-        // Also finish explicitly saved results when automatic file capture is off.
-        // Each saved repository gets its own revision; a parent workspace does
-        // not lend another repository's commit to unrelated artifacts.
-        const repositories = new Set(this.results.items.filter(x => x.groupId === turn.id && x.consoleKey === context.consoleKey).map(x => x.git?.repository).filter(Boolean));
-        for (const repository of repositories) {
-          const ending = endGit?.repository === repository && turn.capture && this.enabled ? endGit : await gitInfo(repository);
-          if (ending) this.results.finishGit(turn.id, context.consoleKey, repository, ending);
-        }
-      } catch { this.emit('tracking-error', { owner, message: 'The final Git revision could not be saved.' }); }
-      await this.codePanel?.finish(this.session(owner), turn);
-      this.active.delete(owner); delete turn.baseline; this.latest.set(owner, turn); if (this.latest.size > 100) this.latest.delete(this.latest.keys().next().value); this.emit('finished', { owner, id: turn.id });
+      this.active.delete(owner); this.latest.set(owner, turn);
+      if (this.latest.size > 100) this.latest.delete(this.latest.keys().next().value);
+      this.emit('finished', { owner, id: turn.id });
     }
     return turn.id;
   }); }
+
 }
 module.exports = { Turns, snapshot };

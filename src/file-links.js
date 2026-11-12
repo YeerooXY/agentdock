@@ -1,4 +1,3 @@
-import { renderMarkdown } from './markdown.js';
 
 // Windows absolute paths (quoted ones may contain spaces), UNC paths, ~/ paths
 // and relative paths that end in a file extension, with an optional :line.
@@ -97,7 +96,7 @@ export function filePreviewDialog({ call, toast, icon }) {
     dialog.querySelector('.file-preview-path').textContent = `${file.path}${file.kind === 'folder' ? '' : ' · ' + size(file.size)}`;
     body.replaceChildren(); body.className = 'file-preview-body ' + file.kind;
     if (file.kind === 'image') { const img = document.createElement('img'); img.src = file.data; img.alt = `Preview of ${file.name}`; body.append(img); }
-    else if (file.kind === 'markdown') body.innerHTML = `<div class="markdown">${renderMarkdown(file.text)}</div>`;
+    else if (file.kind === 'markdown') body.innerHTML = `<div class="markdown">${(await import('./markdown.js')).renderMarkdown(file.text)}</div>`;
     else if (file.kind === 'text') { const pre = document.createElement('pre'); pre.textContent = file.text; body.append(pre); }
     else { const p = document.createElement('p'); p.className = 'file-preview-note'; p.textContent = file.kind === 'folder' ? 'This is a folder. Show it in File Explorer.' : file.kind === 'large' ? 'This image is too large to preview here.' : 'This file type cannot be shown as text. Open it in its default app.'; body.append(p); }
     if (file.truncated) body.insertAdjacentHTML('beforeend', '<p class="file-preview-note">Showing the first 256 KB.</p>');

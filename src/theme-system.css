@@ -122,7 +122,6 @@ body[data-opening-motion=off] canvas.launch-burst { display:none }
 body[data-settings-open] #content {
   position:relative; z-index:30; padding:0!important; overflow:hidden; background:var(--window-black,#07080c);
 }
-body[data-settings-open] #results-shortcut { visibility:hidden!important; opacity:0 }
 body[data-settings-open] #content>.page-background-layer { display:none }
 .settings-overlay { position:absolute; inset:0; max-width:none!important; isolation:isolate; overflow:hidden; display:flex; flex-direction:column; background:var(--window-black,#07080c) }
 .settings-backdrop { position:absolute; inset:0; z-index:-1; pointer-events:none; background:var(--window-black,#07080c) }

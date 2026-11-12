@@ -81,7 +81,7 @@ function planReviewPrompt(job) {
   ].join('\n\n');
 }
 function contractPrompt(job) {
-  return `Shared contracts (changing these requires stopping and replying CONTRACT_CHANGE_REQUIRED with the reason):\n${job.contracts ?? job.plan?.contracts ?? ''}${job.owns ? `\nOwned files:\n${job.owns.join('\n')}\nEditing files outside this ownership is not allowed.` : `\nApproved plan:\n${JSON.stringify(job.plan)}`}`;
+  return `Shared contracts:\n${job.contracts ?? job.plan?.contracts ?? ''}${job.owns ? `\nOwned files:\n${job.owns.join('\n')}\nEditing files outside this ownership is not allowed.` : `\nApproved plan:\n${JSON.stringify(job.plan)}`}`;
 }
 function planReport(job, usageText) {
   if (!job.split) return [];
@@ -185,10 +185,7 @@ class SplitTasks {
     if (main.accountId === job.reviewer?.accountId) throw new Error('Choose a main implementer different from the reviewer.');
     loop.ensureAvailable(job);
     const previous = loop.pending.get(job.id);
-    const reviewers = assignments.map(implementer => {
-      const suggestion = loop.choices(implementer.accountId).assignment;
-      return job.reviewer?.accountId !== implementer.accountId ? job.reviewer : suggestion.reviewer ? loop.assignment(suggestion.reviewer, 'reviewer') : null;
-    });
+    const reviewers = assignments.map(implementer => job.reviewer?.accountId !== implementer.accountId ? job.reviewer : null);
     job.parallelLimit = limit; job.implementer = main; job.approvedAt = loop.now(); job.state = 'building'; job.finishedAt = null;
     for (const [index, sub] of job.subtasks.entries()) {
       sub.implementer = assignments[index];

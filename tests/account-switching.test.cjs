@@ -690,7 +690,7 @@ test('idle settings reject missing consent, busy/stale sessions and unavailable 
 });
 
 
-test('settings bypass only a missing completion check while account switches stay blocked', async t => {
+test('attention and busy sessions block settings and account switching', async t => {
   const f = await fixture(t), source = await f.sessions.create({ provider: 'codex', cwd: f.workspace }, { accountId: f.first.id });
   await new Promise(resolve => setTimeout(resolve, 5)); f.sessions.scanEvents();
   const original = f.sessions.items.get(source.id);
@@ -700,14 +700,10 @@ test('settings bypass only a missing completion check while account switches sta
   await assert.rejects(f.sessions.switchSettings(request), /idle/);
   original.state = 'ready';
   await assert.rejects(f.sessions.switchSettings(request), /applying settings/);
-  f.sessions.signal(source.id, 'question', true);
+  f.sessions.signal(source.id, 'question');
   await assert.rejects(f.sessions.switchAccount({ id: source.id, launchId: source.launchId, targetAccountId: f.second.id }), /Finish the current task before switching accounts/);
-  const result = await f.sessions.switchSettings(request);
-  assert.equal(result.requestedSettings.model, 'test-model');
-  assert.equal(result.requestedSettings.effort, 'high');
-  assert.equal(result.requestedSettings.status, 'awaiting-provider');
-  assert.equal(f.sessions.items.get(source.id).completionMissing, undefined);
-  assert.equal(original.terminal.killed, true);
+  await assert.rejects(f.sessions.switchSettings(request), /idle/);
+  assert.equal(original.terminal.killed, false);
 });
 
 test('a failed same-account model resume keeps the original console and draft', async t => {

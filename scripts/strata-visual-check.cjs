@@ -1,4 +1,5 @@
 'use strict';
+const { installStateTransport } = require('./state-test-transport.cjs');
 // Production UI with a synthetic desktop bridge; no model calls or installs.
 const { chromium, webkit, devices } = require('playwright');
 const assert = require('node:assert/strict');
@@ -52,11 +53,12 @@ let browser; const results = [];
       return { ok: true, value: true };
     });
     await context.exposeFunction('fixtureGetState', () => state);
-    await context.addInitScript(() => { window.dock = { call: async (method, payload) => {
+    await installStateTransport(context);
+await context.addInitScript(() => { window.dock = { call: async (method, payload) => {
       const result = await window.fixtureCall(method, payload);
       if (method === 'profiles.save' && result.ok) window.fixtureStateListener?.(await window.fixtureGetState());
       return result;
-    }, onState: callback => { window.fixtureStateListener = callback; }, onOutput: () => {}, onSelect: () => {}, onNotice: () => {} }; });
+    }, get state() { return window.fixtureStateTransport; }, onOutput: () => {}, onSelect: () => {}, onNotice: () => {} }; });
     const page = await context.newPage(); page.setDefaultTimeout(15000);
     page.on('pageerror', error => errors.push(error.message));
     await page.goto(origin); await openPage(page, 'tools');

@@ -5,7 +5,7 @@ const { spawn } = require('node:child_process');
 
 const tools = [
   { name: 'models', description: 'List installed Upscayl models. Upscaling runs locally with Vulkan; no image upload or API key.', inputSchema: { type: 'object', properties: {}, additionalProperties: false } },
-  { name: 'upscale_image', description: 'Upscale one local PNG, JPEG or WebP to a new PNG. Originals and existing outputs are preserved. Uses the local Vulkan GPU, with a 110-second limit. Save requested outputs using dock/save_result after inspecting them.', inputSchema: { type: 'object', properties: {
+  { name: 'upscale_image', description: 'Upscale one local PNG, JPEG or WebP to a new PNG. Originals and existing outputs are preserved. Uses the local Vulkan GPU, with a 110-second limit.', inputSchema: { type: 'object', properties: {
     input: { type: 'string', description: 'Absolute path of the input image.' }, output: { type: 'string', description: 'New absolute .png path in an existing folder.' },
     model: { type: 'string', default: 'high-fidelity-4x' }, scale: { type: 'integer', enum: [2, 3, 4], default: 4 }, gpu: { type: 'integer', minimum: 0, maximum: 15, description: 'Optional Vulkan GPU index. Omit for automatic selection.' }
   }, required: ['input', 'output'], additionalProperties: false } }

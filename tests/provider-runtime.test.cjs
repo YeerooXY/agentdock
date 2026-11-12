@@ -56,7 +56,6 @@ test('generic providers keep the launcher defaults', async () => {
   assert.deepEqual(strategy.resolveInstall({ getClaude: () => assert.fail('not Claude'), findProgram: () => assert.fail('not Claude') }), { install: null, wsl: false });
   assert.deepEqual(strategy.prepareEditor({ account: { configDir: 'C:/a' } }), { editorRoots: [], tempRoot: null });
   strategy.applyEnvironment(env, {});
-  strategy.appendDiscussion(args, { discussion: 'hello' });
   assert.deepEqual(env, { A: '1' }); assert.deepEqual(args, ['x']);
   assert.equal(strategy.prepareTracking({ hold: () => assert.fail('no tracking') }), '', 'skipped tracking stays synchronous');
   assert.deepEqual(strategy.sessionFields({}), {});
@@ -64,7 +63,7 @@ test('generic providers keep the launcher defaults', async () => {
   assert.deepEqual(strategy.loginLaunch({ executable: 'grok', args: ['login'], programLaunch: (executable, args, options) => ({ executable: 'wrap', args: [executable, ...args, options.bypass] }) }), { executable: 'wrap', args: ['grok', 'login', true] });
 });
 
-test('Codex strategy owns its editor root, tracking, discussion and login', async () => {
+test('Codex strategy owns its editor root, tracking and login', async () => {
   const strategy = settingsAdapter('codex');
   const account = { profile: true, configDir: path.join('C:', 'profile') };
   assert.deepEqual(strategy.prepareEditor({ account }), { editorRoots: [path.join(account.configDir, 'editor')], tempRoot: null });
@@ -83,12 +82,6 @@ test('Codex strategy owns its editor root, tracking, discussion and login', asyn
   assert.deepEqual(events, ['hold', 'release'], 'a failed hook releases the reserved cell');
   for (const skip of [{ login: true }, { purpose: 'setup' }]) assert.equal(strategy.prepareTracking({ ...tracked, ...skip, hold: () => assert.fail('no tracking'), prepareSession: () => assert.fail('no tracking') }), '');
 
-  const discussed = [];
-  strategy.appendDiscussion(discussed, { login: true, discussion: 'plan' });
-  strategy.appendDiscussion(discussed, { login: false, discussion: '' });
-  assert.deepEqual(discussed, []);
-  strategy.appendDiscussion(discussed, { login: false, discussion: 'plan' });
-  assert.deepEqual(discussed, ['--', 'plan']);
   assert.equal(strategy.loginExecutable({ nativeCodex: () => 'native-codex' }), 'native-codex');
   assert.deepEqual(strategy.loginLaunch({ executable: 'native-codex', args: ['login'], programLaunch: () => assert.fail('native') }), { executable: 'native-codex', args: ['login'] });
 });

@@ -1,4 +1,5 @@
 'use strict';
+const { installStateTransport } = require('./state-test-transport.cjs');
 // Usage rows and in-place patching: states, screenshots and keyboard focus.
 // Needs dist/ (npm run build) and artifacts/console-layout/fixture.json (from test:desktop).
 const { chromium, webkit, devices } = require('playwright');
@@ -44,7 +45,8 @@ let browser;
   for (const [name, engine, options] of profiles) {
     browser = await engine.launch(); const context = await browser.newContext(options), state = build(), errors = [];
     await context.exposeFunction('fixtureCall', method => ({ ok: true, value: method === 'state' ? state : method === 'session.buffer' ? { data: '', sequence: 0 } : [] }));
-    await context.addInitScript(() => { window.dock = { call: (m, p) => window.fixtureCall(m, p), onState: fn => window.fixtureState = fn, onOutput: () => {}, onSelect: () => {} }; });
+    await installStateTransport(context);
+await context.addInitScript(() => { window.dock = { call: (m, p) => window.fixtureCall(m, p), get state() { return window.fixtureStateTransport; }, onOutput: () => {}, onSelect: () => {} }; });
     const page = await context.newPage(); page.on('pageerror', e => errors.push(e.message));
     await page.goto(`http://127.0.0.1:${server.address().port}`);
     await page.evaluate(() => document.querySelector('[data-page=usage]').click());

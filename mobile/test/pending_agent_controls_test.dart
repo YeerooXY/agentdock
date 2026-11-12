@@ -163,7 +163,7 @@ void main() {
     expect(c.inputs, isEmpty);
   });
   for (final completionMissing in [true, false, null]) {
-    testWidgets('attention permits settings only for missing completion: '
+    testWidgets('attention blocks settings with legacy completion flag: '
         '$completionMissing', (tester) async {
       final c = SettingsDock();
       addTearDown(c.dispose);
@@ -175,18 +175,11 @@ void main() {
       await effort(tester);
       expect(
         find.text('Wait until this chat is idle before applying settings.'),
-        completionMissing == true ? findsNothing : findsOneWidget,
+        findsOneWidget,
       );
       final button = find.widgetWithText(FilledButton, 'Apply');
-      if (completionMissing == true) {
-        await tester.tap(button);
-        await tester.pumpAndSettle();
-        expect(c.calls.where((x) => x == 'console.settings'), hasLength(1));
-        expect(find.byType(LiveAgentControls), findsNothing);
-      } else {
-        expect(tester.widget<FilledButton>(button).onPressed, isNull);
-        expect(c.calls.where((x) => x == 'console.settings'), isEmpty);
-      }
+      expect(tester.widget<FilledButton>(button).onPressed, isNull);
+      expect(c.calls.where((x) => x == 'console.settings'), isEmpty);
       expect(c.inputs, isEmpty);
     });
   }

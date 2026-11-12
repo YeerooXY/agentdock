@@ -1,8 +1,7 @@
 'use strict';
-const planning = require('./project-planning.cjs');
 
 function available(store) {
-  return ['list', 'get', 'plan'].every(method => typeof store?.[method] === 'function');
+  return ['list', 'get'].every(method => typeof store?.[method] === 'function');
 }
 function summary(project, sessions) {
   const milestones = project.milestones || [];
@@ -32,15 +31,6 @@ function readProjects(sessions, id, detail = false) {
     // blank lines, so this can return fragments. Keep the latest 4,000 chars.
     notes: (project.notes || '').split(/\r?\n\s*\r?\n/).filter(s => s.trim()).slice(-3).join('\n\n').slice(-4000),
     decisions: (project.decisions || []).filter(d => d.status === 'approved').map(({ text, reason }) => ({ text, reason: reason || '' })),
-    decisionsWaiting: (project.decisions || []).filter(d => d.status === 'proposed').length,
-    plan: {
-      revision: project.plan?.revision ?? null,
-      sections: planning.sections.map(section => {
-        const context = project.plan ? store.plan(id, section) : null;
-        return { name: section, revision: context?.revision ?? null,
-          state: context?.proposal ? 'proposal waiting' : context?.approvedSections.includes(section) ? 'approved' : context?.notNeeded.includes(section) ? 'not needed' : 'empty' };
-      }),
-    },
   };
 }
 module.exports = { available, readProjects };

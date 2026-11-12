@@ -1,17 +1,14 @@
 'use strict';
-const { openPage, openResultFolder } = require('./ui-navigation.cjs');
+const { openPage } = require('./ui-navigation.cjs');
 const { _electron: electron } = require('playwright');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const shellCommand = require('./shell-commands.cjs');
-const { Results } = require('../electron/results.cjs');
 const root = path.resolve(__dirname, '..'), parent = path.join(root, 'test-data'), artifacts = path.join(root, 'artifacts', 'console-layout');
 fs.mkdirSync(parent, { recursive: true }); fs.mkdirSync(artifacts, { recursive: true });
 const profile = fs.mkdtempSync(path.join(parent, 'layout-')), errors = [];
 fs.writeFileSync(path.join(profile, 'settings.json'), JSON.stringify({ setupComplete: true, restoreConsoles: true, consoleDefaults: { provider: 'shell', cwd: root, name: 'Trader', command: '' } }));
-const results = new Results(profile), picture = path.join(root, 'artifacts', 'test-thinking-grid.png');
-for (const [groupId, count] of [['three-screens', 3], ['five-screens', 5]]) for (let i = 0; i < count; i++) results.add({ ...(fs.existsSync(picture) ? { file: picture } : { text: 'UI test fixture' }), title: `Fixture screen ${i + 1}`, kind: 'screenshot', groupId, summary: 'Automated UI test fixture.' }, { project: root, consoleKey: 'fixture-console', consoleName: 'Robonslaught', trusted: true });
 let app, page;
 async function until(fn) { const end = Date.now() + 20000; while (Date.now() < end) { if (await fn()) return; await new Promise(r => setTimeout(r, 80)); } throw Error('Timed out'); }
 const call = (method, payload) => page.evaluate(async ([method, payload]) => { const result = await window.dock.call(method, payload); if (!result.ok) throw Error(result.error); return result.value; }, [method, payload]);
@@ -28,7 +25,6 @@ async function acknowledged(session, other) {
   });
   const state = await call('state');
   assert.equal(state.sessions.find(x => x.id === other.id).state, 'ready');
-  assert.equal(state.workbench.unreadResults, 2, 'Console interaction leaves Results unread');
   await page.waitForFunction(() => document.querySelector('#ready-count').textContent === '1');
 }
 async function resize(id, edge, dx, dy, cancel = false, snapshot) {
@@ -192,15 +188,6 @@ async function resize(id, edge, dx, dy, cancel = false, snapshot) {
   await until(async () => (await call('state')).sessions.find(x => x.id === second.id).state === 'open');
   assert.equal(await page.locator('#ready-count').isVisible(), false);
   await secondPanel.locator('[data-action="toggle-console"]').click();
-  await openPage(page, 'results'); await openResultFolder(page); await page.locator('.result-batch-heading strong').first().waitFor();
-  assert.deepEqual(await page.locator('.result-batch-heading strong').allTextContents(), ['Robonslaught', 'Robonslaught']); assert.equal(await page.locator('.result-batch').count(), 2);
-  await capture('results');
-  assert.equal('inbox' in (await call('state')).workbench, false);
-  assert.equal((await call('state')).workbench.results.length, 8);
-  await openPage(page, 'results'); await openResultFolder(page);
-  await page.locator('[data-wb=seen-batch]').first().click(); await until(async () => (await call('state')).workbench.unreadResults === 1);
-  await page.locator('[data-wb=delete-batch]').first().click(); await until(async () => (await call('state')).workbench.results.length === 3);
-  await page.locator('[data-wb=seen-all]').click(); await until(async () => (await call('state')).workbench.unreadResults === 0);
   await call('session.end', second.id); await until(async () => !(await call('state')).sessions.find(x => x.id === second.id)?.alive);
   assert.ok(!Object.values((await call('state')).settings.slotNames).includes('Robonslaught'), 'Ending a console clears its slot name');
   await page.locator('.sidebar-bottom [data-page=settings]').click(); await openPage(page, 'appearance'); await page.locator('.theme-choice[data-frame=blue]').click();
@@ -210,12 +197,11 @@ async function resize(id, edge, dx, dy, cancel = false, snapshot) {
   await page.locator('[data-setting=cursorBlink]').check(); assert.equal((await call('state')).settings.cursorBlink, true);
   await page.locator('[data-setting=cursorBlink]').uncheck();
   await page.reload(); await page.waitForSelector('.session-grid'); assert.equal(await page.locator('body').getAttribute('data-trim'), 'blue'); assert.equal(await page.locator('body').getAttribute('data-lighting'), 'wave');
-  assert.equal((await call('state')).workbench.unreadResults, 0);
   assert.deepEqual(errors, []);
   await call('mode', 'dashboard');
   await app.evaluate(({ BrowserWindow }, bounds) => BrowserWindow.getAllWindows()[0].setBounds(bounds), restoredBounds);
   await call('mode', 'hud'); await call('mode', 'dashboard');
   assert.deepEqual(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].getBounds()), restoredBounds, 'HUD restores the previous window');
-  console.log('PASS edge/corner grid resize, preview/cancel/invalid sizing, keyboard resize, sliding drop with terminal contents, red badges/acknowledgment, window controls, steady cursor, grouped Results and settings persistence');
+  console.log('PASS edge/corner grid resize, preview/cancel/invalid sizing, keyboard resize, sliding drop with terminal contents, red badges/acknowledgment, window controls, steady cursor, settings persistence');
   await call('quit'); await app.close(); app = null;
 })().catch(error => { console.error(error); process.exitCode = 1; }).finally(async () => { if (app) await app.close().catch(() => {}); assert.equal(path.dirname(fs.realpathSync(profile)), fs.realpathSync(parent)); fs.rmSync(profile, { recursive: true, force: true }); });

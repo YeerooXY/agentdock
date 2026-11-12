@@ -1,4 +1,5 @@
 'use strict';
+const { installStateTransport } = require('./state-test-transport.cjs');
 // Usage settings and live Review panels. Synthetic state; no reviewer CLI calls.
 const { chromium, webkit, devices } = require('playwright');
 const fs = require('node:fs'), path = require('node:path'), http = require('node:http');
@@ -26,7 +27,8 @@ const profiles = [['pc', chromium, { viewport: { width: 1440, height: 1000 } }],
       await context.exposeFunction('fixtureCall', method => ({ ok: true, value: method === 'state' ? state : method === 'session.buffer' ? { data: '', sequence: 0 } : method === 'explorer.list' ? (enabled ? { entries: [], truncated: false } : []) : [] }));
       // The off scenario deliberately retains the old malformed Explorer array
       // response: its inherited .entries function must never become a file list.
-      await context.addInitScript(() => { window.dock = { call: (m, p) => window.fixtureCall(m, p), onState: fn => window.fixtureState = fn, onOutput: () => {}, onSelect: () => {}, onNotice: () => {} }; });
+      await installStateTransport(context);
+await context.addInitScript(() => { window.dock = { call: (m, p) => window.fixtureCall(m, p), get state() { return window.fixtureStateTransport; }, onOutput: () => {}, onSelect: () => {}, onNotice: () => {} }; });
       const page = await context.newPage(); page.on('pageerror', e => errors.push(`${name}/usage-${enabled ? 'on' : 'off'}: ${e.stack || e.message}`));
       await page.goto(`http://127.0.0.1:${server.address().port}`); await page.locator('.sidebar-bottom [data-page=settings]').click(); await page.locator('.settings-navigation [data-page=agent-settings]').click();
       const section = page.locator('.delegation-settings'); await section.waitFor(); await section.scrollIntoViewIfNeeded();
@@ -67,7 +69,7 @@ const profiles = [['pc', chromium, { viewport: { width: 1440, height: 1000 } }],
         if (['mode', 'review.close', 'workbench.delegation.stop'].includes(method)) await page.evaluate(next => window.fixtureState(next), state);
         return { ok: true, value };
       });
-      await context.addInitScript(() => { window.dock = { call: (m, p) => window.fixtureCall(m, p), onState: fn => window.fixtureState = fn, onOutput: () => {}, onSelect: () => {}, onNotice: () => {} }; });
+      await context.addInitScript(() => { window.dock = { call: (m, p) => window.fixtureCall(m, p), get state() { return window.fixtureStateTransport; }, onOutput: () => {}, onSelect: () => {}, onNotice: () => {} }; });
       page = await context.newPage(); page.on('pageerror', e => errors.push(`${name}/${scenario}: ${e.stack || e.message}`));
       await page.goto(`http://127.0.0.1:${server.address().port}`); await page.locator('[data-page=consoles]').first().click();
       const panel = page.locator('.review-panel'); await panel.waitFor(); await panel.scrollIntoViewIfNeeded();

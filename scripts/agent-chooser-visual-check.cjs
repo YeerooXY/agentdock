@@ -1,4 +1,5 @@
 'use strict';
+const { installStateTransport } = require('./state-test-transport.cjs');
 // The shipped renderer with fake IPC: the agent chooser lists installed agents,
 // one row per signed-in account with usage, most recent first, in a popover
 // that leaves the dialog layout unchanged. Run after npm run build:
@@ -58,7 +59,8 @@ function makeState() {
     const context = await browser.newContext(options);
     const state = makeState(), creates = [], errors = [];
     let page;
-    await context.addInitScript(at => { localStorage.setItem('console-recent', JSON.stringify({ 'codex|codex-work': at })); }, now);
+    await installStateTransport(context);
+await context.addInitScript(at => { localStorage.setItem('console-recent', JSON.stringify({ 'codex|codex-work': at })); }, now);
     await context.exposeFunction('fixtureCall', async (method, payload) => {
       if (method === 'state') return { ok: true, value: copy(state) };
       if (method === 'session.buffer') return { ok: true, value: { data: 'PS C:\\Workspace> ', sequence: 0, launchId: 'l1' } };
@@ -67,7 +69,7 @@ function makeState() {
       return { ok: true, value: null };
     });
     await context.addInitScript(() => {
-      window.dock = { call: (m, p) => window.fixtureCall(m, p), onState: c => { window.fixtureReceive = c; }, onOutput: c => { window.fixtureOutput = c; }, onSelect: c => { window.fixtureSelect = c; }, onNotice: c => { window.fixtureNotice = c; } };
+      window.dock = { call: (m, p) => window.fixtureCall(m, p), get state() { return window.fixtureStateTransport; }, onOutput: c => { window.fixtureOutput = c; }, onSelect: c => { window.fixtureSelect = c; }, onNotice: c => { window.fixtureNotice = c; } };
     });
     page = await context.newPage(); page.on('pageerror', error => errors.push(error.message));
     await page.goto(`http://127.0.0.1:${server.address().port}`);

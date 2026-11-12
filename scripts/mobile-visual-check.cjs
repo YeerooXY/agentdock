@@ -1,4 +1,5 @@
 'use strict';
+const { installStateTransport } = require('./state-test-transport.cjs');
 const { openPage } = require('./ui-navigation.cjs');
 const { chromium, webkit, devices } = require('playwright');
 const fs = require('node:fs'), path = require('node:path'), http = require('node:http'), assert = require('node:assert/strict');
@@ -36,7 +37,8 @@ const reports = []; let browser;
       if (method === 'mode') state.mode = payload;
       return { ok: true };
     });
-    await context.addInitScript(() => { window.dock = { call: (method, payload) => window.fixtureCall(method, payload), onState: fn => { window.fixtureState = fn; }, onOutput: () => {}, onSelect: () => {} }; });
+    await installStateTransport(context);
+await context.addInitScript(() => { window.dock = { call: (method, payload) => window.fixtureCall(method, payload), get state() { return window.fixtureStateTransport; }, onOutput: () => {}, onSelect: () => {} }; });
     const page = await context.newPage(), errors = [], captures = [], checks = []; page.on('pageerror', e => errors.push(e.message)); page.setDefaultTimeout(15000);
     await page.goto(`http://127.0.0.1:${server.address().port}`); await page.locator('.session-grid').waitFor();
     await page.addScriptTag({ url: '/_axe.js' });

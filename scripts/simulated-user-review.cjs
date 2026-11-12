@@ -4,7 +4,7 @@
 const { _electron: electron } = require('playwright');
 const fs = require('node:fs'), path = require('node:path'), assert = require('node:assert/strict'), crypto = require('node:crypto');
 const { execFileSync } = require('node:child_process');
-const { openPage, openResultFolder } = require('./ui-navigation.cjs');
+const { openPage } = require('./ui-navigation.cjs');
 const root = path.resolve(__dirname, '..'), parent = path.join(root, 'test-data'), out = path.join(root, 'artifacts/simulated-users');
 fs.mkdirSync(parent, { recursive: true }); fs.mkdirSync(out, { recursive: true });
 const work = fs.mkdtempSync(path.join(parent, 'user-walkthrough-')), profile = path.join(work, 'profile'), project = path.join(work, 'Website');
@@ -57,12 +57,6 @@ const started = { at: new Date().toISOString(), branch: execFileSync('git', ['br
   await capture('06-new-project', 'several-projects', 'Create a project for the existing Website folder', { labels: await page.locator('#project-editor').innerText() });
   await page.locator('#project-form [name=name]').fill('Website'); await page.locator('#project-form [name=folders]').fill(project);
   await page.locator('#project-form [type=submit]').click(); await page.locator('#project-editor').waitFor({ state: 'hidden' });
-  const autoOpenedPlan = await page.locator('#project-plan[open]').count() === 1;
-  await capture('07-project-save', 'several-projects', 'Save the folder as a project', { status: (await call('state')).projects[0].status, autoOpenedPlan, actions: await page.locator('.project-actions').innerText() });
-  if (!autoOpenedPlan) await page.locator('[data-project-plan]').first().click();
-  await page.locator('#project-plan[open]').waitFor();
-  await capture('08-project-planning', 'several-projects', autoOpenedPlan ? 'Inspect planning opened automatically after Save' : 'Open the project roadmap', { labels: await page.locator('#project-plan').innerText() });
-  await page.keyboard.press('Escape');
   await openPage(page, 'devices');
   await page.locator('[data-mobile=open]').click();
   await capture('09-phone-setup', 'phone-continuation', 'Open Connect a phone on the PC', { labels: await page.locator('dialog[open]').innerText() }, 'Network/pairing was not enabled in this profile. Native paired-phone evidence is separately cited.');
@@ -79,21 +73,6 @@ const started = { at: new Date().toISOString(), branch: execFileSync('git', ['br
   await until(() => fs.existsSync(bridgeFile));
   const grant = JSON.parse(fs.readFileSync(bridgeFile, 'utf8').replace(/^\uFEFF/, '')); fs.unlinkSync(bridgeFile);
   async function tool(name, args = {}) { const r = await fetch(grant.url, { method:'POST', headers:{ 'Content-Type':'application/json', Authorization:'Bearer '+grant.token }, body:JSON.stringify({name:'dock_call',arguments:{tool:name,arguments:args}}) }); const v=await r.json(); if(v.isError)throw Error(v.content[0].text); return JSON.parse(v.content[0].text); }
-  const reportTurn = await tool('dock/start_turn'); const reportOutput = await tool('dock/save_result', { title:'Website check',text:'# Website check\n\nSynthetic completed result for the walkthrough. No AI work was submitted.',kind:'report',status:'passed',summary:'Example output saved by an agent.' }); await tool('dock/finish_turn', { turnId: reportTurn.turnId, outcome: 'no-change', summary: 'Synthetic review fixture.', nextStep: 'None', outputs: 'saved', resultIds: [reportOutput.id] });
-  await openPage(page, 'results'); await openResultFolder(page); await page.locator('[data-wb=preview]').first().waitFor();
-  await capture('13-completed-results', 'several-projects', 'Find completed work in Results', { headings: await page.locator('.result-console-heading h2').allTextContents() }, 'Completion was supplied by the fixture, not by a paid model or participant.');
-  await page.locator('[data-wb=preview]').first().click(); await page.locator('.wb-dialog[open]').waitFor();
-  await capture('14-result-preview', 'first-use', 'Open the saved report', { title: await page.locator('.wb-dialog[open] h2').innerText() });
-  await page.keyboard.press('Escape');
-  await call('settings', { notifications:false });
-  const before = (await call('state')).workbench.results.length;
-  const emptyTurn = await tool('dock/start_turn');
-  await tool('dock/finish_turn', { turnId: emptyTurn.turnId, outcome: 'no-change', summary: 'Synthetic text-only fixture.', nextStep: 'None', outputs: 'none' });
-  const empty = await tool('dock/notify', { title:'Text-only completion fixture',kind:'ready' });
-  await app.evaluate(({ BrowserWindow }, notice) => BrowserWindow.getAllWindows()[0].webContents.send('dock:notice',notice), empty);
-  // Text-only turns open their console when it is still open; otherwise Results explains.
-  await page.locator('#toast').filter({ hasText:/Its reply is in this console\.|No results were saved for this prompt\./ }).waitFor();
-  await capture('15-no-saved-result', 'first-use', 'Activate a completion with no saved files/report', { savedResultsBefore:before,savedResultsAfter:(await call('state')).workbench.results.length,noticeResultId:empty.resultId,message:await page.locator('#toast').innerText() }, 'Fixture marks a turn ready and injects notification activation; no AI answer or OS toast was tested.');
   const state = await call('state'); state.sessions.forEach(s => { s.cwd = 'C:/Test/Website'; }); state.settings.consoleDefaults.cwd = 'C:/Test/Website'; state.settings.notifications = false;
   fs.writeFileSync(path.join(out, 'fixture.json'), JSON.stringify(state));
   assert.deepEqual(errors, []);

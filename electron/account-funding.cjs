@@ -14,8 +14,4 @@ function accountFunding(candidate, allowance = {}, rules = {}) {
   return 'unknown';
 }
 function fundingRank(kind) { return ({ local: 0, free: 1, included: 2, unknown: 3, metered: 4 })[kind] ?? 3; }
-function fundingFromLimits(candidate, limits = [], rules = {}) {
-  const readings = limits.filter(row => row.accountId === candidate.id).sort((a, b) => (b.observedAt || 0) - (a.observedAt || 0));
-  return accountFunding(candidate, readings[0] || {}, rules);
-}
-module.exports = { FUNDING, accountFunding, fundingRank, fundingFromLimits };
+module.exports = { FUNDING, accountFunding, fundingRank };

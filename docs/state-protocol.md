@@ -93,21 +93,21 @@ Slices hold allowlisted DTOs only. Credential values, OAuth material, pairing to
 
 ## Legacy adapter
 
-`electron/main.cjs` reads the services, splits today's snapshot into slices (`slicesFromLegacy`) and writes each through its writer handle on every publish. The full snapshot is rebuilt from the desktop view (`legacySnapshot`) only for `dock.call('state')`, `state.legacy` and a renderer on the `dock:state` fallback. In test mode, a mismatch between the rebuilt and direct snapshot fails the call. The `tasks` slice is written from TaskLoop's `changed` events instead of the publish-time read.
+`electron/main.cjs` reads the services, splits today's snapshot into slices (`slicesFromLegacy`) and writes each through its writer handle on every publish. The full snapshot is rebuilt from the desktop view (`legacySnapshot`) for explicit `dock.call('state')` reads. In test mode, a mismatch between the rebuilt and direct snapshot fails the call. The `tasks` slice is written from TaskLoop's `changed` events instead of the publish-time read.
 
 The renderer rebuilds the same snapshot from its v2 slices with `snapshotFromSlices` in `src/state-client.js`. The phone rebuilds its v1 `state` map from phone slices and `extras` with `legacyState` in `mobile/lib/state_client.dart` (`phoneLegacyState` in `projections.cjs` is the Node reference). `tests/state-parity.test.cjs` replays recorded store mutations and checks both against the legacy payloads after every step, including resync, resume after a lost batch and a restart.
 
-The v2 renderer also carries the changed protocol slice names alongside the rebuilt snapshot. Its current app consumer uses them to skip broad legacy comparisons and unrelated console-grid rendering. Preferences still refresh the theme; session, panel, shell, project, account, agent, queue, prompt and delegation changes refresh the console grid. Protocol names such as `preferences` and `panels` differ from legacy keys such as `settings` and `codePanels`. Full legacy snapshots and explicit live-code overlays retain the comparison fallback. Snapshot cloning remains in place so views cannot mutate cached protocol slices.
+The v2 renderer also carries the changed protocol slice names alongside the rebuilt snapshot. Its current app consumer uses them to skip broad legacy comparisons and unrelated console-grid rendering. Preferences still refresh the theme; session, panel, shell, project, account, agent, queue, prompt and delegation changes refresh the console grid. Protocol names such as `preferences` and `panels` differ from legacy keys such as `settings` and `codePanels`. Explicit snapshot reads and live-code overlays retain value comparisons. Snapshot cloning remains in place so views cannot mutate cached protocol slices.
 
 ## Transport
 
 Code: `electron/state-sync.cjs` (`ProjectionHistory`, `StateConnection`, `chunkFrames`, `reassembleChunk`). Fixture: `tests/fixtures/state/transport.json` (chunk cases and limits; regenerate with `node tests/fixtures/state/generate-transport.cjs`).
 
-Protocol 2 is on by default. It turns off with the `stateSyncV2` setting set to false (`dock.call('settings', {stateSyncV2: false})`) or `PADDOCK_STATE_V2=0`; `PADDOCK_STATE_V2=0` wins over everything. `--state-v2` and `PADDOCK_STATE_V2=1` force it on even when the setting is false. Off, the renderer gets `dock:state` and phones use `/v1/events`. Turning the setting off closes v2 phone sockets (1012) and returns the renderer to `dock:state`. Turning it back on leaves the open renderer on `dock:state` until it reloads; phones move to `/v2/events` on their next connection.
+The desktop always uses protocol 2. The `stateSyncV2` setting and `PADDOCK_STATE_V2` switches control phone compatibility only. Phones can continue using `/v1/events` when protocol 2 is disabled.
 
 Fallbacks:
 
-- Desktop: if `window.dock.state` is missing or a send fails (for example protocol 2 is off), the renderer logs once to the console, calls `dock.call('state.legacy')` and then lives on `dock:state`. The main process logs the switch once. A renderer reload starts with protocol 2 again.
+- Desktop: a failed subscription stops and displays an error. Reload the renderer to subscribe again.
 - Phone: the app opens `/v2/events` first. HTTP 404 means an older PC or protocol 2 off; the app uses `/v1/events` for that PC until the user reconnects or a v1 `state` frame lists `state.v2`. The PC keeps serving `/v1/events` for older phone builds.
 - Both clients answer `reconnect` with `hello{lastRev: null}` on the same connection. After three failures in a row the phone closes the socket and reconnects normally; the desktop falls back to `dock:state`.
 
@@ -145,7 +145,7 @@ v1 `state` frames are not sent on `/v2/events`. Phone `capabilities` stay in `ex
 
 ### Desktop IPC
 
-`window.dock.state.send(message)` sends `hello`, `subscribe`, `ack`, `resync` or `pong`; `window.dock.state.onMessage(callback)` receives `welcome`, `changes` and `error`. It throws when protocol 2 is off; `dock.call('state.protocol')` returns `{protocol: 2, v2, flag}`. The renderer subscribes to every desktop slice except `alerts` at startup (`connectStateV2` in `src/state-client.js`). With protocol 2 on, the main process sends no `dock:state` snapshots on publish: the first `changes` batch after `hello` is the initial reset. `dock:state` is sent only when protocol 2 is off, after `dock.call('state.legacy')` or when the connection closed itself. A reload or renderer crash closes the subscription; the reloaded renderer subscribes again. Subscribe to `sessions` and `panels`: the preload reads them to keep console identities for owner activity.
+`window.dock.state.send(message)` sends `hello`, `subscribe`, `ack`, `resync` or `pong`; `window.dock.state.onMessage(callback)` receives `welcome`, `changes` and `error`. The renderer subscribes to desktop slices at startup. The first changes batch is an initial reset; later publishes send slice changes. A renderer reload starts a new subscription. The preload tracks sessions and panels for owner activity.
 
 The phone opens `/v2/events` with `hello` for `shell, sessions, queues, prompts, projects, tasks, usage, results`. Phone sessions carry `requestedSettings` and the full `remote` fields (`hostId, name, label, host, folder, tmux`); queue entries carry `id, text, createdAt, ownerRequested, at, state, error`, so the rebuilt map matches v1.
 

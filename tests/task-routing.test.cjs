@@ -1,13 +1,7 @@
 'use strict';
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { defaults, ROUTING_SCHEMA_VERSION, migrateRouting, validateRouting, estimateEffort, suggestAssignment } = require('../electron/task-routing.cjs');
-
-test('estimates effort from scope signals', () => {
-  assert.equal(estimateEffort({ title: 'Fix typo', criteria: 'Correct the label.' }).size, 'small');
-  assert.equal(estimateEffort({ criteria: '- One\n- Two\n- Three\n- Four' }).size, 'medium');
-  assert.equal(estimateEffort({ title: 'Migrate storage', criteria: '- One\n- Two\n- Three\n- Four' }).size, 'large');
-});
+const { defaults, ROUTING_SCHEMA_VERSION, migrateRouting, validateRouting, suggestAssignment } = require('../electron/task-routing.cjs');
 
 test('routing uses fresh account headroom and respects exclusions', () => {
   const now = 2_000_000, candidates = [{ id: 'codex:default', provider: 'codex', label: 'Codex' }, { id: 'opencode:default', provider: 'opencode', label: 'OpenCode' }, { id: 'claude:default', provider: 'claude', label: 'Claude' }];
@@ -20,7 +14,7 @@ test('routing uses fresh account headroom and respects exclusions', () => {
   assert.equal(suggest([reading('codex:default', 30), reading('opencode:default', 25)]).implementer.accountId, 'opencode:default');
   assert.equal(suggest([reading('codex:default', 50), reading('opencode:default', 20)]).implementer.accountId, 'opencode:default');
   assert.equal(suggest([reading('codex:default', 1, 0), reading('opencode:default', 50)]).implementer.accountId, 'opencode:default');
-  assert.notEqual(suggest([]).reviewer.accountId, suggest([]).implementer.accountId);
+  assert.equal(suggest([]).reviewer, null);
   const rules = { ...defaults, claudeReviewsOnly: true, small: [{ accountId: 'claude:default', model: 'model' }, ...defaults.small], excludedModels: [defaults.small[0].model] };
   assert.equal(suggestAssignment({ size: 'small', candidates, rules, now }).implementer.accountId, 'opencode:default');
 });
@@ -122,15 +116,6 @@ test('a stale or unknown shortest window cannot be replaced by a longer one', ()
   assert.equal(suggestAssignment({ size: 'small', candidates, limits, rules, now }).implementer.accountId, candidates[1].id);
 });
 
-test('OpenCode is a default and fallback reviewer with an allowed model', () => {
-  const candidates = [{ id: 'codex:default', provider: 'codex', label: 'Codex' }, { id: 'opencode:default', provider: 'opencode', label: 'OpenCode' }, { id: 'claude:default', provider: 'claude', label: 'Claude' }];
-  const suggestion = rules => suggestAssignment({ size: 'small', candidates, rules, now: 100 });
-  assert.deepEqual(suggestion(defaults).reviewer, { accountId: 'opencode:default', model: 'opencode-go/gpt-6-luna' });
-  const fallback = suggestion({ ...defaults, defaultReviewer: null, excludedModels: [...defaults.excludedModels, 'opencode-go/gpt-6-luna'] }).reviewer;
-  assert.deepEqual(fallback, { accountId: 'opencode:default', model: 'opencode-go/kimi-k3.1-pro' });
-  assert.equal(suggestAssignment({ size: 'small', candidates: candidates.map(c => c.provider === 'opencode' ? { ...c, signedIn: false } : c), rules: defaults, now: 100 }).reviewer.accountId, 'claude:default');
-});
-
 test('split suggestions spread measured accounts within ten points and preserve unknown usage', () => {
   const candidates = ['one', 'two', 'unknown'].map(id => ({ id: `codex:${id}`, provider: 'codex', label: id }));
   const rules = { ...defaults, small: candidates.map(c => ({ accountId: c.id, model: 'test' })) }, now = 2_000_000;
@@ -149,8 +134,8 @@ test('split plan reviewers prefer a different vendor to the planner', () => {
   const candidates = [{ id: 'codex:one', provider: 'codex', label: 'One' }, { id: 'codex:two', provider: 'codex', label: 'Two' }, { id: 'kiro:default', provider: 'kiro', label: 'Kiro' }];
   const rules = { ...defaults, large: [{ accountId: 'codex:one', model: 'planner' }], defaultReviewer: { accountId: 'codex:two', model: 'reviewer' } };
   const result = suggestAssignment({ size: 'large', candidates, rules, preferDifferentVendor: true });
-  assert.equal(result.implementer.model, 'planner'); assert.equal(result.reviewer.accountId, 'kiro:default');
-  assert.equal(suggestAssignment({ size: 'large', candidates: candidates.slice(0, 2), rules: { ...rules, defaultReviewer: null }, preferDifferentVendor: true }).reviewer.accountId, 'codex:two');
+  assert.equal(result.implementer.model, 'planner'); assert.equal(result.reviewer, null);
+  assert.equal(suggestAssignment({ size: 'large', candidates: candidates.slice(0, 2), rules: { ...rules, defaultReviewer: null }, preferDifferentVendor: true }).reviewer, null);
 });
 
 test('default discovery works with Claude alone and never invents an independent reviewer', () => {
@@ -218,13 +203,12 @@ test('a newer empty or failed allowance check invalidates earlier current data',
   assert.equal(accountAllowance('claude:a', [earlier, { accountId: 'claude:a', observedAt: 110, windows: [] }, { ...earlier, observedAt: 120 }], 130).status, 'current');
 });
 
-test('a below-floor reviewer carries its capability warning instead of claiming sufficiency', () => {
+test('a below-floor reviewer is left unassigned', () => {
   const row = id => ({ id, available: true, observedAt: 100 });
   const result = suggestAssignment({ size: 'small', now: 100, rules: { ...defaults, defaultReviewer: null }, candidates: [
     { id: 'codex:default', provider: 'codex', label: 'Builder', models: [row('gpt-6-luna')] },
     { id: 'claude:default', provider: 'claude', label: 'Reviewer', models: [row('claude-haiku-5')] }
   ] });
-  assert.equal(result.reviewer.model, 'claude-haiku-5');
-  assert.ok(result.warnings.some(w => /strongest discovered tier/.test(w)));
-  assert.ok(result.reasons.some(r => /below the preferred review tier/.test(r)));
+  assert.equal(result.reviewer, null);
+  assert.ok(result.warnings.some(w => /No independent reviewer/.test(w)));
 });

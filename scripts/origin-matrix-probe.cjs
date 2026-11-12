@@ -46,7 +46,7 @@ const server = http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(result));
   });
 });
-const brief = 'This is an owner-authorized read-only connector diagnostic. Call native Paddock MCP dock_context with includeProject:true. Then discover the dock/task_candidates schema with dock_tools, then execute dock_call({tool:"dock/task_candidates",arguments:{title:"Small isolated implementation",criteria:"One bounded component with known checks",size:"small"}}). Report ORIGIN_OK, whether local-first guidance appeared, whether Strata is available, and available account IDs with their quota status. No file edits, shell commands, actual delegation, finish_turn, settings changes, retries or alternative models. Stop with a concrete blocker if a call fails. Keep the final reply under 120 words.';
+const brief = 'This is an owner-authorized read-only connector diagnostic. Call native Paddock MCP dock_context with includeProject:true. Then discover the dock/task_candidates schema with dock_tools, then execute dock_call({tool:"dock/task_candidates",arguments:{size:"small"}}). Report ORIGIN_OK, whether local-first guidance appeared, whether Strata is available, and available account IDs with their quota status. No file edits, shell commands, actual delegation, settings changes, retries or alternative models. Stop with a concrete blocker if a call fails. Keep the final reply under 120 words.';
 function launchSpec(item, dir, env) {
   const summaryPath = path.join(dir, 'PADDOCK.md'); fs.writeFileSync(summaryPath, brief);
   const runtime = { node: process.execPath, tools: path.resolve(__dirname, '../electron/agent-tools.cjs') };

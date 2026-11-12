@@ -514,11 +514,13 @@ test('launches use bounded permissions and never put prompts in arguments', () =
   assert.match(Buffer.from(checkLaunch('user checks', 'win32').args.at(-1), 'base64').toString('utf16le'), /LASTEXITCODE/);
 });
 
-test('reviewer suggestion excludes implementer and preserves unknown usage', async t => {
+test('reviewer suggestions require discovered models and preserve unknown usage', async t => {
   const f = fixture(t);
   const choices = f.loop.choices(codex.id);
   assert.ok(!choices.reviewers.some(choice => choice.id === codex.id));
-  assert.ok(choices.suggestion); assert.match(choices.why, /usage unknown/);
+  assert.equal(choices.suggestion, null);
+  assert.equal(choices.reviewers[0].allowance.status, 'unknown');
+  assert.equal(Object.hasOwn(choices, 'estimate'), false);
   assert.ok(!JSON.stringify(choices).includes('/fake/'));
 });
 
@@ -572,7 +574,9 @@ test('internal reports update after acceptance without publishing or changing hi
   f.loop.saveResult = raw => raw.resultId ? results.updateText(raw.resultId, raw) : results.add(raw);
   const job = await f.done(await f.start({ checks: '', reviewer: null }));
   assert.equal(results.list().length, 0);
-  const legacy = results.add({ text: 'Historical saved report', ext: '.md', title: 'Earlier report', kind: 'report' });
+  const legacy = { id: '00000000-0000-4000-8000-000000000001', ext: '.md', title: 'Earlier report', kind: 'report' };
+  fs.mkdirSync(results.directory(legacy.id)); fs.writeFileSync(path.join(results.directory(legacy.id), 'result.md'), 'Historical saved report');
+  results.persist([legacy]);
   job.resultId = legacy.id;
   await f.loop.accept(job.id);
   assert.equal(results.list().length, 1); assert.equal(job.resultId, legacy.id);
@@ -1026,7 +1030,7 @@ test('integration findings use the remaining rounds with the main implementer', 
     { type: 'review', reply: requested }, { type: 'implement', inspect: invocation => { assert.equal(invocation.executable, kiro.executable); assert.match(invocation.prompt, /wrong result/); assert.match(invocation.prompt, /milliseconds/); } }, { type: 'review' }
   ]);
   const job = await readyPlan(f, { reviewer: { accountId: claude.id } });
-  await approvePlan(f, job, { implementer: { accountId: kiro.id } }); await f.done(job);
+  await approvePlan(f, job, { implementer: { accountId: kiro.id }, assignments: { first: { accountId: kiro.id }, second: { accountId: kiro.id } } }); await f.done(job);
   assert.equal(job.state, 'passed'); assert.equal(job.rounds.length, 2);
 });
 test('ownership violations become fix findings and then needs-you without a merge', async t => {
