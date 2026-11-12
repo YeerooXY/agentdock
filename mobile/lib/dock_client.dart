@@ -191,39 +191,10 @@ class DockClient extends ChangeNotifier implements ConsoleScope {
   }
   @override
   String get activePC => pairing?['pin'] as String? ?? '';
-  final resultFilters = <String, Map<String, String>>{};
-  final _resultThumbnails = <String, Future<Uint8List?>>{};
-
-  bool supportsResult(String capability) => supports(capability);
 
   /// Whether the connected PC reports [capability].
   bool supports(String capability) =>
       (state['capabilities'] as List? ?? []).contains(capability);
-
-  Future<Uint8List?> resultThumbnail(String id) {
-    final key = '$activePC:$id';
-    if (!_resultThumbnails.containsKey(key) &&
-        _resultThumbnails.length >= 128) {
-      _resultThumbnails.remove(_resultThumbnails.keys.first);
-    }
-    return _resultThumbnails.putIfAbsent(key, () async {
-      try {
-        final value = await request('results.preview', {
-          'id': id,
-          'thumbnail': true,
-        });
-        final data = value['image'] as String?;
-        return data == null ? null : base64Decode(data.split(',').last);
-      } catch (_) {
-        _resultThumbnails.remove(key);
-        return null;
-      }
-    });
-  }
-
-  void forgetResultThumbnail(String id) {
-    _resultThumbnails.remove('$activePC:$id');
-  }
 
   String get pcName =>
       pairing == null ? 'Computers' : SavedDevices.label(pairing!);
@@ -236,7 +207,7 @@ class DockClient extends ChangeNotifier implements ConsoleScope {
   String deviceStoreError = '';
   final Map<String, String> _selections = {};
   Map<String, dynamic>? pairing;
-  Map<String, dynamic> state = {'sessions': <dynamic>[], 'unreadResults': 0};
+  Map<String, dynamic> state = {'sessions': <dynamic>[]};
   Map<String, ConsoleScreen> get screens => _terminals.screens;
   Map<String, Completer<dynamic>> get pending => _requests.pending;
   WebSocket? get socket => _transport.socket;
@@ -428,7 +399,6 @@ class DockClient extends ChangeNotifier implements ConsoleScope {
   void activate(Map<String, dynamic>? pc) {
     _selections[activePC] = selected;
     disconnectTransport();
-    _resultThumbnails.clear();
     pairing = pc;
     AgentProfiles.apply(null);
     screens.clear();

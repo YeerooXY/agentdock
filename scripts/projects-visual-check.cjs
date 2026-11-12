@@ -1,4 +1,5 @@
 'use strict';
+const { installStateTransport } = require('./state-test-transport.cjs');
 const {chromium,webkit,devices}=require('playwright'), fs=require('node:fs'),path=require('node:path'),http=require('node:http'),assert=require('node:assert/strict');
 const root=path.resolve(__dirname,'..'),out=path.join(root,'artifacts','projects'),fixture=JSON.parse(fs.readFileSync(path.join(out,'fixture.json')));
 const server=http.createServer((req,res)=>{const name=req.url.split('?')[0],file=name==='/axe.js'?require.resolve('axe-core/axe.min.js'):path.join(root,'dist',name==='/'?'index.html':name);if(name!=='/axe.js'&&!file.startsWith(path.join(root,'dist')+path.sep)||!fs.existsSync(file)){res.writeHead(404);return res.end();}res.setHeader('Content-Type',file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':'text/html');fs.createReadStream(file).pipe(res);});
@@ -28,7 +29,8 @@ let browser;const reports=[];
       else if(!['session.resize','session.input','session.acknowledge'].includes(method))throw Error('Unexpected fixture call '+method);
       return{ok:true,value,state};
     });
-    await context.addInitScript(()=>{let changed;window.dock={call:async(m,p)=>{const r=await window.fixtureCall(m,p);if(r.state)changed?.(r.state);return r;},onState:f=>{changed=f;},onOutput:()=>{},onSelect:()=>{}};});
+    await installStateTransport(context);
+await context.addInitScript(()=>{window.dock={call:async(m,p)=>{const r=await window.fixtureCall(m,p);if(r.state)window.fixtureState?.(r.state);return r;},get state() { return window.fixtureStateTransport; },onOutput:()=>{},onSelect:()=>{}};});
     const page=await context.newPage();page.setDefaultTimeout(12000);page.on('pageerror',e=>errors.push(e.message));await page.goto('http://127.0.0.1:'+server.address().port);await page.locator('.session-card').first().waitFor();await page.addScriptTag({url:'/axe.js'});
     const small=['android','iphone'].includes(name);
     async function nav(view){if(small&&state.settings.sidebarCollapsed)await page.locator('#sidebar-toggle').click();await page.locator(`[data-page=${view}]`).first().click();if(small&&!state.settings.sidebarCollapsed)await page.locator('#sidebar-toggle').click();}

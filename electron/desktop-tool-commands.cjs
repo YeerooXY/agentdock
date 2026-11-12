@@ -70,7 +70,7 @@ function desktopToolCommands(h) {
       const apiOwner = 'api:' + crypto.randomUUID();
       turns.virtual.set(apiOwner, { id: apiOwner, consoleKey: 'api:' + profile.id, projectId: project.projectId || null, name: profile.name, cwd: project.cwd || getSettings().consoleDefaults.cwd, alive: true });
       projects.touch(project.projectId);
-      const apiHub = { summary: () => hub.summary({ knowledgeEnabled: workbench.knowledgeAccess.enabled(project.projectId) }) + projects.chatSummary(turns.virtual.get(apiOwner)), invoke: (name, args) => hub.invoke(name, args, apiOwner), completionCheck: () => workbench.completion.check(apiOwner) };
+      const apiHub = { summary: () => hub.summary({ knowledgeEnabled: workbench.knowledgeAccess.enabled(project.projectId) }) + projects.chatSummary(turns.virtual.get(apiOwner)), invoke: (name, args) => hub.invoke(name, args, apiOwner) };
       let result;
       try {
         await turns.begin(apiOwner);

@@ -1,4 +1,5 @@
 'use strict';
+const { installStateTransport } = require('./state-test-transport.cjs');
 // Synthetic renderer coverage for themed page backgrounds and Tools cards.
 // Run after npm run build. No CLI, account or model calls are made.
 const { chromium, webkit, devices } = require('playwright');
@@ -68,7 +69,7 @@ function installFixture(initial) {
       if (method === 'session.buffer') return { ok: true, value: { data: '> Synthetic terminal output for Blue texture verification.\r\n'.repeat(20), sequence: 0, launchId: state.sessions.find(session => session.id === payload)?.launchId || null } };
       return { ok: true, value: [] };
     },
-    onState(fn) { window.fixtureReceive = fn; },
+    get state() { return window.fixtureStateTransport; },
     onOutput() {}, onSelect() {}, onNotice() {},
   };
   const frames = new WeakMap();
@@ -490,7 +491,8 @@ async function inspectTools(page, name, capture) {
       if (new URL(route.request().url()).origin === origin) return route.continue();
       blocked.push(route.request().url()); return route.abort();
     });
-    await context.addInitScript(installFixture, fixture);
+    await installStateTransport(context);
+await context.addInitScript(installFixture, fixture);
     const page = await context.newPage(); page.on('pageerror', error => errors.push(error.message)); page.setDefaultTimeout(20000);
     const capture = async label => { const file=label+'.png'; await page.screenshot({ path:path.join(out,file) }); captures.push(file); };
     await page.goto(origin); await page.locator('.session-grid').waitFor();

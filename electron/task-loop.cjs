@@ -8,8 +8,8 @@ const { atomicJson, readJson } = require('./storage.cjs');
 const { realRoot, programLaunch, powershell, userShell } = require('./platform.cjs');
 const { permitted } = require('./code-panel.cjs');
 const { usageEnvironment } = require('./subscription-usage.cjs');
-const { collectChanges, reviewBrief, pickReviewer, reviewerLaunch, parseReply, progressStream, progressLog, appendLog, killTree, redactText, REVIEWERS, git: runGit } = require('./delegation.cjs');
-const { defaults: routingDefaults, estimateEffort, suggestAssignment, accountAllowance } = require('./task-routing.cjs');
+const { collectChanges, reviewBrief, reviewerLaunch, parseReply, progressStream, progressLog, appendLog, killTree, redactText, REVIEWERS, git: runGit } = require('./delegation.cjs');
+const { defaults: routingDefaults, suggestAssignment, accountAllowance } = require('./task-routing.cjs');
 const { TASK_SCHEMA_VERSION, ATTEMPT_SCHEMA_VERSION, STEERING_SCHEMA_VERSION, attemptId, migrateTaskRecord } = require('./task-contracts.cjs');
 const { STRATA_MODEL, strataConfig, validOpenCodeTaskModel } = require('./local-models.cjs');
 const { taskUsage } = require('./workflow-usage.cjs');
@@ -115,9 +115,9 @@ function killAndWait(child, kill, timeoutMs) {
 }
 
 class TaskLoop extends EventEmitter {
-  constructor(root, { candidates = () => [], prepareAccount = async () => {}, releaseAccount = () => {}, getAccounts = null, repositories = () => [], getLimits = () => [], getSettings = () => ({}), getProfiles = () => [], getInstructions = () => '', documentation = null, environment = () => ({}), saveResult, admission, spawnProcess = spawn, run = execFile, now = Date.now, killProcess = killTree, platform = process.platform, stopTimeoutMs = 2000, processStartedAt = PROCESS_STARTED_AT, isProcessAlive = processAlive } = {}) {
+  constructor(root, { candidates = () => [], prepareAccount = async () => {}, releaseAccount = () => {}, getAccounts = null, repositories = () => [], getLimits = () => [], getSettings = () => ({}), getProfiles = () => [], getInstructions = () => '', documentation = null, environment = () => ({}), admission, spawnProcess = spawn, run = execFile, now = Date.now, killProcess = killTree, platform = process.platform, stopTimeoutMs = 2000, processStartedAt = PROCESS_STARTED_AT, isProcessAlive = processAlive } = {}) {
     super();
-    Object.assign(this, { root, candidates, repositories, getLimits, getSettings, getProfiles, getInstructions, environment, saveResult, spawnProcess, run, now, killProcess, platform, stopTimeoutMs, processStartedAt, isProcessAlive });
+    Object.assign(this, { root, candidates, repositories, getLimits, getSettings, getProfiles, getInstructions, environment, spawnProcess, run, now, killProcess, platform, stopTimeoutMs, processStartedAt, isProcessAlive });
     this.admission = admission || getScheduler(root, { getSettings: () => this.getSettings() });
     this.executionHistory = new ExecutionHistory(root, { now });
     this.admission.attach?.(root); this.admission.getSettings = () => this.getSettings();
@@ -170,19 +170,12 @@ class TaskLoop extends EventEmitter {
       if (job) { job.mergeBack = intent; job.error = intent.error; job.state = 'needs-you'; this.persist(job); }
     }
   }
-  choices(implementerId, { title = '', criteria = '', size, split = false } = {}) {
+  choices(implementerId, { size = 'medium', split = false } = {}) {
+    if (!['small', 'medium', 'large'].includes(size)) throw new Error('Choose small, medium or large task size.');
     const accounts = this.candidates().filter(choice => TASK_PROVIDERS.includes(choice.provider));
-    const estimate = estimateEffort({ title, criteria });
-    const assignment = suggestAssignment({ size: split ? 'large' : ['small', 'medium', 'large'].includes(size) ? size : estimate.size, candidates: accounts, limits: this.getLimits(), rules: this.getSettings().routing || routingDefaults, now: this.now(), selectedImplementer: implementerId, preferDifferentVendor: split });
+    const assignment = suggestAssignment({ size: split ? 'large' : size, candidates: accounts, limits: this.getLimits(), rules: this.getSettings().routing || routingDefaults, now: this.now(), selectedImplementer: implementerId, preferDifferentVendor: split });
     const implementer = accounts.find(choice => choice.id === implementerId) || accounts.find(choice => choice.id === assignment.implementer?.accountId);
-    let suggestion = null, why = '';
     const reviewers = accounts.filter(choice => choice.id !== implementer?.id);
-    if (reviewers.length) {
-      try {
-        const picked = pickReviewer({ candidates: reviewers.filter(choice => !choice.local && choice.installed !== false && choice.signedIn !== false && choice.available !== false), limits: this.getLimits(), callerProvider: implementer?.provider, now: this.now(), rules: this.getSettings().routing });
-        suggestion = picked.choice.id; why = picked.why;
-      } catch (error) { why = error.message; }
-    } else why = 'No other signed-in account is available.';
     const publicChoice = ({ id, provider, label, model, models, local, funding, signedIn, roles, available, readiness, checkedAt, loadedModel }) => {
       const allowance = local ? { status: 'local', remainingPercent: null, windows: [] } : accountAllowance(id, this.getLimits(), this.now());
       const { shortest, controlling, ...publicAllowance } = allowance;
@@ -191,7 +184,7 @@ class TaskLoop extends EventEmitter {
     const inventory = (this.getAccounts?.() || accounts).map(choice => ({ ...publicChoice(choice),
       workerSupported: TASK_PROVIDERS.includes(choice.provider), quotaReader: choice.quotaReader || null,
       ...(choice.unavailableReason ? { unavailableReason: choice.unavailableReason } : {}) }));
-    return { accounts: inventory, implementers: accounts.map(publicChoice), reviewers: reviewers.map(publicChoice), allReviewers: accounts.map(publicChoice), suggestion, suggestionRole: 'reviewer', why, repos: this.repositories(), estimate, assignment,
+    return { accounts: inventory, implementers: accounts.map(publicChoice), reviewers: reviewers.map(publicChoice), allReviewers: accounts.map(publicChoice), suggestion: assignment.reviewer?.accountId || null, suggestionRole: 'reviewer', why: assignment.reasons.at(-1) || assignment.warnings.at(-1) || '', repos: this.repositories(), assignment,
       policy: { implementation: 'ready-local-first', overflow: 'eligible-free-then-included-by-remaining-allowance', model: 'smallest-sufficient-discovered-tier', review: 'smallest-sufficient-discovered-tier', unknownQuota: 'explicit', metered: 'explicit-assignment-only', retry: 'none', guidelines: 'dock_context; dock/website_guide for websites' } };
   }
   // Single persistence path: resolve the owning parent, write atomically, then
@@ -375,10 +368,9 @@ class TaskLoop extends EventEmitter {
         baselineUntrackedState = Object.fromEntries(states);
         baseline = (await this.git(repo, ['stash', 'create'])).trim() || sourceRevision;
       }
-      const suggestion = this.choices(implementer.accountId);
       const job = { id, automaticResolution: this.getSettings().autoResolveTasks === true, schemaVersion: TASK_SCHEMA_VERSION, attemptSchemaVersion: ATTEMPT_SCHEMA_VERSION, steeringSchemaVersion: STEERING_SCHEMA_VERSION, eventSequence: 0, steeringSequence: 0,
         repo, repoKey, workFolder, targetBranch, projectId: args.projectId || null, originConsoleId: typeof args.originConsoleId === 'string' ? args.originConsoleId.slice(0, 80) : null, originConsoleKey: typeof args.originConsoleKey === 'string' ? args.originConsoleKey.slice(0, 100) : null, acknowledgedAt: null, dismissedAt: null, supersededBy: null, title: redactText(title), criteria: redactText(criteria), checks: redactText(checks), workflow, branch, sourceRevision, baseline, baselineUntracked, baselineUntrackedState,
-        implementer, reviewer, why: { implementer: 'Selected by you.', reviewer: reviewer ? reviewer.accountId === suggestion.suggestion ? `Selected by you. Suggested: ${suggestion.why}` : 'Selected by you.' : 'No review selected.' },
+        implementer, reviewer, why: { implementer: 'Selected by you.', reviewer: reviewer ? 'Selected by you.' : 'No review selected.' },
         maxRounds, maxRoundsExplicit: args.maxRounds !== undefined, timeLimitMinutes, startedAt: this.now(), finishedAt: null, state: split ? 'planning' : 'implementing', rounds: [], unresolved: [], log: [], error: '', fingerprint: null, diffStat: '', finalDiff: '', resultId: null,
         ...(split ? { split: true, planner: implementer, planReviewer: reviewer, planRounds: [], subtasks: [], parallelLimit: parallelLimit(this.getSettings()), activeElapsedMs: 0, integrationHead: sourceRevision } : {}) };
       this.jobs.set(id, job); this.reserved.delete(reservation); this.supersedeOlder(job); this.changed(job);
@@ -479,7 +471,6 @@ class TaskLoop extends EventEmitter {
           const implemented = await this.provider(job, round.implement, brief, false);
           if (!RUNNING.has(job.state)) return;
           round.implement.summary = tail(implemented.summary, 4000); round.implement.state = 'done'; this.changed(job);
-          if ((job.split || job.parentId) && /CONTRACT_CHANGE_REQUIRED/i.test(implemented.summary || '')) return await this.finish(job, 'needs-you', 'The implementer requested a contract change. Review the plan before continuing.');
           if (job.parentId) await this.split.ownership(job, round);
         }
         const checkedTree = await this.fingerprint(job);
@@ -1063,7 +1054,7 @@ class TaskLoop extends EventEmitter {
   }
   hasRecordedOutcome(job) {
     if (!job) return false;
-    if (!job.executionHistory) return !!job.resultId; // Legacy saved-report task.
+    if (!job.executionHistory) return false;
     if (job.executionHistory.kind !== 'task' || job.executionHistory.id !== job.id) return false;
     try {
       const archived = this.executionHistory.get('task', job.id);

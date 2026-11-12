@@ -53,7 +53,7 @@ function claudeAdapter() {
     resumePath: ({ target, history, selection }) => path.join(target.configDir, 'projects', selection ? history.relative : history.path),
     launchArgs(ctx) {
       const { resumeId, resumePath, resumeModel, resumeEffort, permissions, node, helper,
-        summaryPath, mcpConfig, dir, isWsl, claudeInstall, discussion, hub,
+        summaryPath, mcpConfig, dir, isWsl, claudeInstall, hub,
         purpose, programLaunch, atomicJson, shQuote, wslPath, cwd } = ctx;
 
       const claude = claudeInstall?.path;
@@ -87,7 +87,6 @@ function claudeAdapter() {
         );
       }
       if (permissions === 'unrestricted') claudeArgs.push('--dangerously-skip-permissions');
-      if (discussion) claudeArgs.push('--', discussion);
 
       let executable, args;
       if (isWsl) {

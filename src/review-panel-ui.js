@@ -1,7 +1,7 @@
 
 import { openExecutionReport } from './ui/execution-report.js';
 
-export function reviewPanelUI({ call, getState, escape: e, icon, resizeHandles, toast, openResult }) {
+export function reviewPanelUI({ call, getState, escape: e, icon, resizeHandles, toast }) {
   const list = value => Array.isArray(value) ? value : [];
   const jobFor = panel => list(getState()?.delegations).find(x => x?.id === panel.reviewId);
   const jobIcon = job => job?.state === 'done' && job.verdict === 'approve' ? 'check' : ['done', 'failed', 'stopped'].includes(job?.state) ? 'close' : 'list';
@@ -40,7 +40,7 @@ export function reviewPanelUI({ call, getState, escape: e, icon, resizeHandles, 
     }
     const stop = body.querySelector('[data-review-action="stop"]'), report = body.querySelector('[data-review-action="result"]');
     const stoppingFocus = document.activeElement === stop && job?.state !== 'running';
-    stop.hidden = job?.state !== 'running'; report.hidden = !(job?.executionHistory || job?.resultId);
+    stop.hidden = job?.state !== 'running'; report.hidden = !(job?.executionHistory);
     if (stoppingFocus) (report.hidden ? card.querySelector('[data-review-action="close"]') : report).focus();
   }
   setInterval(() => {
@@ -62,7 +62,6 @@ export function reviewPanelUI({ call, getState, escape: e, icon, resizeHandles, 
       if (button.dataset.reviewAction === 'stop' && job?.state === 'running') await call('workbench.delegation.stop', job.id);
       if (button.dataset.reviewAction === 'result') {
         if (job?.executionHistory) await openExecutionReport(page => call('execution.report', { kind: 'review', id: job.id, ...page }), button, () => document.querySelector(`[data-console-id="${panel.id}"] [data-review-action="close"]`));
-        else if (job?.resultId) await openResult(job.resultId);
       }
     } catch (error) { toast(error.message, true); }
     finally { button.disabled = false; }

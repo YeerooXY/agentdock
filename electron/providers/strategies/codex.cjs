@@ -46,7 +46,6 @@ function codexAdapter() {
         finally { release(); }
       })();
     },
-    appendDiscussion(args, { login, discussion }) { if (!login && discussion) args.push('--', discussion); },
     loginExecutable: ({ nativeCodex }) => nativeCodex(),
     loginLaunch: ({ executable, args }) => ({ executable, args }),
     confirmResumeIdentity,

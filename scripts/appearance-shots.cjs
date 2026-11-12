@@ -1,4 +1,5 @@
 'use strict';
+const { installStateTransport } = require('./state-test-transport.cjs');
 // Real renderer, synthetic state, no agent processes or paid requests.
 // Usage: node scripts/appearance-shots.cjs [label] — writes artifacts/appearance-v2/<label>-*.png
 const { chromium, webkit, devices } = require('playwright');
@@ -32,7 +33,8 @@ const profiles = [['pc', chromium, { viewport: process.env.PADDOCK_WIDE ? { widt
         if (method === 'session.buffer') return { ok: true, value: { data: 'Console appearance fixture\r\n\r\n> Reviewing the current workspace.\r\n\r\nPS C:\Projects> ', sequence: 0 } };
         return { ok: true, value: [] };
       });
-      await context.addInitScript(() => { window.dock = { call: (m, p) => window.fixtureCall(m, p), onState: fn => window.fixtureState = fn, onOutput: () => {}, onSelect: () => {}, onNotice: () => {} }; });
+      await installStateTransport(context);
+await context.addInitScript(() => { window.dock = { call: (m, p) => window.fixtureCall(m, p), get state() { return window.fixtureStateTransport; }, onOutput: () => {}, onSelect: () => {}, onNotice: () => {} }; });
       page = await context.newPage(); page.on('pageerror', e => errors.push(`${name}/${theme}: ${e.message}`));
       await page.goto(`http://127.0.0.1:${server.address().port}`); await page.locator('.session-grid').waitFor();
       await page.waitForTimeout(Number(process.env.PADDOCK_WAIT || 600));

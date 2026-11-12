@@ -2,7 +2,6 @@
 const fs = require('node:fs'), path = require('node:path'), { randomUUID } = require('node:crypto');
 const { EventEmitter } = require('node:events');
 const { readJson, atomicJson } = require('./storage.cjs');
-const planning = require('./project-planning.cjs');
 const { normalizeKnowledgeMode } = require('./knowledge-policy.cjs');
 const projectPalette = ['#89b4ff', '#f19cda', '#8bd6b0', '#f0bf78', '#b8a0f5', '#7ed6d0'];
 function projectColor(color, id) {
@@ -19,8 +18,8 @@ function folder(value) {
   return path.resolve(value);
 }
 class Projects extends EventEmitter {
-  constructor(root) { super(); this.file = path.join(root, 'projects.json'); this.items = readJson(this.file, []); this.proposalFile = path.join(root, 'project-proposals.json'); this.proposals = readJson(this.proposalFile, []); }
-  list() { return this.items.map(x => ({ ...x, color: projectColor(x.color, x.id), progress: { done: x.milestones.filter(m => m.done).length, total: x.milestones.length } })).sort((a, b) => (b.lastActiveAt || b.createdAt) - (a.lastActiveAt || a.createdAt)); }
+  constructor(root) { super(); this.file = path.join(root, 'projects.json'); this.items = readJson(this.file, []); }
+  list() { return this.items.map(({ plan, ...x }) => ({ ...x, color: projectColor(x.color, x.id), progress: { done: x.milestones.filter(m => m.done).length, total: x.milestones.length } })).sort((a, b) => (b.lastActiveAt || b.createdAt) - (a.lastActiveAt || a.createdAt)); }
   get(id) { return this.items.find(x => x.id === id); }
   forFolder(folderPath) {
     if (!folderPath) return null;
@@ -30,38 +29,6 @@ class Projects extends EventEmitter {
     return matches[0].p;
   }
   commit(items) { atomicJson(this.file, items); this.items = items; this.emit('changed'); }
-  commitProposals(items) { atomicJson(this.proposalFile, items); this.proposals = items; this.emit('changed'); }
-  checkFolders(folders) {
-    const key = value => { let resolved; try { resolved = fs.realpathSync(value); } catch { resolved = path.resolve(value); } return process.platform === 'win32' ? resolved.toLowerCase() : resolved; };
-    const paths = new Set(folders.map(f => key(f.path)));
-    const owner = this.items.find(p => p.folders.some(f => paths.has(key(f.path))));
-    if (owner) throw new Error(`Folder already belongs to project: ${owner.name}.`);
-  }
-  proposeProject(raw, session) {
-    if (this.proposals.length >= 5) throw new Error('5 project proposals already await review.');
-    const name = text(raw.name, 64, 'Name'); if (!name) throw new Error('Give the project a name.');
-    if (!Array.isArray(raw.folders) || raw.folders.length < 1 || raw.folders.length > 20) throw new Error('Add 1 to 20 project folders.');
-    const folders = raw.folders.map(value => ({ label: '', path: folder(value) }));
-    this.checkFolders(folders);
-    if (!Array.isArray(raw.milestones || []) || (raw.milestones || []).length > 100) throw new Error('Use up to 100 milestones.');
-    const milestones = planning.milestones(raw.milestones || []);
-    if (!Array.isArray(raw.decisions || []) || (raw.decisions || []).length > 100) throw new Error('Use up to 100 decisions.');
-    const decisions = (raw.decisions || []).map(d => { const value = text(d.decision, 500, 'Decision'); if (!value) throw new Error('Describe the decision.'); return { text: value, reason: text(d.reason || '', 1000, 'Reason') }; });
-    const proposal = { id: randomUUID(), name, folders, goals: text(raw.goals, 10000, 'Goals'), category: text(raw.category || '', 60, 'Category'), milestones, decisions, sessionId: session?.id || null, consoleName: String(session?.name || 'Agent').slice(0, 80), createdAt: Date.now() };
-    this.commitProposals([...this.proposals, proposal]); return proposal;
-  }
-  acceptProposal(id, sessions) {
-    const proposal = this.proposals.find(p => p.id === id); if (!proposal) throw new Error('Proposal not found.');
-    this.checkFolders(proposal.folders);
-    const project = this.save({ ...proposal, id: undefined, status: 'active' });
-    const now = Date.now();
-    const saved = this.store({ ...this.get(project.id), decisions: proposal.decisions.map(d => ({ ...d, id: randomUUID(), status: 'approved', by: 'You', at: now, decidedAt: now })) });
-    this.commitProposals(this.proposals.filter(p => p.id !== id));
-    const session = sessions?.items.get(proposal.sessionId);
-    if (session && !session.dismissed && (session.alive || session.restoreError)) sessions.assignProject(session.id, saved.id);
-    return saved;
-  }
-  dismissProposal(id) { if (!this.proposals.some(p => p.id === id)) throw new Error('Proposal not found.'); this.commitProposals(this.proposals.filter(p => p.id !== id)); }
   save(raw) {
     const before = raw.id ? this.get(raw.id) : null;
     if (raw.id && !before) throw new Error('Project not found.');
@@ -71,76 +38,19 @@ class Projects extends EventEmitter {
     if (!Array.isArray(raw.folders) || raw.folders.length < 1 || raw.folders.length > 20) throw new Error('Add 1 to 20 project folders.');
     const folders = raw.folders.map(x => ({ label: text(x.label || '', 64, 'Folder label'), path: folder(x.path) }));
     if (!Array.isArray(raw.milestones || []) || (raw.milestones || []).length > 100) throw new Error('Use up to 100 milestones.');
-    const milestones = planning.milestones(raw.milestones || []);
-    const item = { id: before?.id || randomUUID(), decisions: before?.decisions || [], name, category: text(raw.category || '', 60, 'Category'), goals: text(raw.goals || '', 10000, 'Goals'), approach: text(raw.approach || '', 10000, 'Plan'), notes: text(raw.notes || '', 20000, 'Notes'), nextStep: text(raw.nextStep || '', 1000, 'Next step'), status: raw.status || 'active', folders, milestones, createdAt: before?.createdAt || Date.now(), updatedAt: Date.now(), lastActiveAt: before?.lastActiveAt || null };
+    const milestones = (raw.milestones || []).map(m => ({ text: text(m.text, 500, 'Milestone'), acceptance: text(m.acceptance || '', 1000, 'Completion check'), done: m.done === true })).filter(m => m.text);
+    const item = { ...before, id: before?.id || randomUUID(), decisions: before?.decisions || [], name, category: text(raw.category || '', 60, 'Category'), goals: text(raw.goals || '', 10000, 'Goals'), approach: text(raw.approach || '', 10000, 'Plan'), notes: text(raw.notes || '', 20000, 'Notes'), nextStep: text(raw.nextStep || '', 1000, 'Next step'), status: raw.status || 'active', folders, milestones, createdAt: before?.createdAt || Date.now(), updatedAt: Date.now(), lastActiveAt: before?.lastActiveAt || null };
     item.knowledgeMode = before?.knowledgeMode || 'inherit';
     item.color = projectColor(raw.color ?? before?.color, item.id);
     if (before?.lastProgress) item.lastProgress = before.lastProgress;
-    if (before?.plan) {
-      planning.checkRevision(before, raw.revision);
-      item.plan = structuredClone(before.plan);
-      if (item.goals !== before.goals) planning.invalidate(item, 'brief');
-      if (JSON.stringify(item.milestones) !== JSON.stringify(before.milestones)) planning.invalidate(item, 'roadmap');
-      item.plan.revision++;
-    } else if (raw.guided) {
-      item.plan = planning.initial(); item.status = 'planning';
-      item.plan.brief.audience = text(raw.audience || '', 10000, 'Audience');
-      item.plan.brief.success = text(raw.success || '', 10000, 'Success criteria');
-    }
     return this.store(item);
   }
   store(item) {
     this.commit([item, ...this.items.filter(x => x.id !== item.id)]);
-    if (item.plan) {
-      const saved = structuredClone(item);
-      try { saved.plan.files = { directory: planning.writeFiles(saved), revision: saved.plan.revision, error: '' }; }
-      catch (error) { saved.plan.files = { ...saved.plan.files, error: `Plan saved in Paddock. Project files could not be updated: ${error.message}` }; }
-      this.commit(this.items.map(x => x.id === saved.id ? saved : x));
-    }
     return this.list().find(x => x.id === item.id);
   }
-  plan(id, section) { return planning.context(this.get(id), section); }
-  review(id, raw) { return this.store(planning.review(this.get(id), raw)); }
-  underway(id, raw) { return this.store(planning.underway(this.get(id), raw)); }
-  propose(id, raw, agent) { return this.store(planning.propose(this.get(id), raw, agent)); }
-  addLater(id, raw) { return this.store(planning.later(this.get(id), raw)); }
-  // Files and images are copied into the project's planning folder so every
-  // agent working in the project can read them, even after the original moves.
-  addReference(id, raw) {
-    const p = this.get(id); if (!p?.plan) throw new Error('Project plan not found.');
-    if (raw?.kind === 'link') return this.store(planning.addReference(p, raw));
-    const source = String(raw?.value || '');
-    let stat; try { stat = fs.statSync(source); } catch { throw new Error('That file could not be found.'); }
-    if (!path.isAbsolute(source) || !stat.isFile()) throw new Error('Choose a file, not a folder.');
-    if (stat.size > 25 * 1024 * 1024) throw new Error('Reference files can be up to 25 MB.');
-    const kind = /\.(png|jpe?g|gif|webp|bmp)$/i.test(source) ? 'image' : 'file';
-    const target = path.join(planning.directory(p, true), 'references');
-    if (fs.existsSync(target) && (fs.lstatSync(target).isSymbolicLink() || !fs.statSync(target).isDirectory())) throw new Error('Project planning folder must be a regular directory.');
-    fs.mkdirSync(target, { recursive: true });
-    const copy = path.join(target, `${randomUUID().slice(0, 8)}-${path.basename(source).replace(/[^\w.() -]+/g, '_').slice(-120)}`);
-    fs.copyFileSync(source, copy, fs.constants.COPYFILE_EXCL);
-    try { return this.store(planning.addReference(p, { revision: raw.revision, kind, value: copy, title: raw.title || path.basename(source) })); }
-    catch (error) { fs.rmSync(copy, { force: true }); throw error; }
-  }
-  removeReference(id, raw) {
-    const p = this.get(id); if (!p?.plan) throw new Error('Project plan not found.');
-    const item = (p.plan.references || []).find(x => x.id === raw?.ref);
-    const next = this.store(planning.removeReference(p, raw));
-    if (item && item.kind !== 'link') {
-      const folder = path.join(planning.directory(p), 'references');
-      if (path.dirname(item.value) === folder) fs.rmSync(item.value, { force: true });
-    }
-    return next;
-  }
-  beginPlan(id) {
-    const before = this.get(id); if (!before) throw new Error('Project not found.');
-    if (before.plan) return before;
-    return this.store({ ...before, plan: planning.initial(), updatedAt: Date.now() });
-  }
-  syncPlan(id) { const p = this.get(id); if (!p?.plan) throw new Error('Project plan not found.'); return this.store(p); }
-  folderPath(id, index = 0, planFiles = false) {
+  folderPath(id, index = 0) {
     const p = this.get(id); if (!p) throw new Error('Project not found.');
-    if (planFiles) return folder(planning.directory(p));
     if (!Number.isInteger(index) || !p.folders[index]) throw new Error('Project folder not found.');
     return folder(p.folders[index].path);
   }
@@ -158,44 +68,22 @@ class Projects extends EventEmitter {
   }
   progress(id, raw) {
     const item = this.get(id); if (!item) throw new Error('Choose a project for this console first.');
-    let nextStep = raw.nextStep == null ? item.nextStep : text(raw.nextStep, 1000, 'Next step');
-    const notes = raw.note ? text([item.notes, text(raw.note, 2000, 'Progress note')].filter(Boolean).join('\n\n'), 20000, 'Notes') : item.notes;
+    const nextStep = raw.nextStep == null ? item.nextStep : text(raw.nextStep, 1000, 'Next step');
     const milestones = item.milestones.map(x => ({ ...x }));
     if (raw.milestone != null) {
-      if (item.plan) planning.checkRevision(item, raw.revision);
       if (!Number.isInteger(raw.milestone) || !milestones[raw.milestone]) throw new Error('Choose an existing milestone.');
       milestones[raw.milestone].done = raw.done === true;
-      if (item.plan && raw.nextStep == null) nextStep = milestones.find(m => !m.done)?.text || 'Review project completion';
     }
-    const updated = { ...item, nextStep, notes, milestones, updatedAt: Date.now(), lastActiveAt: Date.now() };
-    if (item.plan) updated.plan = { ...item.plan, revision: item.plan.revision + 1 };
+    const updated = { ...item, nextStep, milestones, updatedAt: Date.now(), lastActiveAt: Date.now() };
     return this.store(updated);
-  }
-  recordOutcome(id, record) {
-    const item = this.get(id); if (!item) throw new Error('The linked project no longer exists.');
-    const lastProgress = { turnId: record.turnId, summary: record.summary, nextStep: record.nextStep, at: record.at };
-    if (item.lastProgress?.turnId === record.turnId && item.lastProgress.summary === record.summary && item.nextStep === record.nextStep) return item;
-    // Keep a current outcome on the card; the completion journal retains history.
-    return this.store({ ...item, nextStep: record.nextStep, lastProgress, updatedAt: record.at, lastActiveAt: record.at });
   }
   brief(id, worker = false) {
     const p = this.get(id); if (!p) return null;
     const decisions = (p.decisions || []).filter(d => d.status === 'approved').map(d => d.reason ? `${d.text} (${d.reason})` : d.text);
     const clip = (text, length) => String(text || '').slice(0, length);
     return { id: p.id, name: p.name, status: p.status, goals: worker ? p.goals : clip(p.goals, 600), nextStep: clip(p.nextStep, 500),
-      ...(worker ? { approach: p.approach, decisions, milestones: p.milestones, references: p.plan?.references || [], scope: p.plan?.scope || '', excluded: p.plan?.excluded || '', approvals: p.plan?.approvals || {}, planRevision: p.plan?.revision || null }
-        : { lastOutcome: clip(p.lastProgress?.summary, 400), approvedDecisions: decisions.length, milestones: { done: p.milestones.filter(x => x.done).length, total: p.milestones.length }, planRevision: p.plan?.revision || null, details: 'Use dock_context({includeProject:true}) for decisions, scope, milestones and references in the task-start call; detail:"project" remains available separately. History: dock_context({detail:"history"}).' }) };
-  }
-  // Decisions are durable project choices and preferences. Agents can only
-  // propose one; the user approves, edits or rejects it in Projects.
-  proposeDecision(id, raw, agent) {
-    const item = this.get(id); if (!item) throw new Error('Link this chat to a project before proposing a decision.');
-    const decisions = item.decisions || [];
-    if (decisions.filter(d => d.status === 'proposed').length >= 20) throw new Error('20 decisions already await the user. Ask them to review Projects first.');
-    const entry = { id: randomUUID(), text: text(raw?.decision, 500, 'Decision'), reason: text(raw?.reason || '', 1000, 'Reason'), status: 'proposed', by: String(agent || 'An agent').slice(0, 80), at: Date.now() };
-    if (!entry.text) throw new Error('Describe the decision.');
-    if (decisions.some(d => d.status !== 'rejected' && d.text.toLowerCase() === entry.text.toLowerCase())) throw new Error('This decision is already recorded.');
-    return this.store({ ...item, decisions: [...decisions, entry], updatedAt: Date.now() });
+      ...(worker ? { approach: p.approach, decisions, milestones: p.milestones, references: p.plan?.references || [], scope: p.plan?.scope || '', excluded: p.plan?.excluded || '' }
+        : { lastOutcome: clip(p.lastProgress?.summary, 400), approvedDecisions: decisions.length, milestones: { done: p.milestones.filter(x => x.done).length, total: p.milestones.length }, details: 'Use dock_context({includeProject:true}) for saved project details.' }) };
   }
   decide(id, raw) {
     const item = this.get(id); if (!item) throw new Error('Project not found.');
@@ -228,16 +116,12 @@ class Projects extends EventEmitter {
     const binding = { projectId: p?.id || null, projectName: p?.name || null, chatTitle: session.name || '', launchDirectory: session.cwd || '' };
     return '\n\n## Current chat binding\n' + JSON.stringify(binding, null, 2) + '\n' + (p
       ? 'This is the project explicitly linked to this chat. Use its ID and project context, even when the chat has a custom title. If a request points to a different project, ask the user to change the link before project-specific work. Refresh dock_context at task start; pass your own sinceContextRevision to omit unchanged instructions. An earlier chat message or title does not override the current binding.\n'
-      : 'No saved project is linked. Use the launch directory and explicit user instructions; do not infer a project from the chat title. Use dock/propose_project when appropriate.\n') + (p && includeBrief ? '\n## Project brief\n' + JSON.stringify(this.brief(p.id)) : '');
+      : 'No saved project is linked. Use the launch directory and explicit user instructions; do not infer a project from the chat title.\n') + (p && includeBrief ? '\n## Project brief\n' + JSON.stringify(this.brief(p.id)) : '');
   }
   summary(id) {
     const p = this.get(id); if (!p) return '';
     const decisions = (p.decisions || []).filter(d => d.status === 'approved').map(d => d.reason ? `${d.text} (${d.reason})` : d.text);
-    const waiting = (p.decisions || []).filter(d => d.status === 'proposed').length;
-    return '\n\n## Current project\n' + JSON.stringify({ id: p.id, name: p.name, category: p.category, status: p.status, goals: p.goals, approach: p.approach, nextStep: p.nextStep, notes: p.notes, milestones: p.milestones, folders: p.folders, lastActiveAt: p.lastActiveAt, decisions }, null, 2)
-      + '\nFollow the approved decisions: they record the user’s choices and preferences for this project. When the user makes a lasting choice (a preference, a rejected approach, a stack or convention), propose it with dock/project_decision; the user approves it in Projects.'
-      + (waiting ? ` ${waiting} proposed decision${waiting === 1 ? '' : 's'} await the user’s review; treat them as unapproved.` : '')
-      + '\nUse this project brief as context. Keep progress honest: only mark a milestone done after verifying it. Use dock/project_progress to record a completed milestone, a brief progress note or the next step. Refresh with dock_context at the start of each task.\n' + planning.instructions(p);
+    return '\n\n## Current project\n' + JSON.stringify({ id: p.id, name: p.name, category: p.category, status: p.status, goals: p.goals, approach: p.approach, nextStep: p.nextStep, notes: p.notes, milestones: p.milestones, folders: p.folders, lastActiveAt: p.lastActiveAt, decisions }, null, 2);
   }
 }
 module.exports = { Projects };

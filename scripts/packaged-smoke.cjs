@@ -88,8 +88,7 @@ async function eventually(predicate) {
     env: { ...env, PADDOCK_DATA_DIR: dataDir, PADDOCK_SESSION_ID: hookSession, PADDOCK_LAUNCH_ID: hookLaunchId }, windowsHide: true, timeout: 15000
   });
   const hook = JSON.parse(fs.readFileSync(path.join(dataDir, 'events', `${hookSession}.${hookLaunchId}.state.json`), 'utf8'));
-  assert.equal(hook.state, 'attention', 'A callback without the completion bridge cannot report ready');
-  assert.match(hook.summary, /Completion check missing/);
+  assert.equal(hook.state, 'ready');
   assert.equal(hook.providerSessionId, 'bundled-hook-check');
 
   const token = crypto.randomUUID();

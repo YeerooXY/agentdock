@@ -93,7 +93,7 @@ function fixture(t, settings = {}) {
     }, saveResult: async raw => { published.push(raw); return { id: 'saved-review' }; }
   });
   t.after(() => { delegation.stopAll(); fs.rmSync(root, { recursive: true, force: true }); });
-  const start = () => delegation.start({ focus: 'PRIVATE_FOCUS_TEXT' }, { sessionId: 'caller', cwd: root, consoleName: 'Builder', context: { project: root } });
+  const start = () => delegation.start({ reviewer: 'kiro:default', focus: 'PRIVATE_FOCUS_TEXT' }, { sessionId: 'caller', cwd: root, consoleName: 'Builder', context: { project: root } });
   return { sessions, delegation, start, children, published };
 }
 
@@ -113,7 +113,7 @@ test('starting a review opens a panel; drag, resize and close preserve the runni
   assert.ok(!f.children[0].killed);
   const waiting = f.delegation.status(started.id, { waitSeconds: 5 });
   f.children[0].stdout.emit('data', 'VERDICT: approve\nFINDINGS:\n- none'); f.children[0].emit('close', 0);
-  const done = await waiting; assert.equal(done.verdict, 'approve'); assert.equal(done.resultId, null);
+  const done = await waiting; assert.equal(done.verdict, 'approve'); assert.equal(done.resultId, undefined);
   assert.equal(f.published.length, 0);
   const archived = f.delegation.executionHistory.get('review', started.id);
   assert.match(archived.report, /VERDICT: approve/);

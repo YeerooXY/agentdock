@@ -1,4 +1,5 @@
 'use strict';
+const { installStateTransport } = require('./state-test-transport.cjs');
 // Tools page with logos and in-card key entry, synthetic state, four profiles.
 const { chromium, webkit, devices } = require('playwright');
 const fs = require('node:fs'), path = require('node:path'), http = require('node:http');
@@ -20,7 +21,8 @@ const integrations = [['blender', 'Blender'], ['unity', 'Unity'], ['meshy', 'Mes
     state.mode = 'dashboard'; Object.assign(state.settings, { setupComplete: true, trimStyle: 'classic' });
     state.toolCatalog = catalog; state.integrations = integrations; state.vault = { available: true, entries: [{ id: 'meshyai', label: 'Meshy AI Key', savedAt: Date.now() }] };
     await context.exposeFunction('fixtureCall', async m => m === 'state' ? { ok: true, value: state } : { ok: true, value: [] });
-    await context.addInitScript(() => { window.dock = { call: (m, p) => window.fixtureCall(m, p), onState: fn => window.fixtureState = fn, onOutput: () => {}, onSelect: () => {}, onNotice: () => {} }; });
+    await installStateTransport(context);
+await context.addInitScript(() => { window.dock = { call: (m, p) => window.fixtureCall(m, p), get state() { return window.fixtureStateTransport; }, onOutput: () => {}, onSelect: () => {}, onNotice: () => {} }; });
     const page = await context.newPage(); page.on('pageerror', e => errors.push(`${name}: ${e.message}`));
     await page.goto(`http://127.0.0.1:${server.address().port}`); await page.locator('.session-grid').waitFor();
     await page.locator('.sidebar-bottom [data-page=settings]').click(); await page.locator('.settings-navigation [data-page=tools]').click();

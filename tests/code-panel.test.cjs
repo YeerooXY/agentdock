@@ -29,7 +29,7 @@ test('code panel distinguishes working-tree changes from turn changes with Resul
   assert.equal(report.mode, 'working'); assert.equal(report.changes.length, 2); assert.equal(report.changes[0].before, undefined);
   let file = await f.service.file(f.panel.id, 'app.js', report.id); assert.match(file.before, /value = 1/); assert.match(file.after, /value = 2/);
   const results = { items: [], add() { throw new Error('Code panels must not create Results entries.'); } };
-  const turns = new Turns(results, { getSession: id => f.sessions.items.get(id), enabled: false }); turns.codePanel = f.service;
+  const turns = new Turns({ getSession: id => f.sessions.items.get(id), enabled: false }); turns.codePanel = f.service;
   await turns.begin(f.source.id); f.write('app.js', 'export const value = 3;\n'); fs.unlinkSync(path.join(f.project, 'new.txt'));
   await turns.finish(f.source.id); report = await f.service.report(f.panel.id);
   assert.equal(report.mode, 'turn'); assert.equal(report.changes.length, 2); assert.match(report.notes.join(' '), /other editors/);

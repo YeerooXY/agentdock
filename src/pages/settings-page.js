@@ -29,9 +29,6 @@ export function settingsPage({ getState, getPage, call, toast, providerName, con
     const state = getState();
     return `<section class="surface"><h2>Startup</h2><label class="toggle-row"><span><strong>Restore previous consoles</strong><small>${state.safeMode ? 'Restart normally to change this setting.' : 'Reopen your panels and folders. Saved agent chats resume; shells and custom commands restart.'}</small></span><input type="checkbox" data-setting="restoreConsoles" ${state.settings.restoreConsoles ? 'checked' : ''} ${state.safeMode ? 'disabled' : ''}></label><label class="toggle-row"><span><strong>Keep scrollback in Codex consoles</strong><small>Codex runs inline, so you can scroll up and select text to copy. Applies to Codex consoles opened after the change.</small></span><input type="checkbox" data-setting="codexScrollback" ${state.settings.codexScrollback !== false ? 'checked' : ''}></label><p id="workspace-error" class="form-error" role="alert">${escape(state.workspaceError || '')}</p></section>`;
   }
-  function resultsSettings() {
-    return `<section class="surface"><h2>Results</h2><p class="field-hint">Agents save the documents, images, designs, reports and exports you ask them to create. Add other files from Results.</p><label class="toggle-row"><span><strong>Also capture file changes</strong><small>Copy code diffs and changed images after each turn.</small></span><input type="checkbox" data-setting="autoSaveResults" ${getState().settings.autoSaveResults === true ? 'checked' : ''}></label><p class="field-hint">Optional. Turning this off stops current captures. Requested outputs and files you add are still saved.</p></section>`;
-  }
   function projectSettings() {
     const settings = getState().settings, worker = settings.knowledgeWorker;
     const candidates = (getState().accounts || []).filter(account => ['claude', 'antigravity'].includes(account.provider));
@@ -83,7 +80,7 @@ export function settingsPage({ getState, getPage, call, toast, providerName, con
     else if (page === 'api-settings') content = tools.renderApis();
     else if (page === 'tools') content = tools.renderTracked();
     else if (page === 'instructions') content = tools.renderInstructions();
-    else content = '<div class="settings-general-columns"><div class="settings-column">' + (sections[0]?.outerHTML || '') + shortcutSettings() + '</div><div class="settings-column">' + startupSettings() + projectSettings() + resultsSettings() + '</div></div>' + (panels.updates()?.render() || '');
+    else content = '<div class="settings-general-columns"><div class="settings-column">' + (sections[0]?.outerHTML || '') + shortcutSettings() + '</div><div class="settings-column">' + startupSettings() + projectSettings() + '</div></div>' + (panels.updates()?.render() || '');
     return settingsShell(page, `<div class="settings-layout${page === 'console-settings' ? ' settings-console-grid' : ''}">${content}</div>`, icon('close'), state.settings.trimStyle || 'classic');
   }
   function launchDefaultsFields() {

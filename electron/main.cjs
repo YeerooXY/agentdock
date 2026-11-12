@@ -31,7 +31,6 @@ const { WorkerSessions } = require('./worker-sessions.cjs');
 const { OwnerConsoles } = require('./owner-consoles.cjs');
 const { CapacityReservations } = require('./capacity-reservations.cjs');
 const { registryFromRouting } = require('./worker-registry.cjs');
-const { resultGitContext } = require('./git-context.cjs');
 const { Turns } = require('./turns.cjs');
 const { MobileCompanion } = require('./mobile.cjs');
 const { DockNotifications } = require('./notifications.cjs');
@@ -173,15 +172,12 @@ const stateWriters = Object.fromEntries(Object.entries(SLICES).filter(([slice]) 
 const desktopState = desktopProjection(stateStore), phoneState = phoneProjection(stateStore);
 // Protocol 2 is on by default. It turns off with the stateSyncV2 setting set to
 // false or PADDOCK_STATE_V2=0; --state-v2 or PADDOCK_STATE_V2=1 force it on.
-// Off, the renderer gets dock:state and phones use /v1/events.
+// The switch controls phone compatibility; the desktop always uses protocol 2.
 const desktopHistory = new ProjectionHistory(desktopState), phoneHistory = new ProjectionHistory(phoneState);
 const stateV2Off = process.env.PADDOCK_STATE_V2 === '0';
 const stateV2Flag = !stateV2Off && (process.argv.includes('--state-v2') || process.env.PADDOCK_STATE_V2 === '1');
 const stateV2Enabled = () => !stateV2Off && (stateV2Flag || settings?.stateSyncV2 !== false);
-// desktopV2 is the renderer's open subscription. desktopLegacy is set when the
-// renderer asked for full snapshots instead (its subscription failed) or when
-// protocol 2 was turned on while the renderer was already on dock:state.
-let desktopV2 = null, desktopLegacy = false;
+let desktopV2 = null;
 const taskVerifiedAt = new Map();
 function verifyTasks(repo = null) {
   const key = repo || '*', now = Date.now();
@@ -220,7 +216,7 @@ function snapshot() {
 function serviceSnapshot() {
   return { platform: process.platform, mode, transitioning, trayHidden, sessions: sessions?.list() || [], codePanels: sessions?.codePanels() || [], queues: {}, prompts: prompts?.list() || [], codeRevision: codePanel?.revision || 0, limits, accounts: accounts?.allChoices() || [], accountProviders: accounts?.providers() || [], recent, accountError, refreshing, lastRefresh, agents: (cliSetup?.snapshot() || []).map(agent => ({ ...(agent.id === 'opencode' && !openCodeAvailable ? { ...agent, installed: false } : agent), consoleFeatures: consoleFeaturesFor(agent.id) })), agentSetupBusy: !!cliSetup?.running, skills: skillPacks?.snapshot() || { packs: [], busy: false },
     usageAccounts: usageAccounts(), usageChecks: subscriptionUsage?.snapshot() || [], delegations: workbench?.delegation?.snapshot() || [], tasks: tasks?.snapshot() || [],
-    sshHosts: ssh?.list() || [], capabilities, projects: projects?.list() || [], projectProposals: projects?.proposals || [], messages: [...(messageUsage?.items || []), ...apiMessages(ledger || [])].sort((a,b) => b.at - a.at).slice(0, 200), mobile: mobile?.snapshot(), workbench: workbench?.snapshot(), vault: { available: vault?.available() || false, entries: vault?.list() || [] },
+    sshHosts: ssh?.list() || [], capabilities, projects: projects?.list() || [], messages: [...(messageUsage?.items || []), ...apiMessages(ledger || [])].sort((a,b) => b.at - a.at).slice(0, 200), mobile: mobile?.snapshot(), workbench: workbench?.snapshot(), vault: { available: vault?.available() || false, entries: vault?.list() || [] },
     ledger: ledger || [], summary: ledgerSummary(ledger || []), shared: hub?.snapshot(), updates: updates?.snapshot(), grid: sessions?.grid || settings?.grid, settings, storageError, workspaceError, shortcutAvailable, safeMode, startupNotices: crash.notices,
     integrations: integrations?.snapshot(hub?.config.connections || [], vault?.list() || []), toolCatalog: mcpCatalog?.snapshot(hub?.config.connections || []) || [],
     toolLimits: Object.fromEntries((hub?.config.connections || []).map(x => [x.id, { models: policyLimits[x.id]?.models?.order || [], unit: budgetUnit(x.id) }])), defaultFolder, version: app.getVersion(), screenshot: screenshots?.snapshot() || null };
@@ -233,15 +229,7 @@ async function confirmToolCall({ connection, tool, args }) {
   const { response } = await dialog.showMessageBox(window, { type: 'question', buttons: ['Allow once', 'Deny'], defaultId: 1, cancelId: 1, noLink: true, title: 'Allow tool call?', message: `An agent wants to use ${connection}: ${tool}`, detail: preview.length > 1500 ? preview.slice(0, 1500) + '…' : preview });
   return response === 0;
 }
-// Every publish commits the services to the store; the renderer and v2 phones
-// receive the resulting changes. A full dock:state snapshot is built only for a
-// renderer on the fallback path. With protocol 2 on, a renderer that has not
-// subscribed yet gets nothing here: its hello answers with a reset.
-function publish() {
-  const v2Desktop = !!desktopV2 && !desktopV2.closed;
-  if (!v2Desktop && window && !window.isDestroyed() && (desktopLegacy || !stateV2Enabled())) { window.webContents.send('dock:state', snapshot()); return; }
-  syncState();
-}
+function publish() { syncState(); }
 function updatePower() { workPower?.update({ enabled: settings?.keepAwakeWhileWorking === true, sessions: sessions?.list() || [], apiBusy }); }
 function persistSettings(next) { atomicJson(path.join(root, 'settings.json'), next); settings = next; updatePower(); }
 function revealWindow() {
@@ -490,7 +478,6 @@ app.whenReady().then(() => guardStartup(async () => {
   await startupStep('Codex check', () => { capabilities.codex = !!nativeCodex(); }, { optional: true });
   const savedSettings = readJson(path.join(root, 'settings.json'), {});
   settings = initialSettings(savedSettings, defaultFolder, capabilities);
-  if (savedSettings.resultsPolicyVersion !== settings.resultsPolicyVersion) persistSettings(settings);
   // Saved skill preferences must exist before adapters are rendered and cached.
   skillPacks = new SkillPacks(root, { home: process.env.PADDOCK_SKILLS_HOME || os.homedir(), getAgents: () => cliSetup.snapshot(), getPreferences: () => settings.skillAuto || {}, downloads: new ManagedDownloads(root), onChange: publish });
   if (!safeMode && (!testMode || process.env.PADDOCK_SKILLS_HOME)) await startupStep('Managed skill update', async () => {
@@ -528,7 +515,6 @@ app.whenReady().then(() => guardStartup(async () => {
     usageEnvironment,
     credentialSwitch,
     clineRoute,
-    saveResult: async (raw, context) => workbench.results.add(raw, await resultGitContext({}, context || {}, workbench.results.root))
   });
   workbench.delegation = new Delegation(root, { ...taskAccounts, testMode, getSettings: () => settings,
     openPanel: job => sessions?.createReviewPanel(job), panelOpen: id => sessions?.items.get(id)?.kind === 'review' });
@@ -569,9 +555,6 @@ app.whenReady().then(() => guardStartup(async () => {
       for (const session of sessions?.items.values() || []) if (session.alive && !session.remote && !session.kind && session.cwd) folders.push({ path: session.cwd, label: `${session.name}: ${session.cwd}` });
       return folders.filter((folder, index) => folders.findIndex(other => process.platform === 'win32' ? other.path.toLowerCase() === folder.path.toLowerCase() : other.path === folder.path) === index);
     },
-    saveResult: async (raw, context) => raw.resultId && workbench.results.items.some(item => item.id === raw.resultId)
-      ? workbench.results.updateText(raw.resultId, raw)
-      : taskAccounts.saveResult(raw, context)
   });
   // The tasks slice is written by TaskLoop's events, not by the publish-time sync.
   const writeTasks = () => { try { stateWriters.tasks.set(toCollection(tasks.snapshot())); } catch (error) { stateFailure('tasks', error); } };
@@ -635,7 +618,7 @@ app.whenReady().then(() => guardStartup(async () => {
   });
   sessions.on('context-error', message => { storageError = message; publish(); });
   sessions.on('message-usage', ({ session, messages }) => { try { messageUsage.record({ ...session, projectName: projects.get(session.projectId)?.name || '' }, messages); } catch { storageError = 'Message usage could not be saved.'; } });
-  turns = new Turns(workbench.results, { enabled: settings.autoSaveResults === true, getSession: id => sessions.items.get(id), getSecrets: () => vault.list().flatMap(x => { try { return [vault.get(x.id)]; } catch { return []; } }) });
+  turns = new Turns({ getSession: id => sessions.items.get(id) });
   workbench.turns = turns;
   codePanel = new CodePanel(sessions, { onChange: publish, getProjects: () => projects.list(), getSecrets: () => vault.list().flatMap(x => { try { return [vault.get(x.id)]; } catch { return []; } }) });
   turns.codePanel = codePanel;
@@ -659,11 +642,7 @@ app.whenReady().then(() => guardStartup(async () => {
     if (id) saveUsage({ id }, [{ ...value, accountId: id }]);
   });
   sessions.on('attention', session => {
-    if (session.state === 'ready' && !session.taskId && !session.remote && session.purpose === 'agent' && !['shell', 'cmd'].includes(session.provider)) {
-      try { workbench.completion.check(session.id); }
-      catch { session = { ...session, state: 'attention', summary: 'Completion check missing. The agent must record its outcome with dock/finish_turn.' }; sessions.signal(session.id, 'question', true); }
-    }
-    workbench.alerts.send(completionNotice({ key: `${session.id}:${session.updatedAt}:${session.state}`, title: session.name + (session.state === 'ready' ? ' is ready' : ' needs you'), message: session.summary || '', kind: session.state === 'ready' ? 'ready' : 'question' }, { sessionId: session.id, consoleKey: session.consoleKey || session.id, turnId: session.turnId }, workbench.results.list()));
+    workbench.alerts.send(completionNotice({ key: `${session.id}:${session.updatedAt}:${session.state}`, title: session.name + (session.state === 'ready' ? ' is ready' : ' needs you'), message: session.summary || '', kind: session.state === 'ready' ? 'ready' : 'question' }, { sessionId: session.id, consoleKey: session.consoleKey || session.id, turnId: session.turnId }));
   });
   const seenExits = new Set();
   sessions.on('changed', () => {
@@ -709,7 +688,7 @@ app.whenReady().then(() => guardStartup(async () => {
   window.on('unresponsive', () => { crash.log('WARN', 'Window unresponsive'); ownerConsoles.freeze(); });
   window.on('responsive', () => crash.log('INFO', 'Window responsive'));
   // A reloaded renderer subscribes again (or asks for the fallback) on its own.
-  window.webContents.on('did-start-loading', () => { ownerConsoles.freeze(); endDesktopV2(); desktopLegacy = false; });
+  window.webContents.on('did-start-loading', () => { ownerConsoles.freeze(); endDesktopV2(); });
   window.webContents.on('render-process-gone', (_, details) => {
     endDesktopV2();
     crash.log('WARN', `Renderer gone: reason=${details.reason} exitCode=${details.exitCode}`);
@@ -769,15 +748,12 @@ app.whenReady().then(() => guardStartup(async () => {
   // receives welcome/changes/error on dock:v2. No compression or chunking.
   ipcMain.handle('dock:v2', (event, message) => {
     if (event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame || event.senderFrame.url !== entryUrl) throw new Error('Untrusted client.');
-    if (!stateV2Enabled()) throw new Error('State protocol 2 is off.');
     if (!desktopV2 || desktopV2.closed) {
       const connection = new StateConnection({ history: desktopHistory, view: 'desktop', transport: 'ipc',
         write: value => { if (window && !window.isDestroyed()) window.webContents.send('dock:v2', value); },
-        authorized: () => !!window && !window.isDestroyed() && stateV2Enabled(),
-        // Closed by the connection itself (not a reload or the off switch): the
-        // renderer keeps working on full snapshots.
-        close: () => { if (desktopV2 === connection) { desktopV2 = null; desktopLegacy = true; crash.log('WARN', 'Desktop state subscription closed; using full snapshots.'); } } });
-      desktopV2 = connection; desktopLegacy = false;
+        authorized: () => !!window && !window.isDestroyed(),
+        close: () => { if (desktopV2 === connection) desktopV2 = null; } });
+      desktopV2 = connection;
     }
     // Commit current service state first so the welcome batch is fresh.
     if (message?.type === 'hello') syncState();
@@ -794,9 +770,8 @@ app.whenReady().then(() => guardStartup(async () => {
     getCapabilities: () => capabilities, setCapabilities: value => { capabilities = value; },
     getLedger: () => ledger, setLedger: value => { ledger = value; },
     getApiBusy: () => apiBusy, setApiBusy: value => { apiBusy = value; }, updatePower,
-    getDesktopLegacy: () => desktopLegacy, setDesktopLegacy: value => { desktopLegacy = value; },
     setQuitting: value => { quitting = value; }, getMode: () => mode,
-    stateV2Enabled, stateV2Flag, endDesktopV2, snapshot, restart, setMode,
+    stateV2Enabled, snapshot, restart, setMode,
     minimize: () => window.minimize(), hideToTray, revealWindow, dragWindow, quit, refreshLimits,
     qrCode: (code, options) => require('qrcode').toDataURL(code, options),
     resolveKey: id => vault.get(id)

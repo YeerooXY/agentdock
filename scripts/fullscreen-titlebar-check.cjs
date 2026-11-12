@@ -1,4 +1,5 @@
 'use strict';
+const { installStateTransport } = require('./state-test-transport.cjs');
 // F11 fullscreen: the title bar is hidden, returns at the top edge or on keyboard focus, and hides again.
 const { chromium, webkit, devices } = require('playwright');
 const fs = require('node:fs'), path = require('node:path'), http = require('node:http');
@@ -23,7 +24,8 @@ const profiles = [['pc', chromium, { viewport: { width: 1440, height: 900 } }], 
         if (method === 'mode') { state.mode = payload; setTimeout(() => page.evaluate(s => window.fixtureState(s), state).catch(() => {}), 5); }
         return { ok: true, value: method === 'state' ? state : method === 'session.buffer' ? { data: '', sequence: 0 } : [] };
       });
-      await context.addInitScript(() => { window.dock = { call: (m, p) => window.fixtureCall(m, p), onState: fn => window.fixtureState = fn, onOutput: () => {}, onSelect: () => {}, onNotice: () => {} }; });
+      await installStateTransport(context);
+await context.addInitScript(() => { window.dock = { call: (m, p) => window.fixtureCall(m, p), get state() { return window.fixtureStateTransport; }, onOutput: () => {}, onSelect: () => {}, onNotice: () => {} }; });
       page = await context.newPage(); page.on('pageerror', e => errors.push(`${name}: ${e.message}`));
       await page.goto(`http://127.0.0.1:${server.address().port}`); await page.locator('.titlebar').waitFor({ state: 'attached' });
       const bottom = async () => { await page.waitForTimeout(260); return page.locator('.titlebar').evaluate(x => Math.round(x.getBoundingClientRect().bottom)); };

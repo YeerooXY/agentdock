@@ -1,4 +1,5 @@
 'use strict';
+const { installStateTransport } = require('./state-test-transport.cjs');
 const { chromium, webkit, devices } = require('playwright');
 const fs = require('node:fs'), path = require('node:path'), http = require('node:http');
 const { openPage } = require('./ui-navigation.cjs');
@@ -24,7 +25,8 @@ const checks=[];let browser;
       if(method==='settings')Object.assign(state.settings,payload);
       return{ok:true};
     });
-    await context.addInitScript(()=>{window.dock={call:(m,p)=>window.fixtureCall(m,p),onState:fn=>window.fixtureState=fn,onOutput(){},onSelect(){},onNotice:fn=>window.fixtureNotice=fn};});
+    await installStateTransport(context);
+await context.addInitScript(()=>{window.dock={call:(m,p)=>window.fixtureCall(m,p),get state() { return window.fixtureStateTransport; },onOutput(){},onSelect(){},onNotice:fn=>window.fixtureNotice=fn};});
     const page=await context.newPage();page.on('pageerror',e=>errors.push(e.message));
     const url=`http://127.0.0.1:${server.address().port}`;
     async function capture(view){

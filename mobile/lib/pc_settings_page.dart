@@ -87,9 +87,9 @@ class _PCSettingsPageState extends State<PCSettingsPage> {
     }[widget.category];
     final items = key == null ? <dynamic>[] : data?[key] as List? ?? [];
     final toolStatus = widget.category == 'Tools' &&
-        widget.client.supportsResult('tools.status');
+        widget.client.supports('tools.status');
     final keysOnPC = widget.category == 'Keys' &&
-        widget.client.supportsResult('tools.status');
+        widget.client.supports('tools.status');
     final requests = toolStatus
         ? (data?['setupRequests'] as List? ?? []).whereType<Map>().toList()
         : <Map>[];

@@ -89,7 +89,7 @@ function desktopSessionCommands(h) {
       const name = payload.name.trim(), slotNames = { ...getSettings().slotNames };
       if (name) slotNames[slot] = name; else delete slotNames[slot];
       persistSettings({ ...getSettings(), slotNames });
-      if (item) { sessions.rename(item.id, name); workbench.results.renameConsole(item.consoleKey || item.id, sessions.items.get(item.id).name); } else publish();
+      if (item) { sessions.rename(item.id, name); } else publish();
       return NO_VALUE;
     },
     'session.models': async payload => payload === 'opencode' ? strataModels(h.hub.config.profiles) : consoleModels(payload),

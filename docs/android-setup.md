@@ -1,6 +1,6 @@
 # Paddock on Android
 
-Leave Paddock running on your PC, then use your phone to work in the same consoles. The Android app shows one terminal at a time. You can switch consoles, start one with your saved defaults, view Results, and check usage.
+Leave Paddock running on your PC, then use your phone to work in the same consoles. The Android app shows one terminal at a time. You can switch consoles, start one with your saved defaults, view image previews and check usage.
 
 This is an Android preview. iPhone support comes later. The owner verified a physical phone sending commands over mobile data on 18 October 2026. The new matching-code approval flow is tested separately.
 
@@ -40,7 +40,7 @@ A Windows VM running Paddock can be added once its network address is reachable.
 
 Android preview 6 puts account usage first, with separate pink-blue bars for each reported limit, reset times and pull-to-refresh. Unknown and stale readings remain labeled. API estimates stay separate from subscription limits. The console's Send button and borders also follow the pink-blue theme.
 
-The scrolling fix from preview 5 is included. Tap **Command or message** to write a prompt, or the keyboard button beside the terminal controls for direct input. Touching the terminal closes the keyboard without deleting your draft. The mobile UI update works with Windows preview 4 or later; Results settings are controlled by the connected Windows PC.
+The scrolling fix from preview 5 is included. Tap **Command or message** to write a prompt, or the keyboard button beside the terminal controls for direct input. Touching the terminal closes the keyboard without deleting your draft. The mobile UI update works with Windows preview 4 or later;
 
 On the phone, tap **Updates** on the connection screen, **App updates** above your consoles, or **Settings → General → Updates**. From preview 12, **App updates** is under the **⋮** menu. These controls work without a paired or reachable PC. **Check for updates** contacts GitHub directly; **Download update** opens the matching APK in your browser. **All downloads** also works if the version check fails. Open the APK to install it over the existing app. Android may ask you to allow installs from your browser. Upgrades signed with the same key preserve pairing; do not uninstall or clear app data first. Reopen Paddock to reconnect. Updating only Android leaves PC consoles running.
 
@@ -109,24 +109,6 @@ Preview 15 PC hosts provide event IDs so reconnects avoid duplicate alerts and c
 - Code, terminal output, selected Results, account usage, configuration names and shared instructions go directly from your PC to its paired phone. Key values, endpoint URLs and connection bindings stay on the PC. Terminal buffers and opened previews stay in app memory; reconnect credentials persist until forgotten. The phone app does not upload these to Paddock hosting.
 - Image attachments use the Android system picker. Android 14+ screenshot detection only offers the picker; it does not read screenshots automatically. Chosen images are resized, re-encoded without EXIF/location metadata and sent over the paired TLS connection into the selected local project's `.agentdock/mobile-attachments` folder. Uploads are capped at 4 MiB; each project keeps at most 128 copies/64 MiB. Remove old copies from that folder on the PC. They are not automatically deleted or sent to an AI.
 - Unsent message drafts stay in OS-backed encrypted storage on the phone, separately for each PC and console. Sending or clearing a draft removes it; forgetting a PC removes its drafts. Up to 128 recent drafts are retained, with a combined target of 1 MiB of text. Drafts are sent only when you press Send. **Copy** puts selected terminal text on Android's clipboard. The optional file picker reads names inside the selected console's working folder, not file contents.
-- **Devices → computer menu → Forget computer** clears that computer's saved pairing. Other computers remain saved. Also **Remove** the phone on the PC, especially if it was offline when forgotten. Clearing app data/uninstalling removes the phone's local data. Deleting Results permanently removes the saved copies from disk, not project originals or copies already exported elsewhere.
+- **Devices → computer menu → Forget computer** clears that computer's saved pairing. Other computers remain saved. Also **Remove** the phone on the PC, especially if it was offline when forgotten. Clearing app data/uninstalling removes the phone's local data.
 
 The author does not hold your private connection or project data. There is no author-hosted account to delete. Manage Tailscale and Google accounts with those providers. For app problems, use the [repository's issue page](https://github.com/YeerooXY/agentdock/issues); do not post pairing codes, keys, or private reports.
-
-## Code changes in Results
-
-Requested outputs share their task's group and console name. One unread group counts as one badge, even with several files. When optional file-change capture is enabled, Paddock also takes a folder snapshot at the start of a tracked task and saves its diff when it finishes.
-
-Results keeps requested outputs saved by agents: documents, images, designs, reports, datasets and exports. Ordinary answers, small edits, progress messages and routine checks create no Results entry. Use **Add files** to keep another file. **Settings → General → Results → Also capture file changes** optionally copies code diffs and changed images; it defaults off. The first update to this policy turns legacy capture off once; later opt-ins persist. Turning it off discards unfinished captures, and turning it back on starts with the next turn. Existing Results and explicitly saved/imported outputs remain available. This PC setting also controls captures viewed on the phone.
-
-Claude's prompt/stop hooks and Paddock's API requests start/end tracking automatically. For Codex and other MCP agents, call **`dock_context` before editing** on each new task. Finish with **`dock/notify`** (`kind: ready`) or **`dock/finish_turn`**; supported completion hooks also finish it. Shell commands and agents that skip the start call cannot be reconstructed reliably afterward.
-
-Existing uncommitted edits are the starting point, so they are not presented as new work. If multiple consoles work in the same or nested folders, the report says authorship overlaps. This is a before/after folder record, not proof that one agent authored every change. Intermediate edits that cancel out leave no final diff.
-
-Ignored/build folders, generated dependencies such as `.deps`, Paddock's `.agentdock` metadata, obvious credential files, and known vault secrets are excluded or redacted. Binary files, large files, and captures that hit limits are identified as omitted. Capture is bounded to avoid stalling the PC and is not a secret scanner or backup. Baselines are held in memory; a crash or restart can lose an unfinished turn. Completed Results stay until deleted. Review a report before sharing it.
-
-## Results browsing and attribution
-
-Results are grouped by console/chat, then by completed prompt. Summaries and saved files appear first; project, Git and capture information are under Details. Their recorded project and working folder remain attached. The console name is historical: renaming a reused console does not relabel old results. A non-Git workspace containing child repositories captures only files directly in the workspace, leaving sibling project folders out. Open a console in the actual project folder to capture its files. Old results without a saved project ID retain their recorded working folder. Overlapping consoles in the same folder can still produce overlapping diffs; these are labeled as folder activity, not proof of authorship. Old dependency-only captures are hidden from the gallery without deleting source files or stored reports.
-
-Pictures in a turn share a gallery with Previous/Next and viewed markers. Only opened pictures are marked viewed. The phone fetches each picture on demand and keeps the larger image optional. Internal JSON is collapsed; code reports use the diff view. Empty code snapshots are no longer generated.

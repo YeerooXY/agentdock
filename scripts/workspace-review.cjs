@@ -1,4 +1,5 @@
 'use strict';
+const { installStateTransport } = require('./state-test-transport.cjs');
 // Current renderer with fixed sample data. No live sessions or provider calls.
 const { chromium, webkit, devices } = require(process.env.REVIEW_PLAYWRIGHT || 'playwright');
 const fs = require('node:fs'), path = require('node:path'), http = require('node:http');
@@ -93,9 +94,10 @@ let browser;
       if (/session\.(input|create|end|kill)|write|delete|remove/.test(method)) throw new Error('Unexpected mutation: ' + method);
       return { ok: true, value: [] };
     });
-    await context.addInitScript(() => { let changed; window.dock = {
-      call: async (m, p) => { const r = await window.fixtureCall(m, p); if (r.state) changed?.(r.state); return r; },
-      onState: f => { changed = f; }, onOutput: () => {}, onSelect: () => {}, onNotice: () => {},
+    await installStateTransport(context);
+await context.addInitScript(() => { window.dock = {
+      call: async (m, p) => { const r = await window.fixtureCall(m, p); if (r.state) window.fixtureState?.(r.state); return r; },
+      get state() { return window.fixtureStateTransport; }, onOutput: () => {}, onSelect: () => {}, onNotice: () => {},
     }; });
     const page = await context.newPage(); page.setDefaultTimeout(10000); page.on('pageerror', error => errors.push(error.message));
     await page.goto('http://127.0.0.1:' + server.address().port);

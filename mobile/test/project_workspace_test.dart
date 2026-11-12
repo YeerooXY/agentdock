@@ -18,11 +18,9 @@ void main() {
   Widget buildHarness({
     Map<String, dynamic>? project,
     List<dynamic> work = const [],
-    List<dynamic> outputs = const [],
     Map<String, dynamic>? knowledge,
     String tab = 'overview',
     ValueChanged<String>? onTab,
-    ValueChanged<Map<String, dynamic>>? onOpenOutput,
     ValueChanged<Map<String, dynamic>>? onOpenReport,
     ValueChanged<String>? onReadSection,
     VoidCallback? onLoadMore,
@@ -32,11 +30,9 @@ void main() {
         body: ProjectWorkspace(
           project: project ?? testProject,
           work: work,
-          outputs: outputs,
           knowledge: knowledge,
           tab: tab,
           onTab: onTab ?? (_) {},
-          onOpenOutput: onOpenOutput ?? (_) {},
           onOpenReport: onOpenReport ?? (_) {},
           onReadSection: onReadSection ?? (_) {},
           onLoadMore: onLoadMore,
@@ -55,9 +51,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(tappedTabs, contains('work'));
 
-    await tester.tap(find.text('Outputs'));
-    await tester.pumpAndSettle();
-    expect(tappedTabs, contains('outputs'));
+    expect(find.text('Outputs'), findsNothing);
 
     await tester.tap(find.text('Knowledge'));
     await tester.pumpAndSettle();
@@ -137,41 +131,6 @@ void main() {
     await tester.pumpAndSettle();
     expect(reportsOpened.length, 1);
     expect(reportsOpened.first['id'], 'w-1');
-  });
-
-  testWidgets('scope foreign outputs and trigger onOpenOutput', (tester) async {
-    final outputsOpened = <Map<String, dynamic>>[];
-    final outputList = [
-      {
-        'id': 'out-1',
-        'projectId': 'proj-alpha',
-        'title': 'Connection Spec',
-        'summary': 'Protocol documentation v1',
-      },
-      {
-        'id': 'out-foreign',
-        'projectId': 'proj-beta',
-        'title': 'Foreign Spec',
-        'summary': 'Do not show',
-      },
-    ];
-
-    await tester.pumpWidget(
-      buildHarness(
-        tab: 'outputs',
-        outputs: outputList,
-        onOpenOutput: outputsOpened.add,
-      ),
-    );
-
-    expect(find.text('Connection Spec'), findsOneWidget);
-    expect(find.text('Protocol documentation v1'), findsOneWidget);
-    expect(find.text('Foreign Spec'), findsNothing);
-
-    await tester.tap(find.text('Connection Spec'));
-    await tester.pumpAndSettle();
-    expect(outputsOpened.length, 1);
-    expect(outputsOpened.first['id'], 'out-1');
   });
 
   testWidgets('knowledge off hides records and displays off message', (
@@ -256,14 +215,6 @@ void main() {
               'projectId': 'proj-alpha',
               'title': 'Long task title that could potentially overflow on narrow viewports',
               'state': 'in progress',
-            },
-          ],
-          outputs: [
-            {
-              'id': 'o-1',
-              'projectId': 'proj-alpha',
-              'title': 'Long output title with lots of details',
-              'summary': 'Detailed summary description that spans multiple lines cleanly',
             },
           ],
         ),

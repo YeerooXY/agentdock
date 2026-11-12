@@ -28,7 +28,6 @@
       }
     ],
     "switching": false,
-    "completionMissing": false,
     "purpose": "agent",
     "taskId": null,
     "consoleCapabilities": {
@@ -77,7 +76,6 @@
       }
     ],
     "switching": false,
-    "completionMissing": false,
     "purpose": "agent",
     "taskId": null,
     "sliceId": null,

@@ -12,7 +12,7 @@ function fixture(t) {
   t.after(() => { assert.equal(path.dirname(fs.realpathSync(root)), parent); fs.rmSync(root, { recursive: true, force: true }); });
   const session = { id: 'owner', consoleKey: 'chat', launchId: 'launch-1', provider: 'codex', cwd: root, alive: true };
   const wb = new Workbench(root, {}, { nativeImage: {} }, { getSessions: () => ({ items: new Map([[session.id, session]]) }), getProject: () => root, onChange() {} });
-  wb.turns = new Turns(wb.results, { getSession: () => session });
+  wb.turns = new Turns({ getSession: () => session });
   wb.projects = new Projects(root);
   const project = wb.projects.save({ name: 'Fixture', goals: 'Implement the requested feature', folders: [{ path: root }] });
   session.projectId = project.id;
@@ -21,25 +21,20 @@ function fixture(t) {
     const text = (await hub.invoke('dock_context', args || {}, session.id)).content[0].text;
     return { text, ...JSON.parse(text.split('\n')[0]) };
   };
-  const finish = (outcome = 'no-change') => wb.invoke('dock/finish_turn', {
-    turnId: wb.completion.turn(session.id).id, outcome, summary: 'Verified the fixture.', nextStep: 'None.', outputs: 'none'
-  }, session.id);
-  return { root, session, wb, hub, project, context, finish };
+  return { root, session, wb, hub, project, context };
 }
 
-test('caller revision omits unchanged instructions and each new task gets its own turn', async t => {
+test('caller revision omits unchanged instructions without starting a tracked turn', async t => {
   const f = fixture(t), first = await f.context({ includeProject: true });
-  const firstTurn = f.wb.completion.turn(f.session.id).id;
+  assert.equal(f.wb.turns.active.size, 0);
   assert.equal(first.unchanged, false); assert.equal(first.projectContextIncluded, true);
   assert.match(first.text, /Paddock shared instructions|Project details/);
-  await f.finish();
   const second = await f.context({ includeProject: true, sinceContextRevision: first.contextRevision });
   assert.equal(second.unchanged, true); assert.deepEqual(second.contextRevision, first.contextRevision);
   assert.doesNotMatch(second.text, /Paddock shared instructions|Project details/);
   assert.ok(second.text.length < first.text.length / 4, `${second.text.length}/${first.text.length}`);
-  assert.notEqual(f.wb.completion.turn(f.session.id).id, firstTurn);
-  assert.match(second.text, /Current turnId/);
-  await f.finish('changed');
+  assert.equal(f.wb.turns.active.size, 0);
+  assert.doesNotMatch(second.text, /Current turnId|finish_turn/);
 });
 
 test('missing and obsolete receipts resend context independently for each caller', async t => {
@@ -62,16 +57,14 @@ test('launch, project, folder and profile identities invalidate context receipts
   }
 });
 
-test('one context call supplies project details without weakening approval or completion', async t => {
+test('one context call supplies project details while preserving user approval', async t => {
   const f = fixture(t);
-  f.wb.projects.proposeDecision(f.project.id, { decision: 'PROPOSED_ONLY' }, 'Fixture');
+  f.wb.projects.get(f.project.id).decisions.push({ text: 'PROPOSED_ONLY', status: 'proposed' });
   const plain = await f.context();
-  await assert.rejects(f.finish('changed'), /detail:"project"/);
   const full = await f.context({ includeProject: true, sinceContextRevision: plain.contextRevision });
   assert.equal(full.unchanged, true); assert.equal(full.projectUnchanged, false); assert.equal(full.projectContextIncluded, true);
   assert.doesNotMatch(full.text, /PROPOSED_ONLY/);
   assert.equal(f.wb.projects.get(f.project.id).decisions[0].status, 'proposed');
-  await f.finish('changed');
 });
 
 test('approved decisions and plan edits replace previously acknowledged project details', async t => {
@@ -125,6 +118,6 @@ test('invalid receipt options fail before starting tracked work and schema expos
   assert.equal(schema.properties.sinceContextRevision.properties.instructions.pattern, '^[a-f0-9]{64}$');
   assert.equal(schema.properties.includeProject.type, 'boolean');
   const description = DOCK_TOOLS.find(tool => tool.name === 'dock_context').description;
-  assert.match(description, /Only consoles whose study instructions explicitly enable quiet mode/);
-  assert.match(f.hub.summary(), /all other consoles keep normal task tracking/);
+  assert.doesNotMatch(description, /finish_turn/);
+  assert.doesNotMatch(f.hub.summary(), /finish_turn|project_progress|save_result/);
 });

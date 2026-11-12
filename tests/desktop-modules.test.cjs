@@ -78,3 +78,16 @@ test('format: status badges escape and window labels name their span', async () 
   assert.equal(age(Date.now()), 'Just updated');
   assert.equal(number(undefined), '—');
 });
+
+
+test('saving settings preserves the desktop stream and reconnects only v2 phones', async () => {
+  let settings = { restoreConsoles: false, stateSyncV2: true }, closes = 0;
+  const handlers = require('../electron/desktop-settings-commands.cjs').desktopSettingsCommands({
+    getSettings: () => settings, persistSettings: next => { settings = next; }, workspace: { setEnabled() {} },
+    stateV2Enabled: () => settings.stateSyncV2 !== false, mobile: { clients: [{ v2: true, ws: { close: () => closes++ } }, { v2: false, ws: { close: () => assert.fail('v1 phone stays connected') } }] },
+    getMode: () => 'dashboard', publish() {}
+  });
+  await handlers.settings({ stateSyncV2: false }); assert.equal(closes, 1);
+  await handlers.settings({ stateSyncV2: true }); assert.equal(closes, 1);
+  await handlers.settings({ restoreConsoles: true }); assert.equal(settings.restoreConsoles, true);
+});

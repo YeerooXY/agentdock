@@ -26,9 +26,9 @@ function legacy() {
     usageAccounts: [{ id: 'codex:default', provider: 'codex', label: 'Codex', hasUsage: true, inUse: true }], usageChecks: [{ accountId: 'codex:default', status: 'current', observedAt: 5 }],
     delegations: [{ id: 'd1', state: 'done', log: [] }], tasks: [{ id: 't1', title: 'Task', state: 'done', rounds: [] }],
     sshHosts: [{ id: '00000000-0000-4000-8000-000000000000', name: 'box' }], capabilities: { codex: true }, projects: [{ id: 'p1', name: 'P', status: 'active', progress: { done: 0, total: 1 } }, { id: 'p2', name: 'Old', status: 'archived' }],
-    projectProposals: [{ id: 'pp1', name: 'Idea' }], messages: [{ at: 1, tokens: 3 }],
+    messages: [{ at: 1, tokens: 3 }],
     mobile: { enabled: true, devices: [{ id: 'dev', name: 'Phone', connected: false }], pendingPairing: { id: 'pp', name: 'Phone', code: '123456', expires: 9, state: 'pending' } },
-    workbench: { results: [{ id: 'res1', title: 'R', seenAt: null }], unreadResults: 1, concepts: [], conceptUsage: {}, meshyAuth: { state: 'waiting', code: 'ABCD-EFGH', url: 'https://example.test/device' }, setupRequests: [{ id: 'sr1', kind: 'tool', config: { id: 'x' } }] },
+    workbench: { results: [{ id: 'res1', title: 'R', seenAt: null }], concepts: [], conceptUsage: {}, meshyAuth: { state: 'waiting', code: 'ABCD-EFGH', url: 'https://example.test/device' }, setupRequests: [{ id: 'sr1', kind: 'tool', config: { id: 'x' } }] },
     vault: { available: true, entries: [{ id: 'openai', provider: 'openai', label: 'OpenAI', savedAt: 1 }] },
     ledger: [{ id: 'l1', cost: 0.1 }], summary: { total: 0.1 }, shared: { instructions: 'Hi', connections: [{ id: 'c', envKeys: { API: { key: 'openai', prefix: '' } } }] }, updates: { state: 'idle' },
     grid: { columns: 3, rows: 2 }, settings: { notifications: true, routing: {} }, storageError: null, workspaceError: null, shortcutAvailable: true, safeMode: false, startupNotices: [],
@@ -97,7 +97,7 @@ test('phone projection exposes allowlisted slices only, without secrets', () => 
   assert.deepEqual(shell, { capacity: 6, version: '0.6.0' });
   assert.deepEqual(agentProfiles, dto('phone-agent-profiles.json').output);
   assert.deepEqual(P.secretPaths(agentProfiles), []);
-  assert.deepEqual(phone.get('results'), { unread: 1, count: 1 });
+  assert.equal(phone.get('results'), undefined);
   const text = JSON.stringify(phone.state());
   for (const banned of ['envKeys', 'openai', 'C:/Users/me', 'loginInstruction', 'Bearer']) assert.ok(!text.includes(banned), banned);
 });
@@ -141,11 +141,11 @@ test('knowledge refresh epochs survive desktop snapshot projection and advance w
   const raw = legacy(); raw.workbench.knowledgeEpoch = 0;
   load(writers, store, raw);
   assert.ok(jsonEqual(J.legacySnapshot(desktop.state(), J.ephemeralFromLegacy(raw)), raw));
-  const revision = desktop.state().results;
+  const revision = desktop.state().imageJobs;
   raw.workbench.knowledgeEpoch = 2;
   load(writers, store, raw);
   const snapshot = J.legacySnapshot(desktop.state(), J.ephemeralFromLegacy(raw));
   assert.equal(snapshot.workbench.knowledgeEpoch, 2);
   assert.deepEqual(snapshot.workbench.results, raw.workbench.results);
-  assert.notDeepEqual(desktop.state().results, revision);
+  assert.notDeepEqual(desktop.state().imageJobs, revision);
 });

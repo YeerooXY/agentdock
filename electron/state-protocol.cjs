@@ -17,13 +17,11 @@ const SLICES = Object.freeze({
   tasks: { kind: 'collection', writer: 'taskLoop' },
   delegations: { kind: 'collection', writer: 'delegation' },
   projects: { kind: 'collection', writer: 'projects' },
-  projectProposals: { kind: 'collection', writer: 'projects' },
   accounts: { kind: 'collection', writer: 'accountProfiles' },
   agents: { kind: 'collection', writer: 'cliSetup' },
   skills: { kind: 'collection', writer: 'skillPacks' },
   usage: { kind: 'value', writer: 'usage' },
   usageHistory: { kind: 'value', writer: 'usage' },
-  results: { kind: 'collection', writer: 'workbench' },
   imageJobs: { kind: 'value', writer: 'workbench' },
   setupRequests: { kind: 'collection', writer: 'workbench' },
   tools: { kind: 'value', writer: 'sharedHub' },
@@ -46,7 +44,6 @@ const PHONE_SLICES = Object.freeze({
   projects: Object.freeze({ kind: 'collection', deps: Object.freeze(['projects']) }),
   tasks: Object.freeze({ kind: 'collection', deps: Object.freeze(['tasks']) }),
   usage: Object.freeze({ kind: 'collection', deps: Object.freeze(['usage']) }),
-  results: Object.freeze({ kind: 'value', deps: Object.freeze(['results']) }),
 });
 const VIEWS = Object.freeze({ desktop: SLICES, phone: PHONE_SLICES });
 function viewTable(view) {

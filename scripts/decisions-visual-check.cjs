@@ -1,4 +1,5 @@
 'use strict';
+const { installStateTransport } = require('./state-test-transport.cjs');
 // Renders the project Decisions section on PC, Mac Safari, Android and iPhone
 // profiles (all but PC emulated) and exercises approve, edit and add.
 const {chromium,webkit,devices}=require('playwright'), fs=require('node:fs'),path=require('node:path'),http=require('node:http'),assert=require('node:assert/strict');
@@ -32,7 +33,8 @@ let browser;const reports=[];
       if(['session.resize','session.input','session.acknowledge'].includes(method))return{ok:true};
       throw Error('Unexpected fixture call '+method);
     });
-    await context.addInitScript(()=>{let changed;window.dock={call:async(m,p)=>{const r=await window.fixtureCall(m,p);if(r.state)changed?.(r.state);return r;},onState:f=>{changed=f;},onOutput:()=>{},onSelect:()=>{}};});
+    await installStateTransport(context);
+await context.addInitScript(()=>{window.dock={call:async(m,p)=>{const r=await window.fixtureCall(m,p);if(r.state)window.fixtureState?.(r.state);return r;},get state() { return window.fixtureStateTransport; },onOutput:()=>{},onSelect:()=>{}};});
     const page=await context.newPage();page.setDefaultTimeout(12000);page.on('pageerror',e=>errors.push(e.message));await page.goto('http://127.0.0.1:'+server.address().port);await page.locator('.session-card').first().waitFor();await page.addScriptTag({url:'/axe.js'});
     // The activity rail holds the page buttons; #sidebar-toggle now opens the Explorer.
     async function nav(view){await page.locator(`[data-page=${view}]`).first().click();}

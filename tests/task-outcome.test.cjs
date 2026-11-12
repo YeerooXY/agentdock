@@ -36,19 +36,6 @@ test('verdicts cover failed checks, open items, failure and interruption', () =>
   assert.equal(buildOutcome(base({ checks: '', rounds: [] })).checks.status, 'none');
 });
 
-test('Results stores the outcome JSON beside the report and on the entry', t => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'paddock-outcome-')); t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const results = new Results(root), outcome = buildOutcome(base());
-  const item = results.add({ text: '# T', ext: '.md', title: 'T', outcome }, { trusted: true, projectId: 'p1', project: root });
-  assert.equal(item.outcome.verdict, 'ready'); assert.equal(item.taskId, 't1');
-  const file = path.join(root, 'results', item.id, 'outcome.json');
-  assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).outcome, 'Added the filter.');
-  const updated = results.updateText(item.id, { text: '# T2', status: 'failed', summary: 's', outcome: { ...outcome, verdict: 'failed', outcome: 'Broke.' } });
-  assert.equal(updated.outcome.verdict, 'failed'); assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).verdict, 'failed');
-  const untrusted = results.add({ text: 'x', ext: '.md', outcome }, { project: root });
-  assert.equal(untrusted.outcome, undefined);
-});
-
 function loop(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'paddock-life-')); let clock = 1000;
   const l = new TaskLoop(root, { now: () => ++clock });

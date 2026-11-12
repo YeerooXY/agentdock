@@ -27,7 +27,6 @@ class StateClient extends ChangeNotifier {
       'projects',
       'tasks',
       'usage',
-      'results',
     ],
   });
 

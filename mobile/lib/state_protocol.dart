@@ -33,7 +33,6 @@ const phoneView = StateView('phone', {
   'projects': SliceKind.collection,
   'tasks': SliceKind.collection,
   'usage': SliceKind.collection,
-  'results': SliceKind.value,
 });
 
 class ProtocolError implements Exception {

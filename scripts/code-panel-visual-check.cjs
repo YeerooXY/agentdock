@@ -1,4 +1,5 @@
 'use strict';
+const { installStateTransport } = require('./state-test-transport.cjs');
 const { chromium, webkit, devices } = require('playwright');
 const fs = require('node:fs'), path = require('node:path'), http = require('node:http'), assert = require('node:assert/strict');
 const root = path.resolve(__dirname, '..'), out = path.join(root, '.build/code-panel-20261025'); fs.mkdirSync(out, { recursive: true });
@@ -38,7 +39,8 @@ let browser; const reports = [];
       if (['code.create', 'code.close', 'mode', 'settings'].includes(method)) setTimeout(() => page.evaluate(s => window.fixtureState(s), state).catch(() => {}), 5);
       return { ok: true, value };
     });
-    await context.addInitScript(() => { window.dock = { call: (m, p) => window.fixtureCall(m, p), onState: fn => window.fixtureState = fn, onOutput: fn => window.fixtureOutput = fn, onSelect: () => {} }; });
+    await installStateTransport(context);
+await context.addInitScript(() => { window.dock = { call: (m, p) => window.fixtureCall(m, p), get state() { return window.fixtureStateTransport; }, onOutput: fn => window.fixtureOutput = fn, onSelect: () => {} }; });
     await context.addInitScript({ path: require.resolve('axe-core/axe.min.js') });
     page = await context.newPage(); page.on('pageerror', e => errors.push(e.message));
     await page.goto(`http://127.0.0.1:${server.address().port}`);

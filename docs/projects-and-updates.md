@@ -1,29 +1,12 @@
 # Projects, usage and updates
 
-## Plan a project
+## Projects
 
-Open **Projects → New project**. Give it a name and folder, then describe your goals, audience, success criteria and initial milestones. You can leave decisions unfinished and save a planning draft. Add several folders if the game, website and backend live separately. The folder picker adds one; the text field also accepts one folder per line, optionally as `Label | path`.
-
-New projects start in **Planning**. These sections can be reviewed independently:
-
-1. **Project brief:** goals, audience and a clear definition of success.
-2. **Similar apps & niche:** alternatives, the need you want to serve, sources and open questions. Personal or internal projects can record why market research is unnecessary.
-3. **Infrastructure:** target devices, language/tools, a recommendation with reasons and an alternative, hosting/cost, data, access/security, testing, deployment and backups. Choose **Let me choose the technology** to record a preferred language. Starting recommendations are examples to review against your requirements; they install nothing.
-4. **Roadmap:** agreed scope and ordered milestones. Each milestone needs a completion check: `Milestone | Done when`.
-
-Use **Discuss with agent** on any section. It saves the current draft and opens your default console in the project. Codex and Claude receive a supported startup prompt asking one question and waiting for your answer. Other integrations receive their usual project instructions; start the discussion in that console yourself. Your agent uses its own account or API billing. You can also fill in and approve the plan yourself without an AI request.
-
-An agent submits a proposal; you can edit, approve or reject it. Proposals stay separate from the saved plan. Changing a section clears its approval. Choose a status in **Edit** at any time. **Already under way** sets a Planning project to Active and marks open sections not needed; waiting proposals remain available. Conflicting saves ask you to reload; your entered text stays available. Unsaved section text survives switching steps and closing/reopening the dialog during this app session. Use **Save draft** before quitting.
-
-**Later features** keeps extra ideas outside the agreed scope. Agents are instructed to ask before expanding it and to defer marketing strategy until completion. To adopt an idea, add it to the roadmap and approve the revised scope. These rules control Paddock's plan updates and instruct the agent; they do not sandbox an external CLI or change your console's permissions.
-
-Paddock saves readable copies in `<first project folder>/.agentdock/projects/<project ID>/`: `PROJECT.md`, `ROADMAP.md` and `LATER_FEATURES.md`. **Open project files** opens that directory. Edit the plan in Paddock; these copies are regenerated on saved changes. A file-write failure keeps the plan in Paddock and shows **Retry saving files**. These files are not a full project import/export bundle.
-
-Existing projects keep their current status. **Plan project** opts one into the review process while retaining its goals, notes, folders and milestones. The roadmap editor is currently a desktop feature; the Android app can continue the conversation in the paired terminal.
+Create a project with a name and one or more folders. Goals and milestones are optional. Edit its notes, next step and status from **Edit project**.
 
 Choose **Open console** on its card, or right-click/hold **+** and select the project. **Start in** lists its saved folders. The editable folder below also accepts a subfolder or another existing folder. The console inherits the project name unless you enter a different name. Automatic titles follow later project renames and keep that behavior after restart. Regular **+** still uses your defaults.
 
-**Projects** shows status, goals, milestone progress, next step and the last worked date. Active is green, Planning blue, Paused amber, Complete violet and Archived gray; each has a text label. Click a project folder path to open it on your PC. Agent progress updates appear live. Active projects left for a week get a quiet **Pick up again** label. Search or filter by category/status. Paused and complete projects remain available; archived projects leave the launch chooser.
+**Projects** shows status, goals, milestone progress, next step and the last worked date. Active is green, Planning blue, Paused amber, Complete violet and Archived gray; each has a text label. Click a project folder path to open it on your PC. Active projects left for a week get a quiet **Pick up again** label. Search or filter by category/status. Paused and complete projects remain available; archived projects leave the launch chooser.
 
 An existing chat without a project shows **Set up project** above the consoles. Link an existing project or create one with the chat's name and working folder filled in. Linking keeps the running process, conversation ID, folder and files; it does not import earlier transcript text. Default folder titles become the project name. Custom titles stay unchanged. In the console's folder menu, **Use project name as chat title** selects automatic naming; turning it off keeps the current title. Editing a title directly selects custom naming, and clearing it restores the linked project's name.
 
@@ -33,11 +16,10 @@ Link changes and project edits refresh each live console's local instruction fil
 
 **Don't ask again** turns suggestions off globally and stays off after restarting. **Settings → Projects → Suggest project setup** turns them back on. The folder button in a console header always opens the project picker, including when suggestions are off. Use **View project** there to jump to its progress. Project setup and progress editing are currently desktop features.
 
-The selected project's brief and planning rules are included in startup instructions and each `dock_context` refresh. Agents read one section with `dock/project_plan`, submit proposed fields with `dock/propose_project_plan`, and park extra ideas with `dock/add_later_feature`. These calls use the current revision and belong to the calling console's project. No agent tool approves the plan. At any time, `dock/project_progress` can record a verified milestone, a note or the next step; milestone updates for guided plans require the current revision. Custom commands must read the supplied instruction file themselves. API requests have their own Project selector.
 
 Project records live in `projects.json` inside Paddock's local profile, normally `%APPDATA%\Paddock`. They are ordinary local text, not vault entries. Use **Keys** for credentials. Only the project selected for a console/request is added to its instructions; the agent or API provider can receive that brief. Other provider/tool data practices still apply.
 
-**Edit → Delete project** removes that local project record. It leaves folders, the three planning copies and open consoles intact. Remove the project's `.agentdock/projects/<project ID>/` directory yourself if you also want those copies deleted. Information already copied into startup instruction files, agent histories, Results or exports is not erased by this action. Existing consoles retain their current name and folder; new context calls stop including the deleted project record.
+**Edit → Delete project** removes that local project record. It leaves folders, saved project files and open consoles intact. Remove the project's `.agentdock/projects/<project ID>/` directory yourself if you also want those copies deleted. Information already copied into startup instruction files, agent histories or exports is not erased by this action. Existing consoles retain their current name and folder; new context calls stop including the deleted project record.
 
 ## Make room for more consoles
 

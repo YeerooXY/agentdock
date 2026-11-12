@@ -1,7 +1,6 @@
 // Renderer state. The desktop opens a protocol 2 subscription at startup
 // (docs/state-protocol.md) and rebuilds today's snapshot shape from the
-// slices, so views keep reading one `state` object. When the subscription is
-// unavailable the renderer falls back to full `dock:state` snapshots.
+// slices, so views keep reading one `state` object.
 // Views subscribe to the slices they use and are called only when one changed.
 
 import { snapshotFromSlices } from '../electron/state-snapshot.mjs';
@@ -71,10 +70,10 @@ export function createStateClient() {
 
 // Every desktop slice the snapshot is built from. `alerts` is reserved.
 export const DESKTOP_SLICES = Object.freeze(['shell', 'preferences', 'sessions', 'panels', 'queues', 'prompts', 'tasks', 'delegations', 'projects',
-  'projectProposals', 'accounts', 'agents', 'skills', 'usage', 'usageHistory', 'results', 'imageJobs', 'setupRequests', 'tools', 'keyMetadata',
+  'accounts', 'agents', 'skills', 'usage', 'usageHistory', 'imageJobs', 'setupRequests', 'tools', 'keyMetadata',
   'sshHosts', 'mobileStatus', 'updates', 'screenshots']);
-const COLLECTIONS = new Set(['sessions', 'panels', 'prompts', 'tasks', 'delegations', 'projects', 'projectProposals', 'accounts', 'agents', 'skills',
-  'results', 'setupRequests', 'sshHosts']);
+const COLLECTIONS = new Set(['sessions', 'panels', 'prompts', 'tasks', 'delegations', 'projects', 'accounts', 'agents', 'skills',
+  'setupRequests', 'sshHosts']);
 
 export function initialProtocolState() { return { epoch: null, subscription: null, slices: [], revs: {}, values: {}, lastBatch: 0 }; }
 
@@ -150,19 +149,19 @@ export function applyProtocolMessage(state, message) {
 //   transport.onMessage(fn) -> unsubscribe (window.dock.state.onMessage)
 //   read(method) -> Promise<value>         explicit reads for display codes
 //   onSnapshot(snapshot)                   called after each applied batch
-//   onFallback(error)                      the subscription failed; use dock:state
+//   onError(error)                      the subscription failed
 // Returns {state(), resume(), stop()}.
-export function connectStateV2({ transport, read = async () => null, onSnapshot, onFallback = () => {}, slices = DESKTOP_SLICES, maxRetries = 3 }) {
+export function connectStateV2({ transport, read = async () => null, onSnapshot, onError = () => {}, slices = DESKTOP_SLICES, maxRetries = 3 }) {
   let client = initialProtocolState(), stopped = false, retries = 0;
   const codes = { pairingCode: undefined, meshyCode: undefined }, keys = { pairing: '', meshy: '' };
   const ready = () => slices.every(slice => slice in client.revs);
-  // Views get their own copy, as with dock:state, so a view that edits its
+  // Views get their own copy, as with explicit snapshot reads, so a view that edits its
   // state object cannot change the cached slices.
   const emit = changedSlices => { if (!stopped && ready()) onSnapshot(structuredClone(snapshotFromSlices(client.values, codes)), changedSlices); };
   const fail = error => {
     if (stopped) return;
     stop();
-    onFallback(error instanceof Error ? error : new Error(String(error?.message || error || 'State protocol 2 failed.')));
+    onError(error instanceof Error ? error : new Error(String(error?.message || error || 'State protocol 2 failed.')));
   };
   const send = message => {
     if (stopped) return;

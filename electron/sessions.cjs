@@ -249,9 +249,9 @@ class Sessions extends EventEmitter {
     if (!item || !this.ownerConsoles) return;
     this.ownerConsoles.interaction(item.consoleKey, item.launchId || item.id, kind, { ...flags, trusted: true });
   }
-  signal(id, kind, completionMissing = false) {
+  signal(id, kind) {
     const item = this.items.get(id); if (!item?.alive || !['ready', 'question', 'error'].includes(kind)) return;
-    item.state = kind === 'question' ? 'attention' : kind; item.completionMissing = kind === 'question' && completionMissing === true; item.updatedAt = Date.now(); this.emit('changed');
+    item.state = kind === 'question' ? 'attention' : kind; item.updatedAt = Date.now(); this.emit('changed');
   }
   resize(id, cols, rows) {
     const item = this.items.get(id); if (!item?.alive) return;

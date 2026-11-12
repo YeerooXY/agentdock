@@ -1488,8 +1488,7 @@
           "epoch": "epoch-a",
           "subscription": "sub-1",
           "slices": [
-            "usage",
-            "results"
+            "usage"
           ],
           "compression": "none"
         },
@@ -1500,8 +1499,7 @@
             "epoch": "epoch-a",
             "subscription": "sub-1",
             "slices": [
-              "usage",
-              "results"
+              "usage"
             ],
             "revs": {},
             "values": {},
@@ -1532,15 +1530,6 @@
                 ],
                 "meta": {}
               }
-            },
-            {
-              "kind": "reset",
-              "slice": "results",
-              "rev": 1,
-              "value": {
-                "unread": 0,
-                "count": 0
-              }
             }
           ]
         },
@@ -1552,12 +1541,10 @@
             "epoch": "epoch-a",
             "subscription": "sub-1",
             "slices": [
-              "usage",
-              "results"
+              "usage"
             ],
             "revs": {
-              "usage": 2,
-              "results": 1
+              "usage": 2
             },
             "values": {
               "usage": {
@@ -1571,10 +1558,6 @@
                   "codex:default"
                 ],
                 "meta": {}
-              },
-              "results": {
-                "unread": 0,
-                "count": 0
               }
             },
             "lastBatch": 1
@@ -1601,16 +1584,6 @@
                 }
               },
               "remove": []
-            },
-            {
-              "kind": "replace",
-              "slice": "results",
-              "baseRev": 1,
-              "rev": 2,
-              "value": {
-                "unread": 1,
-                "count": 1
-              }
             }
           ]
         },
@@ -1622,12 +1595,10 @@
             "epoch": "epoch-a",
             "subscription": "sub-1",
             "slices": [
-              "usage",
-              "results"
+              "usage"
             ],
             "revs": {
-              "usage": 3,
-              "results": 2
+              "usage": 3
             },
             "values": {
               "usage": {
@@ -1642,10 +1613,6 @@
                   "codex:default"
                 ],
                 "meta": {}
-              },
-              "results": {
-                "unread": 1,
-                "count": 1
               }
             },
             "lastBatch": 2

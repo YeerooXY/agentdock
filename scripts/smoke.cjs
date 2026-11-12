@@ -462,10 +462,6 @@ async function eventually(predicate, message) {
   await eventually(() => { try { JSON.parse(fs.readFileSync(bridgeFile, 'utf8').replace(/^\uFEFF/, '')); return true; } catch { return false; } });
   const grant = JSON.parse(fs.readFileSync(bridgeFile, 'utf8').replace(/^\uFEFF/, '')); fs.unlinkSync(bridgeFile);
   const hookEnv = { ...process.env, PADDOCK_DATA_DIR: dataDir, PADDOCK_SESSION_ID: session.id, PADDOCK_LAUNCH_ID: session.launchId, PADDOCK_BRIDGE_URL: grant.url, PADDOCK_BRIDGE_TOKEN: grant.token };
-  async function completionTool(tool, args = {}) {
-    const response = await fetch(grant.url, { method: 'POST', headers: { Authorization: 'Bearer ' + grant.token, 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'dock_call', arguments: { tool, arguments: args } }) });
-    const result = await response.json(); if (result.isError) throw Error(result.content[0].text); return JSON.parse(result.content[0].text);
-  }
   const workingHook = spawnSync(process.execPath, [path.join(root, 'electron', 'agent-event.cjs'), 'UserPromptSubmit'], { input: JSON.stringify({ session_id: 'test-thread' }), windowsHide: true, env: hookEnv });
   assert.equal(workingHook.status, 0);
   await page.waitForSelector(`.session-card.active[data-console-id="${session.id}"]`);
@@ -478,8 +474,6 @@ async function eventually(predicate, message) {
   assert.equal(thinkingOutline.edge, '100%', 'active frame has a stronger edge');
   await capture({ path: path.join(artifacts, 'test-thinking-grid.png') });
   // A synthetic CLI completion tests integration without sending a prompt to an agent.
-  const { turnId } = await completionTool('dock/start_turn');
-  await completionTool('dock/finish_turn', { turnId, outcome: 'no-change', summary: 'Synthetic console status fixture.', nextStep: 'None', outputs: 'none' });
   const hook = spawnSync(process.execPath, [path.join(root, 'electron', 'agent-event.cjs'), 'codex-notify', JSON.stringify({ type: 'agent-turn-complete', 'thread-id': 'test-thread', 'last-assistant-message': 'NOT_PERSISTED' })], { windowsHide: true, env: hookEnv });
   assert.equal(hook.status, 0);
   await eventually(async () => (await invoke('state')).sessions.find(x => x.id === session.id)?.state === 'ready', 'Completion callback did not reach the dashboard');

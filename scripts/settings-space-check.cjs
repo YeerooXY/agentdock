@@ -1,4 +1,5 @@
 'use strict';
+const { installStateTransport } = require('./state-test-transport.cjs');
 // Render the real frontend against isolated configuration/results fixtures.
 const { chromium, webkit, devices } = require('playwright');
 const fs = require('node:fs'), path = require('node:path'), http = require('node:http'), assert = require('node:assert/strict');
@@ -34,7 +35,8 @@ const rows = []; let browser;
       if (method === 'workbench.results.seen') { for (const item of state.workbench.results) if (payload.includes(item.id)) item.seenAt ||= Date.now(); return { ok: true }; }
       return { ok: true };
     });
-    await context.addInitScript(() => { window.dock = { call: (method, payload) => window.fixtureCall(method, payload), onState: () => {}, onOutput: () => {}, onSelect: () => {}, onNotice: () => {} }; });
+    await installStateTransport(context);
+await context.addInitScript(() => { window.dock = { call: (method, payload) => window.fixtureCall(method, payload), get state() { return window.fixtureStateTransport; }, onOutput: () => {}, onSelect: () => {}, onNotice: () => {} }; });
     const page = await context.newPage(), errors = [], captures = [], smallText = []; page.on('pageerror', e => errors.push(e.message));
     await page.goto(`http://127.0.0.1:${server.address().port}`); await page.locator('.session-grid').waitFor();
     await page.addScriptTag({ url: '/_axe.js' });

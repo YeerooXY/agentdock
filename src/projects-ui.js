@@ -1,24 +1,26 @@
 import { projectWorkspaceController } from './pages/project-workspace-controller.js';
 import { projectColor, projectDot } from './project-colors.js';
 import { projectActivity, attentionLabel } from './project-activity.js';
-import { projectPlanUI, milestoneLines, parseMilestones, waitingProposal } from './project-plan-ui';
+export const milestoneLines = items => (items || []).map(m => `[${m.done ? 'x' : ' '}] ${m.text}${m.acceptance ? ' | ' + m.acceptance : ''}`).join('\n');
+export const parseMilestones = value => value.split('\n').map(s => s.trim()).filter(Boolean).map(line => {
+  const [title, ...rest] = line.replace(/^\[(?:x| )\]\s*/i, '').split('|');
+  return { text: title.trim(), acceptance: rest.join('|').trim(), done: /^\[x\]/i.test(line) };
+});
 
-export function projectsUI({ call, getState, escape: e, icon, toast, renderPage, openNew, preview, openResult, getPage = () => 'projects' }) {
-  const workspace = projectWorkspaceController({ call, getState, getPage, renderPage, escape: e, icon, toast, openResult });
+
+export function projectsUI({ call, getState, escape: e, icon, toast, renderPage, openNew, preview, getPage = () => 'projects' }) {
+  const workspace = projectWorkspaceController({ call, getState, getPage, renderPage, escape: e, icon, toast });
   let query = '', category = '', status = 'open', opener, afterSave;
-  const plan = projectPlanUI({ call, getState, escape: e, icon, toast, renderPage, openNew, preview });
   const dialog = document.createElement('dialog'); dialog.id = 'project-editor'; dialog.setAttribute('aria-labelledby', 'project-editor-title');
   dialog.innerHTML = `<form id="project-form"><div class="dialog-heading"><h2 id="project-editor-title">New project</h2><button type="button" class="icon-button" data-project-close aria-label="Close project">${icon('close')}</button></div>
     <div class="form-pair"><label>Name<input name="name" maxlength="64" required autocomplete="off"></label><label>Category<input name="category" maxlength="60" list="project-categories" placeholder="Game, app, research…"><datalist id="project-categories"></datalist></label></div>
     <label class="project-color-field">Color<input type="color" name="color" value="#89b4ff" aria-label="Project color"></label>
     <label>Goals<textarea name="goals" maxlength="10000" rows="3" placeholder="What do you want to make?"></textarea></label>
-    <div data-project-new-fields><label>Audience<textarea name="audience" maxlength="10000" rows="2" placeholder="Who is this for?"></textarea></label><label>Success criteria<textarea name="success" maxlength="10000" rows="2" placeholder="What would make it successful?"></textarea></label></div>
     <label data-project-existing>How it will work<textarea name="approach" maxlength="10000" rows="3"></textarea></label>
     <label data-project-existing>Next step<input name="nextStep" maxlength="1000" placeholder="Next task"></label>
     <label>Initial milestones<textarea name="milestones" rows="4" placeholder="Milestone | Done when"></textarea></label>
     <label>Project folders<textarea name="folders" required rows="2" placeholder="One folder per line. Optional label: Game | C:\\Projects\\Game"></textarea></label><button type="button" class="secondary" data-project-folder>${icon('folder')}Add folder</button>
     <details data-project-existing><summary>Notes and status</summary><label>Project notes<textarea name="notes" maxlength="20000" rows="5"></textarea></label><label>Status<select name="status"><option value="planning">Planning</option><option value="active">Active</option><option value="paused">Paused</option><option value="complete">Complete</option><option value="archived">Archived</option></select></label></details>
-    <p class="field-hint" data-project-new-note>New projects start in Planning.</p>
     <p class="form-error" role="alert"></p><div class="project-dialog-actions"><button type="button" class="subtle danger" data-project-remove hidden>Delete project</button><button type="submit" class="primary">Save project</button></div></form>`;
   document.body.append(dialog);
   const form = dialog.querySelector('form');
@@ -29,11 +31,6 @@ export function projectsUI({ call, getState, escape: e, icon, toast, renderPage,
     return days < 1 ? 'Today' : days === 1 ? 'Yesterday' : `${days} days ago`;
   };
   const projects = () => getState().projects || [];
-  const proposals = () => getState().projectProposals || [];
-  function proposalSection() {
-    const items = proposals();
-    return items.length ? `<section aria-labelledby="project-proposals-title"><h2 id="project-proposals-title">Proposed by agents</h2><div class="project-cards">${items.map(p => `<article class="surface project-card"><h3>${e(p.name)}</h3><p>${e(p.goals)}</p><ul>${p.folders.map(f => `<li>${e(f.path)}</li>`).join('')}</ul><p>${p.milestones.length} milestone${p.milestones.length === 1 ? '' : 's'}</p><p>Proposed in ${e(p.consoleName)}</p>${p.milestones.length ? `<details><summary>Milestones</summary><ul>${p.milestones.map(m => `<li>${e(m.text)}${m.acceptance ? `<br><small>Done when: ${e(m.acceptance)}</small>` : ''}</li>`).join('')}</ul></details>` : ''}${p.decisions.length ? `<details open><summary>Decisions to approve</summary><ul>${p.decisions.map(d => `<li>${e(d.text)}${d.reason ? `<br><small>Reason: ${e(d.reason)}</small>` : ''}</li>`).join('')}</ul></details>` : ''}<div class="project-actions"><button class="primary" data-proposal-accept="${e(p.id)}">Create project</button><button class="subtle" data-proposal-dismiss="${e(p.id)}">Dismiss</button></div></article>`).join('')}</div></section>` : '';
-  }
   let editingDecision = '';
   // Agents propose decisions; only approved ones reach their project context.
   function decisions(p) {
@@ -54,17 +51,14 @@ export function projectsUI({ call, getState, escape: e, icon, toast, renderPage,
     const items = projects().filter(p => (!category || p.category === category) && (!status || status === 'open' ? !status || ['active', 'planning'].includes(p.status) : p.status === status) && `${p.name} ${p.category} ${p.goals} ${p.nextStep}`.toLowerCase().includes(query.toLowerCase()));
     return items.length ? items.map(p => {
       const current = activity.get(p.id), done = p.milestones.filter(x => x.done).length, total = p.milestones.length;
-      const waiting = p.plan && !p.plan.approvals.roadmap, proposal = p.plan && waitingProposal(p.plan);
       const milestoneRow = (m, i) => `<label title="${e(m.acceptance || '')}"><input type="checkbox" data-project-milestone="${i}" ${m.done ? 'checked' : ''}><span>${e(m.text)}</span></label>`;
       return `<article class="surface project-card" data-project-id="${e(p.id)}" style="--project-color:${projectColor(p)}">
         <header class="project-card-heading"><span class="project-card-icon" aria-hidden="true">${icon(p.category?.toLowerCase() === 'game' ? 'grid' : 'folder')}</span><span class="project-state" data-status="${e(p.status)}">${e(p.status)}</span></header>
         <h2>${e(p.name)}</h2><p class="project-goals">${e(p.lastProgress?.summary || p.goals || 'No goals recorded.')}</p>
         <div class="project-tags">${[p.category, ...p.folders.map(f => f.label)].filter(Boolean).slice(0, 3).map(tag => `<span>${e(tag)}</span>`).join('')}</div>
         <div class="project-activity"><span>${current.running} running</span>${current.consoles ? `<span>${current.consoles} console${current.consoles === 1 ? '' : 's'}</span>` : ''}${current.attention ? `<span class="project-attention">${attentionLabel(current.attention)}</span>` : ''}<time title="${current.lastActiveAt ? e(new Date(current.lastActiveAt).toLocaleString()) : ''}">Activity: ${since(current.lastActiveAt)}</time></div>
-        ${current.latestResult ? `<button class="project-latest-result subtle" data-project-result="${e(current.latestResult.id)}" title="${e(current.latestResult.title)}">${icon('file')}<span>${e(current.latestResult.title)}</span></button>` : ''}
-        <div class="project-progress"><span>${waiting ? 'Draft milestones' : 'Milestones'}</span><span>${done} / ${total}</span></div>
-        ${total ? `<div class="project-milestone-list" aria-label="${waiting ? 'Draft milestones' : 'Milestones'}">${p.milestones.slice(0, 4).map(milestoneRow).join('')}${total > 4 ? `<details class="project-milestones"><summary>${total - 4} more</summary>${p.milestones.slice(4).map((m, i) => milestoneRow(m, i + 4)).join('')}</details>` : ''}</div>` : '<p class="field-hint">No milestones recorded.</p>'}
-        ${p.plan?.files?.error ? '<p class="form-error">Project files need attention.</p>' : ''}
+        <div class="project-progress"><span>Milestones</span><span>${done} / ${total}</span></div>
+        ${total ? `<div class="project-milestone-list" aria-label="Milestones">${p.milestones.slice(0, 4).map(milestoneRow).join('')}${total > 4 ? `<details class="project-milestones"><summary>${total - 4} more</summary>${p.milestones.slice(4).map((m, i) => milestoneRow(m, i + 4)).join('')}</details>` : ''}</div>` : '<p class="field-hint">No milestones recorded.</p>'}
         <footer class="project-card-footer"><time class="project-notes-date" title="${p.updatedAt ? e(new Date(p.updatedAt).toLocaleString()) : ''}">Details edited: ${since(p.updatedAt)}</time>
           <div class="project-actions"><button class="secondary" data-project-inspect="${e(p.id)}">Open project</button>
           <details class="project-more"><summary aria-label="More actions for ${e(p.name)}">•••</summary><div class="project-more-content">
@@ -72,17 +66,13 @@ export function projectsUI({ call, getState, escape: e, icon, toast, renderPage,
             ${p.nextStep ? `<div class="project-next"><span>Recorded next step</span><p>${e(p.nextStep)}</p></div>` : ''}
             ${decisions(p)}
             <div class="project-folder-links">${p.folders.map((f, index) => `<button class="subtle" data-project-folder-open="${e(p.id)}" data-folder-index="${index}" title="${e(f.path)}">${icon('folder')}<span>${e(f.label || f.path)}</span></button>`).join('')}</div>
-            ${p.plan && p.status === 'planning' ? `<p class="field-hint">Sets the project to Active and marks open plan sections not needed. Waiting proposals stay.</p><button class="secondary" data-project-underway="${e(p.id)}">Already under way</button>` : ''}
           </div></details></div>
         </footer></article>`;
     }).join('') : `<div class="surface project-empty"><h2>${projects().length ? 'No matching projects' : 'No projects'}</h2>${projects().length ? '<p>Try a different filter.</p>' : ''}<button class="primary" data-project-new>${icon('plus')}New project</button></div>`;
   }
 
   function refreshCards(force = false) {
-    plan.refresh();
     if (workspace.sync()) return;
-    const proposalsHost = document.querySelector('#project-proposals');
-    if (proposalsHost) { const value = JSON.stringify(proposals()); if (proposalsHost.dataset.fingerprint !== value) { proposalsHost.dataset.fingerprint = value; proposalsHost.innerHTML = proposalSection(); } }
     const host = document.querySelector('#project-cards'); if (!host) return;
     if (!force && host.contains(document.activeElement) && document.activeElement.closest('form')) return;
     const fingerprint = JSON.stringify([projects(), [...projectActivity(getState())], query, category, status, editingDecision, Math.floor(Date.now() / 60000)]);
@@ -102,14 +92,11 @@ export function projectsUI({ call, getState, escape: e, icon, toast, renderPage,
   function render() {
     const detail = workspace.render(); if (detail) return detail;
     const categories = [...new Set(projects().map(x => x.category).filter(Boolean))].sort();
-    return `<div class="page-heading"><h1>Projects</h1><div class="project-actions"><button class="subtle" data-page="tasks">Worker history</button><button class="secondary" data-page="results">All outputs</button><button class="primary" data-project-new>${icon('plus')}New project</button></div></div><div id="project-proposals">${proposalSection()}</div><div class="project-filters"><label>Find a project<input data-project-search value="${e(query)}" type="search" placeholder="Name, goal or next step"></label><label>Category<select data-project-category><option value="">All categories</option>${categories.map(x => `<option ${x === category ? 'selected' : ''}>${e(x)}</option>`).join('')}</select></label><label>Status<select data-project-status>${[['open','Open projects'],['planning','Planning'],['active','Active'],['paused','Paused'],['complete','Complete'],['archived','Archived'],['','All projects']].map(([v, label]) => `<option value="${v}" ${v === status ? 'selected' : ''}>${label}</option>`).join('')}</select></label></div><div class="project-cards" id="project-cards">${cards()}</div>`;
+    return `<div class="page-heading"><h1>Projects</h1><div class="project-actions"><button class="subtle" data-page="tasks">Worker history</button><button class="primary" data-project-new>${icon('plus')}New project</button></div></div><div class="project-filters"><label>Find a project<input data-project-search value="${e(query)}" type="search" placeholder="Name, goal or next step"></label><label>Category<select data-project-category><option value="">All categories</option>${categories.map(x => `<option ${x === category ? 'selected' : ''}>${e(x)}</option>`).join('')}</select></label><label>Status<select data-project-status>${[['open','Open projects'],['planning','Planning'],['active','Active'],['paused','Paused'],['complete','Complete'],['archived','Archived'],['','All projects']].map(([v, label]) => `<option value="${v}" ${v === status ? 'selected' : ''}>${label}</option>`).join('')}</select></label></div><div class="project-cards" id="project-cards">${cards()}</div>`;
   }
   function edit(id, callback, trigger = document.activeElement, seed = {}) {
     const p = projects().find(x => x.id === id); opener = trigger; afterSave = callback;
     form.reset(); form.dataset.id = p?.id || '';
-    form.dataset.revision = p?.plan?.revision ?? '';
-    form.querySelector('[data-project-new-fields]').hidden = !!p;
-    form.querySelector('[data-project-new-note]').hidden = !!p;
     for (const section of form.querySelectorAll('[data-project-existing]')) {
       section.hidden = !p;
       for (const input of section.querySelectorAll('input, textarea, select')) input.disabled = !p;
@@ -124,7 +111,7 @@ export function projectsUI({ call, getState, escape: e, icon, toast, renderPage,
     form.querySelector('[data-project-remove]').hidden = !p;
     form.querySelector('[data-project-remove]').textContent = 'Delete project'; delete form.dataset.confirmDelete;
     dialog.querySelector('h2').textContent = p ? 'Edit project' : 'New project';
-    form.querySelector('[type=submit]').textContent = p ? 'Save project' : 'Save planning draft';
+    form.querySelector('[type=submit]').textContent = 'Save project';
     dialog.querySelector('datalist').innerHTML = [...new Set(projects().map(x => x.category).filter(Boolean))].map(x => `<option value="${e(x)}"></option>`).join('');
     dialog.showModal(); form.elements.name.focus();
   }
@@ -134,22 +121,17 @@ export function projectsUI({ call, getState, escape: e, icon, toast, renderPage,
       const data = Object.fromEntries(new FormData(form));
       const folders = data.folders.split('\n').map(x => x.trim()).filter(Boolean).map(line => { const split = line.indexOf('|'); return split < 0 ? { path: line, label: '' } : { label: line.slice(0, split).trim(), path: line.slice(split + 1).trim() }; });
       const milestones = parseMilestones(data.milestones || '');
-      const creating = !form.dataset.id;
-      const saved = await call('projects.save', { ...data, id: form.dataset.id || undefined, revision: form.dataset.revision ? Number(form.dataset.revision) : undefined, folders, milestones });
-      const callback = afterSave; dialog.close(); renderPage(); toast(creating ? 'Planning draft saved.' : 'Project saved.'); callback?.(saved);
-      if (creating && !callback) await plan.open(saved.id);
+      const saved = await call('projects.save', { ...data, id: form.dataset.id || undefined, folders, milestones });
+      const callback = afterSave; dialog.close(); reveal(saved.id); toast('Project saved.'); callback?.(saved);
     } catch (error) { form.querySelector('.form-error').textContent = error.message; }
     finally { button.disabled = false; }
   });
   document.addEventListener('click', async event => {
     const b = event.target.closest('button'); if (!b) return;
     try {
-      if (b.dataset.proposalAccept || b.dataset.proposalDismiss) { b.disabled = true; const accept = !!b.dataset.proposalAccept; try { await call(accept ? 'projects.proposal.accept' : 'projects.proposal.dismiss', { id: b.dataset.proposalAccept || b.dataset.proposalDismiss }); refreshCards(); toast(accept ? 'Project created.' : 'Proposal dismissed.'); } finally { b.disabled = false; } }
       if (b.hasAttribute('data-project-new')) edit(undefined, undefined, b);
       if (b.dataset.projectEdit) edit(b.dataset.projectEdit, undefined, b);
       if (b.dataset.projectOpen) await openNew(undefined, { projectId: b.dataset.projectOpen });
-      if (b.dataset.projectPlan) await plan.open(b.dataset.projectPlan, b);
-      if (b.dataset.projectUnderway) { const p = projects().find(x => x.id === b.dataset.projectUnderway); await call('projects.plan.underway', { id: p.id, revision: p.plan.revision }); refreshCards(); toast('Project active.'); }
       if (b.dataset.decision || b.hasAttribute('data-decision-cancel')) {
         const id = b.closest('[data-project-id]').dataset.projectId, decisionId = b.closest('[data-decision-id]').dataset.decisionId;
         if (b.hasAttribute('data-decision-cancel')) { editingDecision = ''; refreshCards(true); }
@@ -161,7 +143,7 @@ export function projectsUI({ call, getState, escape: e, icon, toast, renderPage,
       if (b.hasAttribute('data-project-folder')) { const chosen = await call('pickFolder'); if (chosen) form.elements.folders.value = [form.elements.folders.value.trim(), chosen].filter(Boolean).join('\n'); }
       if (b.hasAttribute('data-project-remove')) {
         if (!form.dataset.confirmDelete) { form.dataset.confirmDelete = 'true'; b.textContent = 'Confirm delete'; form.querySelector('.form-error').textContent = 'Deletes this project record. Project files and open consoles stay.'; return; }
-        await call('projects.remove', form.dataset.id); dialog.close(); renderPage(); toast('Project deleted.');
+        await call('projects.remove', form.dataset.id); dialog.close(); renderPage(); document.querySelector('[data-project-new]')?.focus(); toast('Project deleted.');
       }
     } catch (error) { toast(error.message, true); }
   });
@@ -183,7 +165,7 @@ export function projectsUI({ call, getState, escape: e, icon, toast, renderPage,
     if (input.hasAttribute('data-project-status')) { status = input.value; refreshCards(); }
     if (input.hasAttribute('data-project-milestone')) {
       input.disabled = true;
-      try { const id = input.closest('[data-project-id]').dataset.projectId; await call('projects.progress', { id, revision: projects().find(p => p.id === id)?.plan?.revision, milestone: Number(input.dataset.projectMilestone), done: input.checked }); refreshCards(); }
+      try { const id = input.closest('[data-project-id]').dataset.projectId; await call('projects.progress', { id, milestone: Number(input.dataset.projectMilestone), done: input.checked }); refreshCards(); }
       catch (error) { input.checked = !input.checked; input.disabled = false; toast(error.message, true); }
     }
   });
@@ -193,9 +175,5 @@ export function projectsUI({ call, getState, escape: e, icon, toast, renderPage,
     const card = [...document.querySelectorAll('.project-card')].find(x => x.dataset.projectId === id);
     if (card) { card.tabIndex = -1; card.focus({ preventScroll: true }); card.scrollIntoView({ block: 'nearest' }); }
   }
-  document.addEventListener('click', event => {
-    const target = event.target.closest('[data-project-result]');
-    if (target) openResult(target.dataset.projectResult).catch(error => toast(error.message, true));
-  });
   return { render, edit, refreshCards, reveal, showWorkspace: workspace.show, observeKnowledgePolicy: workspace.observePolicy };
 }

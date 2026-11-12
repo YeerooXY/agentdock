@@ -108,17 +108,9 @@ window.dock.onNotice?.(item => {
   if (item.destination === 'phone-pairing') { phone.open({ pair: true }); return; }
   workbench.openNotice(item).catch(error => toast(error.message, true));
 });
-// State protocol 2 is the default: the main process sends slice changes and
-// the snapshot is rebuilt here. Full dock:state snapshots stay the fallback
-// (protocol 2 turned off, an older preload, or a failed subscription).
 const store = createStateClient();
-window.dock.onState(receive);
-if (window.dock.state?.send && window.dock.state?.onMessage) {
-  connectStateV2({ transport: window.dock.state, read: method => call(method), onSnapshot: receive, onFallback: error => {
-    console.warn(`State updates use full snapshots: ${error.message}`);
-    window.dock.call('state.legacy').then(result => { if (result?.ok && result.value) receive(result.value); }, () => {});
-  } });
-}
+connectStateV2({ transport: window.dock.state, read: method => call(method), onSnapshot: receive,
+  onError: error => toast('State updates stopped: ' + error.message, true) });
 const chooser = consoleChooser({ call, getState, view: readView, providerName, consoleProviders, shellMark, openSetup: () => setup.open(), projects: () => projects, renderHud: () => hud.render(), openNew });
 const names = slotNames({ call, toast, getState });
 const accountMenuActions = installAccountMenus({ call, toast });
@@ -161,13 +153,13 @@ function renderPage() {
       else pageFade = true;
     }
   }
-  document.querySelectorAll('[data-page]').forEach(button => button.classList.toggle('selected', button.dataset.page === (['tasks', 'results'].includes(page) ? 'projects' : page) || button.closest('.sidebar-bottom') && settingsView));
+  document.querySelectorAll('[data-page]').forEach(button => button.classList.toggle('selected', button.dataset.page === (page === 'tasks' ? 'projects' : page) || button.closest('.sidebar-bottom') && settingsView));
   document.querySelectorAll('.sidebar [data-page]').forEach(button => { if (button.classList.contains('selected') && !button.classList.contains('brand')) button.setAttribute('aria-current', 'page'); else button.removeAttribute('aria-current'); });
   if (consoleView) { grid.render(); return; }
-  const renderer = settingsView ? settings.render : { projects: () => projects.render(), tasks: () => taskLoops.render(), results: () => workbench.render('results'), usage: usage.render }[page] || settings.render;
+  const renderer = settingsView ? settings.render : { projects: () => projects.render(), tasks: () => taskLoops.render(), usage: usage.render }[page] || settings.render;
   const content = $('#content');
   const backgroundLayer = content.querySelector(':scope > .page-background-layer');
-  const markup = (state.storageError ? `<div class="error-banner" role="alert">${escape(state.storageError)}</div>` : '') + (['tasks', 'results'].includes(page) ? '<div class="project-actions"><button type="button" class="subtle" data-page="projects">Projects</button></div>' : '') + renderer();
+  const markup = (state.storageError ? `<div class="error-banner" role="alert">${escape(state.storageError)}</div>` : '') + (page === 'tasks' ? '<div class="project-actions"><button type="button" class="subtle" data-page="projects">Projects</button></div>' : '') + renderer();
   // The same view is patched in place; a different view is replaced outright.
   if (changed || !content.firstElementChild || content.dataset.patched !== page) { content.innerHTML = markup; content.dataset.patched = page; }
   else patchChildren(content, markup);
@@ -522,9 +514,9 @@ vim = vimControls({
   context: () => ({ enabled: state?.settings.vimControls === true, view: state?.mode === 'hud' ? 'hud' : view.expandedId ? 'terminal' : view.page, sessions: state?.sessions || [], grid: gridSize(state), busy: view.windowMoving || view.openingConsole }),
   focusSlot: focusVimSlot, action: vimAction, onError: message => toast(message, true)
 });
-reviewPanels = reviewPanelUI({ call, getState, escape, icon, resizeHandles, toast, openResult: id => workbench.openResult(id) });
+reviewPanels = reviewPanelUI({ call, getState, escape, icon, resizeHandles, toast });
 phone = mobileUI({ call, escape, icon, getState, toast, navigate: navigatePage });
-projects = projectsUI({ call, getState, escape, icon, toast, renderPage, openNew, preview: value => openFile(null, value), openResult: id => workbench.openResult(id), getPage });
+projects = projectsUI({ call, getState, escape, icon, toast, renderPage, openNew, preview: value => openFile(null, value), getPage });
 projectChats = consoleProjects({ call, getState, getView: () => ({ page: view.page, selectedId: view.selectedId }), projects, navigate: navigatePage, escape, icon, toast });
 savedPrompts = consolePrompts({ call, getState, escape, icon, toast, paste: (id, text) => terminals.paste(id, text), agentProviders: () => (state?.agents || []).map(x => x.id) });
 imageGenerator = imageGenerationUI({ call, getState, escape, toast });
@@ -536,6 +528,6 @@ layoutMotion = consoleMotion({ render: grid.render, fit: terminals.scheduleFits 
 consoleDragging({ call, toast, motion: layoutMotion });
 consoleLayoutUI({ call, getState, motion: layoutMotion, toast });
 workbench = workbenchUI({ call, getState, getPage, renderPage, escape, toast, selectSession, navigate: navigatePage });
-taskLoops = taskLoopUI({ call, getState, getPage, renderPage, escape, toast, openResult: id => workbench.openResult(id) });
+taskLoops = taskLoopUI({ call, getState, getPage, renderPage, escape, toast });
 toolFeatures({ call, getState, navigate: navigatePage, render: tools.refreshSections, toast, escape });
 try { state = await call('state'); receive(state); renderPage(); } catch (error) { $('#content').textContent = error.message; }

@@ -48,14 +48,14 @@ test('study instructions state the lifecycle supported by the actual console', t
   const f = fixture(t);
   for (const provider of ['codex', 'claude']) {
     const text = f.context({ ...f.session, provider });
-    assert.match(text, /This console supports quiet study/);
-    assert.match(text, /overrides the shared requirement/);
-    assert.match(text, /Ordinary answers need no context call, finish_turn or ready notification/);
+  assert.doesNotMatch(text, /finish_turn|Completion check required/);
+  assert.doesNotMatch(text, /finish_turn|Completion check required/);
+  assert.doesNotMatch(text, /finish_turn|Completion check required/);
   }
   for (const extra of [{ provider: 'codex', projectId: 'linked' }, { provider: 'claude', projectId: 'linked' }, { provider: 'opencode' }, { provider: 'shell' }, {}]) {
     const text = f.context({ ...f.session, ...extra });
-    assert.match(text, /This console uses normal task tracking/);
-    assert.match(text, /finish_turn before returning/);
+  assert.doesNotMatch(text, /finish_turn|Completion check required/);
+  assert.doesNotMatch(text, /finish_turn|Completion check required/);
     assert.doesNotMatch(text, /answers need no|supports quiet study|omit routine completion alerts/);
   }
 });
@@ -123,7 +123,7 @@ test('new Codex consoles receive study context before input and preserve the sel
   const item = await sessions.create({ provider: 'codex', cwd: f.course, playtimeDataDir: f.profile, name: 'Architecture' });
   const instructions = fs.readFileSync(path.join(f.root, 'sessions', item.id, 'PADDOCK.md'), 'utf8');
   assert.match(instructions, /Practice cache mapping/);
-  assert.match(instructions, /This console supports quiet study/);
+  assert.doesNotMatch(instructions, /finish_turn|Completion check required/);
   assert.ok(calls[0].args.some(arg => arg.startsWith('developer_instructions=') && arg.includes('Study console')));
   assert.equal(sessions.savedConsoles()[0].playtimeDataDir, f.profile);
   f.save([f.note('New reflection')]);
@@ -132,10 +132,10 @@ test('new Codex consoles receive study context before input and preserve the sel
   sessions.items.get(item.id).projectId = 'linked-project';
   sessions.refreshContextFile(sessions.items.get(item.id));
   const linked = fs.readFileSync(path.join(f.root, 'sessions', item.id, 'PADDOCK.md'), 'utf8');
-  assert.match(linked, /This console uses normal task tracking/);
+  assert.doesNotMatch(linked, /finish_turn|Completion check required/);
   assert.doesNotMatch(linked, /answers need no/);
   const other = await sessions.create({ provider: 'codex', cwd: f.course, projectId: 'linked-at-start', playtimeDataDir: f.profile });
   const otherInstructions = fs.readFileSync(path.join(f.root, 'sessions', other.id, 'PADDOCK.md'), 'utf8');
-  assert.match(otherInstructions, /This console uses normal task tracking/);
+  assert.doesNotMatch(otherInstructions, /finish_turn|Completion check required/);
   assert.doesNotMatch(otherInstructions, /answers need no/);
 });

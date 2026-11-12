@@ -1,12 +1,12 @@
 # Screen previews
 
-Choose **Tools → Screen previews** on the PC. **Preview vague design requests** is on by default: when you ask an agent to “improve this screen”, its shared instructions ask it to inspect the screen and try a preview before making a substantial redesign. Review the image in Results and tell the agent what to keep or change. A precise change request can proceed directly. This is agent guidance, not an automatic approval gate or a guarantee that every agent can generate images.
+Choose **Tools → Screen previews** on the PC. **Preview vague design requests** is on by default: when you ask an agent to “improve this screen”, its shared instructions ask it to inspect the screen and try a preview before making a substantial redesign. Review the image and tell the agent what to keep or change. A precise change request can proceed directly. This is agent guidance, not an automatic approval gate or a guarantee that every agent can generate images.
 
 ## Choose a generator
 
 | Choice | Setup | How it runs |
 | --- | --- | --- |
-| Agent's own generator first | No new Paddock key | The agent uses its image tool and saves the image individually in Results. Meshy is the fallback if the tool is unavailable or fails. |
+| Agent's own generator first | No new Paddock key | The agent uses its image tool and shows the generated image. Meshy is the fallback if the tool is unavailable or fails. |
 | OpenAI | Saved API key and image model | Direct Images edit request using the reference screenshot. Default model: `gpt-image-2.5-flare`. API billing is separate from CLI subscriptions. |
 | Gemini / Nano Banana | Saved Gemini API key and image model | Direct Interactions request with the screenshot; `store:false`. Default model: `gemini-nano-banana-2.1`. |
 | Meshy | Tools → Screen previews → Meshy CLI sign-in | Uses the existing image-to-image job flow and Meshy credits. Its CLI sign-in is separate from the Meshy MCP API key. |
@@ -18,13 +18,9 @@ Provider contracts checked on 18 October 2026: [OpenAI image edits](https://deve
 
 ## Generate and review
 
-Ask your agent to review a website and generate a preview. It starts `dock/review_page`, reads `dock/review_details`, and sends a saved screenshot and brief to the selected generator through `dock/generate_preview`. Completed screenshots, findings and previews appear in Results. There is no separate website-review page or notification inbox. Agents can use `dock/list_reviews` to find earlier work, `dock/review_check` to record checklist evidence, and `dock/delete_review` to remove a review and its saved files.
+Ask your agent to review a website and generate a preview. It starts `dock/review_page`, reads `dock/review_details`, and sends a saved screenshot and brief to the selected generator through `dock/generate_preview`. The review tools return findings and image paths. There is no separate website-review page or notification inbox. Agents can use `dock/list_reviews` to find earlier work, `dock/review_check` to record checklist evidence, and `dock/delete_review` to remove a review and its saved files.
 
-Agents can use any saved PNG, JPEG or WebP screenshot from their project, including an application screen:
-
-1. Call `dock_context`, inspect the screen, and save the screenshot with `dock/save_result`.
-2. Discover `dock/generate_preview` with `dock_tools`. Pass the screenshot's `referenceId` or a completed `reviewId`, a brief, and a stable `requestId` for that intended preview.
-3. Read `dock/concept_status` for the result ID and saved file path. Inspect the returned image and show the user its Results entry.
+Use a completed `reviewId` or one of its screenshot reference IDs with `dock/generate_preview`. Read `dock/concept_status` for the saved preview path. Inspect the image before choosing the design.
 
 In default agent mode, `generate_preview` returns guidance to use the agent's own tool. Only pass `nativeStatus: unavailable` or `failed` for a real fallback. A selected API is not silently replaced with another provider. Generated images are design proposals, never screenshots proving an implementation works.
 
@@ -36,10 +32,10 @@ Generation sends the chosen screenshot and design prompt directly from the PC to
 
 API keys stay encrypted in Paddock's vault and are resolved only in the main process. The renderer and agents receive key IDs, never values. Official provider destinations are fixed; custom destinations are user-configured, and requests do not follow redirects. There is no Paddock cloud relay or new telemetry.
 
-API references are limited to 8 MB, response bodies to 30 MB and returned images to 20 MB. PNG, JPEG and WebP are supported. API output must contain image bytes; Paddock does not fetch arbitrary output URLs. Results retains its existing item/storage limits. If a request fails after the provider accepts it, charges may still apply even though no preview is available.
+API references are limited to 8 MB, response bodies to 30 MB and returned images to 20 MB. PNG, JPEG and WebP are supported. API output must contain image bytes; Paddock does not fetch arbitrary output URLs. Local review storage retains its existing limits. If a request fails after the provider accepts it, charges may still apply even though no preview is available.
 
-**Usage → Image generation** lists provider-reported input/output tokens or Meshy credits. Missing values say **Unavailable**; zero stays zero. Image spending is separate from text API cost estimates and is not converted into invented dollar amounts. Native agent image-tool usage is only visible when that agent exposes it independently.
+Provider-reported usage is available in `dock/concept_status`. Missing values remain unknown.
 
-Delete an image from **Results** to recycle its saved copy. **Remove job** in Usage removes that job's prompt and temporary files; the saved image and usage/request-ID records remain. Those records prevent a repeated tool call from creating another charge. They contain identifiers, timestamps, status, provider/model, project path and reported counters, not image bytes or prompts. To erase that metadata too, quit Paddock and remove `concept-usage.json` from its profile; doing so also removes repeat-request protection for deleted jobs. Removing local copies does not delete provider-side records.
+Use `dock/delete_review` to delete a review and its saved evidence. Usage and request-ID records remain after a review is deleted. Those records prevent a repeated tool call from creating another charge. They contain identifiers, timestamps, status, provider/model, project path and reported counters, not image bytes or prompts. To erase that metadata too, quit Paddock and remove `concept-usage.json` from its profile; doing so also removes repeat-request protection for deleted jobs. Removing local copies does not delete provider-side records.
 
-These controls are in the desktop app. Existing Android Results can display the saved images; Android does not yet include generator settings or a project-management page.
+These controls are in the desktop app. Android Image jobs can display generated previews; generator settings stay on the PC.

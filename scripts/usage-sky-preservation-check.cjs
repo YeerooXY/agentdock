@@ -1,4 +1,5 @@
 'use strict';
+const { installStateTransport } = require('./state-test-transport.cjs');
 // Guards the shared #content sky across Usage state broadcasts and navigation.
 // Run after npm run build. Uses synthetic local state and makes no model calls.
 const { chromium } = require('playwright');
@@ -59,7 +60,7 @@ function installFixture(initial) {
       if (method === 'session.buffer') return { ok: true, value: { data: '', sequence: 0 } };
       return { ok: true, value: [] };
     },
-    onState(fn) { window.fixtureReceive = fn; }, onOutput() {}, onSelect() {}, onNotice() {},
+    get state() { return window.fixtureStateTransport; }, onOutput() {}, onSelect() {}, onNotice() {},
   };
   window.skyState = canvas => {
     const record = weak.get(canvas);
@@ -74,7 +75,8 @@ function installFixture(initial) {
   try {
     const context = await browser.newContext({ viewport: { width: 1212, height: 1147 } });
     await context.route('**/*', route => new URL(route.request().url()).origin === origin ? route.continue() : route.abort());
-    await context.addInitScript(installFixture, fixture);
+    await installStateTransport(context);
+await context.addInitScript(installFixture, fixture);
     const page = await context.newPage(), errors = [];
     page.on('pageerror', error => errors.push(error.message));
     await page.goto(origin); await page.locator('.session-grid').waitFor();

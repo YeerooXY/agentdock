@@ -5,10 +5,8 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:agent_dock_mobile/main.dart';
 import 'package:agent_dock_mobile/dock_client.dart';
-import 'package:agent_dock_mobile/results_page.dart';
 import 'package:agent_dock_mobile/console_drafts.dart';
 import 'package:agent_dock_mobile/console_theme.dart';
-import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:xterm/xterm.dart';
 
 class FakeDock extends DockClient {
@@ -105,7 +103,7 @@ class FakeDock extends DockClient {
         },
       ];
     }
-    if (method == 'results.preview') {
+    if (method == 'images.preview') {
       if (markdown) {
         return {
           'text': '# Review ready\n\n**Checked** changes.\n\n| Check | Result |\n| --- | --- |\n| Pairing | Passed |\n\n```js\nconst ready = true;\n```\n\n![Remote](https://example.invalid/tracker.png)',
@@ -447,36 +445,6 @@ void main() {
     expect(client.selected, isEmpty);
     client.dispose();
   });
-  testWidgets(
-    'Markdown reports render native headings, tables and code without remote images',
-    (tester) async {
-      tester.view.physicalSize = const Size(393, 852);
-      tester.view.devicePixelRatio = 1;
-      addTearDown(tester.view.resetPhysicalSize);
-      addTearDown(tester.view.resetDevicePixelRatio);
-      final c = FakeDock()..markdown = true;
-      addTearDown(c.dispose);
-      await tester.pumpWidget(
-        MaterialApp(
-          theme: ThemeData.dark(),
-          home: ResultDetail(
-            client: c,
-            item: const {'id': 'r1', 'title': 'Verification', 'ext': '.md'},
-            ids: const ['r1'],
-          ),
-        ),
-      );
-      await tester.pumpAndSettle();
-      expect(find.byType(MarkdownBody), findsOneWidget);
-      expect(
-        find.textContaining('Review ready', findRichText: true),
-        findsWidgets,
-      );
-      expect(find.byType(Table), findsOneWidget);
-      expect(find.byType(Image), findsNothing);
-      expect(tester.takeException(), isNull);
-    },
-  );
   test('pairing rejects public hosts, expired codes and malformed pins', () {
     Map<String, dynamic> invite() => {
       'v': 1,
@@ -591,52 +559,23 @@ void main() {
       ['https://100.101.102.103:47831'],
     );
   });
-  testWidgets(
-    'console drafts survive page changes and Results widget loads code on demand',
-    (tester) async {
-      tester.view.physicalSize = const Size(393, 852);
-      tester.view.devicePixelRatio = 1;
-      addTearDown(tester.view.resetPhysicalSize);
-      addTearDown(tester.view.resetDevicePixelRatio);
-      final c = FakeDock();
-      addTearDown(c.dispose);
-      await tester.pumpWidget(DockApp(client: c));
-      await enterChat(tester);
-      await tester.enterText(
-        find.byType(TextField).last,
-        'inspect this project',
-      );
-      expect(
-        find.widgetWithText(NavigationDestination, 'Results'),
-        findsNothing,
-      );
-      await tester.tap(find.widgetWithText(NavigationDestination, 'Usage'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.widgetWithText(NavigationDestination, 'Console'));
-      await tester.pumpAndSettle();
-      expect(find.text('inspect this project'), findsOneWidget);
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(body: ResultsPage(client: c)),
-        ),
-      );
-      await tester.pumpAndSettle();
-      expect(find.text('Changed code'), findsOneWidget);
-      expect(c.calls.contains('results.preview'), false);
-      await tester.tap(find.text('Changed code'));
-      await tester.pumpAndSettle();
-      expect(find.text('app.js'), findsOneWidget);
-      expect(find.text('Revision unavailable'), findsNothing);
-      expect(find.text('+new'), findsNothing);
-      await tester.tap(find.text('app.js'));
-      await tester.pumpAndSettle();
-      expect(find.text('+new'), findsOneWidget);
-      expect(c.calls.contains('results.seen'), true);
-      await tester.pageBack();
-      await tester.pumpAndSettle();
-      expect(tester.takeException(), isNull);
-    },
-  );
+  testWidgets('console drafts survive page changes', (tester) async {
+    tester.view.physicalSize = const Size(393, 852);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final c = FakeDock();
+    addTearDown(c.dispose);
+    await tester.pumpWidget(DockApp(client: c));
+    await enterChat(tester);
+    await tester.enterText(find.byType(TextField).last, 'inspect this project');
+    expect(find.widgetWithText(NavigationDestination, 'Results'), findsNothing);
+    await tester.tap(find.widgetWithText(NavigationDestination, 'Usage'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(NavigationDestination, 'Console'));
+    await tester.pumpAndSettle();
+    expect(find.text('inspect this project'), findsOneWidget);
+  });
 
   testWidgets(
     'account switch stays pinned through rebuild and keeps the phone draft',

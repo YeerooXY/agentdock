@@ -3,11 +3,9 @@ import 'package:flutter/material.dart';
 class ProjectWorkspace extends StatelessWidget {
   final Map<String, dynamic> project;
   final List<dynamic> work;
-  final List<dynamic> outputs;
   final Map<String, dynamic>? knowledge;
   final String tab;
   final ValueChanged<String> onTab;
-  final ValueChanged<Map<String, dynamic>> onOpenOutput;
   final ValueChanged<Map<String, dynamic>> onOpenReport;
   final ValueChanged<String> onReadSection;
   final VoidCallback? onLoadMore;
@@ -16,11 +14,9 @@ class ProjectWorkspace extends StatelessWidget {
     super.key,
     required this.project,
     this.work = const [],
-    this.outputs = const [],
     this.knowledge,
     this.tab = 'overview',
     required this.onTab,
-    required this.onOpenOutput,
     required this.onOpenReport,
     required this.onReadSection,
     this.onLoadMore,
@@ -37,7 +33,6 @@ class ProjectWorkspace extends StatelessWidget {
           const SizedBox(height: 16),
           switch (tab.toLowerCase()) {
             'work' => _workTab(context),
-            'outputs' => _outputsTab(context),
             'knowledge' => _knowledgeTab(context),
             _ => _overviewTab(context),
           },
@@ -50,7 +45,6 @@ class ProjectWorkspace extends StatelessWidget {
     const tabs = [
       ('overview', 'Overview'),
       ('work', 'Work'),
-      ('outputs', 'Outputs'),
       ('knowledge', 'Knowledge'),
     ];
     final active = tab.toLowerCase();
@@ -248,8 +242,7 @@ class ProjectWorkspace extends StatelessWidget {
       model = '${task['model']}';
     }
 
-    final hasReport =
-        task['executionHistory'] is Map || task['resultId'] != null;
+    final hasReport = task['executionHistory'] is Map;
 
     return Card(
       clipBehavior: Clip.antiAlias,
@@ -294,51 +287,6 @@ class ProjectWorkspace extends StatelessWidget {
             ),
         ],
       ),
-    );
-  }
-
-  Widget _outputsTab(BuildContext context) {
-    final pid = project['id'];
-    final scoped = outputs
-        .whereType<Map>()
-        .where((o) => '${o['projectId']}' == '$pid')
-        .map((o) => Map<String, dynamic>.from(o))
-        .toList();
-
-    if (scoped.isEmpty) return const Text('No outputs.');
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        for (final out in scoped) ...[
-          OutlinedButton(
-            key: ValueKey('output-${out['id'] ?? out['title']}'),
-            onPressed: () => onOpenOutput(out),
-            style: OutlinedButton.styleFrom(
-              alignment: Alignment.centerLeft,
-              padding: const EdgeInsets.all(12),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '${out['title'] ?? out['name'] ?? 'Output'}',
-                  style: Theme.of(context).textTheme.titleSmall,
-                ),
-                if ('${out['summary'] ?? out['description'] ?? ''}'
-                    .isNotEmpty) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    '${out['summary'] ?? out['description']}',
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                ],
-              ],
-            ),
-          ),
-          const SizedBox(height: 8),
-        ],
-      ],
     );
   }
 

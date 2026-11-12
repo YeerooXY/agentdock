@@ -1,4 +1,5 @@
 'use strict';
+const { installStateTransport } = require('./state-test-transport.cjs');
 // A−/A+ buttons change one console's xterm font size and persist per viewer.
 const { chromium, webkit, devices } = require('playwright');
 const fs = require('node:fs'), path = require('node:path'), http = require('node:http'), assert = require('node:assert/strict');
@@ -19,7 +20,8 @@ const server = http.createServer((req, res) => {
   state.mode = 'dashboard'; Object.assign(state.settings, { setupComplete: true, trimStyle: 'classic', grid: { columns: 4, rows: 3 } }); state.grid = { columns: 4, rows: 3 };
   state.sessions = [0, 1].map(i => ({ ...base.sessions[0], id: `fx-${i}`, consoleKey: `font-${i}`, launchId: 'font-check', slot: i + 1, width: 1, height: 1, state: 'open', name: `Console ${i + 1}` }));
   await context.exposeFunction('fixtureCall', async (method) => method === 'state' ? { ok: true, value: state } : method === 'session.buffer' ? { ok: true, value: { data: 'Readable text check\r\nPS C:\\> ', sequence: 0, launchId: 'font-check' } } : { ok: true, value: [] });
-  await context.addInitScript(() => { window.dock = { call: (m, p) => window.fixtureCall(m, p), onState: fn => window.fixtureState = fn, onOutput: () => {}, onSelect: fn => window.fixtureSelect = fn, onNotice: () => {} }; });
+  await installStateTransport(context);
+await context.addInitScript(() => { window.dock = { call: (m, p) => window.fixtureCall(m, p), get state() { return window.fixtureStateTransport; }, onOutput: () => {}, onSelect: fn => window.fixtureSelect = fn, onNotice: () => {} }; });
   const page = await context.newPage(); page.on('pageerror', e => errors.push(e.message));
   await page.goto(`http://127.0.0.1:${server.address().port}`); await page.locator('.session-grid .xterm').first().waitFor();
   await page.waitForFunction(() => document.querySelector('.session-grid .xterm-rows')?.textContent.includes('Readable'));
