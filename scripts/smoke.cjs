@@ -525,7 +525,7 @@ async function eventually(predicate, message) {
   assert.ok(Math.abs(gridGeometry.bottom - (gridGeometry.screen - gridGeometry.bottomPadding)) <= 2, 'Console grid fills the space below the header');
   assert.ok(gridGeometry.top >= gridGeometry.navBottom, 'Header navigation does not cover the console grid');
   assert.ok(Math.max(...gridGeometry.rows) - Math.min(...gridGeometry.rows) < 2);
-  for (const view of ['tools', 'instructions', 'usage', 'results', 'tasks']) {
+  for (const view of ['tools', 'instructions', 'usage', 'projects', 'tasks']) {
     await openPage(page, view);
     assert.equal(await page.evaluate(() => document.querySelector('#content').scrollWidth <= document.querySelector('#content').clientWidth), true, view + ' overflows');
     await capture({ path: path.join(artifacts, `test-${view}-narrow.png`) });
