@@ -208,8 +208,6 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(const SnackBar(content: Text('Mobile history cleared')));
-      case 'prompts':
-        unawaited(sheets.savedPrompts(context));
       case 'files':
         unawaited(sheets.pickFile(context));
       case 'image':

@@ -201,18 +201,6 @@ body.console-expanded #sidebar-toggle { display:none }
 body[data-platform=darwin] #sidebar { padding-top:46px }
 body[data-platform=darwin]:has(#sidebar[data-collapsed=true]) .titlebar,body[data-platform=darwin].console-expanded .titlebar { padding-left:84px }
 body[data-platform=darwin] .window-actions :is([data-action=minimize],[data-action=tray]) { display:none }
-/* Saved prompt library. */
-.prompts-toggle { position:absolute;right:16px;bottom:12px;z-index:4;background:var(--surface,#0d0f18);-webkit-app-region:no-drag }
-#prompts-panel { position:fixed;inset:auto;margin:0;padding:16px;overflow:auto;background:var(--surface,#0b0d14);color:var(--text,#d4dbf2);border:1px solid var(--border,#33384e);border-radius:10px;box-shadow:0 18px 48px #000a }
-#prompts-panel header,#prompts-panel footer { display:flex;align-items:center;justify-content:space-between;gap:8px }
-#prompts-panel h2 { margin:0;font-size:16px }
-#prompts-panel ul { list-style:none;padding:0 }
-#prompts-panel li { display:flex;align-items:center;gap:6px;padding:8px 0;border-bottom:1px solid var(--border,#33384e) }
-#prompts-panel li>div { flex:1;min-width:0 }
-#prompts-panel li p { margin:4px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--muted) }
-#prompts-panel label { margin:8px 0 }
-#prompts-panel textarea { min-height:80px }
-
 /* F11 fullscreen hides the title bar; touching the top edge or tabbing into it brings it back over the content. */
 body.titlebar-hidden #consoles-page.has-expanded-console .session-grid>.session-card.console-expanded { inset:0!important }
 body.titlebar-hidden .settings-stage { padding-top:0 }

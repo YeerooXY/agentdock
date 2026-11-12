@@ -222,16 +222,6 @@ class ComposerController extends ChangeNotifier {
     );
   }
 
-  /// Replaces the draft with a saved prompt, if [key]'s console is still open.
-  void usePrompt(String? key, String text, int cursorOffset) {
-    if (_disposed || draftKey != key) return;
-    editor.value = TextEditingValue(
-      text: text,
-      selection: TextSelection.collapsed(offset: cursorOffset),
-    );
-    stagedCommandTarget = null;
-  }
-
   /// Picks up draft edits made on another page, such as Code.
   void reloadDraft() {
     final key = draftKey;
