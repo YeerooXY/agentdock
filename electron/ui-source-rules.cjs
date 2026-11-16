@@ -27,6 +27,14 @@ const lineOf = (text, index) => text.slice(0, index).split('\n').length;
 // Blank comments without moving line numbers.
 const stripComments = text => text.replace(/\/\*[\s\S]*?\*\//g, match => match.replace(/[^\n]/g, ' '));
 
+// Greys (equal red, green and blue, any alpha) cannot drift through grey, so fades between them are exempt.
+function grey(colour) {
+  let hex = colour.match(/^#([0-9a-f]{3,8})$/i)?.[1];
+  if (hex) { if (hex.length <= 4) hex = [...hex].map(x => x + x).join(''); return hex.slice(0, 2) === hex.slice(2, 4) && hex.slice(2, 4) === hex.slice(4, 6); }
+  const rgb = colour.match(/^rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)/i);
+  return !!rgb && rgb[1] === rgb[2] && rgb[2] === rgb[3];
+}
+
 function cssFindings(file, text) {
   const found = [], css = stripComments(text);
   for (const rule of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
@@ -49,7 +57,7 @@ function cssFindings(file, text) {
       const args = gradient[1];
       if (/\bin\s+okl(?:ch|ab)\b/.test(args)) continue;
       const colours = (args.match(/#[0-9a-f]{3,8}\b|(?:rgba?|hsla?|oklch|oklab|color)\([^)]*\)|\b(?:red|orange|yellow|green|blue|purple|pink|teal|cyan|magenta|violet|indigo)\b|var\(--[\w-]+\)/gi) || [])
-        .filter(c => !/^(?:#(?:000|fff)(?:000|fff)?|rgba?\(\s*(?:0[ ,]+0[ ,]+0|255[ ,]+255[ ,]+255)\b[^)]*\))$/i.test(c));
+        .filter(c => !grey(c));
       if (new Set(colours.map(c => c.toLowerCase())).size >= 2) found.push({ id: 'gradient-interpolation', line, detail: `${selector}: ${gradient[0].slice(0, 70)}` });
     }
   }

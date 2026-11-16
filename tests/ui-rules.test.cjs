@@ -99,3 +99,11 @@ test('source rules find focus rings, small fonts, missing reduced motion and win
   write('Platform.cs', 'window.MinimumWidth = 850; window.MinimumHeight = 640;');
   assert.deepEqual(inspectSources(root).findings.find(f => f.id === 'window-min-size').locations.map(l => l.file), ['main.cjs']);
 });
+
+test('gradient rule ignores fades between greys and flags fades between hues', t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ui-grey-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(root, 'a.css'), '.a{background:linear-gradient(#ffffff02,#ffffff00)}\n.b{background:linear-gradient(rgb(40 40 40),rgb(10 10 10))}\n.c{background:linear-gradient(135deg,#4d405a,#28232e)}\n.d{background:linear-gradient(135deg in oklch,#4d405a,#28232e)}\n@media(prefers-reduced-motion:reduce){}');
+  const lines = (inspectSources(root).findings.find(f => f.id === 'gradient-interpolation')?.locations || []).map(l => l.line);
+  assert.deepEqual(lines, [3]);
+});
