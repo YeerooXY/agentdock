@@ -56,7 +56,8 @@ function inspectInterface() {
   const groups = new Map();
   for (const el of all) {
     if (!el.classList.length || !el.parentElement) continue;
-    const key = [...el.classList].sort().join('.'), list = groups.get(el.parentElement)?.get(key) || [];
+    // Group by tag and base class, so modifier classes such as .stacked still compare with their siblings.
+    const key = el.tagName + '.' + el.classList[0], list = groups.get(el.parentElement)?.get(key) || [];
     if (!groups.has(el.parentElement)) groups.set(el.parentElement, new Map());
     groups.get(el.parentElement).set(key, [...list, el]);
   }

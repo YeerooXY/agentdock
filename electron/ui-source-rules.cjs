@@ -38,6 +38,21 @@ function cssFindings(file, text) {
       if (px < 12) found.push({ id: 'small-font', line, detail: `${size[1]}${size[2]} in ${selector.slice(0, 80)}` });
     }
   }
+  for (const rule of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+    const selector = rule[1].trim().slice(0, 80), body = rule[2], line = lineOf(css, rule.index + rule[0].length - rule[2].length - 1);
+    // Viewport units: 100vh is wrong in mobile Safari unless a dynamic unit is also given.
+    if (/\b100vh\b/.test(body) && !/\b100[dsl]vh\b/.test(body)) found.push({ id: 'viewport-height', line, detail: selector });
+    // Palette tokens defined in HSL, where equal lightness does not look equal.
+    for (const token of body.matchAll(/(--[\w-]+)\s*:\s*hsla?\(/g)) found.push({ id: 'hsl-palette', line, detail: token[1] });
+    // Gradients between two or more colours without OKLCH/OKLab interpolation turn grey in the middle.
+    for (const gradient of body.matchAll(/(?:repeating-)?(?:linear|radial|conic)-gradient\(([^;]*?)\)(?=\s*[,;]|\s*$)/g)) {
+      const args = gradient[1];
+      if (/\bin\s+okl(?:ch|ab)\b/.test(args)) continue;
+      const colours = (args.match(/#[0-9a-f]{3,8}\b|(?:rgba?|hsla?|oklch|oklab|color)\([^)]*\)|\b(?:red|orange|yellow|green|blue|purple|pink|teal|cyan|magenta|violet|indigo)\b|var\(--[\w-]+\)/gi) || [])
+        .filter(c => !/^(?:#(?:000|fff)(?:000|fff)?|rgba?\(\s*(?:0[ ,]+0[ ,]+0|255[ ,]+255[ ,]+255)\b[^)]*\))$/i.test(c));
+      if (new Set(colours.map(c => c.toLowerCase())).size >= 2) found.push({ id: 'gradient-interpolation', line, detail: `${selector}: ${gradient[0].slice(0, 70)}` });
+    }
+  }
   if (/(?:transition|animation)(?:-duration)?\s*:\s*(?!none)[^;}]*\d/.test(css) && !css.includes('prefers-reduced-motion')) found.push({ id: 'reduced-motion-missing', line: 1, detail: 'transitions or animations without a prefers-reduced-motion block' });
   return found.map(f => ({ ...f, file }));
 }
@@ -58,7 +73,10 @@ const MESSAGES = {
   'focus-without-visible': 'A :focus rule draws an outline or shadow without :focus-visible, so mouse clicks show a ring.',
   'small-font': 'Font size is below 12 px.',
   'reduced-motion-missing': 'Stylesheet animates without a prefers-reduced-motion override.',
-  'window-min-size': 'Window is created without a minimum size, so the layout can be squeezed until it breaks.'
+  'window-min-size': 'Window is created without a minimum size, so the layout can be squeezed until it breaks.',
+  'viewport-height': 'Uses 100vh without 100dvh. Mobile Safari counts its toolbars in vh, so full-height sections overflow.',
+  'hsl-palette': 'Palette colours are defined in HSL, where equal lightness does not look equally light. Define them in OKLCH.',
+  'gradient-interpolation': 'Gradient between colours without "in oklch" can turn grey in the middle. Write linear-gradient(90deg in oklch, ...).'
 };
 
 function inspectSources(root) {

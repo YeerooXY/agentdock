@@ -2,6 +2,7 @@
 const path = require('node:path');
 const fs = require('node:fs');
 const { inspectInterface, probeInteraction } = require('./ui-rules.cjs');
+const { inspectCraft } = require('./ui-craft-rules.cjs');
 
 function inspectPage() {
   const visible = element => !!(element.offsetWidth || element.offsetHeight || element.getClientRects().length);
@@ -91,7 +92,7 @@ async function reviewBrowserProfiles({ url, axeSource, signal, onView, onStage, 
         page.on('dialog', dialog => void dialog.dismiss());
         await page.goto(url, { waitUntil: 'load', timeout: 15000 });
         // Measure motion before the review freezes animations for stable screenshots.
-        const ui = await page.evaluate(inspectInterface);
+        const ui = await page.evaluate(inspectInterface), craft = await page.evaluate(inspectCraft);
         await page.addStyleTag({ content: '*,*::before,*::after { animation:none!important; transition:none!important; caret-color:transparent!important; }' });
         await page.evaluate(() => Promise.race([document.fonts.ready, new Promise(resolve => setTimeout(resolve, 1500))]));
         const inspected = await page.evaluate(inspectPage);
@@ -99,7 +100,7 @@ async function reviewBrowserProfiles({ url, axeSource, signal, onView, onStage, 
         const accessibility = await page.evaluate(() => axe.run(document, { runOnly: { type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'] } }).then(r => ({
           violations: r.violations.map(x => ({ id: x.id, impact: x.impact, help: x.help, helpUrl: x.helpUrl, nodes: x.nodes.slice(0, 12).map(n => ({ target: n.target, summary: n.failureSummary })) })),
           incomplete: r.incomplete.map(x => ({ id: x.id, help: x.help, count: x.nodes.length })), passes: r.passes.length })));
-        const view = { name: profile.name, engine: profile.engine, ...page.viewportSize(), page: inspected, accessibility, interface: ui };
+        const view = { name: profile.name, engine: profile.engine, ...page.viewportSize(), page: inspected, accessibility, interface: ui, craft };
         captured = { view, buffer: await page.screenshot() };
         if (profile.name === 'Desktop') view.interaction = await probeInteraction(page);
       } catch (error) {
@@ -139,12 +140,13 @@ function reviewFindings(report) {
     for (const finding of view.page?.typography?.findings || []) add('typography', finding.id, finding.message, view.name);
     for (const finding of view.accessibility?.violations || []) add('accessibility', finding.id, finding.help, view.name);
     for (const finding of [...view.interface?.findings || [], ...view.interaction?.findings || []]) add('interface', finding.id, finding.message, view.name);
+    for (const finding of view.craft?.findings || []) add('craft', finding.id, finding.message, view.name);
     if (view.page?.horizontalOverflow) add('layout', 'horizontal-overflow', 'Content exceeds the viewport width.', view.name);
   }
   for (const link of report.links || []) if (link.result === 'broken') add('links', link.url, 'Broken link: ' + link.url);
   for (const profile of report.profiles || []) if (profile.status !== 'complete') add('coverage', profile.name, profile.reason, profile.name);
   const findings = [...groups.values()];
-  return { total: findings.length, byCategory: Object.fromEntries(['unstyled', 'typography', 'interface', 'accessibility', 'layout', 'links', 'coverage'].map(category => [category, findings.filter(f => f.category === category).length])),
+  return { total: findings.length, byCategory: Object.fromEntries(['unstyled', 'typography', 'interface', 'craft', 'accessibility', 'layout', 'links', 'coverage'].map(category => [category, findings.filter(f => f.category === category).length])),
     counting: 'Unique rule or broken URL, grouped across profiles. Inspect each affected profile for its nodes and measurements.', findings };
 }
 

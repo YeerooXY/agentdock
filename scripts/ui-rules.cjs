@@ -4,6 +4,7 @@
 const path = require('node:path');
 const { inspectSources } = require('../electron/ui-source-rules.cjs');
 const { inspectInterface, probeInteraction } = require('../electron/ui-rules.cjs');
+const { inspectCraft } = require('../electron/ui-craft-rules.cjs');
 const { reviewRuntime } = require('../electron/review-browser.cjs');
 
 async function main([root, url]) {
@@ -16,6 +17,7 @@ async function main([root, url]) {
       page.on('dialog', dialog => void dialog.dismiss());
       await page.goto(url, { waitUntil: 'load', timeout: 15000 });
       result.rendered = await page.evaluate(inspectInterface);
+      result.craft = await page.evaluate(inspectCraft);
       await page.addStyleTag({ content: '*,*::before,*::after { animation:none!important; transition:none!important; }' });
       result.interaction = await probeInteraction(page);
     } finally { await browser.close(); }

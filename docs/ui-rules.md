@@ -19,6 +19,21 @@ Run before the review disables animations, so motion is measured as shipped.
 | `input-style-outliers` | Text fields whose border, radius, background or font size differ from the most common field style | any |
 | `mixed-tooltips` | Native `title` tooltips used alongside custom tooltips | both present |
 
+## Craft hints (`electron/ui-craft-rules.cjs`, every browser profile)
+
+Style recommendations, reported as hints in a separate `craft` category.
+
+| Rule | Detects | Threshold |
+| --- | --- | --- |
+| `nested-radius` | A rounded element in the corner of a rounded container whose radius is not the outer radius minus the inset | off by more than 3 px or 30% |
+| `opaque-borders` | Neutral borders drawn in a solid colour instead of a translucent one such as `rgb(0 0 0 / 0.12)` | any |
+| `icon-stroke-weight` | Icon stroke width that does not match the stem width of the text beside it | under 0.6x or over 1.7x |
+| `carousel-edge-fade` | Horizontal scrollers with three or more items and no `mask-image` edge fade | any |
+| `dark-depth` | On a dark page, a raised surface with a shadow that is not lighter than what it sits on | any |
+| `white-image-background` | On a tinted light page, an image with white corners and no `mix-blend-mode: multiply` | any |
+
+Blurring an icon while it swaps out cannot be checked from a single snapshot.
+
 ## Interaction checks (desktop Chromium)
 
 | Rule | Detects | Threshold |
@@ -37,6 +52,14 @@ The mouse check presses and moves away before releasing, so no click fires.
 | `small-font` | Font sizes below 12 px (0.75 rem/em) | under 12 px |
 | `reduced-motion-missing` | A stylesheet with transitions or animations and no `prefers-reduced-motion` block | any |
 | `window-min-size` | An Electron `BrowserWindow` or MAUI `Window` created without a minimum width and height | any |
+
+| `viewport-height` | `100vh` without a `100dvh` fallback in the same rule | any |
+| `hsl-palette` | Colour tokens (`--name: hsl(...)`) defined in HSL instead of OKLCH | any |
+| `gradient-interpolation` | Gradients between two or more colours without `in oklch` or `in oklab` | any; black, white and transparent fades are exempt |
+
+## Good and bad comparison
+
+`tests/fixtures/ui-rules-site.cjs` builds one shop page in two versions. The good version follows every rule; the bad version breaks each once. `node scripts/ui-rules-showcase.cjs` writes both, runs all checks on desktop, phone and dark mode, and saves `test-data/ui-rules/REPORT.md` with full-page screenshots. `tests/ui-rules-showcase.test.cjs` requires every rule to fire on the bad page and none on the good page, so a new rule needs a matching case in both versions.
 
 Run against a project: `node scripts/ui-rules.cjs <project-root> [url]`.
 
