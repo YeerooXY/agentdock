@@ -37,11 +37,7 @@ class MainActivity : FlutterActivity() {
                 requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 7411)
             }
         }
-        MethodChannel(engine.dartExecutor.binaryMessenger, "agentdock/updates").setMethodCallHandler { call, result ->
-            if (call.method == "installed") {
-                val info = packageManager.getPackageInfo(packageName, 0)
-                result.success(mapOf("version" to info.versionName, "abis" to android.os.Build.SUPPORTED_ABIS.toList()))
-            } else result.notImplemented()
-        }
+        val updates = DockUpdates(this)
+        MethodChannel(engine.dartExecutor.binaryMessenger, "agentdock/updates").setMethodCallHandler(updates::handle)
     }
 }

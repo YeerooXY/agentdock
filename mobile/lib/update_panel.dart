@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -62,7 +63,21 @@ Map<String, dynamic>? androidRelease(
             asset['size'] is int &&
             asset['size'] > 0 &&
             asset['size'] < 200 * 1024 * 1024) {
-          return {'version': version, 'url': url, 'size': asset['size']};
+          // The checksum file lets the app verify the download before installing.
+          final sumsUrl =
+              'https://github.com/YeerooXY/agentdock/releases/download/$tag/SHA256SUMS.txt';
+          final sums = (r['assets'] as List? ?? []).any(
+            (a) =>
+                a['name'] == 'SHA256SUMS.txt' &&
+                a['browser_download_url'] == sumsUrl,
+          );
+          return {
+            'version': version,
+            'url': url,
+            'name': name,
+            'size': asset['size'],
+            if (sums) 'sums': sumsUrl,
+          };
         }
       }
     }
@@ -84,6 +99,9 @@ class AppUpdates extends ChangeNotifier {
   Map<String, dynamic>? release;
   bool busy = false;
   DateTime? checkedAt;
+
+  /// Download progress from 0 to 1 while an update downloads, otherwise null.
+  double? progress;
 
   bool get available => release != null;
 
@@ -177,7 +195,141 @@ class AppUpdates extends ChangeNotifier {
       notifyListeners();
     }
   }
+
+  /// Downloads the release APK into the app's cache, checks its size and
+  /// SHA-256 against the release checksum file, then opens Android's installer,
+  /// which asks the person to confirm.
+  Future<void> install() async {
+    final next = release;
+    if (next == null || busy) return;
+    busy = true;
+    message = '';
+    progress = 0;
+    notifyListeners();
+    final client = HttpClient()
+      ..connectionTimeout = const Duration(seconds: 15);
+    File? file;
+    try {
+      if (await AppUpdates.native.invokeMethod<bool>('canInstall') != true) {
+        await AppUpdates.native.invokeMethod<void>('allowInstalls');
+        throw const FormatException(
+          'Allow Paddock to install apps, then tap Install update again.',
+        );
+      }
+      final sumsUrl = next['sums'] as String?;
+      if (sumsUrl == null) {
+        throw const FormatException(
+          'This release has no checksum file. Use All downloads instead.',
+        );
+      }
+      final name = next['name'] as String, size = next['size'] as int;
+      final sums = utf8.decode(await _get(client, sumsUrl, 64 * 1024));
+      final expected = sums
+          .split(RegExp(r'\r?\n'))
+          .map((line) => line.trim().split(RegExp(r'\s+\*?')))
+          .where((parts) => parts.length == 2 && parts[1] == name)
+          .map((parts) => parts[0].toLowerCase())
+          .firstOrNull;
+      if (expected == null || !RegExp(r'^[0-9a-f]{64}$').hasMatch(expected)) {
+        throw const FormatException('The release checksum is missing.');
+      }
+      final folder = Directory(
+        (await AppUpdates.native.invokeMethod<String>('updateDir'))!,
+      );
+      // Keep only the update being downloaded.
+      for (final old in folder.listSync().whereType<File>()) {
+        old.deleteSync();
+      }
+      file = File('${folder.path}/$name');
+      final sink = file.openWrite();
+      var shown = 0;
+      try {
+        await _get(
+          client,
+          next['url'] as String,
+          _apkLimit,
+          sink: sink,
+          onChunk: (received) {
+            final step = (received * 100 / size).floor();
+            if (step != shown) {
+              shown = step;
+              progress = (received / size).clamp(0, 1).toDouble();
+              notifyListeners();
+            }
+          },
+        );
+      } finally {
+        await sink.close();
+      }
+      if (await file.length() != size) {
+        throw const FormatException('The download was incomplete. Try again.');
+      }
+      final digest = await sha256.bind(file.openRead()).first;
+      if (digest.toString() != expected) {
+        throw const FormatException(
+          'The download did not match the release. Try again.',
+        );
+      }
+      await AppUpdates.native.invokeMethod<bool>('install', {
+        'path': file.path,
+      });
+      message = 'Android asks you to confirm the update.';
+    } catch (error) {
+      if (file != null && file.existsSync() && message.isEmpty) {
+        try {
+          file.deleteSync();
+        } catch (_) {}
+      }
+      message = error is FormatException
+          ? error.message
+          : error is PlatformException
+          ? (error.message ?? 'Android could not open the installer.')
+          : 'Could not download the update. Try again.';
+    } finally {
+      client.close(force: true);
+      busy = false;
+      progress = null;
+      notifyListeners();
+    }
+  }
 }
+
+const _apkLimit = 200 * 1024 * 1024;
+
+/// GETs [url] into memory, or into [sink] when given, refusing more than [limit] bytes.
+Future<List<int>> _get(
+  HttpClient client,
+  String url,
+  int limit, {
+  IOSink? sink,
+  void Function(int received)? onChunk,
+}) async {
+    final request = await client.getUrl(Uri.parse(url));
+    // GitHub answers release downloads with a redirect to its file host.
+    request.followRedirects = true;
+    request.maxRedirects = 5;
+    request.headers.set('User-Agent', 'Paddock-Android');
+    final response = await request.close().timeout(const Duration(seconds: 30));
+    if (response.statusCode != 200) {
+      throw const FormatException('The download failed. Try again.');
+    }
+    final bytes = <int>[];
+    var received = 0;
+    await for (final chunk in response.timeout(const Duration(seconds: 60))) {
+      received += chunk.length;
+      if (received > limit) {
+        throw const FormatException('The download is larger than expected.');
+      }
+      if (sink != null) {
+        sink.add(chunk);
+      } else {
+        bytes.addAll(chunk);
+      }
+      onChunk?.call(received);
+    }
+    return bytes;
+}
+
 
 class UpdatePanel extends StatefulWidget {
   const UpdatePanel({super.key});
@@ -266,7 +418,7 @@ class _UpdatePanelState extends State<UpdatePanel> {
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 10),
             child: Text(
-              'Download directly from GitHub. A PC connection is not required.',
+              'Updates come from GitHub. A PC connection is not required.',
             ),
           ),
           if (updates.version.isNotEmpty)
@@ -305,15 +457,27 @@ class _UpdatePanelState extends State<UpdatePanel> {
                 : FilledButton.icon(
                     key: const ValueKey('download-update'),
                     focusNode: downloadFocus,
-                    onPressed: () => openDownload(release['url'] as String),
-                    icon: const Icon(Icons.download_outlined),
-                    label: const Text('Download update'),
+                    onPressed: updates.busy ? null : updates.install,
+                    icon: const Icon(Icons.system_update_alt),
+                    label: Text(
+                      updates.progress == null
+                          ? 'Install update'
+                          : 'Downloading ${(updates.progress! * 100).round()}%',
+                    ),
                   ),
           ),
+          if (updates.progress case final p?) ...[
+            const SizedBox(height: 10),
+            LinearProgressIndicator(
+              value: p,
+              semanticsLabel: 'Update download',
+              semanticsValue: '${(p * 100).round()}%',
+            ),
+          ],
           if (release != null) ...[
             const SizedBox(height: 8),
             const Text(
-              'Open the downloaded APK to install. Your pairing stays saved.',
+              'Paddock downloads and checks the update, then Android asks you to confirm. Your pairing stays saved.',
               style: TextStyle(fontSize: 12, height: 1.5),
             ),
           ],

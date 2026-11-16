@@ -104,6 +104,21 @@ void main() {
       androidRelease(values, '0.6.0-preview.9', ['armeabi-v7a'])?['url'],
       endsWith('armv7.apk'),
     );
+    expect(
+      androidRelease(values, '0.6.0-preview.9', ['arm64-v8a'])?['sums'],
+      isNull,
+      reason: 'no checksum asset in this release',
+    );
+    (values[0]['assets'] as List).add({
+      'name': 'SHA256SUMS.txt',
+      'browser_download_url':
+          'https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.10/SHA256SUMS.txt',
+      'size': 300,
+    });
+    expect(
+      androidRelease(values, '0.6.0-preview.9', ['arm64-v8a'])?['sums'],
+      endsWith('/v0.6.0-preview.10/SHA256SUMS.txt'),
+    );
     expect(androidRelease(values, '0.6.0', ['arm64-v8a']), isNull);
     expect(androidRelease(values, '0.6.0-preview.9', ['x86_64']), isNull);
     expect(isNewer('0.6.0', '0.6.0-preview.10'), isTrue);
