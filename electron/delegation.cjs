@@ -148,7 +148,8 @@ function progressLines(provider, line) {
 }
 
 function redactText(text, environment = {}) {
-  const values = [...new Set(Object.values(environment).filter(x => typeof x === 'string' && x.length))].sort((a, b) => b.length - a.length);
+  // Short values such as NUMBER_OF_PROCESSORS=32 or flags like 0 would mangle ordinary text ("320px").
+  const values = [...new Set(Object.values(environment).filter(x => typeof x === 'string' && x.length >= 8))].sort((a, b) => b.length - a.length);
   if (values.length) text = String(text).replace(new RegExp(values.map(x => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'), 'g'), '[redacted]');
   return stripAnsi(text).replace(/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)/g, '[redacted private key]')
     .replace(/\b(?:sk-|gh[pousr]_|github_pat_|Bearer\s+)[\w.\-/+=]+/gi, '[redacted]')

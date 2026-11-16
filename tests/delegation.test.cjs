@@ -134,3 +134,9 @@ test('review tools are listed only while the user has them turned on', () => {
   wb.delegation = { getSettings: () => ({ delegationEnabled: true }) };
   assert.ok(wb.tools().some(tool => tool.name === 'dock/delegate_review') && wb.tools().some(tool => tool.name === 'dock/delegation_status'));
 });
+
+test('redactText keeps short environment values such as 32 or 0 in ordinary text', () => {
+  const { redactText } = require('../electron/delegation.cjs');
+  const out = redactText('Fit 320px and 390px. Key abcdef0123456789', { NUMBER_OF_PROCESSORS: '32', FLAG: '0', SECRET: 'abcdef0123456789' });
+  assert.equal(out, 'Fit 320px and 390px. Key [redacted]');
+});

@@ -53,7 +53,7 @@ export function accountSettings({ getState, call, toast, providerName, getPage, 
     const reviewerOptHtml = `<option value="">None</option>` +
       reviewerOpts.map(o => `<option value="${escape(o.value)}"${o.value === reviewerValue ? ' selected' : ''}>${escape(o.label)}</option>`).join('');
     const dispatcher = state.settings.dispatcher, dispatcherValue = dispatcher ? `${dispatcher.accountId} ${dispatcher.model}` : '';
-    const dispatcherOptions = `<option value="">Small routing tier</option>` + tierOptions(accounts, dispatcher ? [dispatcher] : []).map(o => `<option value="${escape(o.value)}"${o.value === dispatcherValue ? ' selected' : ''}>${escape(o.label)}</option>`).join('');
+    const dispatcherOptions = `<option value="">Console account, lightest model</option>` + tierOptions(accounts, dispatcher ? [dispatcher] : []).map(o => `<option value="${escape(o.value)}"${o.value === dispatcherValue ? ' selected' : ''}>${escape(o.label)}</option>`).join('');
     // Excluded-models checklist: all discovered model IDs, pre-checked if in excludedModels.
     const excluded = new Set(routing.excludedModels || []);
     const candidateIds = excludedModelCandidates(accounts);

@@ -28,7 +28,7 @@ export function delegateComposer({ call, escape: e, toast, openTask, icon = () =
   async function send(key, session, text) {
     set(key, { busy: true, job: null, status: 'Planning…' });
     try {
-      const job = await call('tasks.planMessage', { text, repo: session.cwd, executionMode: 'serial' });
+      const job = await call('tasks.planMessage', { text, repo: session.cwd, executionMode: 'serial', ...(session.accountId ? { accountId: session.accountId } : {}) });
       const count = items(job);
       if (job.autoApproved) set(key, { busy: false, job, status: `Started automatically: ${tasks(count)}.` });
       else if (job.state === 'plan-ready') set(key, { busy: false, job, status: job.error || (count ? `Plan ready: ${tasks(count)}.` : 'Answered. Review the plan for the reply.') });

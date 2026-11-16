@@ -4,10 +4,11 @@ const { randomUUID } = require('node:crypto');
 const { validatePlan, overlap } = require('./task-plan.cjs');
 const { defaults, suggestAssignment, accountAllowance } = require('./task-routing.cjs');
 const { redactText } = require('./delegation.cjs');
+const { selectModel } = require('./routing-models.cjs');
 
 function normalizeDispatcher(value) {
   if (value == null) return null;
-  if (!value || typeof value !== 'object' || Array.isArray(value) || typeof value.accountId !== 'string' || !/^[\w:.-]{1,100}$/.test(value.accountId) || typeof value.model !== 'string' || !/^[\w.:/-]{1,120}$/.test(value.model) || value.model.startsWith('-')) throw Error('Choose a dispatcher account and model, or Small routing tier.');
+  if (!value || typeof value !== 'object' || Array.isArray(value) || typeof value.accountId !== 'string' || !/^[\w:.-]{1,100}$/.test(value.accountId) || typeof value.model !== 'string' || !/^[\w.:/-]{1,120}$/.test(value.model) || value.model.startsWith('-')) throw Error('Choose a dispatcher account and model, or Console account.');
   return { accountId: value.accountId, model: value.model };
 }
 function smallPlan(job) {
@@ -23,8 +24,9 @@ function parseMessagePlan(text, images) {
   if (result.errors.length) throw Error(result.errors.join(' '));
   const plan = result.plan;
   for (const sub of plan.subtasks) {
-    if (!Array.isArray(sub.images) || sub.images.length > images.length || sub.images.some(image => typeof image !== 'string' || !images.includes(image))) throw Error('The dispatcher referenced an image that was not attached.');
-    sub.images = [...new Set(sub.images)];
+    // A file named in the message text is not an attachment: keep only attached paths, so the
+    // reference stays in the criteria without failing the plan or granting file access.
+    sub.images = [...new Set((Array.isArray(sub.images) ? sub.images : []).filter(image => typeof image === 'string' && images.includes(image)))];
   }
   if (images.some(image => !plan.subtasks.some(sub => sub.images.includes(image)))) throw Error('The dispatcher must associate every attached image with an item.');
   // Stable topological order respects declared dependencies before adding file conflicts.
@@ -87,8 +89,18 @@ class MessageDispatcher {
       if (role === 'implementer' && sub.images.length && step.provider !== 'codex') throw Error(`Attached images for ${sub.title} require a Codex worker. Update routing and create the plan again.`);
     }
   }
-  dispatcher() {
-    const raw = normalizeDispatcher(this.loop.getSettings().dispatcher) || this.route('small').implementer;
+  // Without a chosen dispatcher, the account of the console that sent the message plans it with its
+  // lightest discovered model (an Opus console plans with Haiku). Small routing is the fallback.
+  consoleRoute(accountId) {
+    const candidate = accountId && this.loop.candidates().find(choice => choice.id === accountId);
+    if (!candidate || accountAllowance(accountId, this.loop.getLimits(), this.loop.now()).blocked) return null;
+    const { model, tier, blocked } = selectModel(candidate, { size: 'small', now: this.loop.now() });
+    // Only a discovered light model; an undiscovered account default could be Opus.
+    if (blocked || !model || tier !== 1) return null;
+    try { return ['local', 'included', 'free'].includes(this.loop.assignment({ accountId, model }, 'dispatcher').funding) ? { accountId, model } : null; } catch { return null; }
+  }
+  dispatcher(consoleAccountId) {
+    const raw = normalizeDispatcher(this.loop.getSettings().dispatcher) || this.consoleRoute(consoleAccountId) || this.route('small').implementer;
     if (!raw) throw Error('No eligible Small dispatcher route. Check Settings > Agents and account allowance.');
     if (accountAllowance(raw.accountId, this.loop.getLimits(), this.loop.now()).blocked) throw Error('The dispatcher account allowance is exhausted.');
     const step = this.loop.assignment(raw, 'dispatcher');
@@ -104,9 +116,10 @@ class MessageDispatcher {
     const executionMode = args.executionMode ?? 'parallel';
     if (!['parallel', 'serial'].includes(executionMode)) throw Error('Choose parallel worktrees or sequential work.');
     if (args.checks !== undefined && (typeof args.checks !== 'string' || args.checks.length > 4000 || args.checks.includes('\0'))) throw Error('Enter a checks command of up to 4,000 characters.');
-    const step = this.dispatcher();
+    if (args.accountId !== undefined && args.accountId !== null && (typeof args.accountId !== 'string' || !/^[\w:.-]{1,100}$/.test(args.accountId))) throw Error('Unknown console account.');
+    const step = this.dispatcher(args.accountId);
     if (images.length && step.provider !== 'codex') throw Error('Attached images currently require a Codex dispatcher. Choose one in Settings > Agents.');
-    const job = { id: randomUUID(), kind: 'owner-message', title: args.text.trim().slice(0, 100), criteria: redactText(args.text), repo: args.repo, workFolder: args.repo,
+    const job = { id: randomUUID(), kind: 'owner-message', title: args.text.replace(/\s+/g, ' ').trim().slice(0, 100), criteria: redactText(args.text), repo: args.repo, workFolder: args.repo,
       projectId: args.projectId || null, images: [...new Set(images)], workflow: 'current', state: 'planning', startedAt: loop.now(), rounds: [{ number: 1, startedAt: loop.now(), implement: step }], log: [], unresolved: [], maxRounds: 1, checks: args.checks || '', timeLimitMinutes: 5,
       implementer: step, reviewer: null, executionMode, parallelLimit: 6, why: { implementer: 'Dispatcher', reviewer: 'Item routing' }, dispatchTasks: [], automaticResolution: false };
     loop.jobs.set(job.id, job); if (loop.changed(job) === false) throw Error('The message plan could not be saved. No model request started.');

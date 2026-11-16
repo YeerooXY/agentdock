@@ -1,0 +1,39 @@
+/* Message plans use the console surface: near-black with a faint star field, so long plans read
+   like a terminal page instead of a bright glass panel. */
+.task-detail.message-plan {
+  --star-a: color-mix(in oklch, var(--accent-blue) 80%, white);
+  --star-b: color-mix(in oklch, var(--accent-pink) 80%, white);
+  background:
+    radial-gradient(1.5px 1.5px at 12% 18%, var(--star-a), transparent),
+    radial-gradient(1px 1px at 34% 72%, #ffffffb3, transparent),
+    radial-gradient(2px 2px at 58% 9%, var(--star-b), transparent),
+    radial-gradient(1px 1px at 81% 41%, #ffffff99, transparent),
+    radial-gradient(1.5px 1.5px at 92% 86%, var(--star-a), transparent),
+    radial-gradient(1px 1px at 7% 63%, #ffffff80, transparent),
+    radial-gradient(1px 1px at 46% 38%, #ffffff66, transparent),
+    radial-gradient(1.5px 1.5px at 69% 94%, var(--star-b), transparent),
+    #090b15 !important;
+  background-size: 420px 520px, 420px 520px, 420px 520px, 420px 520px, 420px 520px, 420px 520px, 420px 520px, 420px 520px, auto !important;
+  border: 1px solid color-mix(in oklch, var(--accent-blue) 30%, #222238) !important;
+  box-shadow: 0 8px 24px #0006 !important;
+  backdrop-filter: none;
+  color: #f0f0fb;
+}
+.message-plan-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+.message-plan-head .task-actions { margin: 0; }
+.message-plan-request { margin: 14px 0 6px; padding: 10px 14px; border-left: 2px solid var(--accent-blue); background: #ffffff08; border-radius: 0 8px 8px 0; font-size: 14px; line-height: 1.5; white-space: pre-line; overflow-wrap: anywhere; }
+.task-detail .message-plan-summary { color: #a5b2cc; margin: 6px 0 14px; }
+.message-plan-items > li { padding: 12px 0; }
+.message-plan-row { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px; }
+.message-plan-row h3 { margin: 0; font-size: 15px; }
+.message-plan-tag { flex: none; padding: 2px 8px; border-radius: 999px; font-size: 12px; color: #c7d4ec; background: #ffffff12; }
+.message-plan-tag[data-size=large] { color: #ffd9a8; background: #ff9f4a24; }
+.task-detail .message-plan-route { margin: 4px 0; color: #e4ebfa; }
+.message-plan-route span { margin-left: 10px; color: #a5b2cc; }
+.task-detail .message-plan-note { color: #ffd9a8; }
+.message-plan details { margin-top: 6px; font-size: 13px; }
+.message-plan summary { cursor: pointer; color: #a5b2cc; width: fit-content; border-radius: 4px; transition: color 150ms ease; }
+.message-plan summary:hover { color: #f0f0fb; }
+.message-plan summary:focus-visible { outline: 2px solid var(--accent-blue); outline-offset: 2px; }
+.message-plan-rules { margin-top: 14px; padding-top: 12px; border-top: 1px solid #ffffff14; }
+@media (prefers-reduced-motion: reduce) { .message-plan summary { transition: none; } }

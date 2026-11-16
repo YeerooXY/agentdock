@@ -100,7 +100,9 @@ test('attached images reach the mocked model and retain item attribution; invent
   const job = await f.service.create({ ...f.args, images: [image] });
   assert.deepEqual(f.requests[0].job.images, [image]); assert.deepEqual(job.plan.subtasks[0].images, [image]);
   await f.service.approve({ id: job.id }); assert.deepEqual(f.starts[0].images, [image]);
-  assert.throws(() => parseMessagePlan(JSON.stringify(plan(item('one', { images: [image + '.other'] }))), [image]), /not attached/);
+  // Paths named in the message but not attached are dropped instead of failing the plan.
+  assert.deepEqual(parseMessagePlan(JSON.stringify(plan(item('one', { images: [image, image + '.other'] }))), [image]).subtasks[0].images, [image]);
+  assert.deepEqual(parseMessagePlan(JSON.stringify(plan(item('one', { images: ['design/concept.png'] }))), []).subtasks[0].images, []);
   assert.throws(() => parseMessagePlan(JSON.stringify(plan(item('one'))), [image]), /every attached image/);
 });
 test('approval starts one item at a time and halts subsequent items on a failed check', async () => {
@@ -173,4 +175,30 @@ test('a failed automatic start keeps the plan waiting with the reason', async ()
   const job = await f.service.create(f.args);
   assert.equal(job.state, 'plan-ready'); assert.equal(job.autoApproved, undefined);
   assert.match(job.error, /Automatic start failed: .*Approve the plan to retry/); assert.equal(f.starts.length, 0);
+});
+
+test('without a chosen dispatcher, the sending console account plans with its lightest model', async () => {
+  const f = fixture(plan(item('one')));
+  const fresh = 1000000;
+  const claude = { id: 'claude:default', provider: 'claude', label: 'Claude', installed: true, signedIn: true, funding: 'included', available: true, model: 'claude-opus-5-5',
+    models: ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5'].map(id => ({ id, available: true, funding: 'included', observedAt: fresh })) };
+  const base = f.loop.candidates; f.loop.candidates = () => [...base(), claude];
+  const job = await f.service.create({ ...f.args, accountId: 'claude:default' });
+  assert.equal(f.requests[0].step.accountId, 'claude:default');
+  assert.equal(f.requests[0].step.model, 'claude-haiku-5-5');
+  assert.equal(job.state, 'plan-ready');
+  // An unknown console account falls back to Small routing; a chosen dispatcher always wins.
+  const other = fixture(plan(item('one')));
+  await other.service.create({ ...other.args, accountId: 'missing:account' });
+  assert.equal(other.requests[0].step.model, 'small-code');
+  const chosen = fixture(plan(item('one')), { dispatcher: { accountId: 'codex:default', model: 'picked' } });
+  chosen.loop.candidates = () => [...base(), claude];
+  await chosen.service.create({ ...chosen.args, accountId: 'claude:default' });
+  assert.equal(chosen.requests[0].step.model, 'picked');
+  await assert.rejects(f.service.create({ ...f.args, accountId: 'bad id' }), /console account/);
+  // Without a discovered model list the account default (Opus here) is never used for planning.
+  const undiscovered = fixture(plan(item('one')));
+  undiscovered.loop.candidates = () => [...base(), { ...claude, models: [] }];
+  await undiscovered.service.create({ ...undiscovered.args, accountId: 'claude:default' });
+  assert.equal(undiscovered.requests[0].step.model, 'small-code');
 });

@@ -12,7 +12,7 @@ async function setup(page) {
     window.reply = { id: 'plan-1', state: 'plan-ready', plan: { subtasks: [{ kind: 'code' }, { kind: 'code' }, { kind: 'question' }] } };
     window.composer = delegateComposer({ escape: s => String(s), toast: m => toasts.push(m), openTask: job => opened.push(job.id), icon: () => '<svg></svg>',
       call: async (name, args) => { calls.push([name, args]); if (name === 'tasks.planMessage') { await new Promise(r => window.release = r); return window.reply; } return true; } });
-    window.session = { id: 's1', consoleKey: 'k1', name: 'Console 1', cwd: 'C:/repo', alive: true };
+    window.session = { id: 's1', consoleKey: 'k1', name: 'Console 1', cwd: 'C:/repo', alive: true, accountId: 'claude:default' };
     window.card = document.querySelector('.session-card');
     composer.sync(card, session);` });
 }
@@ -56,7 +56,7 @@ test('Enter sends to the dispatcher, Shift+Enter adds a line, and the plan can b
     assert.equal(await focusIs(page, '.delegate-composer textarea'), true);
 
     await page.keyboard.press('Enter');
-    assert.deepEqual(await page.evaluate(() => calls[0]), ['tasks.planMessage', { text: 'Split server stats\ninto its own view', repo: 'C:/repo', executionMode: 'serial' }]);
+    assert.deepEqual(await page.evaluate(() => calls[0]), ['tasks.planMessage', { text: 'Split server stats\ninto its own view', repo: 'C:/repo', executionMode: 'serial', accountId: 'claude:default' }]);
     assert.equal(await page.locator('.delegate-composer [role=status]').textContent(), 'Planning…');
     assert.equal(await page.evaluate(() => document.querySelector('[data-delegate-toggle]').classList.contains('has-plan')), true);
     await page.keyboard.press('Enter');
