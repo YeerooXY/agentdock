@@ -41,7 +41,7 @@ async function until(check) { const end = Date.now() + 15000; while (Date.now() 
     assert.ok(await app.evaluate(({ BrowserWindow }) => { const w = BrowserWindow.getAllWindows()[0]; return w.isVisible() && !w.isMinimized(); }));
     assert.equal((await call('state')).trayHidden, false);
   }
-  await call('mode', 'hud'); await activate(entry);
+  await call('mode', 'fullscreen'); await activate(entry);
   await page.locator('.result-markdown h1').waitFor();
   assert.equal(await page.locator('.result-markdown h1').textContent(), 'Ready for review');
   await page.locator('.wb-dialog [data-wb=close]').click();
@@ -51,6 +51,6 @@ async function until(check) { const end = Date.now() + 15000; while (Date.now() 
   assert.equal((await call('state')).mode, 'dashboard'); assert.equal('inbox' in (await call('state')).workbench, false);
   fs.mkdirSync(path.join(root, 'artifacts', 'notifications'), { recursive: true });
   await page.screenshot({ path: path.join(root, 'artifacts', 'notifications', 'windows-result-activation.png') });
-  console.log('PASS native-click handler restores tray/minimized windows, expands the HUD, selects the console, opens Markdown Results');
+  console.log('PASS native-click handler restores tray/minimized windows, expands fullscreen, selects the console, opens Markdown Results');
   await call('quit');
 })().catch(error => { console.error(error); process.exitCode = 1; }).finally(async () => { await app?.close().catch(() => {}); assert.equal(path.dirname(fs.realpathSync(profile)), fs.realpathSync(parent)); fs.rmSync(profile, { recursive: true, force: true }); });

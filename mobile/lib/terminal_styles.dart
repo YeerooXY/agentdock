@@ -17,14 +17,27 @@ bool wideTail(BufferLine line, int x) => x > 0 && line.getWidth(x - 1) == 2;
 const readingGlyphs = {0x23f4: 0x25c2, 0x23f5: 0x25b8};
 
 /// Plain text with the same gaps, glyphs and wrap joins as the reading view.
-String terminalReadingText(Terminal terminal) {
+String terminalReadingText(Terminal terminal, {int start = 0, int? end}) {
   final out = StringBuffer();
   final lines = terminal.buffer.lines;
-  for (var y = 0; y < lines.length; y++) {
+  var previousRule = false;
+  final limit = min(end ?? lines.length, lines.length);
+  for (var y = start; y < limit; y++) {
     final line = lines[y];
-    if (y > 0 && !line.isWrapped) out.write('\n');
+    final rule = !line.isWrapped && terminalRule(line.getText());
+    if (rule && previousRule) continue;
+    if (y > start && (!line.isWrapped || previousRule)) out.write('\n');
+    previousRule = rule;
+    var end = line.length;
+    if (rule) {
+      var start = 0;
+      while (start < end && const [0, 32].contains(line.getCodePoint(start))) {
+        start++;
+      }
+      end = min(end, start + ruleWidth);
+    }
     var gap = 0;
-    for (var x = 0; x < line.length; x++) {
+    for (var x = 0; x < end; x++) {
       final cp = line.getCodePoint(x);
       if (cp == 0) {
         if (!wideTail(line, x)) gap++;
@@ -32,12 +45,14 @@ String terminalReadingText(Terminal terminal) {
       }
       out.write(' ' * gap);
       gap = 0;
-      out.writeCharCode(line.getAttributes(x) & CellAttr.invisible != 0
-          ? 32
-          : readingGlyphs[cp] ?? cp);
+      out.writeCharCode(
+        line.getAttributes(x) & CellAttr.invisible != 0
+            ? 32
+            : readingGlyphs[cp] ?? cp,
+      );
     }
-    if (gap > 0 && y + 1 < lines.length && lines[y + 1].isWrapped) {
-      out.write(' ' * gap);
+    if (!rule && gap > 0 && y + 1 < limit && lines[y + 1].isWrapped) {
+      out.write(' ');
     }
   }
   return out.toString().trimRight();
@@ -45,7 +60,12 @@ String terminalReadingText(Terminal terminal) {
 
 /// Read the parsed cells so escape sequences, links and controls never become
 /// markup. Group adjacent equal styles rather than allocating a span per cell.
-TextSpan terminalReadingSpan(Terminal terminal, TerminalTheme theme) {
+TextSpan terminalReadingSpan(
+  Terminal terminal,
+  TerminalTheme theme, {
+  int start = 0,
+  int? end,
+}) {
   final palette = [
     theme.black,
     theme.red,
@@ -97,13 +117,14 @@ TextSpan terminalReadingSpan(Terminal terminal, TerminalTheme theme) {
 
   final lines = terminal.buffer.lines;
   var previousRule = false;
-  for (var y = 0; y < lines.length; y++) {
+  final limit = min(end ?? lines.length, lines.length);
+  for (var y = start; y < limit; y++) {
     final line = lines[y];
     // Full-width rules wrap into several rows on a phone; show one short rule.
     final rule = !line.isWrapped && terminalRule(line.getText());
     if (rule && previousRule) continue;
+    if (y > start && (!line.isWrapped || previousRule)) text.write('\n');
     previousRule = rule;
-    if (y > 0 && !line.isWrapped) text.write('\n');
     var end = line.length;
     if (rule) {
       var start = 0;
@@ -167,8 +188,8 @@ TextSpan terminalReadingSpan(Terminal terminal, TerminalTheme theme) {
             : String.fromCharCode(readingGlyphs[cp] ?? cp),
       );
     }
-    if (gap > 0 && y + 1 < lines.length && lines[y + 1].isWrapped) {
-      text.write(' ' * gap);
+    if (!rule && gap > 0 && y + 1 < limit && lines[y + 1].isWrapped) {
+      text.write(' ');
     }
   }
   flush();

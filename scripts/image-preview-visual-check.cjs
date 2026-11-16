@@ -1,4 +1,5 @@
 'use strict';
+const { installStateTransport } = require('./state-test-transport.cjs');
 const { chromium, webkit, devices } = require('playwright');
 const fs = require('node:fs'), path = require('node:path'), http = require('node:http'), assert = require('node:assert/strict');
 const { imageSettings } = require('../electron/image-generation.cjs');
@@ -38,7 +39,8 @@ let browser; const reports = [];
         state.workbench.conceptUsage.unshift({ id: 'mock-job', resultId: id, provider: 'openai', model: state.shared.imageGeneration.model, at: Date.now(), state: 'complete', usage: { input: 42, output: 0 }, credits: null });
       return state;
     });
-    await context.addInitScript(() => { let changed; window.dock = { call: async (m, p) => { const r = await window.fixtureCall(m, p); if (r.state) changed?.(r.state); return r; }, onState: f => { changed = f; }, onNotice: () => {}, completeAgentPreview: async () => changed?.(await window.fixtureCompletePreview()), onOutput: () => {}, onSelect: () => {} }; });
+    await installStateTransport(context);
+await context.addInitScript(() => { window.dock = { call: async (m, p) => { const r = await window.fixtureCall(m, p); if (r.state) window.fixtureState?.(r.state); return r; }, get state() { return window.fixtureStateTransport; }, onNotice: () => {}, completeAgentPreview: async () => window.fixtureState?.(await window.fixtureCompletePreview()), onOutput: () => {}, onSelect: () => {} }; });
     const page = await context.newPage(); page.setDefaultTimeout(12000); page.on('pageerror', e => errors.push(e.message));
     await page.goto('http://127.0.0.1:' + server.address().port); await page.locator('.session-grid').waitFor(); await page.addScriptTag({ url: '/_axe.js' });
     async function nav(view) {

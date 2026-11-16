@@ -121,3 +121,61 @@ body[data-platform=darwin] #dashboard .titlebar { padding-left:84px }
   #sidebar .brand { display:none }
   #sidebar nav button:first-child .rail-tooltip { left:0; transform:none }
 }
+
+/* Frame: the title bar shares the window color and has no divider; pages sit on
+   one inset panel so the bar reads as part of the same frame. */
+#dashboard { --frame-panel:color-mix(in srgb,var(--window-black) 90%,#9aa4ff 4%) }
+#dashboard .titlebar { position:relative; background:var(--window-black); border-bottom:0; box-shadow:none }
+#dashboard .window-drag-handle { min-width:24px }
+#content:not([hidden]) { margin:0 8px 8px; border-radius:12px; background:var(--frame-panel); min-height:0 }
+#consoles-page { padding:4px 8px 8px }
+.titlebar-search {
+  position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
+  display:flex; align-items:center; gap:10px; width:min(440px,36vw); height:38px; padding:0 8px 0 14px;
+  border:1px solid transparent; border-radius:19px; background:var(--frame-panel); color:#a7aec4;
+  font:inherit; font-size:13px; text-align:left; cursor:pointer; -webkit-app-region:no-drag;
+}
+.titlebar-search svg { width:16px; height:16px; flex:none; stroke:currentColor; fill:none; stroke-width:2 }
+.titlebar-search span { flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
+.titlebar-search kbd { flex:none; padding:2px 7px; border-radius:6px; background:#ffffff0d; color:#8a91a8; font:inherit; font-size:11px }
+.titlebar-search:hover { color:#e6e8f2; border-color:#ffffff1f; background:color-mix(in srgb,var(--frame-panel) 85%,#fff 6%) }
+.titlebar-search:focus-visible { outline:2px solid #d4d8ff; outline-offset:2px }
+@media(max-width:1100px) { .titlebar-search { width:min(300px,30vw) } .titlebar-search kbd { display:none } }
+@media(max-width:820px) { .titlebar-search { position:static; transform:none; width:38px; padding:0; justify-content:center } .titlebar-search span { display:none } }
+
+.command-search { width:min(560px,92vw); margin:72px auto auto; padding:0; border:1px solid #ffffff1a; border-radius:14px; background:#14161f; color:#e6e8f2; box-shadow:0 24px 64px #000b }
+.command-search::backdrop { background:#0008 }
+.command-search-field { display:flex; align-items:center; gap:10px; padding:12px 16px; border-bottom:1px solid #ffffff12 }
+.command-search-field svg { width:18px; height:18px; stroke:#8a91a8; fill:none; stroke-width:2 }
+.command-search-field input { flex:1; min-width:0; border:0; background:none; color:inherit; font:inherit; font-size:15px; outline:none }
+.command-search ul { list-style:none; margin:0; padding:6px; max-height:min(420px,60vh); overflow-y:auto }
+.command-search li[role=option] { display:flex; align-items:center; gap:12px; padding:9px 10px; border-radius:9px; cursor:pointer }
+.command-search li[role=option] svg { width:16px; height:16px; flex:none; stroke:#9aa1b8; fill:none; stroke-width:1.8 }
+.command-search li span { display:flex; flex-direction:column; min-width:0 }
+.command-search li strong { font-weight:600; font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
+.command-search li small { color:#8a91a8; font-size:12px }
+.command-search li[aria-selected=true] { background:#ffffff12 }
+.command-search-empty { padding:14px 10px; color:#8a91a8; font-size:13px }
+@media(prefers-reduced-motion:no-preference) { .command-search[open] { animation:command-search-in .12s ease-out } }
+@keyframes command-search-in { from { opacity:0; transform:translateY(-6px) } }
+/* The page backdrop (theme texture and sky) fills the whole rounded panel, not the
+   centred page column that the page-width rule would otherwise give it. */
+#dashboard #content>.page-background-layer { inset:56px 8px 8px; width:auto; max-width:none; margin:0; border-radius:12px; overflow:hidden }
+@media(max-width:680px) { #dashboard #content>.page-background-layer { inset:100px 8px 8px } }
+/* Settings: the theme texture behind the same dark veil the pages use, and a header
+   that sits on it instead of a flat strip. */
+#dashboard .settings-backdrop { background:linear-gradient(rgb(3 5 10 / .84),rgb(3 5 10 / .84)),var(--theme-texture,none) center / cover no-repeat,var(--window-black,#07080c) }
+body[data-textures=off] #dashboard .settings-backdrop { background:var(--window-black,#07080c) }
+#dashboard .settings-overlay,#dashboard .settings-header { background:transparent }
+/* Project suggestion: a slim bar on the frame, aligned with the panels below it. */
+#project-suggestion:not([hidden]) { display:flex; align-items:center; justify-content:space-between; gap:16px; margin:0 8px 8px; padding:10px 12px 10px 16px; border-radius:12px; background:var(--frame-panel) }
+#project-suggestion strong { font-size:13px }
+#project-suggestion p { margin:2px 0 0; color:var(--muted); font-size:12px }
+.project-suggestion-actions { display:flex; gap:8px; flex:none }
+#command-search .command-search-field input { height:auto; padding:4px 0; border:0; border-radius:0; background:none; box-shadow:none; outline:none }
+/* Console chooser: "New project" is a text button beside the project select,
+   not an icon inside the field like the folder picker. */
+.chooser-project .folder-input { gap:8px; align-items:stretch }
+.chooser-project .folder-input select { flex:1; width:0; min-width:0 }
+.chooser-project .folder-input button { position:static; flex:none; width:auto; height:auto; padding:0 14px; white-space:nowrap }
+.chooser-project .folder-input { align-items:center } .chooser-project .folder-input button { height:38px; margin:0 }

@@ -1,0 +1,209 @@
+/* One style for every Settings category. Loaded last; scoped to the Settings overlay.
+   Sections: a sentence-case title over rows divided by lines. Rows: label and hint on the left,
+   control on the right. Nothing is collapsed (settings-ui.js flattens <details>). */
+.settings-overlay .settings-content {
+  --set-gap: 14px; --set-row: 14px; --set-title: 15px; --set-label: 13px; --set-hint: 11.5px;
+}
+
+/* section titles: the same everywhere (replaces the small uppercase labels) */
+.settings-overlay .settings-content .surface h2,
+.settings-overlay .settings-content .section-label h2,
+.settings-overlay .settings-content section > h2,
+#content[data-view] .settings-content .surface h2 {
+  font-size: var(--set-title); font-weight: 650; letter-spacing: 0; text-transform: none; color: var(--text, #eef0fa); margin: 0 0 6px;
+}
+.settings-overlay .settings-content .section-label { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 6px; }
+.settings-overlay .settings-content .section-label h2 { margin: 0; }
+.settings-overlay .settings-content .section-label > span,
+.settings-overlay .settings-content .section-label .button-row > span { color: var(--muted); font-size: var(--set-hint); white-space: nowrap; }
+.settings-overlay .settings-content .section-label .button-row { display: flex; align-items: center; justify-content: flex-end; flex-wrap: nowrap; gap: 12px; margin: 0 0 0 auto; }
+.settings-overlay .settings-content .section-label button { margin: 0; white-space: nowrap; }
+.settings-overlay .settings-content .surface > p:not(.form-error):not(.field-hint),
+.settings-overlay .settings-content .field-hint { font-size: var(--set-hint); line-height: 1.5; color: #9aa3bd; max-width: 72ch; }
+
+/* rows */
+.settings-overlay .settings-content :is(.toggle-row, .setting-row, .connection-row, .shortcut-row) {
+  display: flex; align-items: center; justify-content: space-between; gap: 24px; margin: 0; padding: var(--set-row) 0; border-bottom: 1px solid var(--line); font-size: var(--set-label);
+}
+.settings-overlay .settings-content :is(.toggle-row, .setting-row) > span:first-child { min-width: 0; }
+.settings-overlay .settings-content :is(.toggle-row, .setting-row) strong { display: block; font-size: var(--set-label); font-weight: 550; }
+.settings-overlay .settings-content :is(.toggle-row, .setting-row) small { display: block; margin-top: 4px; font-size: var(--set-hint); line-height: 1.45; color: #8f98b4; max-width: 64ch; }
+.settings-overlay .settings-content :is(.toggle-row, .setting-row, .connection-row, .shortcut-row):last-child { border-bottom: 0; }
+.settings-overlay .settings-content .toggle-row select { width: auto; min-width: 96px; }
+.settings-overlay .settings-content .connection-row button, .settings-overlay .settings-content .connection-row > span:nth-child(2) { font-size: var(--set-hint); }
+
+/* checkbox rows become switches on the right, like every other on/off setting */
+.settings-overlay .settings-content label.check-row.toggle-row { flex-direction: row-reverse; justify-content: space-between; cursor: pointer; }
+.settings-overlay .settings-content label.check-row.toggle-row input[type=checkbox] { margin: 0; }
+
+/* former collapsible blocks: an always-open block with a plain title */
+.settings-overlay .settings-content [data-flat-section] { margin: 12px 0 4px; padding: 0; border: 0; background: none; }
+.settings-overlay .settings-content [data-flat-section] > .flat-title { margin: 0 0 6px; font-size: var(--set-label); font-weight: 600; color: #c9cee0; cursor: default; list-style: none; }
+.settings-overlay .settings-content [data-flat-section] > .flat-title::marker,
+.settings-overlay .settings-content [data-flat-section] > .flat-title::-webkit-details-marker { display: none; content: ''; }
+.settings-overlay .settings-content [data-flat-section].surface { padding: 24px 0; }
+.settings-overlay .settings-content [data-flat-section].surface > .flat-title { font-size: var(--set-title); font-weight: 650; color: var(--text, #eef0fa); }
+
+/* tool panels (concept 5b): full-width bordered panels with 3 zones (identity / config / actions) */
+.settings-overlay .settings-content :is(.integration-grid, .connection-list) {
+  display: flex; flex-direction: column; grid-template-columns: 1fr !important; gap: 16px;
+}
+.settings-overlay .settings-content :is(.tool-panel, .integration-card, .tool-card),
+.settings-overlay .settings-content .integrations[aria-label="Built-in tools"] .integration-card {
+  display: grid; grid-template-columns: minmax(220px, 1.15fr) minmax(200px, 1.35fr) auto;
+  grid-template-rows: none !important; grid-row: auto !important; gap: 18px; align-items: center;
+  min-height: 0; padding: 20px 22px; margin: 0; border: 1px solid #202538; border-radius: 10px;
+  background: #080a12; box-shadow: none;
+}
+.settings-overlay .settings-content .tool-panel.metered {
+  border-color: rgba(137, 180, 255, 0.38); background: #090c16;
+}
+.settings-overlay .settings-content .zone-identity {
+  display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 14px; align-items: start; min-width: 0;
+}
+.settings-overlay .settings-content .zone-identity-text { min-width: 0; display: grid; gap: 4px; }
+.settings-overlay .settings-content .zone-identity .title-line { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.settings-overlay .settings-content .zone-identity .title-line h3 {
+  margin: 0; min-height: 0; font-size: 14px; font-weight: 600; line-height: 1.3; color: var(--text, #eef0fa);
+}
+.settings-overlay .settings-content .tool-status-pill {
+  display: inline-flex; align-items: center; gap: 5px; margin: 0; padding: 2px 9px; border-radius: 999px;
+  font-size: 11.5px !important; line-height: 1.4; font-weight: 500; background: #131826; border: 1px solid #252c44; color: #9ea8c4;
+}
+.settings-overlay .settings-content .tool-status-pill:is(.ready, .connected) {
+  color: #8ce2b4; background: rgba(98, 217, 154, 0.1); border-color: rgba(98, 217, 154, 0.28);
+}
+.settings-overlay .settings-content .zone-identity-text .tool-description {
+  margin: 0; font-size: var(--set-hint) !important; line-height: 1.45; color: #b5bdd4;
+}
+.settings-overlay .settings-content .zone-identity-text :is(.field-hint, .tool-meta) {
+  margin: 0; font-size: 11.5px !important; line-height: 1.45; color: #8c96b2;
+}
+.settings-overlay .settings-content .zone-config { min-width: 0; display: grid; gap: 10px; align-items: center; }
+.settings-overlay .settings-content .zone-config .free-note { font-size: 12px; color: #7e88a4; }
+.settings-overlay .settings-content .zone-config .tool-policy {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)) auto; gap: 10px; align-items: end;
+  margin: 0; padding: 0; border: 0;
+}
+.settings-overlay .settings-content .zone-config :is(.inline-field, label) {
+  margin: 0 !important; display: grid; gap: 5px; font-size: 11.5px !important; font-weight: 500; color: #95a0bc;
+}
+.settings-overlay .settings-content .zone-config :is(input:not([type=checkbox]), select),
+.settings-overlay .settings-content .zone-config .tool-policy button,
+.settings-overlay .settings-content .zone-actions button {
+  height: 40px !important; min-height: 40px !important; margin: 0; padding: 0 12px; box-sizing: border-box; font-size: 13px !important;
+}
+.settings-overlay .settings-content .zone-config .tool-policy button { grid-column: auto; align-self: end; }
+.settings-overlay .settings-content .zone-config .folder-input button { top: 0; height: 40px !important; min-height: 40px !important; padding: 0; }
+.settings-overlay .settings-content .zone-config .key-entry .field-hint { margin: 4px 0 0; font-size: 11px !important; line-height: 1.4; }
+.settings-overlay .settings-content .zone-config .key-entry .inline-link { height: auto !important; min-height: 0 !important; padding: 0 4px; font-size: 11px !important; }
+.settings-overlay .settings-content .zone-actions {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; margin: 0 !important; min-height: 40px;
+}
+.settings-overlay .settings-content .tool-brand-notices { margin-top: 20px; padding-top: 12px; border-top: 1px solid var(--line); }
+.settings-overlay .settings-content .tool-brand-notices summary { cursor: pointer; font-size: 12px !important; color: #8c96b2; user-select: none; }
+.settings-overlay .settings-content .tool-brand-notices p { margin: 8px 0 0; font-size: 11.5px !important; line-height: 1.5; color: #8c96b2; max-width: 80ch; }
+
+@media (max-width: 960px) {
+  .settings-overlay .settings-content :is(.tool-panel, .integration-card, .tool-card),
+  .settings-overlay .settings-content .integrations[aria-label="Built-in tools"] .integration-card { grid-template-columns: 1fr; }
+  .settings-overlay .settings-content .zone-actions { justify-content: flex-start; }
+}
+
+/* long read-only text that used to sit behind an arrow: shown, in a short scrolling box */
+.settings-overlay .settings-content [data-flat-section] pre { max-height: 220px; overflow: auto; margin: 0; padding: 12px 14px; border: 1px solid var(--line); border-radius: 8px; background: rgba(0, 0, 0, .25); font-size: 11.5px; line-height: 1.5; white-space: pre-wrap; }
+
+.settings-overlay .settings-content .zone-identity-text details { margin-top: 4px; font-size: 11.5px; color: #8c96b2; }
+.settings-overlay .settings-content .zone-identity-text details summary { cursor: pointer; font-weight: 550; color: #b5bdd4; user-select: none; }
+.settings-overlay .settings-content .zone-identity-text details ol { margin: 8px 0 6px; padding-left: 18px; display: grid; gap: 4px; line-height: 1.45; }
+
+/* Console grid matrix picker (concept-1-a) */
+.settings-overlay .settings-content .matrix-card { display: flex; flex-direction: column; gap: 16px; }
+.settings-overlay .settings-content .matrix-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.settings-overlay .settings-content .matrix-badge {
+  display: inline-flex; align-items: baseline; gap: 6px; padding: 6px 12px; border-radius: 8px;
+  background: rgba(137, 180, 255, 0.12); border: 1px solid rgba(137, 180, 255, 0.35);
+  font-family: var(--font-mono, Consolas, monospace); font-size: 14px !important; font-weight: 650; color: #eef2ff; white-space: nowrap;
+}
+.settings-overlay .settings-content .matrix-badge small { font-size: 11.5px !important; font-weight: 500; color: #b7c2df; }
+.settings-overlay .settings-content .matrix-picker {
+  display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 18px;
+  border-radius: 10px; background: #070910; border: 1px solid #1b2030;
+}
+.settings-overlay .settings-content .matrix-axis-cols {
+  display: grid; grid-template-columns: repeat(8, 34px); gap: 6px; padding-left: 24px;
+  font-family: var(--font-mono, Consolas, monospace); font-size: 11px; color: #8f98b4; text-align: center;
+}
+.settings-overlay .settings-content .matrix-body { display: flex; align-items: center; gap: 8px; }
+.settings-overlay .settings-content .matrix-axis-rows {
+  display: grid; grid-template-rows: repeat(8, 34px); gap: 6px; width: 16px;
+  font-family: var(--font-mono, Consolas, monospace); font-size: 11px; color: #8f98b4; align-items: center; text-align: right;
+}
+.settings-overlay .settings-content .matrix-cells { display: grid; grid-template-columns: repeat(8, 34px); grid-template-rows: repeat(8, 34px); gap: 6px; }
+.settings-overlay .settings-content .matrix-cell {
+  width: 34px; height: 34px; min-height: 34px !important; margin: 0 !important; padding: 0 !important;
+  border-radius: 6px; background: #101421; border: 1px solid #23293d; cursor: pointer;
+  transition: background-color 100ms ease, border-color 100ms ease, box-shadow 100ms ease;
+}
+.settings-overlay .settings-content .matrix-cell:hover { border-color: rgba(137, 180, 255, 0.65); }
+.settings-overlay .settings-content .matrix-cell.active {
+  background: linear-gradient(135deg, rgba(137, 180, 255, 0.34), rgba(241, 156, 218, 0.28));
+  border-color: #89b4ff; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14);
+}
+.settings-overlay .settings-content .matrix-cell.cursor,
+.settings-overlay .settings-content .matrix-cell:focus-visible {
+  outline: 2px solid #f19cda; outline-offset: 2px; position: relative; z-index: 1;
+}
+.settings-overlay .settings-content .matrix-footer {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+  padding: 10px 14px; border-radius: 8px; background: #0c0f1a; border: 1px solid #1d2233;
+}
+.settings-overlay .settings-content .matrix-status { font-size: 12.5px; color: #b7c0d8; }
+.settings-overlay .settings-content .matrix-status strong { color: #f1f4fc; font-weight: 600; }
+
+/* Installed agents two-column directory (concept-4-b) */
+.settings-overlay .settings-content .installed-agents-surface { display: flex; flex-direction: column; gap: 16px; }
+.settings-overlay .settings-content .installed-agents-surface > .section-label { margin-bottom: 0; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
+.settings-overlay .settings-content .installed-agents-surface > .section-label .field-hint { margin: 2px 0 0; }
+.settings-overlay .settings-content .directory-split {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; align-items: start;
+}
+.settings-overlay .settings-content .dir-column {
+  background: #080a12; border: 1px solid #202538; border-radius: 10px; padding: 16px 18px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.settings-overlay .settings-content .dir-col-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding-bottom: 8px; border-bottom: 1px solid #161a28;
+}
+.settings-overlay .settings-content .dir-col-title { margin: 0; font-size: 14px; font-weight: 650; color: #eef1fb; }
+.settings-overlay .settings-content .count-tag {
+  font-family: var(--font-mono, Consolas, monospace); font-size: 11px; padding: 2px 8px; border-radius: 99px;
+  background: rgba(131, 229, 173, 0.12); border: 1px solid rgba(131, 229, 173, 0.35); color: #83e5ad;
+}
+.settings-overlay .settings-content .count-tag.muted { background: #111523; border-color: #252b40; color: #8f98b4; }
+.settings-overlay .settings-content .agent-row {
+  display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; gap: 12px; align-items: center;
+  padding: 9px 10px; border-radius: 8px; background: #0b0e18; border: 1px solid #1a1f30;
+}
+.settings-overlay .settings-content .agent-row .account-mark {
+  width: 36px; height: 36px; border-radius: 8px; background: #121728;
+  border: 1px solid color-mix(in srgb, var(--mark-color, #89b4ff) 45%, #22273a);
+  display: grid; place-items: center; overflow: hidden; font-weight: 700; font-size: 14px; color: var(--mark-color, #eef1fb);
+}
+.settings-overlay .settings-content .agent-row .account-mark img { width: 22px; height: 22px; object-fit: contain; }
+.settings-overlay .settings-content .agent-row-main { min-width: 0; display: grid; gap: 2px; }
+.settings-overlay .settings-content .agent-row-title { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.settings-overlay .settings-content .agent-row-name { font-weight: 650; font-size: 13.5px !important; color: #f1f4fc; }
+.settings-overlay .settings-content .cmd-badge {
+  font-family: var(--font-mono, Consolas, monospace); font-size: 11px; padding: 1px 6px; border-radius: 4px;
+  background: #131829; border: 1px solid #262e46; color: #b4c2e4;
+}
+.settings-overlay .settings-content .agent-row-sub { display: block; font-size: 11.5px !important; line-height: 1.4; color: #8f98b4; }
+.settings-overlay .settings-content .agent-row .btn-row {
+  min-height: 32px !important; height: 32px !important; margin: 0 !important; padding: 0 12px !important;
+  border-radius: 6px; font-size: 12px !important; font-weight: 600;
+}
+@media (max-width: 900px) {
+  .settings-overlay .settings-content .directory-split { grid-template-columns: 1fr; }
+}

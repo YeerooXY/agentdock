@@ -1,4 +1,5 @@
 'use strict';
+const { installStateTransport } = require('./state-test-transport.cjs');
 // Production UI with a synthetic desktop bridge; no model calls or installs.
 const { chromium, webkit, devices } = require('playwright');
 const assert = require('node:assert/strict');
@@ -52,20 +53,21 @@ let browser; const results = [];
       return { ok: true, value: true };
     });
     await context.exposeFunction('fixtureGetState', () => state);
-    await context.addInitScript(() => { window.dock = { call: async (method, payload) => {
+    await installStateTransport(context);
+await context.addInitScript(() => { window.dock = { call: async (method, payload) => {
       const result = await window.fixtureCall(method, payload);
       if (method === 'profiles.save' && result.ok) window.fixtureStateListener?.(await window.fixtureGetState());
       return result;
-    }, onState: callback => { window.fixtureStateListener = callback; }, onOutput: () => {}, onSelect: () => {}, onNotice: () => {} }; });
+    }, get state() { return window.fixtureStateTransport; }, onOutput: () => {}, onSelect: () => {}, onNotice: () => {} }; });
     const page = await context.newPage(); page.setDefaultTimeout(15000);
     page.on('pageerror', error => errors.push(error.message));
-    await page.goto(origin); await openPage(page, 'tools');
+    await page.goto(origin); await openPage(page, 'add-tools');
     await page.addScriptTag({ url: `${origin}/test-axe.js` });
     const accessibility = async selector => {
       const violations = await page.evaluate(async selector => (await axe.run(document.querySelector(selector), { runOnly: ['color-contrast', 'label', 'button-name', 'select-name'] })).violations.map(item => item.id), selector);
       assert.deepEqual(violations, [], `${name}: accessible controls and contrast in ${selector}`);
     };
-    await page.locator('.local-ai details summary').click();
+    // Connection steps stay open in Settings.
     await page.evaluate(() => document.fonts.ready);
     await page.locator('.local-ai').evaluate(el => el.scrollIntoView({ block: 'start' }));
     await page.waitForTimeout(300);
@@ -88,7 +90,7 @@ let browser; const results = [];
     await accessibility('#profile-form');
     await form.locator('[type=submit]').click();
     await page.locator('[data-edit-profile=strata]').waitFor();
-    await openPage(page, 'tools');
+    await openPage(page, 'add-tools');
     await page.locator('.local-ai [data-api-preset=strata]').click();
     assert.equal(await form.locator('[name=url]').inputValue(), 'http://127.0.0.1:8081/v1/chat/completions', 'Review preserves a saved custom port');
     await page.screenshot({ path: path.join(out, `${name}-api-saved.png`) });

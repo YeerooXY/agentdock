@@ -1,12 +1,12 @@
-# Website design workflow
+# Interface design workflow
 
 Use the user's brief, existing brand and current product facts. Record audience, entry route, immediate task, main action, evidence, constraints and success condition. Infer known facts from the project; ask only when a missing fact changes the work.
 
-## Start from an ordinary website request
+## Start from an interface request
 
-Apply this workflow when the user asks to create a website, without requiring them to name a guide, skill or reference site. Read content for the CTA playbook, then layout, visual, verification and checklist as needed. Preserve the user's chosen tools and project. A request for a repair does not authorize a redesign.
+Apply this workflow when the user asks to create or substantially redesign a user-facing interface: websites, desktop or Electron apps, mobile apps, game menus, dashboards and internal tools. Read app for application frames, themes, components and keyboard interaction; read content for website offers and calls to action. Read layout, visual, creative, verification and checklist as relevant. Preserve the user's chosen tools and project. Keep small repairs scoped to the existing screen.
 
-1. **Brief.** Establish the business/product name, offer, audience, primary visitor action, contact or download destination, existing assets and constraints. Read known facts from the project. Ask only for missing facts that affect the work. Keep unknown prices, business identity and operational claims out of published copy.
+1. **Brief.** Establish the product, audience, immediate user task, primary action, existing assets and constraints. For apps, include navigation, data density, window sizes and editing or playback state. For marketing sites, include the offer and real contact or download destination. Read known facts from the project. Ask only for missing facts that affect the work. Keep unknown prices, business identity and operational claims out of published copy.
 2. **References.** Select two or three examples relevant to the task from the content playbook and source register. Inspect the dated evidence or the current pages. Record the pattern to adapt, its purpose and its limits. Use an actual product screenshot when the product exists. An attractive competitor page does not establish conversion gains.
 3. **Direction.** Read creative for an open visual brief. Draft three structurally different composition ideas from the same facts and primary action, then render the comparison in one flat 2D image when practical. The creative role supplies spatial relationships and image prompts; the image generator renders them. Save the concept and let the owner select a direction before a substantial build. An already specified direction can proceed. In an explicitly unattended benchmark, use its predeclared selection rule and record who selected. For an existing ambiguous screen, inspect its actual screenshot and follow the Screen previews setting. If generation is unavailable, offer an editable local layout proposal and name the limitation; do not call a screenshot an AI concept.
 4. **Assets.** Generate the site's own images when useful and supported by the selected tools. Record sources, permissions and required attribution for supplied or licensed assets. Reference captures are internal study material and must not become the site's images or copied prose. Generating a realistic product photograph does not make it evidence of a real product.
@@ -34,7 +34,7 @@ Check actual worker capabilities before assigning image generation or browser wo
 | Portfolio or editorial | Identify author/topic and inspect relevant work | layout, content |
 | Shop, catalogue, product or checkout | Find, compare and buy the correct item | commerce, visual, content |
 | Booking or lead form | Understand eligibility, availability, cost and commitment | layout, content, verification |
-| Application or dashboard | Continue work, understand status and recover from failure | layout, visual, verification |
+| Desktop, Electron, mobile app, game menu or dashboard | Continue work, understand status and recover from failure | app, creative, visual, verification |
 
 All implemented pages need verification. Read only the topics relevant to the task. A small button repair does not require a full redesign.
 

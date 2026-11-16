@@ -1,4 +1,5 @@
 'use strict';
+const { installStateTransport } = require('./state-test-transport.cjs');
 // Render the production first-run and API views in four local browser profiles.
 // The bridge is synthetic: no CLI install, login, model call or external request.
 const { chromium, webkit, devices } = require('playwright');
@@ -66,11 +67,12 @@ let browser; const results = [];
       return { ok: true, value: true };
     });
     await context.exposeFunction('fixtureGetState', () => state);
-    await context.addInitScript(() => { window.dock = { call: async (method, payload) => {
+    await installStateTransport(context);
+await context.addInitScript(() => { window.dock = { call: async (method, payload) => {
       const result = await window.fixtureCall(method, payload);
       if (method === 'agents.install') window.fixtureStateListener?.(await window.fixtureGetState());
       return result;
-    }, onState: callback => { window.fixtureStateListener = callback; }, onOutput: () => {}, onSelect: () => {}, onNotice: () => {} }; });
+    }, get state() { return window.fixtureStateTransport; }, onOutput: () => {}, onSelect: () => {}, onNotice: () => {} }; });
     const page = await context.newPage(); page.setDefaultTimeout(15000); page.on('pageerror', error => errors.push(error.message)); page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
     await page.goto(origin); await page.waitForTimeout(1200);
     if (!await page.locator('#first-run[open]').count()) {

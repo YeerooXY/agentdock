@@ -10,6 +10,17 @@ const { STALE_AFTER_MS, normalizeReading } = require('../electron/usage-reading.
 const MIN = 60_000;
 const row = (provider, id, at, windows = [{ key: 'five_hour', label: '5-hour', minutes: 300, usedPercent: 34, resetsAt: at + 60 * MIN }]) => [{ id, accountId: id, provider, observedAt: at, windows }];
 
+test('inapplicable windows cannot carry a false percentage or reset countdown', () => {
+  const account = { id: 'antigravity:default', provider: 'antigravity' };
+  const value = normalizeReading({ accountId: account.id, provider: account.provider, observedAt: 1, windows: [
+    { key: 'five-hour', notApplicable: true, usedPercent: 0, resetsAt: 2, resetLabel: 'Weekly limit reached' }
+  ] }, account).windows[0];
+  assert.equal(value.notApplicable, true);
+  assert.equal(value.usedPercent, null);
+  assert.equal(value.resetsAt, null);
+  assert.equal(value.resetLabel, 'Weekly limit reached');
+});
+
 test('readings are normalized and keep unknown percentages unknown', () => {
   const account = { id: 'cursor:default', provider: 'cursor', label: 'Default Cursor' };
   const reading = normalizeReading({ id: account.id, accountId: account.id, provider: 'cursor', observedAt: 5, windows: [
@@ -98,11 +109,32 @@ test('usage help no longer sends Kimi users to a command when a reader exists', 
 
 function readerHarness() {
   const seen = {}, impl = {};
+  impl.readAntigravityModels = async () => [];
   for (const name of ['Claude', 'Copilot', 'Kiro', 'Kimi', 'OpenCode', 'Antigravity', 'Cursor', 'Pi']) impl[`read${name}Usage`] = async options => { seen[name.toLowerCase()] = options; return []; };
   const accounts = { environment: (id, provider, { baseEnv }) => ({ ...baseEnv, ACCOUNT_ENV: id + '/' + provider }), getAccount: id => ({ configDir: '/profiles/' + id }) };
   const readers = buildUsageReaders({ executable: id => '/bin/' + id, accounts, usageDirectory: '/usage', env: { PATH: 'x', OPENAI_API_KEY: 'secret' }, codex: async () => ['codex'], impl });
   return { seen, readers };
 }
+
+test('Antigravity quota and model discovery share one account lease; model failure preserves quota', async () => {
+  let active = null, failModels = false;
+  const readers = buildUsageReaders({ executable: () => 'agy.exe', usageDirectory: '/usage',
+    accounts: { environment: () => ({}), getAccount: () => ({}) }, codex: async () => [],
+    credentialSwitch: { handles: () => true, withAccount: async (_provider, id, reader) => {
+      active = id; try { return await reader(); } finally { active = null; }
+    } },
+    impl: {
+      readAntigravityUsage: async ({ accountId }) => { assert.equal(active, accountId); return row('antigravity', accountId, 100); },
+      readAntigravityModels: async () => { assert.equal(active, 'antigravity:second'); if (failModels) throw Error('unavailable'); return [{ id: 'claude-sonnet-4-6', available: true }]; }
+    }
+  });
+  const choice = { id: 'antigravity:second', provider: 'antigravity' };
+  assert.equal((await readers.antigravity(choice))[0].models[0].id, 'claude-sonnet-4-6');
+  failModels = true;
+  const reading = (await readers.antigravity(choice))[0];
+  assert.equal(reading.windows[0].usedPercent, 34); assert.deepEqual(reading.models, []);
+  assert.match(reading.modelMessage, /discovery failed/); assert.equal(active, null);
+});
 
 test('the reader map equals the providers that declare a reader, and drives the usage capability', () => {
   const { readers } = readerHarness();

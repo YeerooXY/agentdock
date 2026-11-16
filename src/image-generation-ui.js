@@ -52,11 +52,5 @@ export function imageGenerationUI({ call, getState, escape: e, toast }) {
     } catch (error) { form.querySelector('.form-error').textContent = error.message; }
     finally { button.disabled = false; }
   });
-  function usage() {
-    const entries = getState().workbench?.conceptUsage || [];
-    if (!entries.length) return '';
-    const work = getState().workbench, jobs = new Map(work.concepts.map(x => [x.id, x])), results = new Set(work.results.map(x => x.id));
-    return `<section class="surface image-usage"><h2>Image generation</h2><p class="field-hint">Provider-reported usage. Check your provider’s billing for spending.</p><div class="table-scroll"><table><thead><tr><th>Time</th><th>Generator</th><th>Status</th><th>Input tokens</th><th>Output tokens</th><th>Credits</th><th>Details</th></tr></thead><tbody>${entries.map(x => `<tr><td>${e(new Date(x.at).toLocaleString())}</td><td>${e(x.provider || 'meshy')}${x.model ? '<small>' + e(x.model) + '</small>' : ''}</td><td>${e(x.state)}</td><td>${e(x.usage?.input ?? 'Unavailable')}</td><td>${e(x.usage?.output ?? 'Unavailable')}</td><td>${e(x.credits ?? 'Unavailable')}</td><td>${results.has(x.resultId) ? `<button class="subtle" data-wb="preview" data-id="${e(x.resultId)}">View preview</button>` : ''}${jobs.get(x.id)?.taskId && ['failed','interrupted'].includes(x.state) ? `<button class="subtle" data-wb="concept-resume" data-id="${e(x.id)}">Resume task</button>` : ''}${jobs.has(x.id) ? `<button class="subtle" data-wb="concept-delete" data-id="${e(x.id)}" ${['submitting','waiting','downloading'].includes(x.state) ? 'disabled' : ''} title="Remove prompt and job details; keep the saved image and usage record">Remove job</button>` : ''}</td></tr>`).join('')}</tbody></table></div></section>`;
-  }
-  return { render, mount: fields, sync, usage };
+  return { render, mount: fields, sync };
 }

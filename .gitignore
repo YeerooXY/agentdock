@@ -4,6 +4,9 @@ artifacts/
 test-data/
 release/
 .build/
+.paddock/screens/latest/
+.paddock/screens/history/
+.paddock/screens/reviews/
 *.log
 .env*
 !.env.example
@@ -39,3 +42,6 @@ release/
 *.p12
 **/google-services.json
 **/*service-account*.json
+
+# Experiment and benchmark output (screenshots, zips); kept locally, too large for the repository.
+verification/

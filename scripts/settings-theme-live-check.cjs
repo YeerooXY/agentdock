@@ -1,4 +1,5 @@
 'use strict';
+const { installStateTransport } = require('./state-test-transport.cjs');
 // Real renderer and synthetic state. Check immediate updates with a frozen clock,
 // then advance the retained rail sky and real CSS timeline. Settings stays solid.
 // No CLI, account or model calls.
@@ -140,7 +141,7 @@ function installFixture(initial) {
         focusPreserved: focus === document.activeElement, scrollPreserved: scrollTop === scroller.scrollTop });
       return { ok: true };
     },
-    onState: fn => { window.fixtureReceive = fn; }, onOutput() {}, onSelect() {}, onNotice() {},
+    get state() { return window.fixtureStateTransport; }, onOutput() {}, onSelect() {}, onNotice() {},
   };
 }
 
@@ -439,7 +440,8 @@ const results = [];
       if (new URL(route.request().url()).origin === origin) return route.continue();
       blocked.push(route.request().url()); return route.abort();
     });
-    await context.addInitScript(installFixture, fixture);
+    await installStateTransport(context);
+await context.addInitScript(installFixture, fixture);
     const page = await context.newPage(); page.on('pageerror', error => errors.push(error.message));
     page.setDefaultTimeout(15000);
     await page.clock.install({ time: new Date('2026-10-24T12:00:00Z') });

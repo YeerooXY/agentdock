@@ -74,13 +74,14 @@ function claudeMessage(file) {
       const usage = normalizeUsage('anthropic', message.usage);
       const old = calls.get(message.id);
       // A streamed message may appear several times. Keep its latest counters.
-      calls.set(message.id, { usage: usage || old?.usage || null, model: message.model || old?.model });
+      calls.set(message.id, { usage: usage || old?.usage || null, model: message.model || old?.model, at: Date.parse(entry.timestamp) });
     }
   }
   if (!current?.id || !valid(current.at) || !calls.size) return null;
   const values = [...calls.values()];
   const usage = values.every(x => x.usage) ? Object.fromEntries(['input','output','cached','cacheWrite','uncached','total'].map(key => [key, values.reduce((sum, x) => sum + (x.usage[key] || 0), 0)])) : null;
-  return { ...current, model: [...new Set(values.map(x => x.model).filter(Boolean))].join(', '), usage, status: 'completed', source: 'Claude transcript · main agent' };
+  const lastResponseAt = Math.max(...values.map(value => value.at).filter(valid));
+  return { ...current, ...(valid(lastResponseAt) ? { finishedAt: lastResponseAt } : {}), model: [...new Set(values.map(x => x.model).filter(Boolean))].join(', '), usage, status: 'completed', source: 'Claude transcript · main agent' };
 }
 class MessageUsage {
   constructor(root) { this.file = path.join(root, 'message-usage.json'); this.items = readJson(this.file, []); }
@@ -102,7 +103,7 @@ class MessageUsage {
       // an already attributed turn with its original project when a chat moves.
       const projectId = prior?.projectId || session.projectId || null;
       const projectName = prior?.projectId ? prior.projectName || '' : session.projectName || prior?.projectName || '';
-      const row = { id, at: message.at, finishedAt: valid(message.finishedAt) ? message.finishedAt : prior?.finishedAt || null, provider: session.provider, model: String(message.model || prior?.model || session.model || session.launchModel || '').slice(0, 200), consoleName: prior?.consoleName || session.name, projectId, projectName, usage: usage || prior?.usage || null, quota, estimatedCost: null, status: message.status, source: String(message.source || 'Codex log').slice(0, 100) };
+      const row = { id, at: message.at, finishedAt: valid(message.finishedAt) ? message.finishedAt : prior?.finishedAt || null, consoleKey: prior?.consoleKey || session.consoleKey || null, provider: session.provider, model: String(message.model || prior?.model || session.model || session.launchModel || '').slice(0, 200), consoleName: prior?.consoleName || session.name, projectId, projectName, usage: usage || prior?.usage || null, quota, estimatedCost: null, status: message.status, source: String(message.source || 'Codex log').slice(0, 100) };
       if (JSON.stringify(map.get(id)) !== JSON.stringify(row)) { map.set(id, row); changed = true; }
     }
     if (changed) { const items = [...map.values()].sort((a,b) => b.at - a.at).slice(0, 5000); atomicJson(this.file, items); this.items = items; }

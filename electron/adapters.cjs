@@ -11,7 +11,13 @@ function findProgram(name) {
   }
   return (process.env.PATH || '').split(path.delimiter).map(x => path.join(x, name)).find(x => fs.existsSync(x)) || null;
 }
+// nativeCodex runs where.exe synchronously; usage polling calls it often, so reuse a result for 30 s.
+let codexLookup = null;
 function nativeCodex() {
+  if (codexLookup && Date.now() - codexLookup.at < 30_000 && (!codexLookup.file || fs.existsSync(codexLookup.file))) return codexLookup.file;
+  const file = locateCodex(); codexLookup = { file, at: Date.now() }; return file;
+}
+function locateCodex() {
   if (process.platform !== 'win32') return findProgram('codex') || [path.join(os.homedir(), '.local', 'bin', 'codex')].find(file => fs.existsSync(file)) || null;
   const standalone = path.join(process.env.LOCALAPPDATA || '', 'Programs', 'OpenAI', 'Codex', 'bin', 'codex.exe');
   if (fs.existsSync(standalone)) return standalone;

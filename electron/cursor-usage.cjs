@@ -62,7 +62,7 @@ async function readCursorUsage({ executable, accountId = 'cursor:default', cwd, 
       } catch { finish(new UsageError('unavailable', 'Cursor returned no readable allowance.')); }
     };
     try {
-      child = spawnPty(launch.executable, launch.args, { cwd, env: { ...usageEnvironment(env), TERM: 'xterm-256color', NO_OPEN_BROWSER: '1' }, cols: 140, rows: 65, name: 'xterm-256color' });
+      child = spawnPty(launch.executable, launch.args, { cwd, env: { ...usageEnvironment(env), TERM: 'xterm-256color', NO_OPEN_BROWSER: '1' }, useConpty: true, cols: 140, rows: 65, name: 'xterm-256color' });
       unregister = trackUsageReader({ kill: () => finish(new UsageError('unavailable', 'The usage reader closed.')) });
       exitListener = child.onExit(() => finish(new UsageError('unavailable', 'Cursor closed before returning usage.')));
       dataListener = child.onData(data => {

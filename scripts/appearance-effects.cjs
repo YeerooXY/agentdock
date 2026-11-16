@@ -1,4 +1,5 @@
 'use strict';
+const { installStateTransport } = require('./state-test-transport.cjs');
 
 // Capture real renderer openings and state transitions against a fake dock.
 // No CLI starts, account data or paid model requests are used.
@@ -77,10 +78,11 @@ function session(id, name, status = 'active') {
       if (method === 'session.acknowledge') return { ok: true };
       return { ok: true, value: [] };
     });
-    await context.addInitScript(() => {
+    await installStateTransport(context);
+await context.addInitScript(() => {
       window.dock = {
         call: (method, payload) => window.fixtureCall(method, payload),
-        onState: callback => { window.fixtureState = callback; },
+        get state() { return window.fixtureStateTransport; },
         onOutput: callback => { window.fixtureOutput = callback; },
         onSelect: () => {}, onNotice: () => {},
       };
@@ -268,7 +270,7 @@ function session(id, name, status = 'active') {
           captures.push(await savePanel(panel, 'blue-expanded-ready-100ms'));
           await page.waitForTimeout(800);
           await panel.locator('[data-action="toggle-console"]').click();
-          await page.locator('.sidebar nav [data-page=results]').click();
+          await require('./ui-navigation.cjs').openPage(page, 'results');
           await page.locator('.sidebar nav [data-page=consoles]').click();
           if (await panel.locator('canvas.console-state-effect').count()) throw new Error('Returning to the grid replayed the Blue Ready effect');
           await page.reload(); await page.locator('.session-grid').waitFor();

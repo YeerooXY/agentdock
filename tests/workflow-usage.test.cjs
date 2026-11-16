@@ -2,6 +2,17 @@
 const { test } = require('node:test'), assert = require('node:assert/strict');
 const { summarizeUsage } = require('../electron/workflow-usage.cjs');
 const { taskUsage } = require('../electron/workflow-usage.cjs');
+const { leadUsage } = require('../electron/workflow-usage.cjs');
+
+test('lead measurements use the origin console and overlapping turns, deduplicate and keep incomplete attribution explicit', () => {
+  const job = { originConsoleKey: 'lead', startedAt: 100, finishedAt: 200, rounds: [] };
+  const row = { id: 'a', consoleKey: 'lead', at: 90, finishedAt: 210, usage: { input: 100, output: 20, cached: 50 }, status: 'completed' };
+  const lead = leadUsage(job, [row, row, { ...row, id: 'other', consoleKey: 'other' }, { ...row, id: 'old', finishedAt: 99 }, { ...row, id: 'later', at: 201 }]);
+  assert.equal(lead.calls, 1); assert.equal(lead.input, 100); assert.deepEqual(lead.turnIds, ['a']);
+  const summary = taskUsage({ ...job, leadUsage: lead });
+  assert.equal(summary.totalCloud.input, 100); assert.equal(summary.cloud.input, 0); assert.equal(summary.cloudComplete, false);
+  assert.equal(leadUsage(job, []).status, 'unavailable');
+});
 const { compareUsage } = require('../electron/workflow-comparison.cjs');
 test('counts cloud coordination, failures and cached tokens separately from local work', () => {
   const r = summarizeUsage([

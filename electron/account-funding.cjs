@@ -5,6 +5,7 @@ function accountFunding(candidate, allowance = {}, rules = {}) {
   const configured = rules.accountFunding?.[candidate?.id];
   if (FUNDING.includes(configured)) return configured;
   if (FUNDING.includes(candidate?.funding) && candidate.funding !== 'unknown') return candidate.funding;
+  if (FUNDING.includes(allowance.funding) && allowance.funding !== 'unknown') return allowance.funding;
   // An installed provider or a model listing does not establish entitlement.
   const plan = allowance.plan || '';
   if (/(?:^|[\s_-])free(?:$|[\s_-])/i.test(plan)) return 'free';
@@ -14,8 +15,4 @@ function accountFunding(candidate, allowance = {}, rules = {}) {
   return 'unknown';
 }
 function fundingRank(kind) { return ({ local: 0, free: 1, included: 2, unknown: 3, metered: 4 })[kind] ?? 3; }
-function fundingFromLimits(candidate, limits = [], rules = {}) {
-  const readings = limits.filter(row => row.accountId === candidate.id).sort((a, b) => (b.observedAt || 0) - (a.observedAt || 0));
-  return accountFunding(candidate, readings[0] || {}, rules);
-}
-module.exports = { FUNDING, accountFunding, fundingRank, fundingFromLimits };
+module.exports = { FUNDING, accountFunding, fundingRank };

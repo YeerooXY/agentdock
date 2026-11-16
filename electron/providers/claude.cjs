@@ -1,6 +1,10 @@
 'use strict';
 module.exports = {
   id: 'claude',
+  settings: { strategy: 'claude' },
+  session: { persistConversation: true, steering: true },
+  console: { modelChoices: true, mobileModelChoices: true, liveModelMenu: true, permissions: true },
+  screen: { selectors: ['❯'], banner: 'Claude Code v|^[▐▛▜▝▘█▀▌ ]+$', emptyPrompts: [] },
   catalog: {
     name: 'Claude Code',
     command: 'claude',

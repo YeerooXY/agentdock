@@ -19,6 +19,7 @@ function fixture(t) {
     status: async () => ({ dirty: false, ahead: 1 }) };
   const m = Object.create(MobileCompanion.prototype);
   Object.assign(m, { sessions, worktrees, getDefaults: () => ({ cwd: root }), endMobileSession: async () => true, clients: new Set(), private: { devices: [] } });
+  m.commands = m.createCommands();
   const device = {}, client = { ws: { readyState: WebSocket.OPEN }, device, selected: '' };
   m.clients.add(client); m.private.devices.push(device);
   return { m, client, sessions, worktrees, root, sub };

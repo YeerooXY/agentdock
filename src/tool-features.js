@@ -28,34 +28,53 @@ export async function storeKey(container, call) {
 }
 export function savedKeys(state, e) {
   if (!state.vault.entries.length) return '';
-  return `<section class="surface saved-key-list"><h2>Saved keys</h2><p class="field-hint">Encrypted with ${({ win32: 'your Windows account', darwin: 'the macOS Keychain' })[state.platform] || 'your system keyring'}. Replace a key from the tool or API that uses it.</p><div class="saved-keys">${state.vault.entries.map(x => `<div class="saved-key"><div><strong>${e(x.label)}</strong><small>${e(x.id)} · ${new Date(x.savedAt).toLocaleDateString()}</small></div><button class="subtle danger" data-remove-key="${e(x.id)}">Remove</button></div>`).join('')}</div></section>`;
+  return `<section class="surface saved-key-list"><h2>Saved keys</h2><p class="field-hint">Encrypted with ${({ win32: 'your Windows account', darwin: 'the macOS Keychain' })[state.platform] || 'your system keyring'}. Replace a key from the tool or API that uses it.</p><div class="saved-keys">${state.vault.entries.map(x => `<div class="saved-key"><div><strong>${e(x.label)}</strong><small>${e(x.id)}, ${new Date(x.savedAt).toLocaleDateString()}</small></div><button class="subtle danger" data-remove-key="${e(x.id)}">Remove</button></div>`).join('')}</div></section>`;
+}
+
+export function integrationNote(item) {
+  return item.id === 'upscayl' ? 'Free local processing. Requires a Vulkan GPU. Downloads the official portable Windows app (290 MB); no API key or image upload.' : item.id === 'mirofish' ? 'Connect your separately running backend. Simulations use its model and Zep services and can incur charges. Results are hypotheses to test with real users.' : item.id === 'rea' ? 'Installs REA locally. No service key needed. Native analysis needs an engine such as Ghidra; web observation needs a Chrome-family browser.' : item.id === 'blender' ? 'Installs the MCP server and enables its Blender add-on. In Blender, open N → MCP for Blender and start the server.' : item.id === 'unity' ? 'Choose a project. Paddock adds Unity Pipeline so the CLI can reach the editor.' : 'Uses your Meshy account. Generating assets spends Meshy credits.';
+}
+export function integrationStatus(item) {
+  return item.job?.message || item.setupNote || (item.connected ? item.enabled ? 'Connected to Paddock' : 'Disabled' : item.available ? 'Ready to set up' : item.id === 'upscayl' ? 'Requires Windows and the bundled Upscayl adapter.' : item.id === 'mirofish' ? 'The MiroFish adapter is missing from this build.' : item.id === 'rea' ? 'Dock’s Node/npm runtime is missing.' : item.id === 'blender' ? 'Install Blender, then check again.' : item.id === 'unity' ? 'Install Unity CLI, then check again.' : 'Meshy is missing from this build.');
+}
+export function integrationFields(item, state, e) {
+  return item.id === 'mirofish' ? `<label>Local backend URL<input name="backendUrl" value="${e(item.backendUrl)}" placeholder="http://127.0.0.1:5001"></label>` : item.id === 'unity' ? `<label>Unity project<div class="folder-input"><input name="projectPath" value="${e(item.projectPath)}" placeholder="Choose a project folder"><button type="button" data-unity-folder aria-label="Choose Unity project">…</button></div></label>` : item.id === 'meshy' ? keyField(state, e, { keyId: item.keyId || 'meshy', label: 'Meshy API key', getKey: 'meshy' }) : '';
+}
+export function integrationActionLabel(item) {
+  return item.id === 'upscayl' ? item.ready ? 'Connect Upscayl' : 'Install and connect' : item.id === 'mirofish' ? item.connected ? 'Check connection' : 'Connect MiroFish' : item.id === 'rea' ? item.connected ? 'Repair connection' : 'Set up REA' : item.id === 'blender' ? item.ready ? 'Update tools' : 'Set up Blender' : item.connected ? 'Save connection' : 'Connect';
+}
+export function brandNotices() {
+  return `<details class="tool-brand-notices field-hint"><summary>Logo credits</summary><p>Blender and its logo belong to the Blender Foundation. Meshy and its logo belong to MESHY LLC. Playwright belongs to Microsoft, Chrome DevTools to Google, Context7 to Upstash, Notion to Notion Labs, Stripe to Stripe and GitHub to GitHub. MiroFish belongs to its authors. Logos identify each tool; Paddock is not affiliated with their owners.</p><p>Paddock is not sponsored by or affiliated with Unity Technologies or its affiliates. Unity and the Unity logo are trademarks or registered trademarks of Unity Technologies or its affiliates in the U.S. and elsewhere.</p></details>`;
 }
 
 export function integrationCards(state, e) {
-  return `<section class="integrations" aria-label="Built-in tools"><div class="section-label"><h2>Built-in tools</h2><button type="button" class="subtle" data-integration-refresh>Check installed apps</button></div><div class="integration-grid">${(state.integrations || []).map(item => {
-    const note = item.id === 'upscayl' ? 'Free local processing. Requires a Vulkan GPU. Downloads the official portable Windows app (290 MB); no API key or image upload.' : item.id === 'mirofish' ? 'Connect your separately running backend. Simulations use its model and Zep services and can incur charges. Results are hypotheses to test with real users.' : item.id === 'rea' ? 'Installs REA locally. No service key needed. Native analysis needs an engine such as Ghidra; web observation needs a Chrome-family browser.' : item.id === 'blender' ? 'Installs the MCP server and enables its Blender add-on. In Blender, open N → MCP for Blender and start the server.' : item.id === 'unity' ? 'Choose a project. Paddock adds Unity Pipeline so the CLI can reach the editor.' : 'Uses your Meshy account. Generating assets spends Meshy credits.';
-    const status = item.job?.message || item.setupNote || (item.connected ? item.enabled ? 'Connected to Paddock' : 'Disabled' : item.available ? 'Ready to set up' : item.id === 'upscayl' ? 'Requires Windows and the bundled Upscayl adapter.' : item.id === 'mirofish' ? 'The MiroFish adapter is missing from this build.' : item.id === 'rea' ? 'Dock’s Node/npm runtime is missing.' : item.id === 'blender' ? 'Install Blender, then check again.' : item.id === 'unity' ? 'Install Unity CLI, then check again.' : 'Meshy is missing from this build.');
-    return `<article class="integration-card" data-integration="${e(item.id)}"><div class="integration-heading">${toolLogo(item.id, item.name)}<h3>${e(item.name)}</h3><button type="button" class="subtle" data-docs="${e(item.id)}">Setup guide</button></div><p>${e(item.description)}</p><p class="field-hint">${e(note)}</p><div class="integration-fields">${item.id === 'mirofish' ? `<label>Local backend URL<input name="backendUrl" value="${e(item.backendUrl)}" placeholder="http://127.0.0.1:5001"></label>` : item.id === 'unity' ? `<label>Unity project<div class="folder-input"><input name="projectPath" value="${e(item.projectPath)}" placeholder="Choose a project folder"><button type="button" data-unity-folder aria-label="Choose Unity project">…</button></div></label>` : item.id === 'meshy' ? keyField(state, e, { keyId: item.keyId || 'meshy', label: 'Meshy API key', getKey: 'meshy' }) : ''}</div><p class="integration-status" data-integration-status role="status">${e(status)}</p><div class="button-row"><button type="button" class="secondary" data-integration-setup="${e(item.id)}" ${!item.available || item.job?.busy ? 'disabled' : ''}>${item.id === 'upscayl' ? item.ready ? 'Connect Upscayl' : 'Install and connect' : item.id === 'mirofish' ? item.connected ? 'Check connection' : 'Connect MiroFish' : item.id === 'rea' ? item.connected ? 'Repair connection' : 'Set up REA' : item.id === 'blender' ? item.ready ? 'Update tools' : 'Set up Blender' : item.connected ? 'Save connection' : 'Connect'}</button></div></article>`;
-  }).join('')}</div><details class="tool-brand-notices field-hint"><summary>Logo credits</summary><p>Blender and its logo belong to the Blender Foundation. Meshy and its logo belong to MESHY LLC. Playwright belongs to Microsoft, Chrome DevTools to Google, Context7 to Upstash, Notion to Notion Labs, Stripe to Stripe and GitHub to GitHub. MiroFish belongs to its authors. Logos identify each tool; Paddock is not affiliated with their owners.</p><p>Paddock is not sponsored by or affiliated with Unity Technologies or its affiliates. Unity and the Unity logo are trademarks or registered trademarks of Unity Technologies or its affiliates in the U.S. and elsewhere.</p></details></section>`;
+  const items = state.integrations || []; if (!items.length) return '';
+  return `<section class="integrations" aria-label="Built-in tools"><div class="section-label"><h2>Built-in tools</h2><button type="button" class="subtle" data-integration-refresh>Check installed apps</button></div><div class="integration-grid">${items.map(item => {
+    const note = integrationNote(item), status = integrationStatus(item), fields = integrationFields(item, state, e);
+    return `<article class="integration-card tool-panel${item.id === 'meshy' ? ' metered' : ''}" data-integration="${e(item.id)}"><div class="zone-identity">${toolLogo(item.id, item.name)}<div class="zone-identity-text"><div class="title-line"><h3>${e(item.name)}</h3><span class="tool-status-pill${item.ready || item.connected ? ' ready' : ''}" data-integration-status role="status">${e(status)}</span></div><p class="tool-description">${e(item.description)}</p><p class="field-hint">${e(note)}</p></div></div><div class="zone-config">${fields ? `<div class="integration-fields">${fields}</div>` : ''}</div><div class="zone-actions button-row"><button type="button" class="secondary" data-integration-setup="${e(item.id)}" ${!item.available || item.job?.busy ? 'disabled' : ''}>${integrationActionLabel(item)}</button><button type="button" class="subtle" data-docs="${e(item.id)}">Setup guide</button></div></article>`;
+  }).join('')}</div></section>`;
 }
 
 // Recommended tools from their makers. Adding installs one pinned package.
 export function catalogCards(state, e) {
   const items = state.toolCatalog || []; if (!items.length) return '';
-  return `<section class="integrations tool-catalog" aria-label="Recommended tools"><div class="section-label"><h2>Recommended tools</h2><span>From each tool’s maker · pinned versions</span></div><div class="integration-grid">${items.map(item => {
+  return `<section class="integrations tool-catalog" aria-label="Recommended tools"><div class="section-label"><h2>Recommended tools</h2><span>From each tool’s maker, pinned versions</span></div><div class="integration-grid">${items.map(item => {
     const status = item.job?.message || (item.added ? 'Added. Set its limits under Shared tools.' : item.key ? `Paste your ${item.key.label} to add it.` : 'No key needed.');
     const credentials = !item.added && item.key ? keyField(state, e, { keyId: item.id, label: item.key.label, getKey: 'key-' + item.id }) : '';
     const action = item.added ? '<span class="connection connected">Added</span>' : `<button type="button" class="primary" data-catalog-add="${e(item.id)}" ${item.job?.busy ? 'disabled' : ''}>Add ${e(item.name)}</button>`;
-    return `<article class="integration-card" data-catalog="${e(item.id)}"><div class="integration-heading">${toolLogo(item.id, item.name)}<h3>${e(item.name)}</h3><button type="button" class="subtle" data-docs="${e(item.id)}">Docs</button></div><p>${e(item.description)}</p><p class="field-hint">${e(item.maker)} · ${e(item.license)} · ${item.type === 'http' ? 'hosted server' : 'v' + e(item.version)}</p>${credentials}<p class="field-hint" data-catalog-status role="status">${e(status)}</p><div class="button-row catalog-action-row">${action}</div></article>`;
+    return `<article class="integration-card tool-panel" data-catalog="${e(item.id)}"><div class="zone-identity">${toolLogo(item.id, item.name)}<div class="zone-identity-text"><div class="title-line"><h3>${e(item.name)}</h3><span class="tool-status-pill" data-catalog-status role="status">${e(status)}</span></div><p class="tool-description">${e(item.description)}</p><p class="field-hint">${e(item.maker)}, ${e(item.license)}, ${item.type === 'http' ? 'hosted server' : 'v' + e(item.version)}</p></div></div><div class="zone-config">${credentials}</div><div class="zone-actions button-row catalog-action-row">${action}<button type="button" class="subtle" data-docs="${e(item.id)}">Docs</button></div></article>`;
   }).join('')}</div></section>`;
 }
 
-// Per-tool limits Paddock enforces: access, highest model, daily budget.
+// Per-tool limits Paddock enforces. Only tools that spend credits (Meshy) show
+// access, max model and daily budget controls; free and local tools show none.
 export function toolPolicy(connection, state, e) {
-  const policy = connection.policy || {}, limits = state.toolLimits?.[connection.id] || { models: [], unit: 'paid calls' };
+  const limits = state.toolLimits?.[connection.id] || { models: [], unit: 'paid calls' };
+  if (limits.unit !== 'credits' && !limits.models.length) return '';
+  const policy = connection.policy || {};
   const access = !connection.enabled ? 'off' : policy.access || 'allowed';
-  const models = limits.models.length ? `<label>Max model<select name="maxModel"><option value="">No limit</option>${limits.models.map(m => `<option value="${e(m)}" ${policy.maxModel === m ? 'selected' : ''}>${e(m)}</option>`).join('')}</select></label>` : '';
-  return `<form class="tool-policy" data-tool-policy="${e(connection.id)}"><label>Access<select name="access">${[['allowed', 'Allowed'], ['ask', 'Ask me first'], ['off', 'Off']].map(([v, l]) => `<option value="${v}" ${access === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>${models}<label>Daily budget, ${e(limits.unit)}<input name="dailyBudget" type="number" min="0" step="1" inputmode="numeric" placeholder="No limit" value="${policy.dailyBudget ?? ''}"></label><button type="submit" class="secondary">Save limits</button></form>`;
+  const models = limits.models.length ? `<label class="inline-field"><span class="inline-label">Max model</span><select name="maxModel"><option value="">No limit</option>${limits.models.map(m => `<option value="${e(m)}" ${policy.maxModel === m ? 'selected' : ''}>${e(m)}</option>`).join('')}</select></label>` : '';
+  return `<form id="tool-policy-${e(connection.id)}" class="tool-policy" data-tool-policy="${e(connection.id)}"><label class="inline-field"><span class="inline-label">Access</span><select name="access">${[['allowed', 'Allowed'], ['ask', 'Ask me first'], ['off', 'Off']].map(([v, l]) => `<option value="${v}" ${access === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>${models}<label class="inline-field"><span class="inline-label">Daily budget, ${e(limits.unit)}</span><input name="dailyBudget" type="number" min="0" step="1" inputmode="numeric" placeholder="No limit" value="${policy.dailyBudget ?? ''}"></label><button type="submit" class="secondary">Save limits</button></form>`;
 }
 
 export function workingGuides(state, e) {
@@ -67,15 +86,20 @@ export function skillPackCards(state, e) {
   const { packs = [], busy = false } = state.skills || {};
   if (!packs.length) return '';
   const size = bytes => bytes >= 1048576 ? `${(bytes / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
-  return `<section class="skill-packs surface"><div class="section-label"><h2>Skill packs <span class="optional">optional</span></h2><button type="button" class="subtle" data-skill-refresh ${busy ? 'disabled' : ''}>Check again</button></div><p class="field-hint">Installing copies a pack into each installed agent's skills folder. Agents load it only when a task matches. Uninstall removes the files Paddock added and keeps any you changed.</p>${packs.map(pack => {
+  const renderPack = pack => {
     const installable = pack.targets.some(t => ['not-installed', 'outdated'].includes(t.state)), removable = pack.targets.some(t => ['installed', 'outdated', 'modified'].includes(t.state));
-    const label = !pack.targets.some(t => t.state !== 'not-installed') ? 'Install' : 'Update';
-    return `<article class="skill-pack" data-skill-pack="${e(pack.id)}"><div class="skill-pack-heading"><div><h3>${e(pack.name)}</h3><small>${pack.source === 'local' ? 'Local · this PC only' : 'Included with Paddock'} · ${size(pack.size)}</small></div><div class="button-row">${installable ? `<button type="button" class="secondary" data-skill-install="${e(pack.id)}" ${busy || pack.error ? 'disabled' : ''}>${label}</button>` : ''}${removable ? `<button type="button" class="subtle danger" data-skill-uninstall="${e(pack.id)}" ${busy ? 'disabled' : ''}>Uninstall</button>` : ''}</div></div><p>${e(pack.description)}</p>${pack.error ? `<p class="form-error">${e(pack.error)}</p>` : ''}<details><summary>Folders</summary><ul class="skill-targets">${pack.targets.map(t => `<li data-state="${e(t.state)}"><span class="mono">${e(t.path)}</span><small>${e(t.agents.join(', ') || 'Agents that read the shared folder')} · ${e(skillStates[t.state] || t.state)}</small></li>`).join('')}</ul></details></article>`;
-  }).join('')}</section>`;
+    const label = pack.downloadable ? 'Download and install' : !pack.targets.some(t => t.state !== 'not-installed') ? 'Install' : 'Update';
+    return `<article class="skill-pack" data-skill-pack="${e(pack.id)}"><div class="skill-pack-heading"><div><h4>${e(pack.name)}</h4><small>${pack.source === 'catalog' ? 'Optional download' : pack.source === 'local' ? 'Local to this PC' : 'Included with Paddock'} ${pack.size ? size(pack.size) : ''}</small></div><div class="button-row">${installable ? `<button type="button" class="secondary" data-skill-install="${e(pack.id)}" ${busy || pack.error ? 'disabled' : ''}>${label}</button>` : ''}${removable ? `<button type="button" class="subtle danger" data-skill-uninstall="${e(pack.id)}" ${busy ? 'disabled' : ''}>Uninstall</button>` : ''}</div></div><p>${e(pack.description)}</p>${removable ? `<label class="check"><input type="checkbox" data-skill-automatic="${e(pack.id)}" ${pack.automatic ? 'checked' : ''} ${busy || pack.error ? 'disabled' : ''}> Use automatically</label>${pack.automatic && !pack.entryPath ? '<p class="field-hint">Automatic use needs an unchanged installed copy. Check Folders below.</p>' : ''}` : ''}${pack.setup ? `<details data-skill-details="setup"><summary>Setup details</summary><p>${e(pack.setup)}</p>${pack.upstream ? `<p class="mono">${e(pack.upstream)}</p>` : ''}</details>` : ''}${pack.error ? `<p class="form-error">${e(pack.error)}</p>` : ''}<details data-skill-details="folders"><summary>Folders</summary><ul class="skill-targets">${pack.targets.map(t => `<li data-state="${e(t.state)}"><span class="mono">${e(t.path)}</span><small>${e(t.agents.join(', ') || 'Agents that read the shared folder')} ${e(skillStates[t.state] || t.state)}</small></li>`).join('')}</ul></details></article>`;
+  };
+  const groups = [['engineering', 'Engineering skills'], ['study', 'Study skills'], ['other', 'Other skills']].map(([id, title]) => {
+    const items = packs.filter(pack => (pack.group || 'other') === id);
+    return items.length ? `<section aria-label="${title}"><h3>${title}</h3>${items.map(renderPack).join('')}</section>` : '';
+  }).join('');
+  return `<section class="skill-packs surface"><div class="section-label"><h2>Skill packs <span class="optional">optional</span></h2><button type="button" class="subtle" data-skill-refresh ${busy ? 'disabled' : ''}>Check again</button></div><p class="field-hint">Installing copies a pack into each installed agent's skills folder. Agents load it only when a task matches. Uninstall removes the files Paddock added and keeps any you changed.</p>${groups}</section>`;
 }
 
 export function creativeToolCards(state, e) {
-  return `<section class="creative-tools surface"><h2>Free creative tools</h2><p class="field-hint">Keep your preferred tools. If you need an alternative, these independent ArtCraft apps offer MCP interfaces. Features and release maturity vary. Preparing settings installs and runs nothing.</p><details><summary>Browse optional alternatives</summary><div class="integration-grid">${(state.shared.creativeTools || []).map(item => `<article class="integration-card"><h3>${e(item.name)}</h3><p>${e(item.purpose)}</p><div class="button-row"><button type="button" class="secondary" data-creative-prepare="${e(item.id)}">Prepare MCP settings</button><button type="button" class="subtle" data-docs="${e(item.id)}">Official project</button></div></article>`).join('')}</div></details></section>`;
+  return `<section class="creative-tools surface"><h2>Free creative tools</h2><p class="field-hint">Keep your preferred tools. If you need an alternative, these independent ArtCraft apps offer MCP interfaces. Features and release maturity vary. Preparing settings installs and runs nothing.</p><details><summary>Browse optional alternatives</summary><div class="integration-grid">${(state.shared.creativeTools || []).map(item => `<article class="integration-card tool-panel"><div class="zone-identity">${toolLogo(item.id, item.name)}<div class="zone-identity-text"><div class="title-line"><h3>${e(item.name)}</h3></div><p class="tool-description">${e(item.purpose)}</p><p class="field-hint">Local MCP command: <code>${e(item.command)}</code></p></div></div><div class="zone-config"></div><div class="zone-actions button-row"><button type="button" class="secondary" data-creative-prepare="${e(item.id)}">Prepare MCP settings</button><button type="button" class="subtle" data-docs="${e(item.id)}">Official project</button></div></article>`).join('')}</div></details></section>`;
 }
 
 export function syncIntegrationJobs(state) {
@@ -93,28 +117,52 @@ export function toolFeatures({ call, getState, navigate, render, toast, escape: 
   document.body.append(dialog);
   // The Instructions page is not re-rendered on state updates, so the pack list
   // refreshes itself and keeps open folder lists and keyboard focus.
-  function refreshSkillPacks(focusId) {
+  function refreshSkillPacks(focusId, focusControl, skills) {
     const current = document.querySelector('.skill-packs'); if (!current) return;
-    const open = new Set([...current.querySelectorAll('.skill-pack details[open]')].map(x => x.closest('[data-skill-pack]').dataset.skillPack));
-    const template = document.createElement('template'); template.innerHTML = skillPackCards(getState(), e);
+    const restoreFocus = current.contains(document.activeElement) || document.activeElement === document.body;
+    const focusedPack = document.activeElement.closest?.('[data-skill-pack]')?.dataset.skillPack;
+    if (!focusId) focusId = focusedPack;
+    if (!focusControl && document.activeElement.hasAttribute?.('data-skill-automatic')) focusControl = 'automatic';
+    const open = new Set([...current.querySelectorAll('.skill-pack details[open]')].map(x => [x.closest('[data-skill-pack]').dataset.skillPack, x.dataset.skillDetails]));
+    const template = document.createElement('template'); template.innerHTML = skillPackCards(skills ? { ...getState(), skills } : getState(), e);
     const next = template.content.querySelector('.skill-packs'); if (!next) return;
-    for (const id of open) next.querySelector(`[data-skill-pack="${id}"] details`)?.setAttribute('open', '');
+    for (const [id, detail] of open) next.querySelector(`[data-skill-pack="${id}"] [data-skill-details="${detail}"]`)?.setAttribute('open', '');
     current.replaceWith(next);
-    if (focusId) next.querySelector(`[data-skill-pack="${focusId}"] .button-row button`)?.focus({ preventScroll: true });
+    if (restoreFocus) (next.querySelector(`[data-skill-pack="${focusId}"] ${focusControl === 'automatic' ? '[data-skill-automatic]:not(:disabled)' : '.button-row button:not(:disabled)'}`) || next.querySelector(`[data-skill-pack="${focusId}"] .button-row button:not(:disabled)`) || next.querySelector('[data-skill-refresh]:not(:disabled)'))?.focus({ preventScroll: true });
     const preview = document.querySelector('.summary-preview pre'); if (preview) preview.textContent = getState().shared.summary;
   }
+  document.addEventListener('change', async event => {
+    const input = event.target.closest?.('[data-skill-automatic]'); if (!input) return;
+    const id = input.dataset.skillAutomatic;
+    if (input.getAttribute('aria-disabled') === 'true') { input.checked = !input.checked; return; }
+    input.setAttribute('aria-disabled', 'true');
+    try {
+      const results = await call('skills.automatic', { id, automatic: input.checked });
+      const problems = results.filter(item => ['skipped', 'failed', 'kept'].includes(item.state));
+      if (problems.length) toast(problems.map(item => item.reason).join(' ') + ' Preserved copies may still be loaded by native agents.', true);
+    }
+    catch (error) { toast(error.message, true); }
+    finally {
+      try { refreshSkillPacks(id, 'automatic', { packs: await call('skills.refresh'), busy: false }); }
+      catch { input.removeAttribute('aria-disabled'); refreshSkillPacks(id, 'automatic'); }
+    }
+  });
   document.addEventListener('click', async event => {
     const button = event.target.closest('button'); if (!button) return;
     try {
       if (button.dataset.skillInstall || button.dataset.skillUninstall || button.hasAttribute('data-skill-refresh')) {
         const install = !!button.dataset.skillInstall, id = button.dataset.skillInstall || button.dataset.skillUninstall;
         button.disabled = true;
+        button.textContent = !id ? 'Checking...' : install ? 'Installing...' : 'Removing...';
         try {
           if (!id) { await call('skills.refresh'); return; }
           const results = await call(install ? 'skills.install' : 'skills.uninstall', id);
           const problems = results.filter(x => ['skipped', 'failed', 'kept'].includes(x.state));
           toast(problems.length ? problems.map(x => x.reason).join(' ') : install ? 'Skill pack installed. New agent sessions load it.' : 'Skill pack removed.', problems.some(x => x.state !== 'kept'));
-        } finally { refreshSkillPacks(id); }
+        } finally {
+          try { refreshSkillPacks(id, undefined, { packs: await call('skills.refresh'), busy: false }); }
+          catch { button.disabled = false; refreshSkillPacks(id); }
+        }
         return;
       }
       if (button.dataset.creativePrepare) {
@@ -134,7 +182,7 @@ export function toolFeatures({ call, getState, navigate, render, toast, escape: 
       if (button.dataset.catalogAdd) {
         const card = button.closest('[data-catalog]'), status = card.querySelector('[data-catalog-status]');
         button.disabled = true;
-        try { const keyId = await storeKey(card, call); await call('catalog.add', { id: button.dataset.catalogAdd, keyId }); render(); toast('Tool added.'); }
+        try { const keyId = await storeKey(card, call); await call('catalog.add', { id: button.dataset.catalogAdd, keyId }); render(button); toast('Tool added.'); }
         catch (error) { status.textContent = error.message; }
         finally { if (button.isConnected) button.disabled = false; }
       }
@@ -147,7 +195,7 @@ export function toolFeatures({ call, getState, navigate, render, toast, escape: 
         const card = button.closest('[data-integration]');
         const payload = { id: button.dataset.integrationSetup, projectPath: card.querySelector('[name=projectPath]')?.value, backendUrl: card.querySelector('[name=backendUrl]')?.value };
         button.disabled = true;
-        try { payload.keyId = await storeKey(card, call) || undefined; await call('integrations.setup', payload); render(); toast('Tool connected.'); }
+        try { payload.keyId = await storeKey(card, call) || undefined; await call('integrations.setup', payload); render(button); toast('Tool connected.'); }
         catch (error) { card.querySelector('[data-integration-status]').textContent = error.message; }
         finally { if (button.isConnected) button.disabled = false; }
       }
@@ -169,7 +217,7 @@ export function toolFeatures({ call, getState, navigate, render, toast, escape: 
     const form = event.target.closest?.('[data-tool-policy]'); if (!form) return;
     event.preventDefault(); event.stopImmediatePropagation();
     const button = form.querySelector('[type=submit]'), data = Object.fromEntries(new FormData(form)); button.disabled = true;
-    try { await call('tools.policy', { id: form.dataset.toolPolicy, policy: { access: data.access, maxModel: data.maxModel || null, dailyBudget: data.dailyBudget === '' ? null : data.dailyBudget } }); render(); toast('Limits saved. Agents see them on their next task.'); }
+    try { await call('tools.policy', { id: form.dataset.toolPolicy, policy: { access: data.access, maxModel: data.maxModel || null, dailyBudget: data.dailyBudget === '' ? null : data.dailyBudget } }); render(button); toast('Limits saved. Agents see them on their next task.'); }
     catch (error) { toast(error.message, true); }
     finally { if (button.isConnected) button.disabled = false; }
   }, true);

@@ -1,0 +1,71 @@
+/* Initial Paddock snapshot provenance. Canonical shared source; edit this package.
+Paddock themes/manifest.json sha256=624d75a19a2de098dbccb2749fcff01f9a9c8d4f14accc6f4160bccc841cb6c3
+Paddock src/styles.css sha256=373820adfe65492a6f029f0f68ed892e2e2687e508a50a0c98da24351c1db73e
+Paddock src/style.css sha256=efa80abc4a2e3af1e81e63a8a882a2ecc3185a07bbf949ed3d981c1d7f9203f6
+Paddock src/mobile.css sha256=7b070d46533aeb73fe3cc274581e8737e22da1ca786e3571dcc4d7c27d75fc76
+Paddock src/workbench.css sha256=c32c9bd18c26a4522abb4a1c811ca5964fec0054754d4107c7f61648e953a3bf
+Paddock src/console-polish.css sha256=585cbd44d6d30be7ce77b2fa98f3f0f8e40d17c6fff922e6145cbc7faf262765
+Paddock src/setup.css sha256=ee2921f280684ea61c299498ef1223db957ec76dc77edcd459e0a491a304c451
+Paddock src/projects.css sha256=7024f82b24c8dd12a355fda76b55b7c48575db7deee18a7fe62583a3167aad41
+Paddock src/worker-composer.css sha256=7452052f1438d350dde6d067f1dc57b5719ebadcde0898b3a2cc72df1407219f
+Paddock src/review-panel.css sha256=be429ca463276250bee4e183a72fafc753623f182cbd756574810ae3659c3133
+Paddock src/task-loop.css sha256=59b3b487e4f23b2764cf58973dc76b45d29150b9b5ad70479730168d3cb3c3ce
+Paddock src/ssh.css sha256=915ed1e6a3a360c4fb438415b4dd6984ba2403b8587a9f8d0d86e23c7d7cb70c
+Paddock src/account-usage.css sha256=7775340afeed2eb3ca0763151eef87ed9e9c9cd94bbee8f6bfe393c9a6960f1d
+Paddock src/usage-page.css sha256=1c00a6d2887da480af49b4462de1bcc0ea3a59870b2a3d64482d2c4d60752e6f
+Paddock src/console-trim.css sha256=e585e39c17372595fa3d383f6ed3a1005708b6c86452345c29084de284a91c88
+Paddock src/console-themes.css sha256=73b5db2b572596b8dfc352b0417753b19bb689b2729fa17ef70fd4c51753ff54
+Paddock src/theme-palette.css sha256=61caafd5252b1d9d9fd45dd39a4deb6be28d06cfce6e520aa469b7fd58aad7ce
+Paddock src/theme-system.css sha256=a72917ce4f7461b8c9a4a95f38b4690f27f02e6b50f1925649afa76068057074
+Paddock src/navigation-rail.css sha256=37984db3ea0540a393f9dd546e550301b0b7d4893917617a83e7a26626462272
+Paddock src/page-layout.css sha256=f4551e2392f44a177026a96930e0278baf24c3bb8cba8364412d392660a33659
+Paddock src/workspace-glass.css sha256=6d5e6b21bd6b8efc9ea8dd3d2433731350c1d918ce8e26f73ba38f67aa262863
+Paddock src/usage-glass.css sha256=663370c0927a7ef7a06e48afbddea03dbafbb78ebba47c2e9a15dc65954b1a18
+Paddock src/console-sky.js sha256=0b53e2a36140568813a7a28c8321a6390cf7204627fb6a9e3395572576a4d5ce */
+
+body[data-theme="classic"] { --accent-blue:#89b4ff; --accent-pink:#f19cda; --frame-a:#89b4ff; --frame-b:#f19cda; --window-black:#0c0d13; --theme-header:rgb(16 19 34); --on-accent:#10111b  }
+
+body[data-theme="hot-pink"] { --accent-blue:#ff6ad5; --accent-pink:#c13cff; --frame-a:#ff6ad5; --frame-b:#c13cff; --window-black:#0c0d13; --theme-header:rgb(36 9 30); --on-accent:#10111b  }
+
+body[data-theme="blue"] { --accent-blue:#80c7ff; --accent-pink:#4f7bff; --frame-a:#80c7ff; --frame-b:#4f7bff; --window-black:#0c0d13; --theme-header:rgb(10 26 47); --on-accent:#10111b  }
+
+body[data-theme="violet"] { --accent-blue:#c7a3ff; --accent-pink:#8f5bff; --frame-a:#c7a3ff; --frame-b:#8f5bff; --window-black:#0c0d13; --theme-header:rgb(30 18 51); --on-accent:#10111b  }
+
+body[data-theme="void"] { --accent-blue:#8f80ff; --accent-pink:#5a3fd0; --frame-a:#7b6cff; --frame-b:#35246e; --window-black:#010102 ; --theme-header:rgb(6 5 13); --on-accent:#ffffff }
+
+body[data-theme="redline"] { --accent-blue:#ff4d5e; --accent-pink:#d10022; --frame-a:#ff2a3d; --frame-b:#b0001a; --window-black:#030303 ; --theme-header:rgb(9 9 9); --on-accent:#ffffff }
+
+body[data-theme="cyber"] { --accent-blue:#00e1ff; --accent-pink:#cc55ff; --frame-a:#00e1ff; --frame-b:#cc55ff; --window-black:#080911 ; --theme-header:rgb(14 22 41); --on-accent:#10111b  }
+
+body[data-theme="icy"] { --accent-blue:#7fe9ff; --accent-pink:#4f9dff; --frame-a:#7fe9ff; --frame-b:#4f9dff; --window-black:#040b14 ; --theme-header:rgb(11 34 53); --on-accent:#10111b  }
+
+body[data-theme="fiery"] { --accent-blue:#ffb700; --accent-pink:#ff6a2b; --frame-a:#ff6a2b; --frame-b:#ffb700; --window-black:#100805 ; --theme-header:rgb(43 18 9); --on-accent:#10111b  }
+
+body[data-theme="gamer"] { --accent-blue:var(--rgb-blue); --accent-pink:var(--rgb-pink) ; --frame-a:var(--rgb-blue); --frame-b:var(--rgb-pink) ; --window-black:#08090d ; --theme-header:rgb(17 21 31); --on-accent:#10111b  }
+
+body[data-theme="normal"] { --accent-blue:#c4cedc; --accent-pink:#8f9bb0; --frame-a:#b9c6d8; --frame-b:#8392a8; --window-black:#0c0f15 ; --theme-header:#131720; --on-accent:#10111b  }
+
+@property --rgb-blue { syntax:'<color>'; inherits:true; initial-value:#ff7895 }
+
+@property --rgb-pink { syntax:'<color>'; inherits:true; initial-value:#80bfff }
+
+@keyframes console-rgb {
+  0% { --rgb-blue:#ff7895; --rgb-pink:#80bfff; --chroma-turn:0deg }
+  17% { --rgb-blue:#ffbd80; --rgb-pink:#b79bff; --chroma-turn:60deg }
+  33% { --rgb-blue:#e6ff85; --rgb-pink:#ff8fe3; --chroma-turn:120deg }
+  50% { --rgb-blue:#85ffb1; --rgb-pink:#ff7895; --chroma-turn:180deg }
+  67% { --rgb-blue:#80dfff; --rgb-pink:#ffbd80; --chroma-turn:240deg }
+  83% { --rgb-blue:#b79bff; --rgb-pink:#85ffb1; --chroma-turn:300deg }
+  100% { --rgb-blue:#ff7895; --rgb-pink:#80bfff; --chroma-turn:360deg }
+}
+
+
+body[data-theme] { --frame-bg:var(--window-black); --panel-hue:var(--theme-header); --accent:var(--accent-blue); --accent-2:var(--accent-pink); background:var(--frame-bg); isolation:isolate }
+body[data-theme=gamer] { animation:console-rgb 12s steps(24) infinite }
+body[data-theme] #app { position:relative; z-index:1 }
+#paddock-background { position:fixed; inset:0; z-index:-1; pointer-events:none; overflow:hidden; background:var(--frame-bg) }
+#paddock-background > .panel-sky { position:absolute; inset:0; width:100%; height:100%; pointer-events:none }
+body[data-stars=off] #paddock-background > .panel-sky { visibility:hidden }
+body[data-visual-paused=true][data-theme=gamer] { animation-play-state:paused }
+body[data-stars=off][data-theme=gamer] { animation-play-state:paused }
+@media (prefers-reduced-motion:reduce) { body[data-theme=gamer] { animation:none } }

@@ -121,27 +121,18 @@ class Session {
 class Project {
   final String id, name, status;
   final String? color;
-  final int progressDone, progressTotal;
-  final int? lastActiveAt;
   const Project({
     required this.id,
     required this.name,
     required this.status,
     this.color,
-    this.progressDone = 0,
-    this.progressTotal = 0,
-    this.lastActiveAt,
   });
   factory Project.fromJson(Map<String, dynamic> j) {
-    final progress = _map(j['progress']);
     return Project(
       id: _str(j['id']) ?? '',
       name: _str(j['name']) ?? '',
       status: _str(j['status']) ?? '',
       color: _str(j['color']),
-      progressDone: _int(progress?['done']) ?? 0,
-      progressTotal: _int(progress?['total']) ?? 0,
-      lastActiveAt: _int(j['lastActiveAt']),
     );
   }
 }
@@ -245,7 +236,7 @@ class UsageWindow {
   /// Null means the provider did not report a percentage. Never show it as 0.
   final num? usedPercent;
   final int? minutes, resetsAt, observedAt;
-  final bool unlimited;
+  final bool unlimited, notApplicable;
   const UsageWindow({
     required this.key,
     required this.label,
@@ -257,6 +248,7 @@ class UsageWindow {
     this.resetsAt,
     this.observedAt,
     this.unlimited = false,
+    this.notApplicable = false,
   });
   factory UsageWindow.fromJson(Map<String, dynamic> j) => UsageWindow(
     key: _str(j['key']) ?? '',
@@ -269,6 +261,7 @@ class UsageWindow {
     resetsAt: _int(j['resetsAt']),
     observedAt: _int(j['observedAt']),
     unlimited: _bool(j['unlimited']),
+    notApplicable: _bool(j['notApplicable']),
   );
 }
 

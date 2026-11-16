@@ -42,7 +42,7 @@ test('a retained toast click restores Paddock before opening its console', async
 });
 
 test('ready notifications restore the Results workspace from every window mode', async () => {
-  for (const mode of ['hud', 'dashboard', 'fullscreen']) for (const resultId of ['saved-result', null]) {
+  for (const mode of ['dashboard', 'fullscreen']) for (const resultId of ['saved-result', null]) {
     const events = [], window = { isDestroyed: () => false, webContents: { send: (...args) => events.push(args) } };
     const center = new DockNotifications({ getWindow: () => window, getSessions: () => [{ id: 'console-a' }], getMode: () => mode, reveal() {}, publish() {}, setMode: async next => events.push(next) });
     const item = { kind: 'ready', sessionId: 'console-a', resultId, turnId: 'turn-a', destination: 'results' };
@@ -59,9 +59,9 @@ test('old ready alerts stay in Results while errors still open the originating c
   await center.open({ kind: 'error', sessionId: 'a' }); assert.equal(events[0], 'fullscreen');
 });
 
-test('result notifications expand the HUD without selecting a stale console', async () => {
+test('result notifications leave fullscreen without selecting a stale console', async () => {
   const events = [], window = { isDestroyed: () => false, webContents: { send: (...args) => events.push(args) } };
-  const center = new DockNotifications({ getWindow: () => window, getSessions: () => [], getMode: () => 'hud', reveal: () => events.push('reveal'), publish: () => {}, setMode: async value => events.push(value) });
+  const center = new DockNotifications({ getWindow: () => window, getSessions: () => [], getMode: () => 'fullscreen', reveal: () => events.push('reveal'), publish: () => {}, setMode: async value => events.push(value) });
   const item = { resultId: 'result-a', sessionId: 'closed-console' }; await center.open(item);
   assert.equal(events[1], 'dashboard'); assert.deepEqual(events.at(-1), ['dock:notice', item]);
   window.isDestroyed = () => true; const count = events.length; await center.open(item); assert.equal(events.length, count);

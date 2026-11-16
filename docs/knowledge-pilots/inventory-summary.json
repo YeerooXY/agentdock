@@ -1,0 +1,772 @@
+{
+  "schemaVersion": 1,
+  "observedAt": "2026-11-05T12:18:44.584Z",
+  "scope": "Read-only metadata; no source snapshots or semantic completeness. Raw path metadata is retained locally under .build/knowledge-pilot/inventory.json.",
+  "roots": [
+    {
+      "label": "Agentdock / Desktop and Android app",
+      "rootName": "agent-dock",
+      "inventoryId": "efd2fe1ae0b252a8971d98199ae05f3ed6ee2ddb3b4d18a3dd310c4519751057",
+      "policy": "default-exclusions-only-v1:4f2e9c4f196a8bc91dfc257509173e5d26267c661bf72f28c273ac47f9c7955f",
+      "coverage": {
+        "complete": false,
+        "truncated": true,
+        "reasons": [
+          "entry-limit"
+        ],
+        "examined": 10000,
+        "lookaheadEntries": 29,
+        "excluded": 46,
+        "excludedByRule": {
+          "private-name": 16,
+          "directory-name-hint": 26,
+          "build-prefix-directory-hint": 4
+        },
+        "excludedDirectories": [
+          {
+            "path": ".build",
+            "rule": "directory-name-hint"
+          },
+          {
+            "path": ".git",
+            "rule": "directory-name-hint"
+          },
+          {
+            "path": "artifacts/skill-validator/_yaml/__pycache__",
+            "rule": "directory-name-hint"
+          },
+          {
+            "path": "artifacts/skill-validator/yaml/__pycache__",
+            "rule": "directory-name-hint"
+          },
+          {
+            "path": "dist",
+            "rule": "directory-name-hint"
+          },
+          {
+            "path": "mobile/.dart_tool",
+            "rule": "directory-name-hint"
+          },
+          {
+            "path": "mobile/.idea",
+            "rule": "directory-name-hint"
+          },
+          {
+            "path": "mobile/android/.gradle",
+            "rule": "directory-name-hint"
+          },
+          {
+            "path": "mobile/build",
+            "rule": "directory-name-hint"
+          },
+          {
+            "path": "node_modules",
+            "rule": "directory-name-hint"
+          },
+          {
+            "path": "release/local-preview33-20261102/win-unpacked/resources/app.asar.unpacked/node_modules",
+            "rule": "directory-name-hint"
+          },
+          {
+            "path": "release/local-preview33-20261102/win-unpacked/resources/runtime/meshy-cli/dist",
+            "rule": "directory-name-hint"
+          },
+          {
+            "path": "release/local-preview33-20261102/win-unpacked/resources/runtime/meshy-cli/node_modules",
+            "rule": "directory-name-hint"
+          },
+          {
+            "path": "release/local-preview33-20261102/win-unpacked/resources/runtime/npm/bin",
+            "rule": "directory-name-hint"
+          },
+          {
+            "path": "release/local-preview33-20261102/win-unpacked/resources/runtime/npm/node_modules",
+            "rule": "directory-name-hint"
+          },
+          {
+            "path": "release/win-unpacked/resources/app.asar.unpacked/node_modules",
+            "rule": "directory-name-hint"
+          },
+          {
+            "path": "release/win-unpacked/resources/runtime/meshy-cli/dist",
+            "rule": "directory-name-hint"
+          },
+          {
+            "path": "release/win-unpacked/resources/runtime/meshy-cli/node_modules",
+            "rule": "directory-name-hint"
+          },
+          {
+            "path": "release/win-unpacked/resources/runtime/npm/bin",
+            "rule": "directory-name-hint"
+          },
+          {
+            "path": "release/win-unpacked/resources/runtime/npm/node_modules",
+            "rule": "directory-name-hint"
+          },
+          {
+            "path": "test-data/Installed Dock 4oJKJJ/Program Files/Agent Dock/resources/app.asar.unpacked/node_modules",
+            "rule": "directory-name-hint"
+          },
+          {
+            "path": "test-data/Installed Dock 9rsH1u/Program Files/Agent Dock/resources/app.asar.unpacked/node_modules",
+            "rule": "directory-name-hint"
+          },
+          {
+            "path": "test-data/codex-restore-7ID5r4/home/.tmp/plugins-clone-6HjUVe/.git",
+            "rule": "directory-name-hint"
+          },
+          {
+            "path": "test-data/codex-restore-7ID5r4/home/.tmp/plugins-clone-WODmvh/.git",
+            "rule": "directory-name-hint"
+          },
+          {
+            "path": "test-data/codex-start-R9x4s2/home/.tmp/plugins-clone-jrcQIu/.git",
+            "rule": "directory-name-hint"
+          },
+          {
+            "path": "test-data/codex-start-R9x4s2/home/.tmp/plugins-clone-jrcQIu/plugins/build-ios-apps",
+            "rule": "build-prefix-directory-hint"
+          },
+          {
+            "path": "test-data/codex-start-R9x4s2/home/.tmp/plugins-clone-jrcQIu/plugins/build-macos-apps",
+            "rule": "build-prefix-directory-hint"
+          },
+          {
+            "path": "test-data/codex-start-R9x4s2/home/.tmp/plugins-clone-jrcQIu/plugins/build-web-apps",
+            "rule": "build-prefix-directory-hint"
+          },
+          {
+            "path": "test-data/codex-start-R9x4s2/home/.tmp/plugins-clone-jrcQIu/plugins/build-web-data-visualization",
+            "rule": "build-prefix-directory-hint"
+          },
+          {
+            "path": "vendor",
+            "rule": "directory-name-hint"
+          }
+        ],
+        "unreadable": 0,
+        "symlinks": 0
+      },
+      "fileCount": 8384,
+      "counts": {
+        "source": 1256,
+        "test": 106,
+        "docs": 859,
+        "config": 72,
+        "asset": 2271,
+        "data": 1002,
+        "other": 2818
+      },
+      "languageHints": {
+        "cmd": 1,
+        "cjs": 472,
+        "ts": 3,
+        "js": 354,
+        "css": 27,
+        "ps1": 11,
+        "html": 200,
+        "dart": 136,
+        "py": 113,
+        "mjs": 11,
+        "bat": 13,
+        "java": 1,
+        "kt": 4,
+        "sh": 5
+      }
+    },
+    {
+      "label": "Playtime",
+      "rootName": "playtime",
+      "inventoryId": "fceca5566a8bdf100f2164469a06783647ce6aa58a96d60d945644c62c85582b",
+      "policy": "default-exclusions-only-v1:4f2e9c4f196a8bc91dfc257509173e5d26267c661bf72f28c273ac47f9c7955f",
+      "coverage": {
+        "complete": true,
+        "truncated": false,
+        "reasons": [],
+        "examined": 1163,
+        "lookaheadEntries": 0,
+        "excluded": 5,
+        "excludedByRule": {
+          "directory-name-hint": 5
+        },
+        "excludedDirectories": [
+          {
+            "path": ".git",
+            "rule": "directory-name-hint"
+          },
+          {
+            "path": "app/node_modules",
+            "rule": "directory-name-hint"
+          },
+          {
+            "path": "app/window/tests/.build",
+            "rule": "directory-name-hint"
+          },
+          {
+            "path": "extension/vendor",
+            "rule": "directory-name-hint"
+          },
+          {
+            "path": "node_modules",
+            "rule": "directory-name-hint"
+          }
+        ],
+        "unreadable": 0,
+        "symlinks": 0
+      },
+      "fileCount": 1072,
+      "counts": {
+        "source": 128,
+        "test": 100,
+        "docs": 60,
+        "config": 4,
+        "asset": 717,
+        "data": 49,
+        "other": 14
+      },
+      "languageHints": {
+        "js": 190,
+        "cjs": 16,
+        "html": 17,
+        "css": 7,
+        "mjs": 2,
+        "ps1": 2
+      }
+    },
+    {
+      "label": "Robonslaught",
+      "rootName": "Robonslaught",
+      "inventoryId": "c5fea6f8d25ee084393a357f967a3d5861de223306b35acca64ba91405cf777c",
+      "policy": "default-exclusions-only-v1:4f2e9c4f196a8bc91dfc257509173e5d26267c661bf72f28c273ac47f9c7955f",
+      "coverage": {
+        "complete": false,
+        "truncated": true,
+        "reasons": [
+          "entry-limit"
+        ],
+        "examined": 10000,
+        "lookaheadEntries": 46,
+        "excluded": 4,
+        "excludedByRule": {
+          "private-name": 1,
+          "directory-name-hint": 3
+        },
+        "excludedDirectories": [
+          {
+            "path": ".git",
+            "rule": "directory-name-hint"
+          },
+          {
+            "path": "Library",
+            "rule": "directory-name-hint"
+          },
+          {
+            "path": "Logs",
+            "rule": "directory-name-hint"
+          }
+        ],
+        "unreadable": 0,
+        "symlinks": 0
+      },
+      "fileCount": 9733,
+      "counts": {
+        "source": 247,
+        "test": 0,
+        "docs": 3,
+        "config": 0,
+        "asset": 3848,
+        "data": 569,
+        "other": 5066
+      },
+      "languageHints": {
+        "cs": 247
+      }
+    },
+    {
+      "label": "SFDungeon / Simulator",
+      "rootName": "sf-legendary-sim",
+      "inventoryId": "8b4ddf03e5853786ed8d5e62b955b411c5621e7cf1eeaab51ef9564ca72309ed",
+      "policy": "default-exclusions-only-v1:4f2e9c4f196a8bc91dfc257509173e5d26267c661bf72f28c273ac47f9c7955f",
+      "coverage": {
+        "complete": true,
+        "truncated": false,
+        "reasons": [],
+        "examined": 2861,
+        "lookaheadEntries": 0,
+        "excluded": 25,
+        "excludedByRule": {
+          "directory-name-hint": 15,
+          "build-prefix-directory-hint": 10
+        },
+        "excludedDirectories": [
+          {
+            "path": ".git",
+            "rule": "directory-name-hint"
+          },
+          {
+            "path": "build",
+            "rule": "directory-name-hint"
+          },
+          {
+            "path": "build-adaptive-stones",
+            "rule": "build-prefix-directory-hint"
+          },
+          {
+            "path": "build-calibration-20261018",
+            "rule": "build-prefix-directory-hint"
+          },
+          {
+            "path": "build-effects",
+            "rule": "build-prefix-directory-hint"
+          },
+          {
+            "path": "build-hindsight",
+            "rule": "build-prefix-directory-hint"
+          },
+          {
+            "path": "build-perf",
+            "rule": "build-prefix-directory-hint"
+          },
+          {
+            "path": "build-ui-decisions",
+            "rule": "build-prefix-directory-hint"
+          },
+          {
+            "path": "build-ui-feedback",
+            "rule": "build-prefix-directory-hint"
+          },
+          {
+            "path": "build-v0610",
+            "rule": "build-prefix-directory-hint"
+          },
+          {
+            "path": "build-v0611",
+            "rule": "build-prefix-directory-hint"
+          },
+          {
+            "path": "build-v0612",
+            "rule": "build-prefix-directory-hint"
+          },
+          {
+            "path": "data/vods/trap-order-2026-10-12/__pycache__",
+            "rule": "directory-name-hint"
+          },
+          {
+            "path": "desktop/node_modules",
+            "rule": "directory-name-hint"
+          },
+          {
+            "path": "desktop/out",
+            "rule": "directory-name-hint"
+          },
+          {
+            "path": "docs/runtime-v2-2026-10-12/source-before/tools/sfld_rl/__pycache__",
+            "rule": "directory-name-hint"
+          },
+          {
+            "path": "examples/agents/__pycache__",
+            "rule": "directory-name-hint"
+          },
+          {
+            "path": "out",
+            "rule": "directory-name-hint"
+          },
+          {
+            "path": "tests/__pycache__",
+            "rule": "directory-name-hint"
+          },
+          {
+            "path": "tools/__pycache__",
+            "rule": "directory-name-hint"
+          },
+          {
+            "path": "tools/sfld_live/__pycache__",
+            "rule": "directory-name-hint"
+          },
+          {
+            "path": "tools/sfld_record/__pycache__",
+            "rule": "directory-name-hint"
+          },
+          {
+            "path": "tools/sfld_rl/__pycache__",
+            "rule": "directory-name-hint"
+          },
+          {
+            "path": "tools/sfld_study/__pycache__",
+            "rule": "directory-name-hint"
+          },
+          {
+            "path": "tools/sfld_vod/__pycache__",
+            "rule": "directory-name-hint"
+          }
+        ],
+        "unreadable": 0,
+        "symlinks": 0
+      },
+      "fileCount": 2624,
+      "counts": {
+        "source": 918,
+        "test": 146,
+        "docs": 77,
+        "config": 25,
+        "asset": 148,
+        "data": 822,
+        "other": 488
+      },
+      "languageHints": {
+        "ps1": 3,
+        "cjs": 33,
+        "html": 10,
+        "js": 5,
+        "css": 7,
+        "py": 689,
+        "hpp": 123,
+        "cpp": 199
+      }
+    },
+    {
+      "label": "SFDungeon / Local study setup",
+      "rootName": "sf-ld-local-setup",
+      "inventoryId": "b1e59a1a96fd3263b983bd2d5e217b022003ebde4241dd06d42bd70ef419d8d5",
+      "policy": "default-exclusions-only-v1:4f2e9c4f196a8bc91dfc257509173e5d26267c661bf72f28c273ac47f9c7955f",
+      "coverage": {
+        "complete": false,
+        "truncated": true,
+        "reasons": [
+          "depth-limit"
+        ],
+        "examined": 1629,
+        "lookaheadEntries": 0,
+        "excluded": 22,
+        "excludedByRule": {
+          "directory-name-hint": 22
+        },
+        "excludedDirectories": [
+          {
+            "path": "__pycache__",
+            "rule": "directory-name-hint"
+          },
+          {
+            "path": "arena-policy/__pycache__",
+            "rule": "directory-name-hint"
+          },
+          {
+            "path": "arena-policy/bin",
+            "rule": "directory-name-hint"
+          },
+          {
+            "path": "arena-policy/obj",
+            "rule": "directory-name-hint"
+          },
+          {
+            "path": "arena-policy/patcher/bin",
+            "rule": "directory-name-hint"
+          },
+          {
+            "path": "arena-policy/patcher/obj",
+            "rule": "directory-name-hint"
+          },
+          {
+            "path": "arena-policy/tests/bin",
+            "rule": "directory-name-hint"
+          },
+          {
+            "path": "arena-policy/tests/obj",
+            "rule": "directory-name-hint"
+          },
+          {
+            "path": "combat-reader/bin",
+            "rule": "directory-name-hint"
+          },
+          {
+            "path": "combat-reader/obj",
+            "rule": "directory-name-hint"
+          },
+          {
+            "path": "guild-vacancy-reader/bin",
+            "rule": "directory-name-hint"
+          },
+          {
+            "path": "guild-vacancy-reader/obj",
+            "rule": "directory-name-hint"
+          },
+          {
+            "path": "profiles/combined/backup/offense-inventory-20261017T124007/source/__pycache__",
+            "rule": "directory-name-hint"
+          },
+          {
+            "path": "profiles/combined/logs",
+            "rule": "directory-name-hint"
+          },
+          {
+            "path": "profiles/you/logs",
+            "rule": "directory-name-hint"
+          },
+          {
+            "path": "status-reader/bin",
+            "rule": "directory-name-hint"
+          },
+          {
+            "path": "status-reader/obj",
+            "rule": "directory-name-hint"
+          },
+          {
+            "path": "tests/__pycache__",
+            "rule": "directory-name-hint"
+          },
+          {
+            "path": "tools/Il2CppDumper-src/.git",
+            "rule": "directory-name-hint"
+          },
+          {
+            "path": "tools/Il2CppDumper-src/Il2CppDumper/bin",
+            "rule": "directory-name-hint"
+          },
+          {
+            "path": "tools/Il2CppDumper-src/Il2CppDumper/obj",
+            "rule": "directory-name-hint"
+          },
+          {
+            "path": "vendor",
+            "rule": "directory-name-hint"
+          }
+        ],
+        "unreadable": 0,
+        "symlinks": 0
+      },
+      "fileCount": 1438,
+      "counts": {
+        "source": 331,
+        "test": 12,
+        "docs": 43,
+        "config": 47,
+        "asset": 1,
+        "data": 300,
+        "other": 704
+      },
+      "languageHints": {
+        "cmd": 10,
+        "ps1": 15,
+        "cs": 275,
+        "py": 30,
+        "h": 1,
+        "rs": 7,
+        "html": 2
+      }
+    },
+    {
+      "label": "Agent workflow / Orchestrator",
+      "rootName": "orch",
+      "inventoryId": "950ff3514cae653f3078eedef1736f6a588a0ed423601347639cb1db5a1375c1",
+      "policy": "default-exclusions-only-v1:4f2e9c4f196a8bc91dfc257509173e5d26267c661bf72f28c273ac47f9c7955f",
+      "coverage": {
+        "complete": true,
+        "truncated": false,
+        "reasons": [],
+        "examined": 27,
+        "lookaheadEntries": 0,
+        "excluded": 3,
+        "excludedByRule": {
+          "private-name": 1,
+          "directory-name-hint": 2
+        },
+        "excludedDirectories": [
+          {
+            "path": ".git",
+            "rule": "directory-name-hint"
+          },
+          {
+            "path": "__pycache__",
+            "rule": "directory-name-hint"
+          }
+        ],
+        "unreadable": 0,
+        "symlinks": 0
+      },
+      "fileCount": 22,
+      "counts": {
+        "source": 3,
+        "test": 6,
+        "docs": 9,
+        "config": 0,
+        "asset": 0,
+        "data": 0,
+        "other": 4
+      },
+      "languageHints": {
+        "py": 5
+      }
+    },
+    {
+      "label": "Agent workflow / Benchmark client",
+      "rootName": "bench",
+      "inventoryId": "ed0a9aed64cb4be6fca7d07be2bc28ca017b04f3a2ee7750785d741b890ebaab",
+      "policy": "default-exclusions-only-v1:4f2e9c4f196a8bc91dfc257509173e5d26267c661bf72f28c273ac47f9c7955f",
+      "coverage": {
+        "complete": true,
+        "truncated": false,
+        "reasons": [],
+        "examined": 51,
+        "lookaheadEntries": 0,
+        "excluded": 3,
+        "excludedByRule": {
+          "directory-name-hint": 3
+        },
+        "excludedDirectories": [
+          {
+            "path": ".git",
+            "rule": "directory-name-hint"
+          },
+          {
+            "path": "__pycache__",
+            "rule": "directory-name-hint"
+          },
+          {
+            "path": "tests/__pycache__",
+            "rule": "directory-name-hint"
+          }
+        ],
+        "unreadable": 0,
+        "symlinks": 0
+      },
+      "fileCount": 46,
+      "counts": {
+        "source": 33,
+        "test": 4,
+        "docs": 6,
+        "config": 0,
+        "asset": 0,
+        "data": 0,
+        "other": 3
+      },
+      "languageHints": {
+        "py": 33,
+        "cjs": 3,
+        "cmd": 1
+      }
+    },
+    {
+      "label": "Agent workflow / Website study",
+      "rootName": "webstudy",
+      "inventoryId": "cf855974913bf7b109bb67d0db75256908f6e41ee19a313a46f07f592e008eff",
+      "policy": "default-exclusions-only-v1:4f2e9c4f196a8bc91dfc257509173e5d26267c661bf72f28c273ac47f9c7955f",
+      "coverage": {
+        "complete": true,
+        "truncated": false,
+        "reasons": [],
+        "examined": 304,
+        "lookaheadEntries": 0,
+        "excluded": 2,
+        "excludedByRule": {
+          "directory-name-hint": 2
+        },
+        "excludedDirectories": [
+          {
+            "path": ".git",
+            "rule": "directory-name-hint"
+          },
+          {
+            "path": "node_modules",
+            "rule": "directory-name-hint"
+          }
+        ],
+        "unreadable": 0,
+        "symlinks": 0
+      },
+      "fileCount": 262,
+      "counts": {
+        "source": 4,
+        "test": 0,
+        "docs": 7,
+        "config": 2,
+        "asset": 172,
+        "data": 76,
+        "other": 1
+      },
+      "languageHints": {
+        "cjs": 1,
+        "js": 3
+      }
+    },
+    {
+      "label": "Nemosite / Portfolio site",
+      "rootName": "nemozoli",
+      "inventoryId": "9eea0acdb2e62b6729bd91a96809dcd0e6a93d0bb54058b623191736d181bab8",
+      "policy": "default-exclusions-only-v1:4f2e9c4f196a8bc91dfc257509173e5d26267c661bf72f28c273ac47f9c7955f",
+      "coverage": {
+        "complete": true,
+        "truncated": false,
+        "reasons": [],
+        "examined": 438,
+        "lookaheadEntries": 0,
+        "excluded": 6,
+        "excludedByRule": {
+          "private-name": 3,
+          "directory-name-hint": 3
+        },
+        "excludedDirectories": [
+          {
+            "path": ".git",
+            "rule": "directory-name-hint"
+          },
+          {
+            "path": "dist",
+            "rule": "directory-name-hint"
+          },
+          {
+            "path": "node_modules",
+            "rule": "directory-name-hint"
+          }
+        ],
+        "unreadable": 0,
+        "symlinks": 0
+      },
+      "fileCount": 412,
+      "counts": {
+        "source": 25,
+        "test": 2,
+        "docs": 16,
+        "config": 3,
+        "asset": 345,
+        "data": 15,
+        "other": 6
+      },
+      "languageHints": {
+        "mjs": 20,
+        "css": 2,
+        "html": 2,
+        "js": 5,
+        "py": 1
+      }
+    },
+    {
+      "label": "Párhuzamos rendszerek",
+      "rootName": "Parhuzamos_prog",
+      "inventoryId": "724d79fecec72ee34267c5f534934167f0e47808f65601120c182713ceaec52c",
+      "policy": "default-exclusions-only-v1:4f2e9c4f196a8bc91dfc257509173e5d26267c661bf72f28c273ac47f9c7955f",
+      "coverage": {
+        "complete": true,
+        "truncated": false,
+        "reasons": [],
+        "examined": 44,
+        "lookaheadEntries": 0,
+        "excluded": 0,
+        "excludedByRule": {},
+        "excludedDirectories": [],
+        "unreadable": 0,
+        "symlinks": 0
+      },
+      "fileCount": 32,
+      "counts": {
+        "source": 0,
+        "test": 0,
+        "docs": 5,
+        "config": 0,
+        "asset": 10,
+        "data": 2,
+        "other": 15
+      },
+      "languageHints": {}
+    }
+  ]
+}

@@ -7,23 +7,14 @@ const { MessageUsage, apiMessages, codexMessages, claudeMessage } = require('../
 const { runApi } = require('../electron/api-run.cjs');
 const temp = t => { const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dock-project-test-')); t.after(() => fs.rmSync(root, { recursive: true, force: true })); return root; };
 
-test('project goals, multiple folders, progress and last activity persist; deletion leaves files', t => {
+test('project configuration and multiple folders persist without progress; deletion leaves files', t => {
   const root = temp(t), other = path.join(root, 'website'), sub = path.join(other, 'src'); fs.mkdirSync(sub, { recursive: true });
   const projects = new Projects(root);
   const p = projects.save({ name: 'Robonslaught', category: 'Game', goals: 'Ship a playable demo', nextStep: 'Build the arena', folders: [{ path: root }, { label: 'Site', path: other }], milestones: [{ text: 'Arena', done: false }] });
   const launched = projects.launch({ projectId: p.id, cwd: sub, name: '' }); assert.equal(launched.name, p.name); assert.equal(launched.cwd, sub);
-  projects.progress(p.id, { milestone: 0, done: true, note: 'Arena verified', nextStep: 'Add enemies' });
-  const saved = new Projects(root).list()[0]; assert.deepEqual(saved.progress, { done: 1, total: 1 }); assert.ok(saved.lastActiveAt);
-  assert.match(projects.summary(p.id), /Ship a playable demo/); assert.match(projects.summary(p.id), /Add enemies/);
-  assert.throws(() => projects.progress(p.id, { milestone: 99, done: true }));
+  const saved = new Projects(root).list()[0]; assert.equal(saved.folders.length,2); assert.equal(saved.category,'Game');
+  assert.equal(saved.goals,undefined); assert.equal(saved.progress,undefined); assert.equal(saved.lastActiveAt,undefined);
   assert.throws(() => projects.save({ ...saved, folders: [{ path: path.join(root, 'missing') }] }));
-  assert.equal(projects.get(p.id).nextStep, 'Add enemies');
-  const commit = projects.commit;
-  projects.commit = () => { throw Error('Simulated disk failure'); };
-  let activityError; projects.on('tracking-error', message => { activityError = message; });
-  assert.doesNotThrow(() => projects.touch(p.id, Date.now() + 120000));
-  assert.match(activityError, /could not be saved/);
-  projects.commit = commit;
   projects.remove(p.id); assert.ok(fs.existsSync(sub)); assert.deepEqual(new Projects(root).list(), []);
 });
 test('linking a live chat preserves its PTY, folder, buffer and exact resume ID; invalid links leave it intact', async t => {

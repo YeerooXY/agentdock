@@ -11,29 +11,45 @@ const names = Object.freeze({ claude: 'Claude Code', codex: 'Codex', kiro: 'Kiro
   ...Object.fromEntries(extended.NATIVE_WORKERS.map(id => [id, extended.names[id]])) });
 const NATIVE_WORKERS = Object.freeze(['antigravity', 'copilot', 'grok', 'pi', ...extended.NATIVE_WORKERS]);
 const isNativeWorker = provider => NATIVE_WORKERS.includes(provider);
+// Documentation needs a tool-free adapter, in addition to a general worker.
+// Extend this capability only alongside its bounded launch and output checks.
+const documentationCapabilities = Object.freeze({
+  claude: Object.freeze({ tools: 'disabled', maxSteps: 1 }),
+  antigravity: Object.freeze({ tools: 'denied' }),
+  opencode: Object.freeze({ tools: 'disabled', maxSteps: 1 }),
+});
 const counter = value => Number.isFinite(value) && value >= 0 ? value : null;
 const sum = values => values.every(value => counter(value) !== null) ? counter(values.reduce((a, b) => a + b, 0)) : null;
 
-function workerLaunch(provider, executable, { model, effort, review = false, workFolder, promptFile } = {}) {
+function workerLaunch(provider, executable, { model, effort, review = false, workFolder, promptFile, textOnly = false, checks, images = [] } = {}) {
   // Validate before dispatch so unsupported settings cannot be dropped.
   validateEffort(provider, effort);
-  if (extended.NATIVE_WORKERS.includes(provider)) return extended.extensionLaunch(provider, executable, { model, review, workFolder, promptFile });
-  if (provider === 'pi') return piLaunch(executable, { model, effort, review, workFolder, promptFile });
+  const cleanImages = Array.isArray(images) ? images.filter(img => typeof img === 'string' && img.trim()) : [];
+  if (extended.NATIVE_WORKERS.includes(provider)) return extended.extensionLaunch(provider, executable, { model, review, workFolder, promptFile, images: cleanImages });
+  if (provider === 'pi') return piLaunch(executable, { model, effort, review, workFolder, promptFile, checks });
   const selected = effortLaunchArgs(provider, effort);
   const chosen = [...(model ? ['--model', model] : []), ...selected.args];
+  const check = require('./worker-checks.cjs').workerCheckCommand(checks, { review, textOnly });
   if (provider === 'copilot') {
     const tools = ['view', 'grep', 'glob', ...(review ? [] : ['edit', 'create', 'apply_patch'])];
     return { ...programLaunch(executable, ['--output-format', 'json', '--no-ask-user', '--no-auto-update', '--no-color',
       '--disable-builtin-mcps', '--disable-mcp-server', 'paddock', '--disallow-temp-dir', '--allow-all-tools',
-      '--available-tools', tools.join(','), '--deny-tool', 'shell', ...(review ? ['--deny-tool', 'write'] : []), ...chosen]), effortDispatch: selected.evidence };
+      '--available-tools', tools.join(','), '--deny-tool', 'shell', ...(review ? ['--deny-tool', 'write'] : []), ...chosen]), effortDispatch: selected.evidence, ...(cleanImages.length ? { images: cleanImages } : {}) };
   }
   if (provider === 'antigravity') {
+    const extraReads = textOnly ? [] : cleanImages
+      .filter(img => {
+        if (!workFolder) return true;
+        const rel = path.relative(path.resolve(workFolder), path.resolve(img));
+        return rel.startsWith('..') || path.isAbsolute(rel);
+      })
+      .map(img => `read_file(${path.resolve(img)})`);
     const settings = { agentMode: review ? 'plan' : 'accept-edits', toolPermission: 'request-review',
       allowNonWorkspaceAccess: false, useG1Credits: false, artifactReviewPolicy: 'always-proceed', notifications: false,
-      permissions: { allow: [`read_file(${workFolder})`, ...(review ? [] : [`write_file(${workFolder})`])],
-        deny: ['command(*)', 'mcp(*)', 'read_url(*)', 'execute_url(*)', ...(review ? ['write_file(*)'] : [])] } };
-    return programLaunch(executable, ['--input-format', 'stream-json', '--output-format', 'stream-json',
-      '--disable-slash-commands', '--settings', JSON.stringify(settings), ...chosen]);
+      permissions: { allow: [...(textOnly ? [] : [`read_file(${workFolder})`, ...extraReads]), ...(review ? [] : [`write_file(${workFolder})`]), ...(check ? [`command(${check})`] : [])],
+        deny: [...(textOnly ? ['read_file(*)'] : []), ...(check ? [] : ['command(*)']), 'mcp(*)', 'read_url(*)', 'execute_url(*)', ...(review ? ['write_file(*)'] : [])] } };
+    return { ...programLaunch(executable, ['--input-format', 'stream-json', '--output-format', 'stream-json',
+      '--disable-slash-commands', '--settings', JSON.stringify(settings), ...chosen]), effortDispatch: selected.evidence, ...(cleanImages.length ? { images: cleanImages } : {}) };
   }
   if (provider === 'grok') {
     if (!promptFile) throw new Error('The Grok worker needs a private prompt file.');
@@ -41,7 +57,7 @@ function workerLaunch(provider, executable, { model, effort, review = false, wor
     return { ...programLaunch(executable, ['--prompt-file', promptFile, '--output-format', 'streaming-json', '--max-turns', '12',
       '--permission-mode', 'dontAsk', '--tools', ['read_file', 'grep', 'list_dir', ...(review ? [] : ['search_replace', 'write_file'])].join(','),
       '--disallowed-tools', 'Agent', '--disable-web-search', '--allow', 'Read', '--allow', 'Grep',
-      '--deny', 'Bash', '--deny', 'MCPTool', ...(review ? ['--deny', 'Edit', '--deny', 'Write'] : ['--allow', `Edit(${scope})`, '--allow', `Write(${scope})`]), ...chosen]), effortDispatch: selected.evidence };
+      '--deny', 'Bash', '--deny', 'MCPTool', ...(review ? ['--deny', 'Edit', '--deny', 'Write'] : ['--allow', `Edit(${scope})`, '--allow', `Write(${scope})`]), ...chosen]), effortDispatch: selected.evidence, ...(cleanImages.length ? { images: cleanImages } : {}) };
   }
   throw new Error('This provider has no native worker adapter.');
 }
@@ -127,4 +143,4 @@ function workerFinalize(provider, state, code) {
   if (extended.NATIVE_WORKERS.includes(provider)) return extended.extensionFinalize(provider, state, code);
   return state;
 }
-module.exports = { names, NATIVE_WORKERS, isNativeWorker, workerLaunch, workerInput, workerPrompt, workerState, workerEvent, workerFinalize, workerReply, workerProgress };
+module.exports = { names, NATIVE_WORKERS, isNativeWorker, documentationCapabilities, workerLaunch, workerInput, workerPrompt, workerState, workerEvent, workerFinalize, workerReply, workerProgress };

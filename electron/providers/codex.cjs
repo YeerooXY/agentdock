@@ -1,6 +1,10 @@
 'use strict';
 module.exports = {
   id: 'codex',
+  settings: { strategy: 'codex' },
+  session: { identityEvents: 'uuid', persistConversation: true, recentUsageDefaultOnly: true, focusReports: false, steering: true },
+  console: { modelChoices: true, mobileModelChoices: true, liveModelMenu: true, permissions: true },
+  screen: { selectors: ['›'], banner: '^>_ OpenAI Codex', emptyPrompts: ['› Ask Codex to do anything'] },
   catalog: {
     name: 'Codex',
     command: 'codex',

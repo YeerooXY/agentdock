@@ -25,7 +25,9 @@ const accountEnvNames = ['CODEX_HOME', 'CODEX_SQLITE_HOME', 'OPENAI_API_KEY', 'C
 function saveEnvironment() { return Object.fromEntries(accountEnvNames.map(name => [name, process.env[name]])); }
 function restoreEnvironment(saved) { for (const [name, value] of Object.entries(saved)) value === undefined ? delete process.env[name] : process.env[name] = value; }
 
-async function fixture(t, { model = 'gpt-5.2-codex', failResumeTarget = false, failSameResume = false, failTrustTarget = false, holdStageReady = false, deferStageSetup = false, bridgeTimeout = 4000, onEditorExit = null } = {}) {
+const resumeDialog = '\x1b[1mResume this conversation?\x1b[22m\r\nThis conversation has been inactive for 7s and is 385.2k\r\ntokens long.\r\n\x1b[36m❯ 1. Resume\x1b[39m\r\n  2. Start a new conversation\r\n';
+
+async function fixture(t, { model = 'gpt-5.2-codex', failResumeTarget = false, failSameResume = false, failTrustTarget = false, holdStageReady = false, deferStageSetup = false, bridgeTimeout = 4000, onEditorExit = null, claudeResumeDialog = false } = {}) {
   const root = tempRoot('paddock-account-switch-'), workspace = path.join(root, 'project');
   fs.mkdirSync(workspace);
   const accounts = new AccountProfiles(root, { env: process.env, home: path.join(root, 'home') });
@@ -43,9 +45,9 @@ async function fixture(t, { model = 'gpt-5.2-codex', failResumeTarget = false, f
   const stageSetupStarted = new Promise(resolve => { markStageSetupStarted = resolve; });
 
   class FakeTerminal {
-    constructor(options, exitCode, { initialOutput = 'READY\r\n', holdReady = false, suppressEditor = false } = {}) {
+    constructor(options, exitCode, { initialOutput = 'READY\r\n', holdReady = false, suppressEditor = false, dialog = false } = {}) {
       this.options = options; this.handlers = []; this.exits = []; this.draft = ''; this.writes = []; this.killed = false; this.exitCode = exitCode;
-      this.suppressEditor = suppressEditor;
+      this.suppressEditor = suppressEditor; this.dialog = dialog;
       if (!holdReady) setImmediate(() => { this.emitData(initialOutput); if (this.exitCode != null) this.emitExit(this.exitCode); });
     }
     onData(handler) { this.handlers.push(handler); }
@@ -54,6 +56,11 @@ async function fixture(t, { model = 'gpt-5.2-codex', failResumeTarget = false, f
     emitExit(exitCode) { if (this.killed) return; this.killed = true; for (const handler of this.exits) handler({ exitCode }); }
     write(data) {
       this.writes.push(data);
+      // An unanswered resume dialog swallows every key except its answer.
+      if (this.dialog) {
+        if (data === '\r') { this.dialog = false; setImmediate(() => this.emitData('CLAUDE READY\r\n')); }
+        return;
+      }
       if (data === '\x07') { if (!this.suppressEditor) void this.openEditor(); return; }
       if (data === '/status') {
         this.draft = '/status';
@@ -122,7 +129,8 @@ async function fixture(t, { model = 'gpt-5.2-codex', failResumeTarget = false, f
           accountId: options.env.PADDOCK_ACCOUNT_ID, providerSessionId: threadId, model: 'claude-sonnet-4-5'
         }));
         if (options.env.CLAUDE_CONFIG_DIR) {
-          const terminal = new FakeTerminal(options, null, { initialOutput: 'CLAUDE READY\r\n' }); terminals.push(terminal); return terminal;
+          const dialog = claudeResumeDialog && args.includes('--resume');
+          const terminal = new FakeTerminal(options, null, { initialOutput: dialog ? resumeDialog : 'CLAUDE READY\r\n', dialog }); terminals.push(terminal); return terminal;
         }
       }
       const env = { ...options.env };
@@ -682,6 +690,22 @@ test('idle settings reject missing consent, busy/stale sessions and unavailable 
 });
 
 
+test('attention and busy sessions block settings and account switching', async t => {
+  const f = await fixture(t), source = await f.sessions.create({ provider: 'codex', cwd: f.workspace }, { accountId: f.first.id });
+  await new Promise(resolve => setTimeout(resolve, 5)); f.sessions.scanEvents();
+  const original = f.sessions.items.get(source.id);
+  const request = { id: source.id, launchId: source.launchId, model: 'test-model', effort: 'high', confirmConversationReload: true };
+  f.sessions.isBusy = () => true;
+  original.state = 'attention';
+  await assert.rejects(f.sessions.switchSettings(request), /idle/);
+  original.state = 'ready';
+  await assert.rejects(f.sessions.switchSettings(request), /applying settings/);
+  f.sessions.signal(source.id, 'question');
+  await assert.rejects(f.sessions.switchAccount({ id: source.id, launchId: source.launchId, targetAccountId: f.second.id }), /Finish the current task before switching accounts/);
+  await assert.rejects(f.sessions.switchSettings(request), /idle/);
+  assert.equal(original.terminal.killed, false);
+});
+
 test('a failed same-account model resume keeps the original console and draft', async t => {
   const f = await fixture(t, { failSameResume: true }), source = await f.sessions.create({ provider: 'codex', cwd: f.workspace }, { accountId: f.first.id });
   await new Promise(resolve => setTimeout(resolve, 5)); f.sessions.scanEvents();
@@ -701,4 +725,60 @@ test('Claude idle settings resume the original transcript in the same profile', 
   assert.equal(result.accountId, f.firstClaude.id); assert.equal(result.providerSessionId, threadId);
   assert.equal(result.requestedSettings.model, 'opus'); assert.equal(result.requestedSettings.effort, 'high');
   assert.equal(f.sessions.items.get(source.id).terminal.draft, 'Claude draft'); assert.equal(original.terminal.killed, true);
+  const replacement = f.sessions.items.get(source.id), saved = () => f.sessions.savedConsoles().find(x => x.consoleKey === source.consoleKey).selection;
+  assert.deepEqual(saved(), { model: 'opus', resolvedModel: 'claude-opus-test' });
+  Object.assign(replacement, { model: 'Opus', modelId: 'claude-opus-test', settingsAt: Date.now() + 1000 });
+  assert.deepEqual(saved(), { model: 'opus', resolvedModel: 'claude-opus-test' }, 'the provider confirming the selection keeps it');
+  Object.assign(replacement, { model: 'Sonnet', modelId: 'claude-sonnet-4-5', settingsAt: Date.now() + 2000 });
+  assert.equal(saved(), undefined, 'a newer, different provider report replaces the selection');
+});
+
+test('Claude settings answer the resume dialog before capturing the draft, and name the failing step otherwise', async t => {
+  const f = await fixture(t, { claudeResumeDialog: true, bridgeTimeout: 300 }); writeClaudeHistory(f.firstClaude.configDir, threadId);
+  const source = await f.sessions.create({ provider: 'claude', cwd: f.workspace, model: 'sonnet' }, { accountId: f.firstClaude.id, claudeTarget: { kind: 'native', path: process.execPath } });
+  await new Promise(resolve => setTimeout(resolve, 5)); f.sessions.scanEvents();
+  const original = f.sessions.items.get(source.id); original.state = 'ready'; original.terminal.draft = 'Claude draft';
+  await f.sessions.switchSettings({ id: source.id, launchId: source.launchId, model: 'opus', effort: 'high', confirmConversationReload: true });
+  const replacement = f.sessions.items.get(source.id).terminal;
+  assert.equal(replacement.writes.filter(x => x === '\r').length, 1, 'the default Resume choice is sent once');
+  assert.ok(replacement.writes.indexOf('\r') < replacement.writes.indexOf('\x07'), 'the dialog is answered before the editor key');
+  assert.equal(replacement.draft, 'Claude draft');
+
+  // Another dialog wording is left alone, and the error says which step timed out.
+  const g = await fixture(t, { claudeResumeDialog: true, bridgeTimeout: 300 }); writeClaudeHistory(g.firstClaude.configDir, threadId);
+  g.sessions.accountSwitching.answerResumePrompt = async () => {};
+  const other = await g.sessions.create({ provider: 'claude', cwd: g.workspace, model: 'sonnet' }, { accountId: g.firstClaude.id, claudeTarget: { kind: 'native', path: process.execPath } });
+  await new Promise(resolve => setTimeout(resolve, 5)); g.sessions.scanEvents();
+  const kept = g.sessions.items.get(other.id); kept.state = 'ready';
+  await assert.rejects(g.sessions.switchSettings({ id: other.id, launchId: other.launchId, model: 'opus', effort: 'high', confirmConversationReload: true }), /could not verify the CLI draft.*\(Step: checking the new console draft, after \d+s\.\)/);
+  assert.equal(g.sessions.items.get(other.id), kept); assert.equal(kept.terminal.killed, false);
+});
+
+test('a restored console resumes with the model chosen through idle settings', async t => {
+  const f = await fixture(t), source = await f.sessions.create({ provider: 'codex', cwd: f.workspace }, { accountId: f.first.id });
+  await new Promise(resolve => setTimeout(resolve, 5)); f.sessions.scanEvents();
+  f.sessions.items.get(source.id).state = 'ready';
+  await f.sessions.switchSettings({ id: source.id, launchId: source.launchId, model: 'test-model', effort: 'high', confirmConversationReload: true });
+  // The rollout still names the earlier model until the next turn.
+  Object.assign(f.sessions.items.get(source.id), { model: 'gpt-5.2-codex', modelId: 'gpt-5.2-codex', effort: 'low', settingsAt: Date.now() - 60000 });
+  const entry = f.sessions.savedConsoles().find(x => x.consoleKey === source.consoleKey);
+  assert.deepEqual(entry.selection, { model: 'test-model', resolvedModel: 'test-model' });
+  const launchArgs = launchId => JSON.parse(fs.readFileSync(path.join(f.root, 'records', launchId + '.json'))).args;
+  const modelArgs = args => args.includes('--model') ? args.slice(args.indexOf('--model'), args.indexOf('--model') + 2) : [];
+
+  f.sessions.end(source.id);
+  const restored = await f.sessions.restore(entry);
+  assert.equal(restored.restoreError, undefined);
+  assert.ok(launchArgs(restored.launchId).includes('resume'));
+  assert.deepEqual(modelArgs(launchArgs(restored.launchId)), ['--model', 'test-model'], 'a restore that reapplies effort must also reapply the selected model');
+  assert.equal(restored.model, undefined, 'launch args do not prove effective inference settings');
+  assert.equal(restored.requestedSettings.model, 'test-model'); assert.equal(restored.requestedSettings.effort, 'high');
+  assert.equal(restored.requestedSettings.status, 'awaiting-provider');
+  const again = f.sessions.savedConsoles().find(x => x.consoleKey === source.consoleKey);
+  assert.deepEqual(again.selection, entry.selection, 'the selection survives a second restart');
+
+  f.sessions.end(restored.id);
+  const tampered = await f.sessions.restore({ ...again, selection: { model: '--dangerously-bypass-approvals-and-sandbox' } });
+  assert.deepEqual(modelArgs(launchArgs(tampered.launchId)), [], 'an invalid saved model never reaches the command line');
+  assert.equal(tampered.requestedSettings, undefined);
 });

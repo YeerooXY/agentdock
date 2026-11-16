@@ -1,6 +1,6 @@
 ---
 name: web-ux-ui
-description: Design, build, review or rate websites, web apps and shops. Covers first-screen priorities, layout, typography, color and contrast, motion, loading and error states, wording, product and checkout flows, cross-device verification, and the 20-point page and 50-point security review. Use for new pages, redesigns, UI critiques and pre-release reviews; a backend-only change or a one-line copy fix does not need it.
+description: Design, build, review or rate websites, desktop/Electron/mobile apps, game menus, dashboards and internal tools. Covers first-screen priorities, layout, typography, color and contrast, motion, loading and error states, wording, product and checkout flows, cross-device verification, and the 20-point page and 50-point security review. Use for new pages, redesigns, UI critiques and pre-release reviews; a backend-only change or a one-line copy fix does not need it.
 ---
 
 # Web UX/UI
@@ -11,7 +11,7 @@ Help people understand a product, make a correct decision and complete their tas
 
 Start with [overview](references/overview.md). Then read only the relevant topics:
 
-An ordinary request to create a website activates this guidance. The user does not need to name the skill. For a new website, follow the brief, reference, visual-direction, assets, build and review handoffs in overview; read the site-type CTA playbook in content. Apply only the stages relevant to the authorized task.
+An ordinary request to create a user-facing interface activates this guidance, including websites, desktop/Electron/mobile apps, game menus, dashboards and internal tools. Read app for application frames, themes, components and keyboard interaction. The user does not need to name the skill. For a new website, follow the brief, reference, visual-direction, assets, build and review handoffs in overview; read the site-type CTA playbook in content. Apply only the stages relevant to the authorized task.
 
 | Task | Read |
 | --- | --- |

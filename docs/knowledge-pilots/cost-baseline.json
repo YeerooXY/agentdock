@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 1,
+  "scope": "Framework implementation, fixes, two manual draft maps, inventory and verification combined. Not a docs-only or per-repository benchmark.",
+  "startAt": "2026-11-05T11:52:26.915Z",
+  "endAt": "2026-11-05T12:28:19.106Z",
+  "wallSeconds": 2152.191,
+  "agents": 3,
+  "coordinator": {
+    "provider": "Codex",
+    "model": "gpt-6.1-sol",
+    "nativeTurnId": "01a1ab8d-9c00-7570-9f34-b96b084c7bc6",
+    "source": "Native cumulative token-count delta at exact task boundaries; monotonic counters checked",
+    "usageObservations": 39,
+    "usage": {
+      "input_tokens": 10837213,
+      "cached_input_tokens": 10780032,
+      "cache_write_input_tokens": 0,
+      "output_tokens": 67019,
+      "reasoning_output_tokens": 40332,
+      "total_tokens": 10904232
+    }
+  },
+  "worker": {
+    "provider": "Pi",
+    "model": "openrouter/cohere/north-mini-code:free",
+    "elapsedSeconds": 121.47,
+    "status": "failed bound; lead repaired output",
+    "reportedCost": 0,
+    "usage": {
+      "input": 49401,
+      "cachedInput": 0,
+      "output": 11655
+    }
+  },
+  "review": {
+    "provider": "Claude",
+    "model": "native default, exact model unreported",
+    "elapsedSeconds": 188,
+    "status": "changes requested; lead addressed findings",
+    "usage": {
+      "input": 132937,
+      "cachedInput": 87477,
+      "output": 19112
+    }
+  },
+  "totals": {
+    "input": 11019551,
+    "cachedInput": 10867509,
+    "output": 97786,
+    "uncachedInput": 152042
+  },
+  "billing": {
+    "routes": "free and included subscriptions; no metered fallback launched",
+    "incrementalDollarCost": null,
+    "reason": "No subscription-to-token price attribution or invoice available; Pi reported zero",
+    "cache": "Cached input is included in input, not added. Reasoning output is included in Codex output.",
+    "comparability": "Tokenizer and provider usage semantics differ. Counts are workload observations, not dollar prices or quota percentages."
+  },
+  "docsOnlyWallSeconds": null,
+  "docsOnlyUsage": null,
+  "acceptedOutput": {
+    "manualDraftMaps": 2,
+    "proposedSections": 8,
+    "blindRetrievalBenchmark": false
+  }
+}

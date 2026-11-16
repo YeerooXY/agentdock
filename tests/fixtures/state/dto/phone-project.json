@@ -22,10 +22,6 @@
     "name": "Paddock",
     "color": "#47c",
     "status": "active",
-    "progress": {
-      "done": 1,
-      "total": 4
-    },
-    "lastActiveAt": 1762000000000
+    "knowledgeMode": "inherit"
   }
 }

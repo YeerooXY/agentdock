@@ -1,6 +1,6 @@
 'use strict';
 // Native Pi worker adapter. Pi runs one bounded print-mode turn with file tools
-// only: no shell, MCP, extensions, skills, context files, prompt templates or
+// and an optional fixed checks tool: no general shell, MCP, extensions, skills, context files, prompt templates or
 // saved session. The brief is passed as a private @file, never as an argument.
 const fs = require('node:fs');
 const path = require('node:path');
@@ -39,7 +39,7 @@ function piSdkPath(executable) {
   }
   throw new Error('This Pi installation has no supported SDK for bounded workers.');
 }
-function piLaunch(executable, { model, effort, review = false, workFolder, promptFile, sdkPath } = {}) {
+function piLaunch(executable, { model, effort, review = false, workFolder, promptFile, sdkPath, checks } = {}) {
   if (!promptFile || !path.isAbsolute(promptFile)) throw new Error('The Pi worker needs a private prompt file.');
   if (workFolder && path.resolve(path.dirname(promptFile)) === path.resolve(workFolder)) throw new Error('The Pi prompt file must stay outside the work folder.');
   const route = piRoute(model);
@@ -48,7 +48,7 @@ function piLaunch(executable, { model, effort, review = false, workFolder, promp
   // chosen free model is never replaced by a paid saved default.
   const optionsFile = path.join(path.dirname(promptFile), 'run.json');
   const selected = require('./task-effort.cjs').launchArgs('pi', effort);
-  fs.writeFileSync(optionsFile, JSON.stringify({ route, effort: effort || null, review, workFolder, promptFile }), { mode: 0o600 });
+  fs.writeFileSync(optionsFile, JSON.stringify({ route, effort: effort || null, review, workFolder, promptFile, checks: require('./worker-checks.cjs').workerCheckCommand(checks, { review }) }), { mode: 0o600 });
   return { executable: process.execPath, args: [path.join(__dirname, 'pi-worker-runner.mjs'), sdkPath || piSdkPath(executable), optionsFile], env: { ELECTRON_RUN_AS_NODE: '1' }, effortDispatch: effort ? selected.evidence : { requested: null, status: 'adapter-default', value: 'off' } };
 }
 function piPrompt(folder, brief) {

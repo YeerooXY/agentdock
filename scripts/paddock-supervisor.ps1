@@ -36,19 +36,21 @@ function PhoneReady([int]$processId) {
 function StopAll {
   foreach ($p in MainProcesses) {
     Log "Stopping Paddock process $($p.ProcessId)."
-    & (Join-Path $env:SystemRoot 'System32\taskkill.exe') /PID $p.ProcessId /T /F 2>&1 | Out-Null
+    # Console helpers must stay hidden even when this supervisor has no console.
+    $stopProcess = Start-Process -FilePath (Join-Path $env:SystemRoot 'System32\taskkill.exe') -ArgumentList @('/PID', [string]$p.ProcessId, '/T', '/F') -WindowStyle Hidden -Wait -PassThru
+    Log "Stop request returned $($stopProcess.ExitCode)."
   }
   # Give Windows time to release the old process. Never abort here.
   for ($i = 0; $i -lt 30 -and @(MainProcesses).Count; $i++) { Start-Sleep -Seconds 2 }
   if (@(MainProcesses).Count) { Log 'An old Paddock process is still visible; continuing anyway.' }
 }
 function Launch {
-  Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
-  Remove-Item Env:NODE_OPTIONS -ErrorAction SilentlyContinue
   $folder = AppFolder
   try {
-    $p = Start-Process -FilePath $config.exe -ArgumentList ('"' + $folder + '"') -WorkingDirectory $folder -PassThru
-    $state.launches++; $state.lastLaunchAt = (Get-Date).ToString('o'); Log "Launched $($state.mode) copy ($folder) as process $($p.Id)."; Save
+    $node = if ($config.node) { $config.node } else { (Get-Command node -ErrorAction Stop).Source }
+    $appProcessId = & $node (Join-Path $PSScriptRoot 'launch-detached.cjs') $config.exe $folder
+    if ($LASTEXITCODE -ne 0) { throw 'Detached app launch failed.' }
+    $state.launches++; $state.lastLaunchAt = (Get-Date).ToString('o'); Log "Launched $($state.mode) copy ($folder) as process $appProcessId."; Save
   } catch { Log "Launch failed: $($_.Exception.Message)" }
 }
 # Waits up to $seconds for a main process that stays up and has the phone listener.
@@ -85,6 +87,10 @@ function ReportStartupErrors([datetime]$since) {
 Log "Supervisor started for $($config.hours) hours."; Save
 # Lets the console that started the relaunch finish its reply first.
 if ($config.startDelaySeconds) { Start-Sleep -Seconds ([int]$config.startDelaySeconds) }
+# A delayed task or a sleeping PC must not execute an old restart hours later.
+if ($config.requestedAt -and (Get-Date) -gt ([datetime]$config.requestedAt).AddSeconds([Math]::Max(0, [int]$config.startDelaySeconds) + 120)) {
+  $state.phase = 'expired'; Save; Log 'Restart request expired; left the running app untouched.'; exit 0
+}
 # Switch to the new code.
 $state.phase = 'switching'; Save
 StopAll

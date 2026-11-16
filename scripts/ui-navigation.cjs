@@ -1,5 +1,5 @@
 'use strict';
-const settings = new Set(['appearance', 'console-settings', 'agent-settings', 'devices', 'api-settings', 'tools', 'instructions', 'general-settings']);
+const settings = new Set(['appearance', 'console-settings', 'agent-settings', 'devices', 'api-settings', 'tools', 'add-tools', 'instructions', 'general-settings']);
 async function openPage(page, target) {
   if (target === 'settings') {
     await page.locator('.sidebar-bottom [data-page=settings]').click();
@@ -12,10 +12,12 @@ async function openPage(page, target) {
     await page.keyboard.press('Escape');
     await page.locator('body[data-settings-open]').waitFor({ state: 'detached' });
   }
+  if (target === 'tasks') {
+    await page.locator('.sidebar [data-page="projects"]').click();
+    const back = page.locator('[data-project-back]'); if (await back.count()) await back.click();
+    await page.locator(`#content [data-page="${target}"]`).click();
+    return;
+  }
   await page.locator(`nav [data-page="${target}"]`).click();
 }
-async function openResultFolder(page) {
-  const folder = page.locator('[data-wb="project-folder"]').first();
-  if (await folder.count()) await folder.click();
-}
-module.exports = { openPage, openResultFolder };
+module.exports = { openPage };

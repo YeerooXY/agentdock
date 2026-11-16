@@ -1,0 +1,252 @@
+{
+  "schemaVersion": 1,
+  "project": "Agent workflow / Website study",
+  "profile": "evidence capture and offline research reports",
+  "sourceSnapshot": null,
+  "assurance": "Bounded source observations with proposed responsibility boundaries. JavaScript parsing/binding resolution unavailable; excerpts and declaration hints only. No browser or source-project checks executed.",
+  "inventoryId": "cf855974913bf7b109bb67d0db75256908f6e41ee19a313a46f07f592e008eff",
+  "observations": {
+    "sourceSnapshot": null,
+    "files": [
+      {
+        "path": "capture.js",
+        "sha256": "85e25a09a1c1c3d08603297e3700e7c6402235c36755170629204c5be3dc8396",
+        "representation": "Whole-file hash observation; selected excerpts only, JS binding unresolved",
+        "hashedBytes": 33363,
+        "inspectedBytes": null,
+        "inspectionCoverage": "Selected semantic excerpts; byte count unknown. Hashing and AST parsing are counted separately."
+      },
+      {
+        "path": "postclick.js",
+        "sha256": "938693733a8d8f2efa90ff318a20478972219dbe17bea407376d6382deb58a0d",
+        "representation": "Whole-file hash observation; selected excerpts only, JS binding unresolved",
+        "hashedBytes": 6123,
+        "inspectedBytes": null,
+        "inspectionCoverage": "Selected semantic excerpts; byte count unknown. Hashing and AST parsing are counted separately."
+      },
+      {
+        "path": "build-analysis.cjs",
+        "sha256": "0066edf63a199382f919415b82aa05d561fdc8e9b412ef8619297a363879d99d",
+        "representation": "Whole-file hash observation; selected excerpts only, JS binding unresolved",
+        "hashedBytes": 16300,
+        "inspectedBytes": null,
+        "inspectionCoverage": "Selected semantic excerpts; byte count unknown. Hashing and AST parsing are counted separately."
+      },
+      {
+        "path": "validate-study.js",
+        "sha256": "fc385c892ed2b968cedacc4da43aad9b06cb37e47890a54d0119fbb5cfd709d0",
+        "representation": "Whole-file hash observation; selected excerpts only, JS binding unresolved",
+        "hashedBytes": 2465,
+        "inspectedBytes": null,
+        "inspectionCoverage": "Selected semantic excerpts; byte count unknown. Hashing and AST parsing are counted separately."
+      },
+      {
+        "path": "package.json",
+        "sha256": "090d8be425ca6a234e7116cc2005581234ad8cde4b64aa999e078bc4d27f48a6",
+        "representation": "Whole-file hash observation; selected declared metadata excerpts, not executed",
+        "hashedBytes": 344,
+        "inspectedBytes": null,
+        "inspectionCoverage": "Selected semantic excerpts; byte count unknown. Hashing and AST parsing are counted separately."
+      },
+      {
+        "path": "README.md",
+        "sha256": "b8cd48e62030c94eb8a85d85c142c525cc9625ce7f7b872c617bc3cea71b1202",
+        "representation": "Whole-file hash observation; selected declared metadata excerpts, not executed",
+        "hashedBytes": 12402,
+        "inspectedBytes": null,
+        "inspectionCoverage": "Selected semantic excerpts; byte count unknown. Hashing and AST parsing are counted separately."
+      }
+    ]
+  },
+  "sections": [
+    {
+      "id": "sec_study_register",
+      "title": "Study records and evidence checks",
+      "responsibility": "Validate declared site records, expected evidence counts and report references. Dataset counts encoded by a validator are declared expectations until the validator is run.",
+      "claimStatus": "proposed-interpretation",
+      "sourceHints": [
+        {
+          "path": "capture.js",
+          "line": 52,
+          "symbol": "validateSites"
+        },
+        {
+          "path": "validate-study.js",
+          "line": 7,
+          "symbol": "site/note/post input declarations"
+        },
+        {
+          "path": "validate-study.js",
+          "line": 23,
+          "symbol": "report/evidence checks"
+        }
+      ]
+    },
+    {
+      "id": "sec_study_capture",
+      "title": "Browser evidence capture",
+      "responsibility": "Capture selected site profiles, consent handling, controls and page dimensions into screenshot/JSON evidence. Docker/version requirements and per-profile failures are part of this boundary.",
+      "claimStatus": "proposed-interpretation",
+      "sourceHints": [
+        {
+          "path": "capture.js",
+          "line": 124,
+          "symbol": "rejectOptionalCookies"
+        },
+        {
+          "path": "capture.js",
+          "line": 248,
+          "symbol": "collectControls"
+        },
+        {
+          "path": "capture.js",
+          "line": 352,
+          "symbol": "captureProfile"
+        },
+        {
+          "path": "capture.js",
+          "line": 473,
+          "symbol": "main"
+        }
+      ]
+    },
+    {
+      "id": "sec_study_first_click",
+      "title": "Bounded first-click observations",
+      "responsibility": "Record the selected public first click and its destination. Source declares a request filter, Docker-only execution and completedJourney:false; runtime safety/completeness has not been audited in this pilot.",
+      "claimStatus": "proposed-interpretation",
+      "sourceHints": [
+        {
+          "path": "postclick.js",
+          "line": 20,
+          "symbol": "dismissConsent"
+        },
+        {
+          "path": "postclick.js",
+          "line": 29,
+          "symbol": "main"
+        }
+      ]
+    },
+    {
+      "id": "sec_study_reports",
+      "title": "Report and playbook generation",
+      "responsibility": "Build analysis, first-click and playbook documents from preserved inputs. Also reads a content-guide file from the Paddock repository, an explicit cross-repository dependency.",
+      "claimStatus": "proposed-interpretation",
+      "sourceHints": [
+        {
+          "path": "build-analysis.cjs",
+          "line": 7,
+          "symbol": "input declarations"
+        },
+        {
+          "path": "build-analysis.cjs",
+          "line": 65,
+          "symbol": "contentPath external dependency"
+        },
+        {
+          "path": "build-analysis.cjs",
+          "line": 69,
+          "symbol": "report/playbook generation"
+        }
+      ]
+    }
+  ],
+  "flows": [
+    {
+      "id": "flow_study_evidence",
+      "sequence": [
+        "sec_study_register",
+        "sec_study_capture",
+        "sec_study_first_click",
+        "sec_study_reports",
+        "sec_study_register"
+      ],
+      "status": "proposed from declared file reads/writes; not a proven execution sequence"
+    }
+  ],
+  "externalDependencies": [
+    {
+      "ownerHint": "Paddock",
+      "reference": "../../agent-dock/skills/web-ux-ui/references/content.md",
+      "declaredAt": "build-analysis.cjs:65",
+      "existsObserved": true,
+      "scope": "content input only; imported guide not inspected for semantic correctness"
+    }
+  ],
+  "lookupExamples": [
+    {
+      "question": "Change optional-cookie handling during initial capture",
+      "sections": [
+        "sec_study_capture"
+      ],
+      "start": "capture.js:124 rejectOptionalCookies"
+    },
+    {
+      "question": "Change first-click stopping rules",
+      "sections": [
+        "sec_study_first_click"
+      ],
+      "start": "postclick.js:29 main"
+    },
+    {
+      "question": "Add a report section or change playbook text",
+      "sections": [
+        "sec_study_reports"
+      ],
+      "start": "build-analysis.cjs; check external content guide dependency"
+    },
+    {
+      "question": "Change study size or evidence completeness expectations",
+      "sections": [
+        "sec_study_register",
+        "sec_study_reports"
+      ],
+      "start": "capture.js:52, validate-study.js:7, builder assumptions"
+    }
+  ],
+  "checks": {
+    "declarations": [
+      "package.json capture: node capture.js",
+      "package.json validate: node capture.js --validate",
+      "README separately declares node validate-study.js for deeper offline evidence/link checks"
+    ],
+    "executed": false,
+    "testMapping": "declaration/excerpt only; capture validation and evidence validation are different entry points"
+  },
+  "gaps": [
+    "Evidence images and capture output dominate file count; they do not justify hundreds of semantic sections.",
+    "No JavaScript AST or complete dependency graph was produced.",
+    "The external Paddock content-guide dependency must be included explicitly in future snapshot/permission handling.",
+    "No visual-quality, conversion, browser, legal or current-data completeness claim is established.",
+    "README.md has the decorative heading separator: Reviewed outputs — 31 October 2026. Recorded for its owner; no target edits."
+  ],
+  "observedAt": "2026-11-05T12:18:44.584Z",
+  "policy": "default-exclusions-only-v1:4f2e9c4f196a8bc91dfc257509173e5d26267c661bf72f28c273ac47f9c7955f",
+  "coverage": {
+    "complete": true,
+    "truncated": false,
+    "reasons": [],
+    "examined": 304,
+    "lookaheadEntries": 0,
+    "excluded": 2,
+    "excludedByRule": {
+      "directory-name-hint": 2
+    },
+    "excludedDirectories": [
+      {
+        "path": ".git",
+        "rule": "directory-name-hint"
+      },
+      {
+        "path": "node_modules",
+        "rule": "directory-name-hint"
+      }
+    ],
+    "unreadable": 0,
+    "symlinks": 0
+  },
+  "inventoryReport": "inventory-summary.json",
+  "unmappedSource": [],
+  "unmappedSourceDefinition": "Source-role paths lacking a section anchor. Data, assets, docs and tests are not claimed semantically covered by this list."
+}

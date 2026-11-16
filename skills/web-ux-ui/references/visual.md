@@ -18,6 +18,15 @@ Use consistent SVG icons where shape matters. Emoji presentation varies by platf
 
 Use short motion to acknowledge input, explain state changes or demonstrate meaningful behavior. Essential content and actions must work with reduced motion. Avoid entrance animations that hide content until JavaScript runs, scroll interception and continuous background effects that compete with reading. Automatic movement may need pause/stop controls under WCAG; interaction animation reduction is a separate criterion.
 
+Working defaults for interface motion:
+- Respond to every click or keypress within 400 ms (Doherty threshold); show progress for anything slower.
+- Keep transitions at 150 to 300 ms with ease-out for entering and ease-in for leaving; never animate at constant speed.
+- The more often an action is used, the less it should animate. Timers, ratings, list edits and navigation stay near instant; reserve expressive motion (overshoot, follow-through, a small celebration) for rare moments such as finishing a goal.
+- Stage one focus per screen: the element that changed or needs attention moves; its surroundings stay still.
+- Keep interactive targets at least 24 by 24 px (WCAG 2.5.8) and 44 px on touch; the hit area may extend beyond the visible control.
+- Under reduced motion, replace movement with an instant change or a short fade.
+- Pause decorative animation when the window is hidden or unfocused, and avoid per-frame layout reads.
+
 For an automatically moving logo carousel, provide a persistent keyboard-operable pause control, pause on hover where available, and show a static readable list with reduced motion. Hide duplicated items from assistive technology. Do not place essential task content only inside an auto-advancing carousel.
 
 For requested continuous decorative backgrounds, offer a persistent motion switch in an appropriate appearance control, respect reduced motion and stop work in hidden tabs. Keep decoration visible where intended while scrolling, below content and outside hit testing. Slow, staggered opacity changes can create a star effect with lightweight SVG masks; inspect reading contrast in both themes and use static decoration when controls are unavailable.

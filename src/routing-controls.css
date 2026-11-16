@@ -1,0 +1,8 @@
+/* Routing tier pickers and excluded-model checklist in Settings > Agents. */
+.routing-tier-list { border: 0; padding: 0; margin: 12px 0 0; }
+.routing-tier-list legend { font-size: 13px; font-weight: 500; color: #c5cde6; padding: 0; margin-bottom: 6px; }
+.routing-tier-entries { display: grid; gap: 6px; margin-bottom: 6px; }
+.routing-tier-row { display: flex; gap: 8px; align-items: center; }
+.routing-tier-row select { flex: 1; min-width: 0; }
+.routing-excluded-list { border: 0; padding: 0; margin: 12px 0 0; }
+.routing-excluded-list legend { font-size: 13px; font-weight: 500; color: #c5cde6; padding: 0; margin-bottom: 4px; }

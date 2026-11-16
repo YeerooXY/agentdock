@@ -10,6 +10,8 @@ import droid from '../mobile/assets/providers/droid.png';
 import pi from '../mobile/assets/providers/pi.png';
 import zai from '../mobile/assets/providers/zai.png';
 import ollama from '../mobile/assets/providers/ollama.png';
+import github from '../mobile/assets/providers/github.svg';
+import grok from '../mobile/assets/providers/grok.png';
 
 // Local assets only. Unknown/restricted logos use a plain initial and name.
 // See docs/provider-brand-assets.md for sources and permission boundaries.
@@ -19,10 +21,10 @@ const identities = {
   claude: ['Claude', '#e6a187', claude],
   anthropic: ['Claude', '#e6a187', claude],
   antigravity: ['Antigravity', '#90bdff', antigravity],
-  copilot: ['Copilot', '#bb9aff'],
+  copilot: ['Copilot', '#bb9aff', github],
   opencode: ['OpenCode', '#c9c8c5', opencode],
   cursor: ['Cursor', '#e4e4e4', cursor],
-  grok: ['Grok', '#dedee5'],
+  grok: ['Grok', '#dedee5', grok],
   kiro: ['Kiro', '#c398ff', kiro],
   qwen: ['Qwen', '#a59aff'],
   kimi: ['Kimi', '#91a7ff'],

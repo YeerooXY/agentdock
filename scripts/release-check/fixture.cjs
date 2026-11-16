@@ -1,4 +1,5 @@
 'use strict';
+const { installStateTransport } = require('./../state-test-transport.cjs');
 // In-memory IPC only. Never import main-process services or execute a real tool.
 const image = 'data:image/svg+xml;base64,' + Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="2400" height="1600"><rect width="2400" height="1600" fill="#17334b"/><text x="120" y="240" fill="white" font-size="90">Synthetic review image</text></svg>').toString('base64');
 async function installBridge(context, state, record, origin) {
@@ -35,16 +36,6 @@ async function installBridge(context, state, record, origin) {
         moved.slot = payload.slot;
         return changed(moved);
       }
-      case 'queue.move': case 'queue.remove': case 'queue.edit': case 'queue.add': case 'queue.pause': {
-        const queue = state.queues[payload.id] ||= { paused: false, entries: [] };
-        const i = queue.entries.findIndex(x => x.id === payload.entryId);
-        if (method === 'queue.move') { const [entry] = queue.entries.splice(i, 1); queue.entries.splice(i + payload.offset, 0, entry); }
-        if (method === 'queue.remove') queue.entries.splice(i, 1);
-        if (method === 'queue.edit') queue.entries[i].text = payload.text;
-        if (method === 'queue.add') queue.entries.push({ id: `added-${queue.entries.length}`, text: payload.text, createdAt: Date.now() });
-        if (method === 'queue.pause') queue.paused = payload.paused;
-        return changed(queue);
-      }
       case 'code.create': case 'web.create': {
         const panel = { id: method === 'code.create' ? 'code-one' : 'web-one', kind: method === 'code.create' ? 'code' : 'web', alive: true, state: 'open', slot: 3, width: 1, height: 1, name: 'Review panel', cwd: 'C:\\Workspace', codeSourceKey: 'console-0', url: f.webUrl?.startsWith('/') ? origin + f.webUrl : f.webUrl || '' };
         state.codePanels.push(panel); return changed(panel);
@@ -77,11 +68,11 @@ async function installBridge(context, state, record, origin) {
         return fail(`Release fixture does not implement ${method}`);
     }
   });
-  await context.addInitScript(() => {
-    let receive;
+  await installStateTransport(context);
+await context.addInitScript(() => {
     window.dock = {
-      call: async (method, payload) => { const reply = await window.fixtureCall(method, payload); if (reply.state) receive?.(reply.state); return reply; },
-      onState: fn => { receive = fn; window.fixtureState = fn; },
+      call: async (method, payload) => { const reply = await window.fixtureCall(method, payload); if (reply.state) window.fixtureState?.(reply.state); return reply; },
+      get state() { return window.fixtureStateTransport; },
       onOutput: fn => { window.fixtureOutput = fn; },
       onSelect: fn => { window.fixtureSelect = fn; },
       onNotice: fn => { window.fixtureNotice = fn; }

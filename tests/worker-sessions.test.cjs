@@ -7,7 +7,6 @@ const { TaskLoop } = require('../electron/task-loop.cjs');
 const { OwnerConsoles } = require('../electron/owner-consoles.cjs');
 const { WorkerSessions } = require('../electron/worker-sessions.cjs');
 const { WorkerPlacement } = require('../electron/worker-placement.cjs');
-const { MessageQueue } = require('../electron/message-queue.cjs');
 const { CapacityReservations } = require('../electron/capacity-reservations.cjs');
 const { MobileCompanion } = require('../electron/mobile.cjs');
 const { endSession } = require('../electron/session-end.cjs');
@@ -108,8 +107,8 @@ test('uncertain steering is shown without replaying or blocking a later successf
   assert.equal(f.sessions.items.get(f.job.workerSession.id).steeringState, 'Delivery unconfirmed');
 });
 
-test('worker guards reject direct input, generic close, switching, setup and every queue action after promotion', async t => {
-  const f = fixture(t), item = f.open(), queue = new MessageQueue(f.sessions);
+test('worker guards reject direct input, generic close, switching, setup after promotion', async t => {
+  const f = fixture(t), item = f.open();
   f.sessions.ownerInteraction(item.id, 'click');
   assert.equal(f.owners.records.get(item.consoleKey).ownerManaged, true);
   assert.throws(() => f.sessions.write(item.id, 'stop'), /worker composer/);
@@ -119,9 +118,6 @@ test('worker guards reject direct input, generic close, switching, setup and eve
     getSettings() { assert.fail('Generic close must reject before changing settings.'); } }), /Stop worker/);
   await assert.rejects(f.sessions.switchAccount({ id: item.id, launchId: item.launchId }), /Stop worker/);
   await assert.rejects(f.sessions.createSetupConsole({ id: item.id, launchId: item.launchId }), /Stop worker/);
-  for (const change of [() => queue.add(item.id, 'x'), () => queue.edit(item.id, 'e', 'x'),
-    () => queue.remove(item.id, 'e'), () => queue.move(item.id, 'e', 1), () => queue.pause(item.id, false)]) assert.throws(change, /worker composer/);
-  await assert.rejects(queue.sendNow(item.id, 'e'), /worker composer/);
   assert.deepEqual(f.sessions.savedConsoles(), [], 'workers never restore as a second interactive agent');
 });
 
@@ -130,6 +126,7 @@ test('stale and older phone requests cannot bypass worker guards or confirmed St
   await until(() => f.spawned.length === 1);
   const item = f.sessions.items.get(f.job.workerSession.id), device = {}, client = { ws: { readyState: 1 }, device, selected: item.id };
   const mobile = { sessions: f.sessions, clients: new Set([client]), private: { devices: [device] } };
+  mobile.commands = MobileCompanion.prototype.createCommands.call(mobile);
   const call = (method, payload) => MobileCompanion.prototype.call.call(mobile, client, method, payload);
   for (const method of ['input', 'console.close', 'console.switch', 'console.setup', 'console.rename', 'console.project',
     'console.models', 'console.worktree', 'console.worktree.root', 'console.worktree.status',
@@ -176,7 +173,7 @@ test('deadline exhaustion preserves the process and named Stop remains usable', 
 test('pending worker steering receives owner capacity instead of starving behind its reservation', async t => {
   const f = fixture(t), item = f.open();
   f.owners.heartbeat([{ consoleKey: item.consoleKey, launchId: item.launchId }]);
-  const admission = new CapacityReservations(f.owners); t.after(() => admission.dispose());
+  const admission = new CapacityReservations(f.owners, { workers: () => [{ id: 'explicit-test-cap', accountId: 'codex:default', quotaGroupId: 'codex:default', concurrency: 1 }] }); t.after(() => admission.dispose());
   f.loop.admission = admission;
   f.bridge.submit(f.payload(item));
   const messages = f.bridge.take(f.job);
@@ -190,7 +187,7 @@ test('owner steering wakes a worker waiting for its first automatic slot without
   f.sessions.items.set('owner', { id: 'owner', consoleKey: 'owner', launchId: 'owner-launch',
     accountId: 'codex:default', projectId: 'other-project', alive: true, slot: 1, provider: 'codex', purpose: 'agent', name: 'Owner', width: 1, height: 1 });
   f.sessions.emit('changed'); f.sessions.ownerInteraction('owner', 'typing', { draft: true });
-  const admission = new CapacityReservations(f.owners); t.after(() => admission.dispose());
+  const admission = new CapacityReservations(f.owners, { workers: () => [{ id: 'explicit-owner-test-cap', accountId: 'codex:default', quotaGroupId: 'codex:default', concurrency: 1 }] }); t.after(() => admission.dispose());
   f.loop.admission = admission;
   const before = { ...f.sessions.items.get('owner') };
   const running = f.loop.runTask(f.job, 'mock-check');

@@ -8,14 +8,13 @@ export function consoleAppearance({ call, getState }) {
   const dialog = document.createElement('dialog');
   dialog.id = 'console-color-dialog';
   dialog.setAttribute('aria-labelledby', 'console-color-title');
-  dialog.innerHTML = `<form><h2 id="console-color-title">Console theme</h2><fieldset><legend class="sr-only">Console theme</legend><div class="console-color-options">${[['default', 'Use default'], ...frameStyles].map(([value, label]) => `<label data-frame="${value}"><input type="radio" name="frame" value="${value}"><span class="frame-swatch" aria-hidden="true"></span><span>${label}</span></label>`).join('')}</div></fieldset><div class="console-theme-preview" data-frame="classic">${skin}<header>Theme preview</header><pre><span class="preview-prompt">&gt;</span> Open console<span class="preview-cursor" aria-hidden="true"></span></pre></div><div class="theme-preview-caption"><span data-theme-detail></span><button class="secondary" type="button" data-preview-opening>Replay opening</button></div><p class="form-error" role="alert"></p><div class="dialog-footer"><button type="button" class="secondary" data-cancel-color>Cancel</button><button type="submit" class="primary">Apply</button></div></form>`;
+  dialog.innerHTML = `<form><h2 id="console-color-title">Console theme</h2><fieldset><legend class="sr-only">Console theme</legend><div class="console-color-options">${[['default', 'Use default'], ...frameStyles].map(([value, label]) => `<label data-frame="${value}"><input type="radio" name="frame" value="${value}"><span class="frame-swatch" aria-hidden="true"></span><span>${label}</span></label>`).join('')}</div></fieldset><div class="console-theme-preview" data-frame="classic">${skin}<header>Theme preview</header><pre><span class="preview-prompt">&gt;</span> Open console<span class="preview-cursor" aria-hidden="true"></span></pre></div><div class="theme-preview-caption"><button class="secondary" type="button" data-preview-opening>Replay opening</button></div><p class="form-error" role="alert"></p><div class="dialog-footer"><button type="button" class="secondary" data-cancel-color>Cancel</button><button type="submit" class="primary">Apply</button></div></form>`;
   document.body.append(dialog);
   let target, opener;
   const form = dialog.querySelector('form');
   function preview(play = false) {
     const style = form.elements.frame.value === 'default' ? getState().settings.trimStyle || 'classic' : form.elements.frame.value;
     const panel = dialog.querySelector('.console-theme-preview'); panel.dataset.frame = style;
-    dialog.querySelector('[data-theme-detail]').textContent = consoleTheme(style).detail;
     if (play && getState().settings.launchEffect !== false) openConsoleEffect(panel, style);
   }
   form.addEventListener('change', event => { if (event.target.name === 'frame') preview(true); });
@@ -63,7 +62,6 @@ export function consoleAppearance({ call, getState }) {
       if (sample) {
         sample.dataset.frame = id;
         sample.querySelector('header').textContent = consoleTheme(id).label;
-        const detail = sample.parentElement.querySelector('.theme-detail'); if (detail) detail.textContent = consoleTheme(id).detail;
       }
       if (dialog.open) {
         form.querySelector('[value=default]').closest('label').dataset.frame = id;
@@ -73,7 +71,7 @@ export function consoleAppearance({ call, getState }) {
     },
     preview(style) {
       const id = frameStyles.some(([value]) => value === style) ? style : 'classic';
-      return `<div class="console-theme-preview" data-frame="${id}">${skin}<header>${consoleTheme(id).label}</header><pre><span class="preview-prompt">&gt;</span> Open console<span class="preview-cursor" aria-hidden="true"></span></pre></div><div class="theme-preview-caption"><p class="theme-detail">${consoleTheme(id).detail}</p><button class="secondary" type="button" data-settings-replay>Replay opening</button></div>`;
+      return `<div class="console-theme-preview" data-frame="${id}">${skin}<header>${consoleTheme(id).label}</header><pre><span class="preview-prompt">&gt;</span> Open console<span class="preview-cursor" aria-hidden="true"></span></pre></div><div class="theme-preview-caption"><button class="secondary" type="button" data-settings-replay>Replay opening</button></div>`;
     }
   };
 }

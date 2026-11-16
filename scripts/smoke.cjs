@@ -11,6 +11,7 @@ const { checkFirstRun } = require('./first-run-check.cjs');
 const { checkToolsAndWindow } = require('./tool-window-check.cjs');
 const { checkWindowsIdentity } = require('./windows-identity-check.cjs');
 const { checkUserData } = require('./user-data-check.cjs');
+const { checkHiddenStartup } = require('./startup-check.cjs');
 const root = path.resolve(__dirname, '..');
 const testParent = path.join(root, 'test-data');
 fs.mkdirSync(testParent, { recursive: true });
@@ -28,6 +29,7 @@ async function eventually(predicate, message) {
 }
 (async () => {
   const problems = [], checks = [];
+  await checkHiddenStartup({ root });
   await checkUserData({ root });
   checks.push('Rename startup restores the existing profile, preserves an established Paddock profile and isolates explicit test data');
   let page;
@@ -67,7 +69,6 @@ async function eventually(predicate, message) {
   assert.equal(await page.locator('.app-footer, .local-note, #new-console, #content .page-heading, #content .grid-caption').count(), 0);
   assert.ok(await page.locator('.session-card.empty .new-console-label').evaluateAll(labels => labels.every(label => getComputedStyle(label).opacity === '0')));
   assert.equal(await page.getByRole('button', { name: 'New console', exact: true }).count(), 0);
-  assert.equal((await invoke('state')).settings.hudAlwaysOnTop, false);
   assert.ok(fs.statSync((await invoke('state')).settings.consoleDefaults.cwd).isDirectory());
   assert.equal(await page.locator('#explorer-pane, #explorer-toggle, #explorer-backdrop, #sidebar-toggle').count(), 0);
   assert.equal(await page.locator('#sidebar').isVisible(), true);
@@ -187,7 +188,7 @@ async function eventually(predicate, message) {
   await eventually(async () => renderedText(await page.locator('.session-card .xterm-rows').innerText()).includes('GRID_STILL_LIVE'), async () => `GRID_STILL_LIVE never rendered: ${await terminalReport(page, invoke)}`);
   assert.equal((await invoke('state')).sessions.filter(x => x.alive).length, 1);
   checks.push('Live grid terminal accepts input, keeps focus during updates, and reuses the same terminal fullscreen; returning to Consoles stays fullscreen');
-  checks.push('Panel titles rename in place across grid, fullscreen and HUD without restarting terminals or changing launch defaults');
+  checks.push('Panel titles rename in place across grid and fullscreen without restarting terminals or changing launch defaults');
   const otherFolder = path.join(dataDir, 'Another project'); fs.mkdirSync(otherFolder);
   await app.evaluate(({ dialog }, folder) => { globalThis.originalFolderDialog = dialog.showOpenDialog; dialog.showOpenDialog = async (_window, options) => { globalThis.folderPickerStart = options.defaultPath; return { canceled: false, filePaths: [folder] }; }; }, otherFolder);
   await page.locator('[data-page=settings]').click();
@@ -202,23 +203,19 @@ async function eventually(predicate, message) {
   await page.keyboard.press('Escape');
   checks.push('Settings startup folder picker saves the next launch folder and preserves existing consoles');
   const before = await invoke('session.buffer', session.id);
-  await invoke('mode', 'hud');
-  await page.waitForSelector('#hud:not([hidden])');
-  const bounds = await app.evaluate(({ BrowserWindow }) => { const w = BrowserWindow.getAllWindows()[0]; return { bounds: w.getBounds(), top: w.isAlwaysOnTop(), fullscreen: w.isFullScreen() }; });
-  assert.equal(bounds.bounds.width, 370); assert.equal(bounds.bounds.height, 440); assert.equal(bounds.top, false); assert.equal(bounds.fullscreen, false);
-  assert.equal((await invoke('state')).sessions[0].alive, true);
-  assert.equal(await page.locator(`.hud-slot[data-session="${session.id}"] small`).innerText(), 'Robonslaught dev');
-  assert.equal(await page.locator('.hud-slot[data-slot="3"] .hud-slot-name').innerText(), 'Trader');
-  assert.ok((await invoke('session.buffer', session.id)).data.includes('PADDOCK_SMOKE_OK'));
-  await capture({ path: path.join(artifacts, 'test-hud.png') });
-  await page.locator('.hud-console').click();
-  await eventually(async () => (await invoke('state')).mode === 'fullscreen' && !(await invoke('state')).transitioning && await page.locator(`.session-card.console-expanded[data-console-id="${session.id}"]`).isVisible());
+  await invoke('mode', 'fullscreen');
+  await eventually(async () => (await invoke('state')).mode === 'fullscreen' && !(await invoke('state')).transitioning);
   assert.equal(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isFullScreen()), true);
-  assert.ok((await invoke('session.buffer', session.id)).sequence >= before.sequence);
-  checks.push('Collapse keeps the process and buffer; HUD expands the same console fullscreen');
+  assert.equal((await invoke('state')).sessions[0].alive, true);
+  assert.ok((await invoke('session.buffer', session.id)).data.includes('PADDOCK_SMOKE_OK'));
   await invoke('mode', 'dashboard');
+  await eventually(async () => (await invoke('state')).mode === 'dashboard' && !(await invoke('state')).transitioning);
+  assert.equal(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isFullScreen()), false);
+  assert.equal((await invoke('state')).sessions[0].alive, true);
+  assert.ok((await invoke('session.buffer', session.id)).sequence >= before.sequence);
+  checks.push('Mode changes between dashboard and fullscreen keep the process and buffer');
   await checkVimControls({ page, app, invoke, eventually, capture: file => capture({ path: path.join(artifacts, file) }) });
-  checks.push('Optional Vim controls navigate grid and HUD, rename and launch consoles, switch pages and show help; terminals and forms retain their keys, and the preference survives reload');
+  checks.push('Optional Vim controls navigate the grid, rename and launch consoles, switch pages and show help; terminals and forms retain their keys, and the preference survives reload');
   // Keys are pasted where they are used: here, on the OpenAI API connection.
   await openPage(page, 'api-settings');
   assert.equal((await invoke('state')).vault.available, true);
@@ -248,6 +245,8 @@ async function eventually(predicate, message) {
   await invoke('vault.save', { provider: 'any_service', label: 'Any service', key: 'TEST_TOOL_KEY_123456789' });
   await eventually(async () => (await invoke('state')).vault.entries.length === 2);
   await openPage(page, 'tools');
+  await page.locator('.empty-tools [data-page=add-tools]').click();
+  await page.locator('#tool-form').waitFor();
   await page.locator('#tool-form input[name=id]').fill('local_tools');
   await page.locator('#tool-form input[name=name]').fill('Test tools');
   await page.locator('#tool-form input[name=description]').fill('A local test connection');
@@ -256,20 +255,21 @@ async function eventually(predicate, message) {
   await page.locator('#tool-form select[name=keyId]').selectOption('any_service');
   await page.locator('#tool-form input[name=keyTarget]').fill('FIXTURE_KEY');
   await page.locator('#tool-form button[type=submit]').click();
+  await openPage(page, 'tools');
   await page.locator('[data-test-tool=local_tools]').waitFor();
   await page.locator('[data-test-tool=local_tools]').click();
   await eventually(async () => (await invoke('state')).shared.connections[0].status?.count === 1);
   await capture({ path: path.join(artifacts, 'test-tools.png') });
   await page.locator('[data-edit-tool=local_tools]').click();
   assert.equal(await page.locator('#tool-form select[name=keyId]').inputValue(), 'any_service');
-  await page.locator('#tool-form .advanced-fields summary').click();
+  // Advanced fields stay open in Settings.
   await page.locator('#tool-form textarea[name=extraKeys]').fill('invalid json');
   await page.locator('#tool-form button[type=submit]').click();
   assert.match(await page.locator('#tool-form .form-error').textContent(), /valid JSON/);
   assert.equal((await invoke('state')).shared.connections.length, 1);
   await page.locator('[data-action=reset-tool]').click();
   await openPage(page, 'api-settings');
-  await page.locator('#profile-editor summary').click();
+  // The model API editor stays open in Settings.
   await page.locator('#profile-form input[name=id]').fill('custom_api');
   await page.locator('#profile-form input[name=name]').fill('My model API');
   await page.locator('#profile-form input[name=url]').fill('https://example.com/v1/chat/completions');
@@ -357,13 +357,7 @@ async function eventually(predicate, message) {
   await page.mouse.move(dragBox.x + 65, dragBox.y + 65); await page.mouse.up();
   assert.equal(await chooser.isVisible(), false);
   assert.equal((await invoke('state')).sessions.filter(x => x.alive).length, activeBeforeChooser);
-  await invoke('mode', 'hud');
-  await holdPlus(page.locator('#hud .hud-slot.empty[data-slot="7"]'));
-  assert.equal(await page.locator('#console-chooser-title').innerText(), 'Console 7');
-  assert.equal(await chooser.evaluate(el => el.scrollWidth <= el.clientWidth), true);
-  await capture({ path: path.join(artifacts, 'test-console-chooser-hud.png') });
-  await page.keyboard.press('Escape'); await invoke('mode', 'dashboard');
-  checks.push('Hold works with mouse and keyboard in the grid and HUD; Escape cancels, Enter still launches normally afterward, and dragging cancels the hold');
+  checks.push('Hold works with mouse and keyboard in the grid; Escape cancels, Enter still launches normally afterward, and dragging cancels the hold');
   if ((await invoke('state')).capabilities.codex) {
     await page.locator('.session-card.empty[data-slot="2"]').click({ button: 'right' });
     await chooser.waitFor({ state: 'visible' }); await oneOff.locator('[name=provider]').selectOption('codex');
@@ -451,7 +445,7 @@ async function eventually(predicate, message) {
   checks.push('All nine panels show independent live terminal output');
   await checkToolsAndWindow({ app, page, invoke, eventually, capture: file => capture({ path: path.join(artifacts, file) }), dataDir });
   checks.push('Shared web guide preserves drafts; Unity folder picker and encrypted Meshy binding work; bundled Meshy discovers tools without a paid request');
-  checks.push('Dragging works in dashboard, fullscreen and HUD; close hides to tray and reopening preserves fullscreen and all running consoles');
+  checks.push('Dragging works in dashboard and fullscreen; close hides to tray and reopening preserves fullscreen and all running consoles');
   const tenth = await page.evaluate(cwd => window.dock.call('session.create', { provider: 'shell', cwd }), root);
   assert.equal(tenth.ok, true); assert.equal(tenth.value.slot, 10); assert.equal((await invoke('state')).grid.rows, 4);
   await invoke('session.end', tenth.value.id); await eventually(async () => !(await invoke('state')).sessions.find(x => x.id === tenth.value.id)?.alive); await invoke('grid.configure', { columns: 3, rows: 3 });
@@ -460,10 +454,6 @@ async function eventually(predicate, message) {
   await eventually(() => { try { JSON.parse(fs.readFileSync(bridgeFile, 'utf8').replace(/^\uFEFF/, '')); return true; } catch { return false; } });
   const grant = JSON.parse(fs.readFileSync(bridgeFile, 'utf8').replace(/^\uFEFF/, '')); fs.unlinkSync(bridgeFile);
   const hookEnv = { ...process.env, PADDOCK_DATA_DIR: dataDir, PADDOCK_SESSION_ID: session.id, PADDOCK_LAUNCH_ID: session.launchId, PADDOCK_BRIDGE_URL: grant.url, PADDOCK_BRIDGE_TOKEN: grant.token };
-  async function completionTool(tool, args = {}) {
-    const response = await fetch(grant.url, { method: 'POST', headers: { Authorization: 'Bearer ' + grant.token, 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'dock_call', arguments: { tool, arguments: args } }) });
-    const result = await response.json(); if (result.isError) throw Error(result.content[0].text); return JSON.parse(result.content[0].text);
-  }
   const workingHook = spawnSync(process.execPath, [path.join(root, 'electron', 'agent-event.cjs'), 'UserPromptSubmit'], { input: JSON.stringify({ session_id: 'test-thread' }), windowsHide: true, env: hookEnv });
   assert.equal(workingHook.status, 0);
   await page.waitForSelector(`.session-card.active[data-console-id="${session.id}"]`);
@@ -476,8 +466,6 @@ async function eventually(predicate, message) {
   assert.equal(thinkingOutline.edge, '100%', 'active frame has a stronger edge');
   await capture({ path: path.join(artifacts, 'test-thinking-grid.png') });
   // A synthetic CLI completion tests integration without sending a prompt to an agent.
-  const { turnId } = await completionTool('dock/start_turn');
-  await completionTool('dock/finish_turn', { turnId, outcome: 'no-change', summary: 'Synthetic console status fixture.', nextStep: 'None', outputs: 'none' });
   const hook = spawnSync(process.execPath, [path.join(root, 'electron', 'agent-event.cjs'), 'codex-notify', JSON.stringify({ type: 'agent-turn-complete', 'thread-id': 'test-thread', 'last-assistant-message': 'NOT_PERSISTED' })], { windowsHide: true, env: hookEnv });
   assert.equal(hook.status, 0);
   await eventually(async () => (await invoke('state')).sessions.find(x => x.id === session.id)?.state === 'ready', 'Completion callback did not reach the dashboard');

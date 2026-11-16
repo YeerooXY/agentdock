@@ -44,8 +44,8 @@ function verdictFor(job, checks) {
 }
 function usageSummary(job) {
   try {
-    const { cloud, local } = taskUsage(job), pick = u => ({ calls: u.calls, input: u.input, output: u.output, cached: u.cached });
-    return { cloud: pick(cloud), local: pick(local), note: 'Worker usage only. Coordinating chat usage is not included.' };
+    const { cloud, local, lead, totalCloud, note } = taskUsage(job), pick = u => ({ calls: u.calls, input: u.input, output: u.output, cached: u.cached });
+    return { cloud: pick(cloud), local: pick(local), lead, totalCloud, note };
   } catch { return null; }
 }
 
@@ -54,28 +54,35 @@ function buildOutcome(job) {
   const checks = checksSummary(job), verdict = verdictFor(job, checks);
   const files = [...new Set((job.changedFiles || []).map(String))];
   const unresolved = (job.unresolved || []).map(item => stripToolMarkup(item)).filter(Boolean).slice(0, 20);
+  const visualStep = lastStep(job, 'visualReview', s => s.state === 'done');
+  const lowFindings = (visualStep?.lowFindings || job.visualLowFindings || []).map(item => stripToolMarkup(item)).filter(Boolean).slice(0, 20);
   const summary = sentence(lastStep(job, 'implement', s => s.summary)?.summary);
   const changeText = files.length ? plural(files.length, 'file') + ' changed' : 'No files changed';
+  const baseReady = summary || `${changeText}. Checks and review found nothing open.`;
   const outcome = {
-    ready: summary || `${changeText}. Checks and review found nothing open.`,
+    ready: lowFindings.length ? `${baseReady} Low visual note: ${sentence(lowFindings[0])}` : baseReady,
     'needs-decision': unresolved.length ? `${changeText}. ${sentence(unresolved[0])}` : `${changeText}. Review the result before accepting.`,
     'failed-checks': `${changeText}. ${checks.summary}`,
     failed: sentence(job.error) || 'The task failed before it finished.',
     interrupted: sentence(job.error) || 'The task was stopped before it finished.'
   }[verdict];
   return { type: 'task', taskId: job.id, projectId: job.projectId || null, originConsoleId: job.originConsoleId || null, verdict, outcome,
-    changedFiles: { count: files.length, top: files.slice(0, 5) }, checks, unresolved, usage: usageSummary(job) };
+    changedFiles: { count: files.length, top: files.slice(0, 5) }, checks, unresolved,
+    ...(lowFindings.length ? { visualFindings: lowFindings, lowFindings } : {}),
+    usage: usageSummary(job) };
 }
 
 // Bounded, validated copy for storage in the Results index.
 function cleanOutcome(raw) {
   if (!raw || typeof raw !== 'object' || raw.type !== 'task' || !VERDICTS.includes(raw.verdict)) return null;
   const text = (v, n) => stripToolMarkup(v).slice(0, n);
+  const lowFindings = (raw.visualFindings || raw.lowFindings || []).slice(0, 20).map(i => text(i, 400)).filter(Boolean);
   return { type: 'task', taskId: text(raw.taskId, 80), projectId: raw.projectId ? text(raw.projectId, 80) : null, originConsoleId: raw.originConsoleId ? text(raw.originConsoleId, 80) : null,
     verdict: raw.verdict, outcome: text(raw.outcome, 400),
     changedFiles: { count: Math.max(0, Number(raw.changedFiles?.count) || 0), top: (raw.changedFiles?.top || []).slice(0, 5).map(f => String(f).slice(0, 300)) },
     checks: { status: text(raw.checks?.status, 20), summary: text(raw.checks?.summary, 200) },
     unresolved: (raw.unresolved || []).slice(0, 20).map(i => text(i, 400)),
+    ...(lowFindings.length ? { visualFindings: lowFindings, lowFindings } : {}),
     usage: raw.usage && typeof raw.usage === 'object' ? raw.usage : null };
 }
 module.exports = { buildOutcome, cleanOutcome, stripToolMarkup, VERDICTS };

@@ -1,0 +1,9 @@
+.delegate-composer { display: grid; gap: 4px; padding: 6px 10px 8px; }
+.delegate-composer textarea { display: block; width: 100%; min-width: 0; min-height: 32px; max-height: 140px; resize: none; overflow-y: auto; box-sizing: border-box; transition: border-color .15s ease-out, box-shadow .15s ease-out; }
+.delegate-footer { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-height: 0; }
+.delegate-footer [role="status"] { flex: 1 1 auto; min-width: 0; font-size: 12px; color: var(--muted, inherit); }
+.delegate-footer [role="status"]:empty { display: none; }
+.delegate-actions { display: inline-flex; gap: 6px; animation: delegate-in .18s ease-out; }
+.delegate-actions[hidden] { display: none; }
+@keyframes delegate-in { from { opacity: 0; transform: translateY(2px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .delegate-composer textarea { transition: none; } .delegate-actions { animation: none; } }

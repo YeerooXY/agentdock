@@ -11,8 +11,17 @@ class SetupRequests {
     const saved = readJson(this.file, []);
     this.items = Array.isArray(saved) ? saved.filter(x => x?.id && x.config && ['tool','api','key','image'].includes(x.kind)).slice(0, 20) : [];
   }
-  status() {
+  status({ detail = false } = {}) {
     const hub = this.getHub();
+    if (!detail) return {
+      agents: this.getAgents().map(({ id, name, installed }) => ({ id, name, installed })),
+      keys: hub.vault.list(),
+      connections: hub.config.connections.map(({ id, name, type, enabled }) => ({ id, name, type, enabled })),
+      integrations: hub.builtinTools().map(({ id, name, state, ready, setup }) => ({ id, name, state, ready, setup })),
+      apis: hub.config.profiles.map(({ id, name, protocol }) => ({ id, name, protocol })),
+      imageGeneration: { provider: hub.config.imageGeneration?.provider, model: hub.config.imageGeneration?.model },
+      pending: this.items.map(({ id, kind, config, at, consoleName }) => ({ id, kind, name: config.name || config.id || config.provider, at, consoleName })),
+    };
     return { agents: this.getAgents(), keys: hub.vault.list(), connections: hub.config.connections, integrations: hub.builtinTools(), apis: hub.config.profiles, imageGeneration: hub.config.imageGeneration, pending: this.items, help: 'Integrations lists built-in tools, including those awaiting setup. Connected does not establish provider readiness; test the connection and inspect capabilities. Prepare tool, API or image generator settings with dock/prepare_setup. Use kind key to request direct entry in Keys; never ask for the value in chat. Built-in setup is on Tools. CLI account sign-in stays in the provider console.' };
   }
   prepare({ kind, config }, context) {

@@ -103,13 +103,13 @@ void main() {
       await tester.enterText(input, 'Finish first task');
       await c.select('two');
       await tester.pumpAndSettle();
-      expect(find.byType(TextField), findsNothing);
+      expect(find.byType(TextField), findsOneWidget);
       await enterChat(tester);
       expect(tester.widget<TextField>(input).controller!.text, '');
       await tester.enterText(input, 'Work on the other project');
       await c.select('one');
       await tester.pumpAndSettle();
-      expect(find.byType(TextField), findsNothing);
+      expect(find.byType(TextField), findsOneWidget);
       await enterChat(tester);
       expect(
         tester.widget<TextField>(input).controller!.text,
@@ -126,7 +126,7 @@ void main() {
       );
       await c.select('two');
       await tester.pumpAndSettle();
-      expect(find.byType(TextField), findsNothing);
+      expect(find.byType(TextField), findsOneWidget);
       await enterChat(tester);
       expect(
         tester.widget<TextField>(input).controller!.text,

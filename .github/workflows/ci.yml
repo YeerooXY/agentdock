@@ -77,6 +77,9 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends xvfb xauth dbus-x11 gnome-keyring libsecret-1-0 python3 make g++
       - run: npm ci --no-audit --no-fund
+      - name: Browser runtime dependencies
+        if: runner.os == 'Linux'
+        run: npx playwright install-deps chromium webkit
       - name: Unit and desktop tests (Linux)
         if: runner.os == 'Linux'
         shell: bash

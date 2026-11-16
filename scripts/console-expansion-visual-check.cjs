@@ -1,4 +1,5 @@
 'use strict';
+const { installStateTransport } = require('./state-test-transport.cjs');
 // The shipped renderer, synthetic launch-qualified sessions and fake IPC only.
 // Run after npm run build: node scripts/console-expansion-visual-check.cjs
 const { chromium, webkit, devices } = require('playwright');
@@ -70,7 +71,8 @@ let browser;
   for (const [name, type, options] of profiles) {
     browser = await type.launch({ headless: true });
     const context = await browser.newContext(options);
-    await context.addInitScript(() => {
+    await installStateTransport(context);
+await context.addInitScript(() => {
       localStorage.setItem('console-text-steps', JSON.stringify({ 'console-a': 3 }));
       const clearRect = CanvasRenderingContext2D.prototype.clearRect;
       CanvasRenderingContext2D.prototype.clearRect = function (...args) {
@@ -134,7 +136,7 @@ let browser;
     await context.addInitScript(() => {
       window.dock = {
         call: (method, payload) => window.fixtureCall(method, payload),
-        onState: callback => { window.fixtureReceive = callback; },
+        get state() { return window.fixtureStateTransport; },
         onOutput: callback => { window.fixtureOutput = callback; },
         onSelect: callback => { window.fixtureSelect = callback; },
         onNotice: callback => { window.fixtureNotice = callback; },
@@ -303,7 +305,6 @@ let browser;
     assert.equal(await panel.locator('.xterm-rows').first().evaluate(element => getComputedStyle(element).fontSize), textSizeBefore, 'the console text-size choice stays put');
     assert.equal(await page.locator('#sidebar').evaluate(el => el.inert), true, 'covered navigation leaves keyboard focus');
     assert.equal(await page.locator('.titlebar').evaluate(el => el.inert), false, 'window controls remain available above the console');
-    assert.equal(await page.locator('.titlebar [data-action="hud"]').isVisible(), true, 'the HUD entry point remains available');
     assert.equal(await page.locator('.titlebar [data-action="fullscreen"]').isVisible(), true, 'the window mode entry point remains available');
     await panel.locator('[data-action="end-session"]').click();
     await page.locator('#toast.visible').waitFor();
@@ -399,12 +400,8 @@ let browser;
     assert.equal(await page.locator('.session-card.console-expanded[data-console-id="console-a"]').count(), 1, 'window mode changes keep the selected console');
     await page.locator('.titlebar [data-action="fullscreen"]').click();
     await page.waitForFunction(() => window.dock.call('state').then(result => result.value.mode === 'fullscreen'));
-    await page.locator('.titlebar [data-action="hud"]').click();
-    await page.waitForSelector('#hud:not([hidden])');
-    assert.equal(await page.locator('.session-card.console-expanded').count(), 0, 'the HUD takes over from the expanded grid');
-    assert.equal(state.sessions.find(session => session.id === 'console-a').alive, true, 'HUD mode leaves the selected fake session alive');
-    await page.locator('#hud .hud-title [data-action="dashboard"]').click();
-    await page.waitForSelector('#hud[hidden]', { state: 'attached' });
+    await page.locator('.titlebar [data-action="fullscreen"]').click();
+    await page.waitForFunction(() => window.dock.call('state').then(result => result.value.mode === 'dashboard'));
     await page.evaluate(() => window.fixtureSelect('console-a'));
     await page.locator('.session-card.console-expanded[data-console-id="console-a"]').waitFor();
 

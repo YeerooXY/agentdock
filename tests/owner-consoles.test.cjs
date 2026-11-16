@@ -7,16 +7,34 @@ const vm = require('node:vm');
 const { OwnerConsoles, ownerCapacity, RECENT_MS, HEARTBEAT_MS, PERSIST_MS } = require('../electron/owner-consoles.cjs');
 const { atomicJson } = require('../electron/storage.cjs');
 const { CapacityReservations } = require('../electron/capacity-reservations.cjs');
+
+test('a failed critical save is retried immediately on the next identical interaction', t => {
+  let fail = false;
+  const f = fixture(t, { write(file, value) {
+    if (fail) throw new Error('disk unavailable');
+    atomicJson(file, value);
+  } });
+  f.register('owner', { ownerCreated: true });
+  fail = true;
+  assert.throws(() => f.touch('owner', 'typing', { pendingSubmission: true }), /disk unavailable/);
+  fail = false;
+  f.touch('owner', 'typing', { pendingSubmission: true });
+  const saved = JSON.parse(fs.readFileSync(f.owners.file, 'utf8')).consoles[0];
+  assert.equal(saved.pendingSubmission, true);
+  assert.equal(saved.pendingAt, f.now());
+  assert.equal(saved.reserved, true);
+  assert.equal(f.owners.persistTimer, null);
+});
 const { workerRegistry, routeWorker } = require('../electron/worker-registry.cjs');
 const { TaskLoop } = require('../electron/task-loop.cjs');
 const { Sessions } = require('../electron/sessions.cjs');
-const { MessageQueue } = require('../electron/message-queue.cjs');
 
 function fixture(t, ownerOptions = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'paddock-owner-'));
   let time = 2_000_000;
   const owners = new OwnerConsoles(root, { now: () => time, ...ownerOptions });
-  const admission = new CapacityReservations(owners, { now: () => time });
+  // These tests exercise priority under an explicitly configured one-turn account cap.
+  const admission = new CapacityReservations(owners, { now: () => time, workers: () => [...new Set(['codex:a', ...owners.snapshot().map(owner => owner.quotaGroupId)])].filter(Boolean).map(id => ({ id, accountId: id, quotaGroupId: id, concurrency: 1 })) });
   t.after(() => { admission.dispose(); owners.dispose(); fs.rmSync(root, { recursive: true, force: true }); });
   const register = (key, extra = {}) => {
     owners.register({ consoleKey: key, launchId: `${key}-launch`, accountId: 'codex:a', projectId: 'project-a', ...extra });
@@ -38,6 +56,21 @@ test('trusted interactions promote workers; output, hover, protocol and programm
     f.owners.release('auto', 'auto-launch');
   }
   assert.throws(() => f.owners.interaction('auto', 'old', 'typing', { trusted: true }), /console changed/);
+});
+
+test('recency-only typing skips synchronous listeners and waits for the existing persistence batch', t => {
+  let writes = 0, pending;
+  const f = fixture(t, { write: () => { writes++; }, schedule: fn => (pending = fn, 1), cancel: () => {} });
+  f.register('owner', { ownerCreated: true });
+  let changes = 0; f.owners.on('changed', () => changes++);
+  f.touch('owner', 'typing'); // First interaction promotes the console immediately.
+  const afterPromotion = { writes, changes };
+  f.advance(1);
+  f.touch('owner', 'typing');
+  assert.equal(f.owners.records.get('owner').lastInteractionAt, f.now());
+  assert.deepEqual({ writes, changes }, afterPromotion);
+  pending();
+  assert.equal(writes, afterPromotion.writes + 1);
 });
 
 test('owner-created consoles stay protected for their lifetime and completed workers retain promotion', t => {
@@ -341,38 +374,9 @@ test('typed and pasted input count; terminal protocol reports and queued deliver
   sessions.write('a', '\x1b[200~pasted text\x1b[201~');
   assert.equal(f.owners.records.get('key').lastInteractionAt, f.now());
   sessions.write('a', '\r'); assert.equal(f.owners.records.get('key').ownerTurn, true);
-  const queue = new MessageQueue(sessions, { submitDelay: 0, wait: () => Promise.resolve() });
-  const entry = queue.add('a', 'queued owner text', { ownerRequested: true }); const touched = f.owners.records.get('key').lastInteractionAt;
-  f.advance(100); await queue.send('a', entry.id);
-  assert.equal(f.owners.records.get('key').lastInteractionAt, touched);
-  assert.equal(f.owners.records.get('key').pendingSubmission, false);
   assert.ok(writes.length > 0);
 });
 
-test('legacy worker queues cannot bypass steering or refresh owner recency', async t => {
-  const f = fixture(t);
-  const sessions = new Sessions(f.root, { pty: { spawn() { assert.fail('No process launch'); } } });
-  sessions.items.set('a', { id: 'a', consoleKey: 'key', launchId: 'launch', taskId: 'task', accountId: 'codex:a', purpose: 'agent', provider: 'codex', state: 'active', alive: true, terminal: { write() {} } });
-  f.owners.bind(sessions);
-  f.owners.heartbeat([{ consoleKey: 'key', launchId: 'launch' }]);
-  const queue = new MessageQueue(sessions, { submitDelay: 0, wait: () => Promise.resolve() });
-  assert.throws(() => queue.add('a', 'automatic message'), /worker composer/);
-  let record = f.owners.records.get('key');
-  assert.equal(record.ownerManaged, false); assert.equal(record.lastInteractionAt, null);
-  assert.equal(record.pendingSubmission, false); assert.equal(f.owners.reservations().size, 0);
-  await assert.rejects(queue.send('a', 'old-entry'), /worker composer/);
-  assert.equal(record.ownerTurn, false); assert.equal(record.lastInteractionAt, null);
-  assert.throws(() => queue.add('a', 'owner submission', { ownerRequested: true }), /worker composer/);
-  sessions.ownerInteraction('a', 'click');
-  record = f.owners.records.get('key');
-  assert.equal(record.ownerManaged, true); assert.equal(record.lastInteractionAt, f.now()); assert.equal(record.pendingSubmission, false);
-  const touched = record.lastInteractionAt; f.advance(RECENT_MS + 1);
-  f.owners.heartbeat([{ consoleKey: 'key', launchId: 'launch' }]);
-  assert.throws(() => queue.add('a', 'background follow-up'), /worker composer/);
-  assert.equal(record.lastInteractionAt, touched); assert.equal(record.ownerManaged, true);
-  assert.equal(record.pendingSubmission, false); assert.equal(record.ownerTurn, false);
-  assert.equal(f.owners.reservations().size, 0);
-});
 
 test('TaskLoop admission waits for owner capacity, persists reason and holds unconfirmed process slots', async t => {
   const f = fixture(t); f.register('owner', { ownerCreated: true }); f.touch('owner', 'typing', { draft: true });
@@ -436,7 +440,8 @@ test('isolated preload ignores synthetic focus and sends only trusted flags and 
     document: { hasFocus: () => true, activeElement: target, addEventListener: (type, callback) => listeners.set(type, callback) },
     queueMicrotask, setInterval: callback => { heartbeat = callback; } };
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../electron/preload.cjs'), 'utf8'), context);
-  ipc.emit('dock:state', {}, { sessions: [{ id: 'a', consoleKey: 'key', launchId: 'launch' }] }); loaded();
+  ipc.emit('dock:v2', {}, { type: 'welcome', epoch: 'test' });
+  ipc.emit('dock:v2', {}, { type: 'changes', epoch: 'test', changes: [{ slice: 'sessions', kind: 'reset', value: { order: ['a'], byId: { a: { id: 'a', consoleKey: 'key', launchId: 'launch' } } } }] }); loaded();
   assert.equal(listeners.has('focusin'), false);
   listeners.get('keydown')({ isTrusted: false, type: 'keydown', key: 'x', target }); assert.equal(sent.length, 0);
   heartbeat(); assert.equal(sent.at(-1).payload.consoles[0].focused, false);

@@ -1,0 +1,26 @@
+{
+  "name": "@paddock/effects",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Shared browser palettes and ambient canvas effects for Paddock and FamilyHub",
+  "main": "effects.js",
+  "module": "index.mjs",
+  "exports": {
+    ".": "./index.mjs",
+    "./styles.css": "./effects.css",
+    "./browser": "./effects.js"
+  },
+  "files": [
+    "effects.css",
+    "effects.js",
+    "index.mjs",
+    "README.md",
+    "manifest.json",
+    "build.cjs"
+  ],
+  "sideEffects": true,
+  "scripts": {
+    "test": "node tests/browser.cjs",
+    "build": "node build.cjs"
+  }
+}

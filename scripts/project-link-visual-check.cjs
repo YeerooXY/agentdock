@@ -1,4 +1,5 @@
 'use strict';
+const { installStateTransport } = require('./state-test-transport.cjs');
 const { chromium, webkit, devices } = require('playwright');
 const fs = require('node:fs'), path = require('node:path'), http = require('node:http'), assert = require('node:assert/strict');
 const root = path.resolve(__dirname, '..'), out = path.join(root, '.build', 'prompt7-project-link'), dist = path.join(root, 'dist');
@@ -34,7 +35,8 @@ let browser; const reports = [];
       else if (!['session.resize', 'session.input', 'session.acknowledge'].includes(method)) throw Error('Unexpected fixture call ' + method);
       return { ok: true, value, state };
     });
-    await context.addInitScript(() => { let changed; window.dock = { call: async (m, p) => { const r = await window.fixtureCall(m, p); if (r.state) changed?.(r.state); return r; }, onState: f => { changed = f; }, onOutput: () => {}, onSelect: () => {} }; });
+    await installStateTransport(context);
+await context.addInitScript(() => { window.dock = { call: async (m, p) => { const r = await window.fixtureCall(m, p); if (r.state) window.fixtureState?.(r.state); return r; }, get state() { return window.fixtureStateTransport; }, onOutput: () => {}, onSelect: () => {} }; });
     const page = await context.newPage(); page.setDefaultTimeout(12000); page.on('pageerror', e => errors.push(e.message));
     await page.goto('http://127.0.0.1:' + server.address().port); await page.locator('#project-suggestion').waitFor(); await page.addScriptTag({ url: '/_axe.js' });
     async function capture(view) {
@@ -73,8 +75,8 @@ let browser; const reports = [];
     const linkedPanel = page.locator(`.session-card[data-console-id="${state.sessions[0].id}"]`);
     await linkedPanel.locator('[data-action="toggle-console"]').click(); await linkedPanel.locator('.console-expand[aria-expanded=true]').waitFor(); await capture('linked-console');
     await linkedPanel.locator('.console-project').click(); await page.locator('[data-project-view]').click();
-    await page.locator('.project-card').waitFor(); assert.equal(await page.locator('[data-project-milestone]').first().isVisible(), true); await capture('progress');
-    await nav('settings'); const toggle = page.locator('[data-setting=suggestProjects]');
+    await page.locator('.project-card').waitFor(); assert.equal(await page.locator('[data-project-milestone]').count(), 0); await capture('configuration');
+    await nav('settings'); await page.locator('.settings-navigation [data-page=project-settings]').click(); const toggle = page.locator('[data-setting=suggestProjects]');
     assert.equal(await toggle.isChecked(), false); await toggle.focus(); await page.keyboard.press('Space');
     await page.waitForFunction(async () => (await window.dock.call('state')).value.settings.suggestProjects === true);
     await page.locator('#project-settings').evaluate(x => x.scrollIntoView({ block: 'start' })); await capture('settings');

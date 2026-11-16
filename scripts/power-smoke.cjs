@@ -32,7 +32,7 @@ async function until(check) { const end = Date.now() + 15000; while (Date.now() 
   await state(a.id, 'active'); await until(async () => await activeCount() === 1);
   await state(b.id, 'active'); await state(a.id, 'ready'); assert.equal(await activeCount(), 1);
   assert.equal(await app.evaluate(() => workPowerChecks.requests.length), 1);
-  await call('mode', 'hud'); assert.equal(await activeCount(), 1);
+  await call('mode', 'fullscreen'); assert.equal(await activeCount(), 1);
   await call('tray'); assert.equal(await activeCount(), 1);
   await state(b.id, 'attention'); await until(async () => await activeCount() === 0);
   await call('mode', 'dashboard'); await state(b.id, 'active');
@@ -48,6 +48,6 @@ async function until(check) { const end = Date.now() + 15000; while (Date.now() 
   await page.screenshot({ path: path.join(out, 'windows-settings.png') });
   await call('quit'); await app.close(); app = null;
   assert.equal(JSON.parse(fs.readFileSync(path.join(profile, 'shutdown.json'))).active, 0);
-  fs.writeFileSync(path.join(out, 'native-checks.json'), JSON.stringify({ passed: true, requestType: 'prevent-app-suspension', checks: ['idle consoles', 'overlapping work', 'completion', 'waiting for input', 'HUD and tray', 'setting toggle and persistence', 'console close', 'quit cleanup'] }, null, 2));
-  console.log('PASS native sleep requests follow active consoles, settings, tray/HUD and shutdown');
+  fs.writeFileSync(path.join(out, 'native-checks.json'), JSON.stringify({ passed: true, requestType: 'prevent-app-suspension', checks: ['idle consoles', 'overlapping work', 'completion', 'waiting for input', 'fullscreen and tray', 'setting toggle and persistence', 'console close', 'quit cleanup'] }, null, 2));
+  console.log('PASS native sleep requests follow active consoles, settings, fullscreen/tray and shutdown');
 })().catch(error => { console.error(error); process.exitCode = 1; }).finally(async () => { await app?.close().catch(() => {}); assert.equal(path.dirname(fs.realpathSync(profile)), fs.realpathSync(parent)); fs.rmSync(profile, { recursive: true, force: true }); });

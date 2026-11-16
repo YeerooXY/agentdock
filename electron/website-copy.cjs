@@ -3,8 +3,9 @@
 // known owner corrections; they cannot establish overall writing quality.
 const rules = [
   ['site-status', 'Keep website development status in the handoff.', /\b(?:(?:this|the|our)\s+(?:web\s*site|page)\s+is\s+(?:just\s+|only\s+)?(?:a\s+)?(?:demo|prototype|sample)|(?:demo|prototype|sample)\s+(?:web\s*site|page)|for\s+demonstration\s+(?:purposes\s+)?only)\b/gi],
-  ['generic-slogan', 'Use a concrete fact or task label, or remove this line.', /\b(?:built around your (?:day|notes)|one (?:session|idea) at a time|a small session is still a start|a place for (?:every subject|study|play)|your notes,? put into practice|make a little room for learning)\b/gi],
-  ['promotional-reversal', 'State the specific offer directly.', /\b(?:it['’]s|we['’]re)\s+not\s+just\b[^.!?\n]{0,140}\b(?:it['’]s|we['’]re)\b/gi],
+  ['generic-slogan', 'Use a concrete fact or task label, or remove this line.', /\b(?:unlock your potential|built around your (?:day|notes)|one (?:session|idea) at a time|a small session is still a start|a place for (?:every subject|study|play)|your notes,? put into practice|make a little room for learning)\b/gi],
+  ['promotional-reversal', 'State the specific offer directly.', /\b(?:(?:it(?:['\u2019]s|\s+is)|we(?:['\u2019]re|\s+are))\s+)?not\s+just\b[^.!?]{0,140}\b(?:it(?:['\u2019]s|\s+is)|we(?:['\u2019]re|\s+are))\b/gi],
+  ['promotional-comparison', 'State the specific offer directly.', /\bmore\s+than\s+(?!\d|one\b|two\b|three\b|four\b|five\b|six\b|seven\b|eight\b|nine\b|ten\b|a\s+(?:minute|hour|day|week|month|year)\b)[a-z][^.!?\n]{0,100}/gi],
   ['encoding', 'Inspect this possible encoding error in the rendered page.', /(?:\uFFFD|Ã[\u0080-\u00BF]|Â[\u0080-\u00BF]|â[€€™œ“”–—])/g]
 ];
 function checkWebsiteCopy(text) {

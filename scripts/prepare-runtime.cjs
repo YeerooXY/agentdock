@@ -93,6 +93,17 @@ async function download(url) {
       fs.writeFileSync(marker, checksum + '\n');
     }
   }
+  const reviewDirectory = path.join(output, 'review');
+  copyPackage('playwright-core', root, path.join(reviewDirectory, 'node_modules'));
+  const reviewEnvironment = { ...process.env, PLAYWRIGHT_BROWSERS_PATH: path.join(reviewDirectory, 'browsers', arch) };
+  if (process.platform === 'darwin') {
+    const { hostPlatform } = require(path.join(reviewDirectory, 'node_modules', 'playwright-core', 'lib', 'server', 'utils', 'hostPlatform.js'));
+    reviewEnvironment.PLAYWRIGHT_HOST_PLATFORM_OVERRIDE = hostPlatform.replace(/-arm64$/, '') + (arch === 'arm64' ? '-arm64' : '');
+  }
+  // The shipped reviewer uses the same browser revisions as its bundled driver.
+  require('node:child_process').execFileSync(executable, [path.join(reviewDirectory, 'node_modules', 'playwright-core', 'cli.js'), 'install', '--only-shell', 'chromium', 'webkit'], {
+    env: reviewEnvironment, stdio: 'inherit', windowsHide: true
+  });
   const license = path.join(output, 'NODE-LICENSE.txt');
   fs.copyFileSync(path.join(root, 'electron', 'draft-editor.cjs'), path.join(output, 'draft-editor.cjs'));
   fs.copyFileSync(path.join(root, 'electron', 'draft-policy.cjs'), path.join(output, 'draft-policy.cjs'));
@@ -132,5 +143,5 @@ async function download(url) {
   }
   fs.writeFileSync(path.join(output, 'THIRD-PARTY-NOTICES.txt'), notices.join('\n\n'));
   fs.writeFileSync(path.join(output, 'runtime.json'), JSON.stringify({ node: version, platform: process.platform, arch, sha256: checksum }, null, 2) + '\n');
-  console.log(`Prepared Node ${version}, agent helpers and Meshy MCP.`);
+  console.log(`Prepared Node ${version}, agent helpers, Meshy MCP and review browsers.`);
 })().catch(error => { console.error(error.message); process.exitCode = 1; });

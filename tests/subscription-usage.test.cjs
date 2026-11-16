@@ -90,7 +90,7 @@ test('readings for the wrong account or invalid time are rejected', async () => 
 });
 
 test('Claude reader requests account usage without a prompt and preserves profile isolation', async () => {
-  const fixture = protocolFixture('lines', method => ({ result: method === 'get_usage' ? claudeQuota : {} }));
+  const fixture = protocolFixture('lines', method => ({ result: method === 'get_usage' ? claudeQuota : { models: [{ value: 'sonnet', displayName: 'Sonnet', supportedEffortLevels: ['medium', 'high'] }] } }));
   const values = await readClaudeUsage({ executable: 'claude.exe', accountId: 'claude:second', env: { CLAUDE_CONFIG_DIR: 'private-profile', ANTHROPIC_API_KEY: 'secret', PADDOCK_TOKEN: 'secret' }, ...fixture });
   assert.deepEqual(fixture.requests.map(r => r.request.subtype), ['initialize', 'get_usage']);
   assert.equal(fixture.requests[1].request.skip_behaviors, true);
@@ -99,6 +99,8 @@ test('Claude reader requests account usage without a prompt and preserves profil
   assert.equal(fixture.options.env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC, undefined);
   assert.ok(fixture.argv.includes('--restricted')); assert.ok(fixture.argv.includes('--no-session-persistence'));
   assert.equal(values[0].accountId, 'claude:second'); assert.deepEqual(values[0].windows.map(w => w.usedPercent), [20, 72]);
+  assert.equal(values[0].models[0].id, 'sonnet'); assert.equal(values[0].models[0].available, true);
+  assert.deepEqual(values[0].models[0].efforts, ['medium', 'high']);
 });
 
 test('Copilot reader handles fragmented framed messages and unlimited allowances', async () => {
@@ -135,6 +137,7 @@ test('Copilot keeps feature allowances separate and omits features with no entit
 });
 
 test('quota parsers reject missing and invalid values without inventing zero', () => {
+  assert.throws(() => kimiReading({ kind: 'ok', quota: { usages: {} } }, 'a'), /empty subscription quota list/);
   assert.throws(() => claudeReading({ rate_limits_available: true, rate_limits: null }, 'a'), UsageError);
   assert.throws(() => claudeReading({ rate_limits_available: true, rate_limits: { five_hour: { utilization: -1 } } }, 'a'), UsageError);
   assert.throws(() => copilotReading({ quotaSnapshots: { chat: { remainingPercentage: '80' } } }, 'a'), UsageError);
@@ -244,4 +247,37 @@ test('Claude model discovery initializes only and preserves account environment 
   assert.equal(f.options.env.CLAUDE_CONFIG_DIR, '/isolated-profile');
   assert.deepEqual(models[0].efforts, ['low', 'high']); assert.equal(models[0].resolvedModel, 'claude-sonnet-native');
   assert.ok(f.argv.includes('--restricted')); assert.ok(f.argv.includes('--no-session-persistence'));
+});
+
+
+test('automatic refresh never launches interactive Cursor/Antigravity CLIs and retains cached reading age', async () => {
+  let calls = 0;
+  const usage = new SubscriptionUsage({ now: () => 20000, readers: { antigravity: async account => { calls++; return reading(account.provider, account.id, 1000); }, cursor: async () => { calls++; return []; } } });
+  usage.seed(reading('antigravity', 'antigravity:default', 100));
+  const accounts = [{ id: 'antigravity:default', provider: 'antigravity' }, { id: 'cursor:default', provider: 'cursor' }];
+  await usage.refresh(accounts, { background: true });
+  assert.equal(calls, 0); assert.equal(usage.snapshot().find(x => x.accountId === accounts[0].id).observedAt, 100);
+  assert.equal(usage.snapshot().find(x => x.accountId === accounts[1].id).status, 'limited');
+  await usage.refresh([accounts[0]]); assert.equal(calls, 1);
+});
+
+test('saved interactive quota stays visible as stale to routing until refreshed, and a failed check invalidates it', async () => {
+  const { accountAllowance } = require('../electron/task-routing.cjs');
+  let now = 10000;
+  const account = { id: 'antigravity:default', provider: 'antigravity' };
+  const saved = reading(account.provider, account.id, 1000);
+  const usage = new SubscriptionUsage({ now: () => now, readers: { antigravity: async () => { throw new UsageError('sign-in', 'Sign in through Antigravity, then refresh.'); } } });
+  usage.seed(saved);
+  await usage.refresh([account], { background: true });
+  const getAllowance = () => accountAllowance(account.id, saved.map(item => ({ ...item, usageCheck: usage.snapshot()[0] })), now);
+  const stale = getAllowance();
+  assert.equal(stale.status, 'stale');
+  assert.equal(stale.windows[0].usedPercent, saved[0].windows[0].usedPercent);
+  assert.equal(stale.remainingPercent, null);
+  assert.equal(stale.controlling, null);
+  now = 20000;
+  await usage.refresh([account]);
+  assert.equal(getAllowance().status, 'unknown');
+  assert.equal(getAllowance().windows[0].usedPercent, null);
+  assert.match(usage.snapshot()[0].message, /Sign in/);
 });

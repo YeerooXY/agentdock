@@ -14,7 +14,7 @@ test('fresh installs choose an available console; existing and unfinished setups
     const settings = initialSettings({}, folder, capabilities);
     assert.equal(settings.setupComplete, false); assert.equal(settings.consoleDefaults.provider, provider);
     assert.equal(settings.keepAwakeWhileWorking, true);
-    assert.equal(settings.autoSaveResults, false);
+    assert.equal(settings.autoSaveResults, undefined);
   }
   const existing = { consoleDefaults: { provider: 'custom', cwd: folder, command: 'my-agent' }, agentPermissions: 'unrestricted', slotNames: { 4: 'Trader' }, vimControls: true };
   const migrated = initialSettings(existing, 'unused', {});
@@ -22,8 +22,8 @@ test('fresh installs choose an available console; existing and unfinished setups
   assert.equal(migrated.consoleDefaults.cwd, folder); assert.equal(migrated.agentPermissions, 'unrestricted');
   assert.equal(migrated.vimControls, true); assert.equal(migrated.slotNames[4], 'Trader');
   assert.equal(migrated.keepAwakeWhileWorking, true);
-  assert.equal(migrated.autoSaveResults, false);
-  assert.equal(initialSettings({ ...existing, autoSaveResults: false }, folder, {}).autoSaveResults, false);
+  assert.equal(migrated.autoSaveResults, undefined);
+  assert.equal(initialSettings({ ...existing, autoSaveResults: false }, folder, {}).autoSaveResults, undefined);
   assert.equal(initialSettings({ ...existing, keepAwakeWhileWorking: false }, folder, {}).keepAwakeWhileWorking, false);
   assert.equal(initialSettings({ ...existing, setupComplete: false }, folder, {}).setupComplete, false);
   const switching = JSON.parse(JSON.stringify(initialSettings({ ...existing, accountSwitchThreshold: 75, autoSwitchAccounts: true }, folder, {})));
@@ -31,16 +31,16 @@ test('fresh installs choose an available console; existing and unfinished setups
   assert.equal('autoSwitchAccounts' in switching, false, 'removed automatic switching is not saved again');
 });
 
-test('requested-output policy migrates old capture defaults once and retains later opt-ins', () => {
+test('removed capture settings are dropped without changing other settings', () => {
   const folder = path.resolve(__dirname, '..');
   const old = { autoSaveResults: true, notifications: false, consoleDefaults: { provider: 'shell', cwd: folder } };
   const migrated = initialSettings(old, folder, {});
-  assert.equal(migrated.autoSaveResults, false);
-  assert.equal(migrated.resultsPolicyVersion, 1);
+  assert.equal(migrated.autoSaveResults, undefined);
+  assert.equal(migrated.resultsPolicyVersion, undefined);
   assert.equal(migrated.notifications, false);
   assert.deepEqual(migrated.consoleDefaults, { provider: 'shell', cwd: folder, name: '', command: '' });
-  assert.equal(initialSettings({ ...migrated, autoSaveResults: true }, folder, {}).autoSaveResults, true);
-  assert.equal(initialSettings({ ...migrated, autoSaveResults: false }, folder, {}).autoSaveResults, false);
+  assert.equal(initialSettings({ ...migrated, autoSaveResults: true }, folder, {}).autoSaveResults, undefined);
+  assert.equal(initialSettings({ ...migrated, autoSaveResults: false }, folder, {}).autoSaveResults, undefined);
 });
 
 test('saved legacy routing is migrated before validation without losing preferences', () => {

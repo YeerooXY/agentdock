@@ -5,17 +5,9 @@
 @property --spec-b { syntax:'<color>'; inherits:true; initial-value:#00e5ff }
 :root { --light-speed:1; --on-accent:#10111b }
 body { --accent:var(--accent-blue); --wave-len:70vw }
-body[data-trim=classic] { --accent-blue:#89b4ff; --accent-pink:#f19cda }
-body[data-trim=hot-pink] { --accent-blue:#ff6ad5; --accent-pink:#c13cff }
-body[data-trim=blue] { --accent-blue:#80c7ff; --accent-pink:#4f7bff }
-body[data-trim=violet] { --accent-blue:#c7a3ff; --accent-pink:#8f5bff }
-body[data-trim=void] { --accent-blue:#8f80ff; --accent-pink:#5a3fd0; --on-accent:#ffffff; --window-black:#010102 }
-body[data-trim=redline] { --accent-blue:#ff9b91; --accent-pink:#ff3150 }
-body[data-trim=cyber] { --accent-blue:#00e1ff; --accent-pink:#cc55ff }
-body[data-trim=icy] { --accent-blue:#7fe9ff; --accent-pink:#4f9dff }
-body[data-trim=fiery] { --accent-blue:#ffb700; --accent-pink:#ff6a2b }
+body[data-trim=void] { --on-accent:#ffffff; --window-black:#010102 }
+body[data-trim=redline] { --on-accent:#ffffff; --window-black:#030303 }
 body[data-trim=gamer] { --accent-blue:var(--rgb-blue); --accent-pink:var(--rgb-pink) }
-body[data-trim=normal] { --accent-blue:#c4cedc; --accent-pink:#8f9bb0 }
 body[data-speed=slow] { --light-speed:1.8 }
 body[data-speed=fast] { --light-speed:.5 }
 
@@ -66,7 +58,6 @@ body[data-lighting=spectrum] :is(#sidebar,#content,.settings-overlay,#consoles-p
 .theme-wave { inset:0; z-index:0; clip-path:var(--frame-shape); overflow:hidden }
 .theme-wave::before { content:''; position:absolute; top:0; bottom:0; left:calc(-1 * var(--panel-x,0px) - var(--wave-len)); width:calc(100vw + var(--wave-len) * 2); background:repeating-linear-gradient(90deg,var(--frame-a) 0,color-mix(in srgb,var(--frame-b) 85%,#000) calc(var(--wave-len) * .5),var(--frame-a) var(--wave-len)) }
 .theme-wave::after { content:none; position:absolute; left:calc(-1 * var(--panel-x,0px) - var(--wave-len)); bottom:-3px; width:calc(100vw + var(--wave-len) * 2); height:12px; opacity:.9; background:radial-gradient(circle at 3px 50%,#fff 0 1px,#ffffffa8 2px,transparent 6px) 0 0/var(--wave-len) 12px repeat-x; pointer-events:none }
-[data-frame=gamer]>:where(.console-skin)>.theme-wave::before { background:repeating-linear-gradient(90deg,#ff577f 0,#ffcd56 calc(var(--wave-len) * .17),#45ed98 calc(var(--wave-len) * .34),#00e5ff calc(var(--wave-len) * .5),#7b7bff calc(var(--wave-len) * .67),#ff5db4 calc(var(--wave-len) * .84),#ff577f var(--wave-len)) }
 .theme-halo { inset:-1px; border-radius:12px; box-shadow:0 0 6px var(--frame-a),0 0 22px color-mix(in srgb,var(--frame-b) 70%,transparent) }
 [data-frame=void]>:where(.console-skin)>.theme-halo { box-shadow:0 0 14px color-mix(in srgb,var(--frame-a) 45%,transparent) }
 body[data-lighting=wave] .theme-wave { opacity:1 }
@@ -76,7 +67,7 @@ body[data-opening-motion=off] [data-frame=gamer]>.console-skin>.theme-wave::afte
 body[data-lighting=wave] .theme-halo { opacity:.22 }
 @keyframes light-wave { from { transform:translateX(0) } to { transform:translateX(var(--wave-len)) } }
 body[data-lighting=breathe] .theme-wave,body[data-lighting=breathe] .theme-halo { animation:light-breathe calc(4s * var(--light-speed)) ease-in-out infinite }
-@keyframes light-breathe { 0%,100% { opacity:.05 } 50% { opacity:.95 } }
+@keyframes light-breathe { 0%,100% { opacity:.3 } 50% { opacity:.55 } }
 body[data-lighting=spectrum] .theme-wave { opacity:1 }
 body[data-lighting=spectrum] .theme-wave::before { background:linear-gradient(90deg,var(--frame-a),var(--frame-b)); left:0; width:100% }
 body[data-lighting=spectrum] .theme-halo { opacity:.35 }
@@ -88,7 +79,6 @@ body[data-lighting=breathe] .lit :is(.theme-wave,.theme-halo) { animation-name:l
 /* The sidebar edge joins the same wave. */
 .sidebar-edge { position:absolute; top:0; right:-1px; bottom:0; width:2px; overflow:hidden; pointer-events:none; opacity:0 }
 .sidebar-edge::before { content:''; position:absolute; top:0; bottom:0; left:calc(-1 * var(--panel-x,0px) - var(--wave-len)); width:calc(100vw + var(--wave-len) * 2); background:repeating-linear-gradient(90deg,var(--accent-blue) 0,color-mix(in srgb,var(--accent-pink) 85%,#000) calc(var(--wave-len) * .5),var(--accent-blue) var(--wave-len)) }
-body[data-trim=gamer] .sidebar-edge::before { background:repeating-linear-gradient(90deg,#ff577f 0,#ffcd56 calc(var(--wave-len) * .17),#45ed98 calc(var(--wave-len) * .34),#00e5ff calc(var(--wave-len) * .5),#7b7bff calc(var(--wave-len) * .67),#ff5db4 calc(var(--wave-len) * .84),#ff577f var(--wave-len)) }
 body[data-lighting=wave] .sidebar-edge { opacity:.9 }
 body[data-lighting=wave] .sidebar-edge::before { animation:light-wave calc(5s * var(--light-speed)) linear infinite }
 body[data-lighting=breathe] .sidebar-edge { animation:light-breathe calc(4s * var(--light-speed)) ease-in-out infinite }
@@ -100,26 +90,20 @@ body:is([data-ambient=off],[data-visual-paused=true]) :is(.theme-wave,.sidebar-e
 body:is([data-ambient=off],[data-visual-paused=true]) { animation-play-state:paused }
 
 /* Classic keeps its own pastel pair even when another theme is the default. */
-[data-frame=classic] { --frame-a:#89b4ff; --frame-b:#f19cda }
 [data-frame=hot-pink] {
-  --frame-a:#ff6ad5; --frame-b:#c13cff; --theme-surface:#14060f; --theme-header:rgb(36 9 30 / .94); --theme-text:#fff0fa;
+  --theme-surface:#14060f; --theme-header:rgb(36 9 30 / .94); --theme-text:#fff0fa;
   --frame-border:linear-gradient(90deg,#ff6ad5,#ff2fa0 40%,#c13cff);
   --theme-pattern:linear-gradient(transparent 62%,#ff2fa012 62.3%,transparent 63%,transparent 74%,#ff2fa018 74.3%,transparent 75%,transparent 86%,#ff2fa020 86.4%,transparent 87.4%),radial-gradient(ellipse 60% 40% at 50% 112%,#ff2fa033,transparent 70%),radial-gradient(ellipse at 0 0,#c13cff14,transparent 50%);
   --theme-glow:color-mix(in srgb,#ff2fa0 30%,transparent);
 }
 [data-frame=hot-pink]>:where(.console-skin)>.theme-trace::before,[data-frame=hot-pink]>:where(.console-skin)>.theme-trace::after { height:2px; box-shadow:0 0 6px #ff6ad5,0 0 14px #ff2fa0 }
 [data-frame=void] {
-  --frame-a:#7b6cff; --frame-b:#35246e; --theme-surface:#020205; --theme-header:rgb(6 5 13 / .97); --theme-text:#d9d6ea; --theme-muted:#8c88a6;
+  --theme-surface:#020205; --theme-header:rgb(6 5 13 / .97); --theme-text:#d9d6ea; --theme-muted:#8c88a6;
   --frame-border:linear-gradient(135deg,#5a4bc4,#0e0b1d 32%,#08070f 68%,#2a1f5c);
   --theme-pattern:radial-gradient(circle at 82% 18%,#1a1238 0,#0b0818 9%,transparent 22%),radial-gradient(ellipse at 50% 120%,#120c2a,transparent 60%);
   --theme-glow:color-mix(in srgb,#5a3fd0 12%,transparent);
 }
 [data-frame=void]>:where(.console-skin)>.theme-trace::before,[data-frame=void]>:where(.console-skin)>.theme-trace::after { opacity:.45 }
-[data-frame=icy] { --frame-a:#7fe9ff; --frame-b:#4f9dff }
-[data-frame=fiery] { --frame-a:#ff6a2b; --frame-b:#ffb700 }
-[data-frame=redline] { --frame-a:#ff9b91; --frame-b:#ff3150 }
-[data-frame=blue] { --frame-a:#80c7ff; --frame-b:#4f7bff }
-[data-frame=violet] { --frame-a:#c7a3ff; --frame-b:#8f5bff }
 body[data-trim=void] .sidebar,body[data-trim=void] .titlebar { background:#010102 }
 body[data-trim=void] .surface { background:#05050a }
 
@@ -138,7 +122,6 @@ body[data-opening-motion=off] canvas.launch-burst { display:none }
 body[data-settings-open] #content {
   position:relative; z-index:30; padding:0!important; overflow:hidden; background:var(--window-black,#07080c);
 }
-body[data-settings-open] #results-shortcut { visibility:hidden!important; opacity:0 }
 body[data-settings-open] #content>.page-background-layer { display:none }
 .settings-overlay { position:absolute; inset:0; max-width:none!important; isolation:isolate; overflow:hidden; display:flex; flex-direction:column; background:var(--window-black,#07080c) }
 .settings-backdrop { position:absolute; inset:0; z-index:-1; pointer-events:none; background:var(--window-black,#07080c) }
@@ -201,17 +184,16 @@ body[data-settings-open] #content>.page-background-layer { display:none }
 }
 
 /* Theme picker cards. */
-.theme-choices { display:grid; grid-template-columns:repeat(auto-fill,minmax(min(140px,40%),1fr)); gap:10px; margin:10px 0 0; padding:0; border:0 }
+.theme-choices { display:grid; grid-template-columns:repeat(auto-fill,minmax(min(136px,40%),1fr)); gap:10px; margin:10px 0 0; padding:0; border:0 }
 .theme-choices legend { font-size:16px; margin-bottom:10px; padding:0 }
-.theme-choice { position:relative; display:grid!important; grid-template-rows:auto auto; gap:8px; margin:0!important; padding:10px; border:1px solid #33354a; border-radius:10px; background:#0a0b12; cursor:pointer; transition:border-color 150ms ease,transform 150ms ease }
+.theme-choice { position:relative; display:grid!important; grid-template-rows:auto auto; gap:8px; margin:0!important; padding:8px; border:1px solid #33354a; border-radius:10px; background:#0a0b12; cursor:pointer; transition:border-color 150ms ease,transform 150ms ease }
 .theme-choice:hover { border-color:color-mix(in srgb,var(--frame-a) 60%,#33354a); transform:translateY(-1px) }
 .theme-choice:has(:checked) { border-color:var(--frame-a); box-shadow:0 0 0 1px var(--frame-a),0 0 18px color-mix(in srgb,var(--frame-b) 30%,transparent) }
 .theme-choice:has(:focus-visible) { outline:2px solid var(--accent-pink); outline-offset:2px }
 .theme-choice input { position:absolute; opacity:0; pointer-events:none }
-.theme-chip { height:46px; border-radius:7px; border:1px solid color-mix(in srgb,var(--frame-a) 60%,transparent); background:var(--theme-pattern),linear-gradient(135deg,color-mix(in srgb,var(--frame-a) 22%,var(--theme-surface)),var(--theme-surface) 55%,color-mix(in srgb,var(--frame-b) 26%,var(--theme-surface))) }
+.theme-chip { height:48px; border-radius:7px; border:1px solid color-mix(in srgb,var(--frame-a) 60%,transparent); background:var(--theme-pattern),linear-gradient(135deg,color-mix(in srgb,var(--frame-a) 22%,var(--theme-surface)),var(--theme-surface) 55%,color-mix(in srgb,var(--frame-b) 26%,var(--theme-surface))) }
 [data-frame=gamer]>.theme-chip { border-image:conic-gradient(#ff577f,#ffcd56,#45ed98,#00e5ff,#b778ff,#ff577f) 1 }
-.theme-choice strong { font-size:15px!important; font-weight:600; color:#f0f0f7 }
-.theme-choice small { display:block; font-size:12px!important; color:#a6abc2; margin-top:2px }
+.theme-choice strong { font-size:13.5px!important; font-weight:600; color:#f0f0f7; padding:0 2px }
 .star-scale { display:grid; gap:8px }
 .star-scale input[type=range] { width:100%; accent-color:var(--accent-pink); min-height:28px!important }
 .star-scale output { color:color-mix(in srgb,var(--accent-blue) 60%,#fff); font-weight:600 }
@@ -224,6 +206,21 @@ body:not([data-lighting=static]) .console-skin::after { inset:calc(var(--trim-wi
 .text-size-buttons .text-size small { font-size:10px; margin-left:1px }
 .text-size-buttons .text-size:hover:not(:disabled) { background:#ffffff14 }
 @media (pointer:coarse) { .text-size-buttons .text-size { width:32px; height:40px } }
+/* Header groups: console tools (project, text size, theme) recede until the header
+   is hovered or focused; expand and end sit apart after a hairline. */
+.console-tools,.console-window-actions { display:inline-flex; align-items:center; flex:none; gap:2px }
+.console-tools { opacity:.62; transition:opacity .15s }
+.console-panel-header:is(:hover,:focus-within) .console-tools,.session-card.console-expanded .console-tools { opacity:1 }
+@media (pointer:coarse) { .console-tools { opacity:1 } }
+@media (prefers-reduced-motion:reduce) { .console-tools { transition:none } }
+.console-window-actions { margin-left:2px; padding-left:6px; border-left:1px solid #ffffff17 }
+.console-tools .icon-button svg { width:14px; height:14px }
+.console-tools .text-size-buttons { margin:0 2px; border-radius:7px; background:#ffffff0b; gap:0 }
+.console-tools .text-size-buttons .text-size { width:24px; color:#b3b9cc; font-weight:600 }
+.console-tools .text-size-buttons .text-size + .text-size { border-left:1px solid #ffffff12; border-radius:0 7px 7px 0 }
+.console-tools .text-size-buttons .text-size:first-child { border-radius:7px 0 0 7px }
+.console-tools .console-color-button .frame-swatch { width:11px; height:11px }
+.console-window-actions .console-close:hover { color:#ff9aac; background:#ff5c7a1f }
 /* Narrow consoles drop secondary header details before any control is cut. */
 .consoles-only .session-card { container-type:inline-size; container-name:console }
 .console-panel-header { min-width:0; overflow:hidden }
@@ -246,7 +243,6 @@ body:not([data-lighting=static]) .console-skin::after { inset:calc(var(--trim-wi
 /* "Pa" tile: the mark carries its own dark plate and themed edge. */
 .brand-mark { background:none!important; border:0!important; box-shadow:none!important; filter:drop-shadow(0 0 8px color-mix(in srgb,var(--accent-pink) 28%,transparent)); width:38px; height:38px; padding:0 }
 .brand-mark .pd-mark { width:38px; height:38px }
-.hud-brand .pd-mark { width:18px; height:18px; flex:none }
 #first-run .setup-star .pd-mark { width:46px; height:46px; filter:drop-shadow(0 0 10px color-mix(in srgb,var(--accent-pink) 30%,transparent)) }
 #first-run .setup-star { width:46px; height:46px }
 @media (max-width:1080px) { .brand-mark,.brand-mark .pd-mark { width:32px; height:32px } }
@@ -264,7 +260,8 @@ body:not([data-lighting=static]) .console-skin::after { inset:calc(var(--trim-wi
 [data-frame=fiery] { --theme-texture:url('./textures/fiery.webp') }
 [data-frame=gamer] { --theme-texture:url('./textures/gamer.webp') }
 [data-frame=normal] { --theme-texture:url('./textures/normal.webp') }
-body:not([data-textures=off]) .console-skin::after {
+body:not([data-textures=off]) .console-skin::after,
+body:not([data-textures=off]) #content:is([data-view=projects],[data-view=usage])>.page-background-layer>.page-backdrop {
   background:linear-gradient(color-mix(in srgb,var(--theme-surface) 52%,transparent),color-mix(in srgb,var(--theme-surface) 52%,transparent)),var(--theme-texture,none) center / cover no-repeat,var(--theme-surface);
 }
 body:not([data-textures=off]) .theme-chip { background:linear-gradient(color-mix(in srgb,var(--theme-surface) 25%,transparent),color-mix(in srgb,var(--theme-surface) 25%,transparent)),var(--theme-texture,none) center / cover no-repeat,var(--theme-surface) }
@@ -291,13 +288,13 @@ body:not([data-textures=off]) .theme-chip { background:linear-gradient(color-mix
    pure black for reading; red lives only on the trim, the corner slashes
    and a carbon-weave header. No texture or streaks behind the text. */
 [data-frame=redline] {
-  --frame-a:#ff2a3d; --frame-b:#b0001a; --theme-surface:#040404; --theme-header:rgb(9 9 9 / .97); --theme-text:#f4f4f4;
+  --theme-surface:#040404; --theme-header:rgb(9 9 9 / .97); --theme-text:#f4f4f4;
   --theme-pattern:none; --theme-texture:none; --frame-shape:polygon(14px 0,100% 0,100% calc(100% - 14px),calc(100% - 14px) 100%,0 100%,0 14px);
   --inner-shape:polygon(13px 0,100% 0,100% calc(100% - 13px),calc(100% - 13px) 100%,0 100%,0 13px);
   --frame-border:linear-gradient(135deg,#ff2a3d 0 9%,#2a2a2a 9.2% 46%,#1a1a1a 46% 90.8%,#ff2a3d 91% 100%);
   --theme-glow:color-mix(in srgb,#ff2a3d 16%,transparent);
 }
-body[data-trim=redline] { --accent-blue:#ff4d5e; --accent-pink:#d10022; --on-accent:#ffffff; --window-black:#030303 }
+body[data-trim=redline] { --on-accent:#ffffff; --window-black:#030303 }
 [data-frame=redline]>:where(.console-skin)>.theme-trace::before { top:0; left:22px; width:30%; height:4px; background:linear-gradient(90deg,#ff2a3d,#ff2a3d 70%,transparent); box-shadow:0 0 8px #ff2a3d88; clip-path:polygon(0 0,100% 0,calc(100% - 4px) 100%,4px 100%) }
 [data-frame=redline]>:where(.console-skin)>.theme-trace::after { bottom:0; right:22px; width:30%; height:4px; background:linear-gradient(270deg,#ff2a3d,#ff2a3d 70%,transparent); box-shadow:0 0 8px #ff2a3d88; clip-path:polygon(4px 0,calc(100% - 4px) 0,100% 100%,0 100%) }
 :is([data-frame=redline]>.console-panel-header,[data-frame=redline]>.empty-panel-header,[data-frame=redline]>header) {
@@ -343,3 +340,4 @@ body[data-settings-open] #content>.page-background-layer { inset:0 }
 body[data-textures=off] #content>.page-background-layer>.page-backdrop { background:var(--window-black,#07080c) }
 #content>.page-background-layer>.panel-sky { position:absolute; inset:0; z-index:1; width:100%; height:100%; border-radius:0; opacity:.7 }
 body[data-stars=off] #content>.page-background-layer>.panel-sky { opacity:0 }
+@container console (max-width:300px) { .console-tools .text-size-buttons { display:none } }

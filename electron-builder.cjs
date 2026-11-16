@@ -14,7 +14,11 @@ module.exports = {
   ],
   asar: true,
   asarUnpack: ['node_modules/node-pty/**/*'],
-  extraResources: [{ from: '.build/runtime', to: 'runtime' }, ...(process.platform === 'win32' ? [{ from: 'electron/mobile-network.ps1', to: 'mobile-network.ps1' }] : [])],
+  extraResources: [
+    { from: '.build/runtime', to: 'runtime', filter: ['**/*', '!review/browsers/**/*'] },
+    { from: '.build/runtime/review/browsers/${arch}', to: 'runtime/review/browsers/${arch}', filter: ['**/*', '!chromium-[0-9]*/**/*'] },
+    ...(process.platform === 'win32' ? [{ from: 'electron/mobile-network.ps1', to: 'mobile-network.ps1' }] : [])
+  ],
   // node-pty ships N-API binaries. The packaged smoke test loads the x64 binary
   // and exercises real ConPTY sessions against the bundled Electron version.
   npmRebuild: false,

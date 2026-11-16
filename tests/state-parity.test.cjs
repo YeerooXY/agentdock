@@ -19,7 +19,7 @@ const { consoleCapabilities } = require('../electron/worker-placement.cjs');
 const loadClient = () => import('../src/state-client.js');
 const settle = async () => { for (let i = 0; i < 10; i++) await new Promise(resolve => setImmediate(resolve)); };
 const clone = value => value === undefined ? undefined : JSON.parse(JSON.stringify(value));
-const EXTRA_FIELDS = ['connection', 'previews', 'projects', 'imageJobs', 'imageJobsRunning', 'capabilities', 'alerts', 'unreadResults', 'resultVersion'];
+const EXTRA_FIELDS = ['connection', 'previews', 'projects', 'imageJobs', 'imageJobsRunning', 'capabilities', 'alerts'];
 
 // sessions.list() computes consoleCapabilities; the recorded sessions do the same.
 const session = fields => ({ ...fields, consoleCapabilities: consoleCapabilities(fields, undefined, false) });
@@ -38,9 +38,9 @@ function base() {
     delegations: [{ id: 'd1', state: 'done', log: [] }], tasks: [{ id: 't1', title: 'Task', state: 'done', rounds: [] }],
     sshHosts: [{ id: '00000000-0000-4000-8000-000000000000', name: 'box' }], capabilities: { codex: true },
     projects: [{ id: 'p1', name: 'P', status: 'active', color: '#47c', progress: { done: 0, total: 1 } }, { id: 'p2', name: 'Old', status: 'archived' }],
-    projectProposals: [{ id: 'pp1', name: 'Idea' }], messages: [{ at: 1, tokens: 3 }],
+    messages: [{ at: 1, tokens: 3 }],
     mobile: { enabled: true, devices: [{ id: 'dev', name: 'Phone', connected: false }], pendingPairing: { id: 'pp', name: 'Phone', code: '123456', expires: 9, state: 'pending' } },
-    workbench: { results: [{ id: 'res1', title: 'R', seenAt: null }], unreadResults: 1, concepts: [], conceptUsage: {}, meshyAuth: { state: 'waiting', code: 'ABCD-EFGH', url: 'https://example.test/device' }, setupRequests: [] },
+    workbench: { results: [{ id: 'res1', title: 'R', seenAt: null }], concepts: [], conceptUsage: {}, meshyAuth: { state: 'waiting', code: 'ABCD-EFGH', url: 'https://example.test/device' }, setupRequests: [] },
     vault: { available: true, entries: [{ id: 'openai', provider: 'openai', label: 'OpenAI', savedAt: 1 }] },
     ledger: [{ id: 'l1', cost: 0.1 }], summary: { total: 0.1 }, shared: { instructions: 'Hi', connections: [] }, updates: { state: 'idle' },
     grid: { columns: 3, rows: 2 }, settings: { notifications: true, routing: {} }, storageError: null, workspaceError: null, shortcutAvailable: true, safeMode: false, startupNotices: [],
@@ -60,7 +60,7 @@ const STEPS = [
   ['settings, results, tasks and order change', raw => ({ ...raw, settings: { notifications: false, routing: {} },
     sessions: [session({ id: 's3', slot: 1, name: 'Claude', provider: 'claude', alive: true, state: 'active', cols: 100, rows: 30, launchId: 'l3', consoleKey: 'k3' }), ...raw.sessions],
     tasks: [{ id: 't2', title: 'Next', state: 'running', rounds: [{}] }, ...raw.tasks],
-    workbench: { ...raw.workbench, unreadResults: 0, results: [...raw.workbench.results, { id: 'res2', title: 'S', seenAt: 4 }] } })],
+    workbench: { ...raw.workbench, results: [...raw.workbench.results, { id: 'res2', title: 'S', seenAt: 4 }] } })],
   ['everything empties', raw => ({ ...raw, sessions: [], prompts: [], tasks: [], projects: [], queues: {}, codePanels: [],
     mobile: { enabled: true, devices: [] }, workbench: { ...raw.workbench, meshyAuth: { state: 'signed-in' }, results: [] } })],
 ];
@@ -95,7 +95,7 @@ function desktopWire(S, env, current, { drop = () => false } = {}) {
     if (method === 'meshy.auth') return clone(raw.workbench?.meshyAuth);
     throw new Error(`Unexpected read: ${method}`);
   };
-  const feed = S.connectStateV2({ transport, read, onSnapshot: value => snapshots.push(value), onFallback: error => fallbacks.push(error) });
+  const feed = S.connectStateV2({ transport, read, onSnapshot: value => snapshots.push(value), onError: error => fallbacks.push(error) });
   return { feed, snapshots, fallbacks, handlers, open, last: () => snapshots.at(-1) };
 }
 function assertDesktop(wire, env, raw, label) {
@@ -114,6 +114,16 @@ test('the renderer subscribes to every desktop slice the snapshot reads', async 
   const env = environment('epoch-a');
   publish(env, base());
   assert.ok(jsonEqual(S.snapshotFromSlices(clone(env.desktop.state()), J.ephemeralFromLegacy(base())), J.legacySnapshot(env.desktop.state(), J.ephemeralFromLegacy(base()))));
+});
+
+test('protocol changes pass known slices without reserializing broad legacy state', async () => {
+  const S = await loadClient(), client = S.createStateClient();
+  client.setLegacy({ sessions: [{ id: 'one' }], usageHistory: Array.from({ length: 100 }, (_, id) => ({ id })) });
+  const original = JSON.stringify;
+  JSON.stringify = () => { throw new Error('unexpected deep comparison'); };
+  try { assert.deepEqual(client.setLegacy({ sessions: [{ id: 'two' }], usageHistory: [{ id: 0 }] }, ['sessions']), ['sessions']); }
+  finally { JSON.stringify = original; }
+  assert.equal(client.get().sessions[0].id, 'two');
 });
 
 test('desktop: v2 changes rebuild the legacy snapshot after every recorded publish', async () => {
@@ -174,11 +184,11 @@ test('desktop: a rejected batch resyncs, a lost batch resumes and a restart rese
   assert.deepEqual(wire.fallbacks, []);
 });
 
-test('desktop: a failed subscription falls back once and stops', async () => {
+test('desktop: a failed subscription reports one error and stops', async () => {
   const S = await loadClient();
   const fallbacks = [], off = [];
   const feed = S.connectStateV2({ transport: { send: () => Promise.reject(new Error('State protocol 2 is off.')), onMessage: () => () => off.push(true) },
-    onSnapshot: () => assert.fail('no snapshot'), onFallback: error => fallbacks.push(error.message) });
+    onSnapshot: () => assert.fail('no snapshot'), onError: error => fallbacks.push(error.message) });
   await settle();
   assert.deepEqual(fallbacks, ['State protocol 2 is off.']);
   assert.equal(off.length, 1);
@@ -233,6 +243,8 @@ function assertPhone(wire, mobile, label) {
   const v1 = clone(mobile.publicState());
   const extras = clone(Object.fromEntries(EXTRA_FIELDS.map(key => [key, mobile.extrasState()[key]])));
   const rebuilt = J.phoneLegacyState(clone(wire.values()), extras);
+  assert.deepEqual(v1.agentProfiles, require('../electron/providers/index.cjs').screenProfiles, `${label}: v1 served profiles`);
+  assert.deepEqual(rebuilt.agentProfiles, v1.agentProfiles, `${label}: profile parity`);
   for (const key of Object.keys(v1)) covers(v1[key], rebuilt[key], `${label}: ${key}`);
   assert.ok(Array.isArray(rebuilt.tasks) && Array.isArray(rebuilt.usage), `${label}: v2-only lists`);
   assert.deepEqual(Object.keys(extras), EXTRA_FIELDS);

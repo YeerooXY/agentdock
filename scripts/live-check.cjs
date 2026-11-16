@@ -14,9 +14,9 @@ async function eventually(fn, timeout = 30000) {
   throw new Error('Timed out waiting for live integration');
 }
 (async () => {
-  app = await electron.launch({ args: [root, '--hud'], timeout: 30000 });
+  app = await electron.launch({ args: [root], timeout: 30000 });
   const page = await app.firstWindow();
-  await page.waitForSelector('#hud:not([hidden])');
+  await page.waitForSelector('.session-grid');
   const invoke = (method, payload) => page.evaluate(async ([m, p]) => {
     const result = await window.dock.call(m, p); if (!result.ok) throw new Error(result.error); return result.value;
   }, [method, payload]);
@@ -24,9 +24,6 @@ async function eventually(fn, timeout = 30000) {
   const initial = await invoke('state');
   assert.equal(initial.accountError, null);
   assert.ok(initial.limits.some(x => x.provider === 'codex'));
-  await page.screenshot({ path: path.join(artifacts, 'desktop-hud.png') });
-  await invoke('mode', 'dashboard');
-  await page.waitForSelector('.session-grid');
   await page.screenshot({ path: path.join(artifacts, 'desktop-overview.png') });
   const codex = await invoke('session.create', { provider: 'codex', cwd: root, name: 'Codex launch check' });
   await page.locator(`.session-card[data-console-id="${codex.id}"] [data-action="toggle-console"]`).click();
@@ -41,12 +38,12 @@ async function eventually(fn, timeout = 30000) {
   await invoke('session.input', { id: codex.id, data: '\u0003' });
   await invoke('session.input', { id: codex.id, data: '\u0003' });
   await eventually(async () => !(await invoke('state')).sessions.find(x => x.id === codex.id).alive);
-  await invoke('mode', 'hud');
+  await invoke('mode', 'dashboard');
   await new Promise(resolve => setTimeout(resolve, 1500));
   await app.evaluate(({ app }) => app.getAppMetrics());
   await new Promise(resolve => setTimeout(resolve, 5000));
   const metrics = await app.evaluate(({ app }) => app.getAppMetrics().map(x => ({ type: x.type, cpuPercent: x.cpu.percentCPUUsage, privateKB: x.memory.privateBytes, workingSetKB: x.memory.workingSetSize })));
-  const report = { at: new Date().toISOString(), codexCliLaunch: true, accountLimits: initial.limits.map(x => ({ provider: x.provider, windows: x.windows })), capabilities: initial.capabilities, metrics, note: 'Five-second idle HUD sample after one Codex console was opened and closed. Electron processes only; excludes Codex account-service child. No inference requests made.' };
+  const report = { at: new Date().toISOString(), codexCliLaunch: true, accountLimits: initial.limits.map(x => ({ provider: x.provider, windows: x.windows })), capabilities: initial.capabilities, metrics, note: 'Five-second idle dashboard sample after one Codex console was opened and closed. Electron processes only; excludes Codex account-service child. No inference requests made.' };
   fs.writeFileSync(path.join(artifacts, 'live-check-report.json'), JSON.stringify(report, null, 2));
   console.log(JSON.stringify(report, null, 2));
 })().catch(error => { console.error(error); process.exitCode = 1; }).finally(async () => {

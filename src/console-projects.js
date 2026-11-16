@@ -28,7 +28,7 @@ export function consoleProjects({ call, getState, getView, projects, navigate, e
       b.classList.toggle('linked', !!p); b.title = label; b.setAttribute('aria-label', label);
     }
     const view = getView(), selected = session(view.selectedId) || state.sessions.find(x => !x.dismissed && (x.alive || x.restoreError));
-    const visible = state.settings.suggestProjects !== false && state.settings.setupComplete && state.mode !== 'hud' && ['consoles', 'overview'].includes(view.page) && selected && !project(selected.projectId);
+    const visible = state.settings.suggestProjects !== false && state.settings.setupComplete && ['consoles', 'overview'].includes(view.page) && selected && !project(selected.projectId);
     if (!visible && !prompt.hidden && prompt.contains(document.activeElement)) document.querySelector(`[data-console-project="${prompt.dataset.sessionId}"]`)?.focus({ preventScroll: true });
     prompt.hidden = !visible;
     if (visible) {

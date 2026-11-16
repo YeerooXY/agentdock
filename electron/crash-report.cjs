@@ -58,10 +58,11 @@ class CrashReport {
     return explicit || failures >= 2;
   }
   ready() { try { fs.unlinkSync(this.marker); } catch {} this.windowReady = true; this.log('INFO', 'window ready'); }
-  async startupStep(name, fn, { optional = false, safeMode = false, skipInSafeMode = true, notice } = {}) {
+  async startupStep(name, fn, { optional = false, safeMode = false, skipInSafeMode = true, notice, quiet = false } = {}) {
     if (optional && safeMode && skipInSafeMode) { this.log('INFO', `${name}: skipped in safe mode`); return; }
     if (!this.windowReady) this.step = name;
-    this.log('INFO', name);
+    // Recurring background steps log only their failures.
+    if (!quiet) this.log('INFO', name);
     try { return await fn(); }
     catch (error) {
       this.log('ERROR', `${name}: ${error?.stack || error}`);

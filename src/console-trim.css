@@ -22,10 +22,7 @@ body[data-accent=rgb] { --accent-blue:var(--rgb-blue); --accent-pink:var(--rgb-p
 
 /* Frame colors are separate from terminal content and status indicators. */
 [data-frame] { --frame-a:var(--accent-blue); --frame-b:var(--accent-pink); --frame-glow:18%; --frame-edge:64% }
-[data-frame=blue] { --frame-a:#80c7ff; --frame-b:#6488ff }
-[data-frame=violet] { --frame-a:#c7a3ff; --frame-b:#9c77ff }
-[data-frame=hot-pink] { --frame-a:#ffa3dc; --frame-b:#ff3da8 }
-[data-frame=redline] { --frame-a:#ff9b91; --frame-b:#ff4763; --frame-glow:calc(var(--redline-glow) * 1%) }
+[data-frame=redline] { --frame-glow:calc(var(--redline-glow) * 1%) }
 [data-frame=gamer] { --frame-a:var(--rgb-blue); --frame-b:var(--rgb-pink) }
 .consoles-only .session-card[data-frame],
 .consoles-only .session-card.empty:is(:hover,:focus-within) {
@@ -97,4 +94,3 @@ body[data-stars=off] .panel-stars i { animation-play-state:paused }
   .panel-stars,.toggle-row input[type=checkbox],.toggle-row input[type=checkbox]::before,.toggle-row input[type=checkbox]::after { transition:none!important }
   .console-exit { display:none }
 }
-

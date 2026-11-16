@@ -1,4 +1,5 @@
 'use strict';
+const { installStateTransport } = require('./state-test-transport.cjs');
 // Captures every main page at PC size from a fixture, headless, for UI reviews.
 // Output: artifacts/screen-tour/<page>.png. Unknown bridge calls answer empty.
 const { chromium } = require('playwright'), fs = require('node:fs'), path = require('node:path'), http = require('node:http');
@@ -25,7 +26,8 @@ const server = http.createServer((req, res) => {
     if (/list|models|agents|jobs|results/i.test(method)) { unknown.add(method); return { ok: true, value: [] }; }
     unknown.add(method); return { ok: true, value: null };
   });
-  await context.addInitScript(() => { let changed; window.dock = { call: async (m, p) => { const r = await window.fixtureCall(m, p); if (r.state) changed?.(r.state); return r; }, onState: f => { changed = f; }, onOutput: () => {}, onSelect: () => {} }; });
+  await installStateTransport(context);
+await context.addInitScript(() => { window.dock = { call: async (m, p) => { const r = await window.fixtureCall(m, p); if (r.state) window.fixtureState?.(r.state); return r; }, get state() { return window.fixtureStateTransport; }, onOutput: () => {}, onSelect: () => {} }; });
   const page = await context.newPage(), errors = [];
   page.setDefaultTimeout(12000); page.on('pageerror', e => errors.push(e.message));
   await page.goto('http://127.0.0.1:' + server.address().port);

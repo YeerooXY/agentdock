@@ -6,7 +6,8 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 import 'dock_client.dart';
 import 'help_link.dart';
 import 'update_panel.dart';
-import 'main.dart' show DockMark, pink;
+import 'core/widgets/dock_mark.dart';
+import 'dock_style.dart' show pink;
 
 class PairPage extends StatefulWidget {
   final DockClient client;

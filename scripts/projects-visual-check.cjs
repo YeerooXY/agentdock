@@ -1,4 +1,5 @@
 'use strict';
+const { installStateTransport } = require('./state-test-transport.cjs');
 const {chromium,webkit,devices}=require('playwright'), fs=require('node:fs'),path=require('node:path'),http=require('node:http'),assert=require('node:assert/strict');
 const root=path.resolve(__dirname,'..'),out=path.join(root,'artifacts','projects'),fixture=JSON.parse(fs.readFileSync(path.join(out,'fixture.json')));
 const server=http.createServer((req,res)=>{const name=req.url.split('?')[0],file=name==='/axe.js'?require.resolve('axe-core/axe.min.js'):path.join(root,'dist',name==='/'?'index.html':name);if(name!=='/axe.js'&&!file.startsWith(path.join(root,'dist')+path.sep)||!fs.existsSync(file)){res.writeHead(404);return res.end();}res.setHeader('Content-Type',file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':'text/html');fs.createReadStream(file).pipe(res);});
@@ -13,7 +14,6 @@ let browser;const reports=[];
     state.projects[0].status='planning';
     state.projects[0].goals='Build an arena with movement, enemy waves and saved progress. '.repeat(12);
     state.projects[0].nextStep='Verify movement, collisions and the next enemy wave. '.repeat(12);
-    if(state.projects[0].milestones.length)state.projects[0].milestones[0].acceptance='The player can move, finish a wave and reload the saved game. '.repeat(10);
     state.messages=[{id:'demo',at:Date.now(),provider:'codex',consoleName:'Robonslaught',model:'Test model',usage:{input:12000,output:700,cached:9000},source:'Codex log',status:'completed'},{id:'api-demo',at:Date.now()-50000,provider:'openai',consoleName:'Trader',model:'Test API model',usage:{input:4200,output:500,cached:2000},estimatedCost:0.032,source:'Dock API',steps:3,status:'completed'}];
     await context.exposeFunction('fixtureCall',async(method,payload)=>{
       let value;
@@ -24,26 +24,26 @@ let browser;const reports=[];
       else if(method==='updates.check')state.updates={current:state.version,checkedAt:Date.now(),release:{version:'0.6.0-preview.5',size:150000000},checking:false};
       else if(method==='updates.download')Object.assign(state.updates,{downloaded:true,progress:100});
       else if(method==='projects.save'){const p=state.projects.find(x=>x.id===payload.id);Object.assign(p,payload);value=p;}
-      else if(method==='projects.progress'){const p=state.projects.find(x=>x.id===payload.id);p.milestones[payload.milestone].done=payload.done;value=p;}
       else if(!['session.resize','session.input','session.acknowledge'].includes(method))throw Error('Unexpected fixture call '+method);
       return{ok:true,value,state};
     });
-    await context.addInitScript(()=>{let changed;window.dock={call:async(m,p)=>{const r=await window.fixtureCall(m,p);if(r.state)changed?.(r.state);return r;},onState:f=>{changed=f;},onOutput:()=>{},onSelect:()=>{}};});
+    await installStateTransport(context);
+await context.addInitScript(()=>{window.dock={call:async(m,p)=>{const r=await window.fixtureCall(m,p);if(r.state)window.fixtureState?.(r.state);return r;},get state() { return window.fixtureStateTransport; },onOutput:()=>{},onSelect:()=>{}};});
     const page=await context.newPage();page.setDefaultTimeout(12000);page.on('pageerror',e=>errors.push(e.message));await page.goto('http://127.0.0.1:'+server.address().port);await page.locator('.session-card').first().waitFor();await page.addScriptTag({url:'/axe.js'});
     const small=['android','iphone'].includes(name);
     async function nav(view){if(small&&state.settings.sidebarCollapsed)await page.locator('#sidebar-toggle').click();await page.locator(`[data-page=${view}]`).first().click();if(small&&!state.settings.sidebarCollapsed)await page.locator('#sidebar-toggle').click();}
     async function capture(view){await page.evaluate(async()=>{document.getAnimations().filter(x=>x.effect?.getTiming().iterations!==Infinity).forEach(x=>x.finish());await document.fonts.ready;});const file=name+'-'+view+'.png';await page.screenshot({path:path.join(out,file)});captures.push(file);const checks=await page.evaluate(async()=>{const result=await axe.run(document,{runOnly:['color-contrast','button-name','label','aria-dialog-name']});return{overflow:document.documentElement.scrollWidth>innerWidth+1||(!document.querySelector('#content').hidden&&document.querySelector('#content').scrollWidth>document.querySelector('#content').clientWidth+1),violations:result.violations.map(x=>({id:x.id,nodes:x.nodes.map(n=>n.target)}))};});assert.equal(checks.overflow,false,`${name}/${view} overflow`);if(checks.violations.length)violations.push({view,items:checks.violations});}
     await nav('projects');await capture('projects');
-    const cards=await page.locator('#project-cards .project-card').evaluateAll(nodes=>nodes.map(node=>({top:node.getBoundingClientRect().top,actions:node.querySelector('.project-actions').getBoundingClientRect().top,buttons:[...node.querySelectorAll('.project-card-footer button')].map(button=>button.getBoundingClientRect().height),clamps:[getComputedStyle(node.querySelector('.project-goals')).webkitLineClamp,getComputedStyle(node.querySelector('.project-next p')).webkitLineClamp],underwayInFooter:!node.querySelector('[data-project-underway]')||!!node.querySelector('.project-card-footer [data-project-underway]')})));
-    for(const card of cards){assert.ok(card.buttons.every(height=>Math.abs(height-40)<1),'Footer buttons are 40px');assert.deepEqual(card.clamps,['3','4']);assert.equal(card.underwayInFooter,true);}
+    const cards=await page.locator('#project-cards .project-card').evaluateAll(nodes=>nodes.map(node=>({top:node.getBoundingClientRect().top,actions:node.querySelector('.project-actions').getBoundingClientRect().top,buttons:[...node.querySelectorAll('.project-card-footer button')].map(button=>button.getBoundingClientRect().height),underwayInFooter:!node.querySelector('[data-project-underway]')||!!node.querySelector('.project-card-footer [data-project-underway]')})));
+    for(const card of cards){assert.ok(card.buttons.every(height=>Math.abs(height-40)<1),'Footer buttons are 40px');assert.equal(card.underwayInFooter,true);}
     for(const card of cards)for(const peer of cards.filter(peer=>Math.abs(peer.top-card.top)<1))assert.ok(Math.abs(card.actions-peer.actions)<1,'Action rows align within each grid row');
 await page.locator('[data-project-search]').fill('Trader');assert.equal(await page.locator('.project-card').count(),1);await page.locator('[data-project-search]').fill('');
     await page.locator('.page-heading [data-project-new]').click();await page.locator('#project-editor').waitFor();
     assert.equal(await page.locator('#project-form [name=name]').evaluate(x=>x===document.activeElement),true);
-    for(const field of ['approach','nextStep','notes','status'])assert.equal(await page.locator(`#project-form [name=${field}]`).isVisible(),false);
-    await page.locator('#project-form [name=name]').fill('A new idea');await page.locator('#project-form [name=goals]').fill('Make a small game that is fun to play.');
+    for(const field of ['goals','approach','nextStep','notes','milestones'])assert.equal(await page.locator(`#project-form [name=${field}]`).count(),0);
+    await page.locator('#project-form [name=name]').fill('A new idea');
     await capture('new-project');await page.keyboard.press('Escape');assert.equal(await page.locator('#project-editor').isVisible(),false);assert.equal(await page.locator('.page-heading [data-project-new]').evaluate(x=>x===document.activeElement),true);
-    await page.locator('[data-project-edit]').first().click();await page.locator('#project-editor').waitFor();await page.locator('#project-form [name=nextStep]').fill('Verify the next wave');await capture('project-editor');await page.keyboard.press('Escape');assert.equal(await page.locator('#project-editor').isVisible(),false);
+    await page.locator('[data-project-edit]').first().click();await page.locator('#project-editor').waitFor();await page.locator('#project-form [name=category]').fill('Game');await capture('project-editor');await page.keyboard.press('Escape');assert.equal(await page.locator('#project-editor').isVisible(),false);
     await nav('usage');await page.locator('.usage-subscriptions').scrollIntoViewIfNeeded();assert.equal(await page.locator('.message-usage,.image-usage').count(),0);await capture('usage');
     await nav('settings');await page.locator('#updates-settings').scrollIntoViewIfNeeded();await page.locator('[data-update=check]').click();await capture('updates');await page.locator('[data-update=download]').click();assert.equal(await page.locator('[data-update=install]').count(),1);
     await page.locator('#grid-form').scrollIntoViewIfNeeded();await capture('grid-settings');

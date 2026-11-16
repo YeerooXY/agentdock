@@ -1,0 +1,466 @@
+[
+  {
+    "alias": 1,
+    "id": "consoles-grid",
+    "kind": "page",
+    "group": "main",
+    "reach": { "url": "/", "steps": [{ "wait": ".session-grid .session-card" }] },
+    "selector": "#dashboard",
+    "state": "default",
+    "fixture": "artifacts/console-layout/fixture.json",
+    "sources": ["src/app.js", "src/ui/shell.js", "src/console/grid.js", "src/console/panels.js", "src/styles.css"],
+    "profiles": ["desktop"]
+  },
+  {
+    "alias": 2,
+    "id": "usage-view",
+    "kind": "page",
+    "group": "main",
+    "reach": { "url": "/", "steps": [{ "click": ".sidebar nav [data-page=usage]" }, { "wait": ".usage-subscriptions" }] },
+    "selector": "#content",
+    "state": "default",
+    "fullHeight": true,
+    "fixture": "artifacts/console-layout/fixture.json",
+    "sources": ["src/pages/usage-page.js", "src/usage-analytics.js", "src/quota-state.js", "src/styles.css"],
+    "profiles": ["desktop"]
+  },
+  {
+    "alias": 3,
+    "id": "projects-view",
+    "kind": "page",
+    "group": "main",
+    "reach": { "url": "/", "steps": [{ "click": ".sidebar nav [data-page=projects]" }, { "wait": "#project-cards" }] },
+    "selector": "#content",
+    "state": "default",
+    "fixture": "artifacts/console-layout/fixture.json",
+    "sources": ["src/projects-ui.js", "src/project-activity.js", "src/project-colors.js", "src/styles.css"],
+    "profiles": ["desktop"]
+  },
+  {
+    "alias": 4,
+    "id": "project-knowledge-view",
+    "kind": "page",
+    "group": "main",
+    "reach": {
+      "url": "/",
+      "steps": [
+        { "click": ".sidebar nav [data-page=projects]" },
+        { "click": "[data-project-inspect]" },
+        { "wait": "[data-project-workspace]" }
+      ]
+    },
+    "selector": "#content",
+    "state": "default",
+    "fixture": "artifacts/console-layout/fixture.json",
+    "sources": ["src/projects-ui.js", "src/pages/project-workspace-controller.js", "src/pages/project-workspace.js", "src/styles.css"],
+    "profiles": ["desktop"]
+  },
+  {
+    "alias": 5,
+    "id": "settings-general",
+    "kind": "page",
+    "group": "settings",
+    "reach": { "url": "/", "steps": [{ "click": ".sidebar-bottom [data-page=settings]" }, { "wait": ".settings-content" }] },
+    "selector": ".settings-content",
+    "state": "default",
+    "fullHeight": true,
+    "fixture": "artifacts/console-layout/fixture.json",
+    "sources": ["src/pages/settings-page.js", "src/settings-ui.js", "src/updates-ui.js", "src/styles.css"],
+    "profiles": ["desktop"]
+  },
+  {
+    "alias": 6,
+    "id": "settings-appearance",
+    "kind": "page",
+    "group": "settings",
+    "reach": {
+      "url": "/",
+      "steps": [
+        { "click": ".sidebar-bottom [data-page=settings]" },
+        { "click": ".settings-navigation [data-page=appearance]" },
+        { "wait": ".theme-choices" }
+      ]
+    },
+    "selector": ".settings-content",
+    "state": "default",
+    "fullHeight": true,
+    "fixture": "artifacts/console-layout/fixture.json",
+    "sources": ["src/pages/settings-page.js", "src/console-appearance.js", "src/console-themes.js", "src/styles.css"],
+    "profiles": ["desktop"]
+  },
+  {
+    "alias": 7,
+    "id": "settings-consoles",
+    "kind": "page",
+    "group": "settings",
+    "reach": {
+      "url": "/",
+      "steps": [
+        { "click": ".sidebar-bottom [data-page=settings]" },
+        { "click": ".settings-navigation [data-page=console-settings]" },
+        { "wait": "#console-defaults-form" }
+      ]
+    },
+    "selector": ".settings-content",
+    "state": "default",
+    "fullHeight": true,
+    "fixture": "artifacts/console-layout/fixture.json",
+    "sources": ["src/pages/settings-page.js", "src/settings-ui.js", "src/styles.css"],
+    "profiles": ["desktop"]
+  },
+  {
+    "alias": 8,
+    "id": "settings-agents",
+    "kind": "page",
+    "group": "settings",
+    "reach": {
+      "url": "/",
+      "steps": [
+        { "click": ".sidebar-bottom [data-page=settings]" },
+        { "click": ".settings-navigation [data-page=agent-settings]" },
+        { "wait": ".installed-agents-surface" }
+      ]
+    },
+    "selector": ".settings-content",
+    "state": "default",
+    "fullHeight": true,
+    "fixture": "artifacts/console-layout/fixture.json",
+    "sources": ["src/pages/settings-page.js", "src/pages/accounts-settings.js", "src/pages/routing-controls.js", "src/styles.css"],
+    "profiles": ["desktop"]
+  },
+  {
+    "alias": 9,
+    "id": "settings-projects",
+    "kind": "page",
+    "group": "settings",
+    "reach": {
+      "url": "/",
+      "steps": [
+        { "click": ".sidebar-bottom [data-page=settings]" },
+        { "click": ".settings-navigation [data-page=project-settings]" },
+        { "wait": "#project-settings" }
+      ]
+    },
+    "selector": ".settings-content",
+    "state": "default",
+    "fullHeight": true,
+    "fixture": "artifacts/console-layout/fixture.json",
+    "sources": ["src/pages/settings-page.js", "src/settings-ui.js", "src/styles.css"],
+    "profiles": ["desktop"]
+  },
+  {
+    "alias": 10,
+    "id": "settings-devices",
+    "kind": "page",
+    "group": "settings",
+    "reach": {
+      "url": "/",
+      "steps": [
+        { "click": ".sidebar-bottom [data-page=settings]" },
+        { "click": ".settings-navigation [data-page=devices]" },
+        { "wait": "[data-ssh=add]" }
+      ]
+    },
+    "selector": ".settings-content",
+    "state": "default",
+    "fullHeight": true,
+    "fixture": "artifacts/console-layout/fixture.json",
+    "sources": ["src/pages/settings-page.js", "src/ssh-ui.js", "src/mobile-ui.js", "src/styles.css"],
+    "profiles": ["desktop"]
+  },
+  {
+    "alias": 11,
+    "id": "settings-tools",
+    "kind": "page",
+    "group": "settings",
+    "reach": {
+      "url": "/",
+      "steps": [
+        { "click": ".sidebar-bottom [data-page=settings]" },
+        { "click": ".settings-navigation [data-page=tools]" },
+        { "wait": ".connection-list" }
+      ]
+    },
+    "selector": ".settings-content",
+    "state": "connected-tools",
+    "fullHeight": true,
+    "fixture": "artifacts/console-layout/fixture.json",
+    "sources": ["src/pages/tools-page.js", "src/shared-ui.js", "src/tool-features.js", "src/styles.css"],
+    "profiles": ["desktop"]
+  },
+  {
+    "alias": 12,
+    "id": "settings-add-tools",
+    "kind": "page",
+    "group": "settings",
+    "reach": {
+      "url": "/",
+      "steps": [
+        { "click": ".sidebar-bottom [data-page=settings]" },
+        { "click": ".settings-navigation [data-page=add-tools]" },
+        { "wait": "#tool-form" }
+      ]
+    },
+    "selector": ".settings-content",
+    "state": "default",
+    "fullHeight": true,
+    "fixture": "artifacts/console-layout/fixture.json",
+    "sources": ["src/pages/tools-page.js", "src/shared-ui.js", "src/tool-features.js", "src/setup-ui.js", "src/styles.css"],
+    "profiles": ["desktop"]
+  },
+  {
+    "alias": 13,
+    "id": "settings-api",
+    "kind": "page",
+    "group": "settings",
+    "reach": {
+      "url": "/",
+      "steps": [
+        { "click": ".sidebar-bottom [data-page=settings]" },
+        { "click": ".settings-navigation [data-page=api-settings]" },
+        { "wait": ".model-connections" }
+      ]
+    },
+    "selector": ".settings-content",
+    "state": "default",
+    "fullHeight": true,
+    "fixture": "artifacts/console-layout/fixture.json",
+    "sources": ["src/pages/tools-page.js", "src/shared-ui.js", "src/tool-features.js", "src/setup-ui.js", "src/styles.css"],
+    "profiles": ["desktop"]
+  },
+  {
+    "alias": 14,
+    "id": "settings-instructions",
+    "kind": "page",
+    "group": "settings",
+    "reach": {
+      "url": "/",
+      "steps": [
+        { "click": ".sidebar-bottom [data-page=settings]" },
+        { "click": ".settings-navigation [data-page=instructions]" },
+        { "wait": "#instructions-form" }
+      ]
+    },
+    "selector": ".settings-content",
+    "state": "default",
+    "fullHeight": true,
+    "fixture": "artifacts/console-layout/fixture.json",
+    "sources": ["src/pages/tools-page.js", "src/shared-ui.js", "src/tool-features.js", "src/styles.css"],
+    "profiles": ["desktop"]
+  },
+  {
+    "alias": 15,
+    "id": "settings-previews",
+    "kind": "page",
+    "group": "settings",
+    "reach": {
+      "url": "/",
+      "steps": [
+        { "click": ".sidebar-bottom [data-page=settings]" },
+        { "click": ".settings-navigation [data-page=previews]" },
+        { "wait": "#image-generation-form" }
+      ]
+    },
+    "selector": ".settings-content",
+    "state": "default",
+    "fullHeight": true,
+    "fixture": "artifacts/console-layout/fixture.json",
+    "sources": ["src/pages/settings-page.js", "src/pages/tools-page.js", "src/image-generation-ui.js", "src/styles.css"],
+    "profiles": ["desktop"]
+  },
+  {
+    "alias": 16,
+    "id": "vim-controls-overlay",
+    "kind": "component",
+    "group": "overlays",
+    "reach": {
+      "url": "/",
+      "steps": [
+        { "click": ".sidebar-bottom [data-page=settings]" },
+        { "click": ".settings-navigation [data-page=console-settings]" },
+        { "click": "[data-action=vim-help]" },
+        { "wait": "#vim-help[open]" }
+      ]
+    },
+    "selector": "#vim-help",
+    "state": "default",
+    "fixture": "artifacts/console-layout/fixture.json",
+    "sources": ["src/vim-controls.js", "src/styles.css"],
+    "profiles": ["desktop"]
+  },
+  {
+    "alias": 17,
+    "id": "command-search-overlay",
+    "kind": "component",
+    "group": "overlays",
+    "reach": {
+      "url": "/",
+      "steps": [
+        { "click": "[data-action=open-search]" },
+        { "wait": "#command-search[open]" }
+      ]
+    },
+    "selector": "#command-search",
+    "state": "default",
+    "fixture": "artifacts/console-layout/fixture.json",
+    "sources": ["src/ui/command-search.js", "src/styles.css"],
+    "profiles": ["desktop"]
+  },
+  {
+    "alias": 18,
+    "id": "console-theme-dialog",
+    "kind": "component",
+    "group": "overlays",
+    "reach": {
+      "url": "/",
+      "steps": [
+        { "click": "[data-frame-slot=\"1\"]" },
+        { "wait": "#console-color-dialog[open]" }
+      ]
+    },
+    "selector": "#console-color-dialog",
+    "state": "default",
+    "fixture": "artifacts/console-layout/fixture.json",
+    "sources": ["src/console-appearance.js", "src/console-themes.js", "src/styles.css"],
+    "profiles": ["desktop"]
+  },
+  {
+    "alias": 19,
+    "id": "agent-setup-dialog",
+    "kind": "component",
+    "group": "overlays",
+    "reach": {
+      "url": "/",
+      "steps": [
+        { "click": ".sidebar-bottom [data-page=settings]" },
+        { "click": ".settings-navigation [data-page=agent-settings]" },
+        { "click": "[data-action=agent-setup]" },
+        { "wait": "#first-run[open]" }
+      ]
+    },
+    "selector": "#first-run",
+    "state": "default",
+    "fixture": "artifacts/console-layout/fixture.json",
+    "sources": ["src/first-run.js", "src/setup-agent-state.mjs", "src/styles.css"],
+    "profiles": ["desktop"]
+  },
+  {
+    "alias": 20,
+    "id": "phone-setup-dialog",
+    "kind": "component",
+    "group": "overlays",
+    "reach": {
+      "url": "/",
+      "steps": [
+        { "click": ".sidebar-bottom [data-page=settings]" },
+        { "click": ".settings-navigation [data-page=devices]" },
+        { "click": "[data-mobile=open]" },
+        { "wait": "dialog.mobile-setup[open]" }
+      ]
+    },
+    "selector": "dialog.mobile-setup",
+    "state": "default",
+    "fixture": "artifacts/console-layout/fixture.json",
+    "sources": ["src/mobile-ui.js", "src/styles.css"],
+    "profiles": ["desktop"]
+  },
+  {
+    "alias": 21,
+    "id": "ssh-host-dialog",
+    "kind": "component",
+    "group": "overlays",
+    "reach": {
+      "url": "/",
+      "steps": [
+        { "click": ".sidebar-bottom [data-page=settings]" },
+        { "click": ".settings-navigation [data-page=devices]" },
+        { "click": "[data-ssh=add]" },
+        { "wait": "#ssh-dialog[open]" }
+      ]
+    },
+    "selector": "#ssh-dialog",
+    "state": "default",
+    "fixture": "artifacts/console-layout/fixture.json",
+    "sources": ["src/ssh-ui.js", "src/styles.css"],
+    "profiles": ["desktop"]
+  },
+  {
+    "alias": 22,
+    "id": "project-editor-dialog",
+    "kind": "component",
+    "group": "overlays",
+    "reach": {
+      "url": "/",
+      "steps": [
+        { "click": ".sidebar nav [data-page=projects]" },
+        { "click": "[data-project-new]" },
+        { "wait": "#project-editor[open]" }
+      ]
+    },
+    "selector": "#project-editor",
+    "state": "default",
+    "fixture": "artifacts/console-layout/fixture.json",
+    "sources": ["src/projects-ui.js", "src/styles.css"],
+    "profiles": ["desktop"]
+  },
+  {
+    "alias": 23,
+    "id": "tools-empty-state",
+    "kind": "state",
+    "group": "states",
+    "reach": {
+      "url": "/",
+      "steps": [
+        { "click": ".sidebar-bottom [data-page=settings]" },
+        { "click": ".settings-navigation [data-page=tools]" },
+        { "wait": ".empty-tools" }
+      ]
+    },
+    "selector": ".integrations",
+    "state": "empty",
+    "fixture": "artifacts/console-layout/fixture.json",
+    "sources": ["src/pages/tools-page.js", "src/shared-ui.js", "src/styles.css"],
+    "profiles": ["desktop"]
+  },
+  {
+    "alias": 24,
+    "id": "tool-key-error",
+    "kind": "state",
+    "group": "states",
+    "reach": {
+      "url": "/",
+      "steps": [
+        { "click": ".sidebar-bottom [data-page=settings]" },
+        { "click": ".settings-navigation [data-page=add-tools]" },
+        { "fill": "#tool-form [name=id]", "value": "bad-tool" },
+        { "fill": "#tool-form [name=extraKeys]", "value": "{invalid" },
+        { "click": "#tool-form [type=submit]" },
+        { "wait": "#tool-form .form-error:not(:empty)" }
+      ]
+    },
+    "selector": "#tool-form",
+    "state": "error",
+    "fixture": "artifacts/console-layout/fixture.json",
+    "sources": ["src/pages/tools-page.js", "src/shared-ui.js", "src/ui/form-submit.js", "src/styles.css"],
+    "profiles": ["desktop"]
+  },
+  {
+    "alias": 25,
+    "id": "usage-add-subscription",
+    "kind": "state",
+    "group": "states",
+    "reach": {
+      "url": "/",
+      "steps": [
+        { "click": ".sidebar nav [data-page=usage]" },
+        { "click": "[data-action=usage-add]" },
+        { "wait": "#usage-add-panel" }
+      ]
+    },
+    "selector": ".usage-subscriptions",
+    "state": "expanded",
+    "fixture": "artifacts/console-layout/fixture.json",
+    "sources": ["src/pages/usage-page.js", "src/styles.css"],
+    "profiles": ["desktop"]
+  }
+]

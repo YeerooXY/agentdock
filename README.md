@@ -1,14 +1,15 @@
-﻿# Paddock
+# Paddock
 
 ## Downloads
 
 | Device | Download |
 | --- | --- |
-| Windows 10/11 — Intel or AMD 64-bit | **[Windows installer](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.30/Paddock-0.6.0-preview.30-Setup-x64.exe)** |
-| Android — most phones (ARM64) | **[Android APK](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.27/Agent-Dock-0.6.0-preview.27-Android-arm64.apk)** |
-| Android — older 32-bit phones (ARMv7) | [Android ARMv7 APK](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.27/Agent-Dock-0.6.0-preview.27-Android-armv7.apk) |
+| Windows 10/11 (64-bit Intel or AMD) | **[Windows installer](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.43/Paddock-0.6.0-preview.43-Setup-x64.exe)** |
+| Android (ARM64, most phones) | **[Android APK](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.43/Paddock-0.6.0-preview.43-Android-arm64.apk)** |
+| Android (ARMv7, older 32-bit phones) | [Android ARMv7 APK](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.43/Paddock-0.6.0-preview.43-Android-armv7.apk) |
+| Android (x64) | [Android x64 APK](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.43/Paddock-0.6.0-preview.43-Android-x64.apk) |
 
-Current previews: **Android 0.6.0-preview.27**, **Windows 0.6.0-preview.30**. Reading, copying, saved drafts and adjustable text size work with older PC hosts. Project/folder selection, current Codex model choices, image attachments and SSH hosts require Windows preview 15. Older hosts retain basic terminal controls. [Android release notes](https://github.com/YeerooXY/agentdock/releases/tag/v0.6.0-preview.27) · [Windows release notes](https://github.com/YeerooXY/agentdock/releases/tag/v0.6.0-preview.30) · [All releases](https://github.com/YeerooXY/agentdock/releases) · [Previous stable desktop-only release](https://github.com/YeerooXY/agentdock/releases/tag/v0.5.0).
+[Preview.43 release notes](https://github.com/YeerooXY/agentdock/releases/tag/v0.6.0-preview.43)
 
 A desktop app for Windows, Linux and macOS: agent consoles, projects, shared tools and usage tracking. Linux and macOS installers come from the next release; until then, run Paddock from source on those systems.
 
@@ -47,19 +48,19 @@ This release is unsigned, so Windows may show an unknown-publisher or SmartScree
 
 ## Workspace
 
-Projects, Tasks, Results and Usage are available from the navigation strip. Agent account and routing settings are under **Settings ? Agents**. Click a file path in a console to preview supported files. The desktop file explorer, Code panels and embedded website Preview panels were removed in preview 30.
+Consoles, Projects, Usage and Settings are available from the navigation strip; Projects contains Overview, Work and Knowledge, with Worker history available separately. Agent account and routing settings are under **Settings → Agents**. Click a file path in a console to preview supported files. The desktop file explorer, Code panels and embedded website Preview panels were removed in preview 30.
 
-[Preview 30 changes and limitations](docs/release-preview30.md).
+See the [current state guide](docs/project-current-state.md) for mapped source entry points and architecture. [Preview 30 changes and limitations](docs/release-preview30.md).
 
 ## Android preview
 
-The native Android companion controls your PC consoles, shows Results and account usage, and receives optional completion alerts. The header shows the harness icon, chat name, connection status and PC name.
+The native Android companion controls your PC consoles, provides the Projects workspace (Overview, Work, Knowledge) on workspace-capable hosts, shows account usage, and receives optional completion alerts. The header shows the harness icon, chat name, connection status and PC name.
 
-Tap the thin blue-pink handle below the terminal to write a message. **Model** and **Effort** appear while chat is open; the down arrow collapses it and keeps your draft. Each console retains its draft, caret and reading position. The top **?** menu contains **Text & display**, **Copy text**, **Console links**, **Clear mobile history** and direct keyboard input. Wrapped text keeps terminal colors; its size is adjustable. Clearing history keeps the active terminal screen and the PC process running.
+The message pill sits below the terminal beside Terminal keys, attachments, one model/effort control and dictation. Its image shortcut attaches the latest accessible phone image. Send submits the draft. Each console retains its draft, caret and reading position. The top More options menu contains display, copy, links, history and direct keyboard controls.
 
-The list button beside **Terminal keys** opens the console's **Queue**: **Queue the message box text** adds your draft, and queued messages can be reordered, sent now or removed. **Saved prompts** places a saved prompt in the message box without sending it. The queue itself runs on your PC.
+Messages go directly to the CLI; Paddock does not maintain a separate message queue.
 
-Tap the **chat name ? New console** to select a saved project/folder and an installed agent. Tap the current model or effort, make both choices, then press **Apply**. Browsing and cancelling send no terminal input. Effort can change while keeping the current model. Unknown menu layouts remain in the terminal. The message **+** attaches a project file or selected image. [Mobile controls](docs/mobile-controls.md).
+Tap the **chat name → New console** to select a saved project/folder and an installed agent. Tap the current model or effort, make both choices, then press **Apply**. Browsing and cancelling send no terminal input. Effort can change while keeping the current model. Unknown menu layouts remain in the terminal. The message **+** attaches a project file or selected image. [Mobile controls](docs/mobile-controls.md).
 
 Use **Settings → Devices** to name your phone, add computers and switch between saved PCs. Each PC keeps its pairing and address. On Windows, **Settings → Devices → Connect a phone → Connection** names the PC; **Pair phone** manages its paired phones. [Multiple-device setup](docs/android-setup.md#multiple-computers-and-phones).
 
@@ -94,20 +95,18 @@ The build downloads a pinned Node.js runtime, checks its SHA-256, bundles [npm 1
 
 ## Use it
 
-Start with **+**, or open **Projects → New project**. Give it a name and folder, describe your goals and audience, and add initial milestones. New projects stay in **Planning** while you review the brief, similar apps and niche, infrastructure, and roadmap. **Discuss with agent** starts a conversation using your default console. You approve each section before the project becomes active. See the [planning guide](docs/projects-and-updates.md#plan-a-project).
+Start with **+**, or open **Projects ? New project**. Give it a name and folder. Projects groups consoles and provides the project identity for documentation and Knowledge.
 
 - **AI shells** show their icons in the chooser, console headers, fullscreen tabs and corner HUD. Tools without a bundled logo use a colored initial. **?** in a panel header ends that console after confirmation.
 - **Move consoles** with the shell icon in each panel header. A frozen copy of the terminal follows your pointer while other panels slide into place. On release, the copy expands into its destination. Drop on an empty slot to move, or an occupied slot to swap. Processes, output, names and saved conversations stay with their consoles. With the icon focused, **Alt+1–9** moves it by keyboard.
 - **Resize consoles** by dragging an edge or corner. It snaps to your grid, which starts at 3×3, including 3×1 and 2×2 panels. Other panels move to make room. A pink-blue grid preview, active edge and live size label show the new footprint. An occupied layout turns red. Escape cancels; an impossible size leaves the saved layout intact. Focus a resize handle and use arrow keys to move that edge by one cell. Sizes are saved with your workspace. Narrow browser previews stack panels for readability.
 - **Git workflow** defaults to the current branch. Shared agent instructions require a user request before creating or switching branches.
-- **Results** groups work by project or working folder, then by turn. Pictures share one gallery: use the thumbnails, Previous/Next or arrow keys, and see which pictures you have viewed. Opening one picture marks only that picture; **Mark viewed** clears a whole turn. Console names are kept as recorded when the turn started. Code changes show a readable diff and the recorded branch + commit (for example, `main · 1ca12958`). Uncommitted changes are labelled separately. The code view keeps the starting and ending revisions; later commits do not rewrite old results. Missing historical revisions stay unavailable. Markdown is formatted, and supporting JSON stays behind **Show data**. ZIP files still have a built-in preview browser. Delete a file or a whole turn to permanently remove Paddock's saved copies from disk; project originals and exported copies stay in place. Failed deletions remain visible so you can retry.
-- **Results** keeps requested outputs saved by agents: documents, images, designs, reports, datasets and exports. Ordinary replies and small code edits stay in their chat/project. Use **Add files** to keep other work. **Settings → General → Results → Also capture file changes** optionally copies code diffs and changed images after each turn; it defaults off. The first update to this policy turns the old default-on capture setting off once; later opt-ins persist. Existing Results remain available.
-- **Completion alerts** go to Windows and paired phones. Clicking a Windows notification opens its console, result, or requested settings. Paddock keeps no notification inbox or read history; console badges and new Results batches still show pending work.
-- **Website reviews** run through your agent. Ask it to review a page; screenshots and findings appear in Results. The tools capture desktop/mobile viewports, check accessibility and overflow, and check up to 12 same-origin links. The 20-item checklist needs a human or agent review; an automated scan is not certification. There is no separate review page.
+- **Completion alerts** go to Windows and paired phones. Clicking a Windows notification opens its console, image preview, or requested settings. Paddock keeps no notification inbox or read history; console badges show pending work.
+- **Website reviews** run through your agent. Ask it to review a page; the review tools return findings and screenshot paths. The tools capture desktop/mobile viewports, check accessibility and overflow, and check up to 12 same-origin links. The 20-item checklist needs a human or agent review; an automated scan is not certification. There is no separate review page.
 
 - **Consoles** fills the window with live terminals. Click **+** to launch using **Settings → Console defaults**. When the grid is full, adding a console shrinks a larger panel by one cell or grows the grid, up to 64 consoles. **Settings → Console grid** lets you choose 2–8 rows and columns. More agents use more memory and CPU. You can type directly in a panel or expand it fullscreen. Returning to **Consoles** keeps the window fullscreen. Thinking uses a blue-purple outline; ready uses green.
-- **Projects** shows status, goals, milestone progress, next step and last worked date. Active is green; the other states have distinct colors and labels. Click a folder path to open it. **Roadmap** holds your approved scope and milestones; extra ideas go into **Later features**. Agents can propose changes for review and report verified progress. A project can have several folders, and consoles can launch in subfolders. Existing projects keep their current state until you choose **Plan project**.
-- **Bring an existing chat into Projects:** an ungrouped console shows **Set up project**. Link it to an existing project or create one with its current name and folder already filled in. Add your goals, and the project brief becomes available through `dock_context` on the agent's next turn. Linking preserves the running chat and files; it does not import earlier conversation transcripts. **Don't ask again** switches suggestions off across all consoles, including after a restart. Re-enable them in **Settings → Projects → Suggest project setup**. The folder button in each console header always lets you link, change or remove its project, or jump to **View project**. Project management is currently in the desktop app.
+- **Projects** stores names, categories, colours, status, folders and Knowledge settings. Consoles can launch in any saved folder or subfolder.
+- **Bring an existing chat into Projects:** an ungrouped console shows **Set up project**. Link it to an existing project or create one with its current name and folder already filled in. The selected project identity becomes available through `dock_context`. Linking preserves the running chat and files; it does not import earlier conversation transcripts. **Don't ask again** switches suggestions off across all consoles, including after a restart. Re-enable them in **Settings → Projects → Suggest project setup**. The folder button in each console header always lets you link, change or remove its project, or jump to **View project**. Project management is currently in the desktop app.
 - **Chat project and title:** linked chats receive their exact project ID, name, launch folder and brief. Automatic titles follow project renames. Custom names stay yours; enable **Use project name as chat title** in the console's folder menu to switch back. An unlinked chat is explicitly marked as unlinked in its agent context; Paddock does not assign projects by guessing from a title or message.
 - **Usage ? Project turns** groups recent turns by project. Filter a project or expand its group to see tokens, API cost estimates and observed changes in provider quota windows. These account-wide changes are estimates: other work can overlap, readings can be rounded, and resets or missing baselines stay unavailable. API messages include their tool-call rounds. Subscription prices are separate from API billing.
 - **Project colors** are set when creating or editing a project. The same color appears beside its name, in linked consoles and on its usage bars. Project names and status labels stay visible.
@@ -135,13 +134,9 @@ The folder button above the grid changes the launch folder for new consoles. You
 
 Hold **+** for a moment, or right-click it, to choose a project, name, agent, model and folder for that panel. You can create a project from this chooser too. **Options** has a permission override and **Work in a new Git worktree**. These choices apply only to that console; a regular click still uses your saved defaults. Escape or Cancel closes the chooser without opening anything. This also works in the HUD. With a keyboard, hold Space or press Shift+Enter on a plus button.
 
-**Queue messages while an agent works.** Hover an agent console and click the list button in its bottom-right corner. Type a message and press **Queue** (Ctrl+Enter). When the agent finishes its turn, Paddock types the first queued message and presses Enter; the rest wait for later turns, one per turn. Typing in that console after a turn finishes skips sending for that turn, so your own reply goes first. Edit, reorder, **Send now** or remove queued messages, or **Pause sending**. **Type now** puts the text in the console without pressing Enter. Queues are kept in memory: ending the console or quitting Paddock clears them, and nothing is sent after a restart. Sending needs the agent's status reporting (Codex, Claude Code and agents that call dock/notify); without it, use **Send now**.
-
-**Saved prompts** keep wording you reuse. In the queue panel, type a message, choose **Save as prompt** and name it; optionally limit it to the console's project. **Use** puts a saved prompt in the message box. Prompts are stored in `prompts.json` in Paddock's data folder.
-
 A worktree console gets its own branch (`paddock/<name>-<id>`) and folder inside Paddock's data folder, started from the current commit of the chosen folder's repository, so agents working in parallel do not overwrite each other. The console opens in the same subfolder. Its header shows a branch icon; hover it for the branch and path, and wide consoles also show the branch name. When you end the console, **End and remove worktree** appears only if the worktree has no uncommitted changes; the branch and its commits stay in the repository for you to merge. A worktree with uncommitted changes is always kept. Worktrees are available for consoles on this PC, not SSH hosts.
 
-Pink-blue accents are the default. **Settings → Appearance** also offers blue or pink. Ready consoles pulse green and show a red badge on their terminal icon. Click inside a console, type or paste, or open it fullscreen to clear its badge. Results keeps its own new-batch count directly on its icon. Reduced-motion preferences disable panel motion and the ready pulse. Fullscreen terminals leave space below the last line. Window controls sit at the top right: HUD, minimize, fullscreen/restore, close to tray.
+Pink-blue accents are the default. **Settings → Appearance** also offers blue or pink. Ready consoles pulse green and show a red badge on their terminal icon. Click inside a console, type or paste, or open it fullscreen to clear its badge. Reduced-motion preferences disable panel motion and the ready pulse. Fullscreen terminals leave space below the last line. Window controls sit at the top right: HUD, minimize, fullscreen/restore, close to tray.
 
 The console cursor is steady by default. **Settings → Appearance → Blink cursor** turns blinking back on. Paddock batches short output fragments and gives split cursor hide/redraw/show sequences up to 48 ms to arrive together. It also skips unchanged terminal fits to reduce redraw flicker. Programs can still deliberately hide and show their cursor; Paddock preserves those terminal commands. This setting affects Paddock, not CMD or other terminal apps. For Codex outside Paddock, `codex -c tui.animations=false` disables its animations for that launch; this is a troubleshooting option, not a confirmed fix for every flicker. See [Codex TUI options](https://learn.chatgpt.com/docs/config-file/config-advanced#tui-options).
 
@@ -229,15 +224,15 @@ at interactive uninstall; it never automatically deletes downloaded repositories
 
 ### Web design
 
-For a vague request such as **“improve this screen”**, agents are now instructed to inspect the screen, try one visual preview and show it in **Results** before a substantial redesign. Specific edits can proceed directly. Turn this preference off in **Tools → Screen previews** if you prefer.
+For a vague request such as **“improve this screen”**, agents are now instructed to inspect the screen, try one visual preview and show it before a substantial redesign. Specific edits can proceed directly. Turn this preference off in **Tools → Screen previews** if you prefer.
 
 Choose your **Image generator** there: the agent's own tool, OpenAI, Gemini / Nano Banana, Meshy, or a compatible image API. The default still tries the agent's own tool first, with Meshy as fallback. For an API, add its credential in **Keys**, select that saved key and an image model, then save. Agent help can prepare these settings in Tools for you to apply. Saving does not generate or bill anything. [Provider setup and limits](docs/screen-previews.md).
 
-Ask your agent to review the page and generate a screen preview. It uses the shared review and image tools with your selected generator, then saves screenshots, findings and the image in **Results**. Configure generation in **Tools → Screen previews**; **Meshy CLI sign-in** is there too. Agents can list saved reviews, update checklist evidence and delete a review with its saved files.
+Ask your agent to review the page and generate a screen preview. It uses the shared review and image tools with your selected generator, then returns screenshots, findings and the generated image. Configure generation in **Tools → Screen previews**; **Meshy CLI sign-in** is there too. Agents can list saved reviews, update checklist evidence and delete a review with its saved files.
 
 Meshy fallback uses the bundled official CLI and its own sign-in, separate from the API-key MCP connection in Tools. **Check sign-in** reuses an existing CLI account; **Connect Meshy** provides a code and a browser sign-in link. The CLI manages its credentials; Paddock does not copy them into its vault. Generating a concept uploads the reference screenshot to Meshy and uses credits. Accepted task IDs are saved, so **Resume task** continues checking the same job without another submission. Reported credits appear in **Usage** and remain after deleting a job. No credit amount is invented when Meshy does not report one.
 
-All agents and API sessions can discover connection `dock` with `dock_tools`. It includes `save_result`, `notify`, `review_page`, `review_details`, `generate_preview`, `meshy_concept` and job status tools. File results must be inside the calling console’s project; API sessions use the default project folder. Files are copied into the gallery, with a 50 MB file limit and a 1 GB gallery limit. Optional file-change capture compares bounded project snapshots and saves changed code and images; see the [capture limits](docs/android-setup.md#code-changes-in-results).
+Agents and API sessions can discover review, preview and notification tools through `dock_tools`. Generated preview paths are returned by `dock/concept_status`.
 
 **Instructions → Ways of working → Web design** is off by default; the **Web UX/UI** skill pack below carries the same research for agents to load when a task needs it. Turned on, its [shared guide](guides/web-design.md) covers layout, typography, responsive behavior, accessibility, performance and a 20-point page review: policies, consent, data collection, SDKs, honest claims and reviews, fees, business details, children's data, unsubscribe, asset licenses and deletion requests.
 
@@ -287,9 +282,9 @@ Local data is in `%APPDATA%\Paddock`:
 - `shared/PADDOCK.md`: generated summary without secrets.
 - `integrations`: installed Blender server, setup versions and add-on setup notes. The Blender add-on itself lives in Blender's user add-ons folder. Unity Pipeline lives in the project you selected.
 - `ledger.json`: model, time, tokens, request status and estimated cost; no prompts or responses.
-- `results/`, `reviews.json`: saved files, page screenshots, findings and manual checklist notes. These can contain project or page content. Delete saved copies in Results, or ask your agent to delete a whole review with `dock/delete_review`.
+- `results/`, `reviews.json`: saved files, page screenshots, findings and manual checklist notes. These can contain project or page content. Ask your agent to delete a whole review with `dock/delete_review`. Legacy saved files remain on disk.
 - `mobile.json`: connection settings plus an OS-encrypted payload containing paired device tokens and TLS identity. Disable the connection or remove phones in Android setup.
-- `concept-jobs/` holds image job metadata, prompts and Meshy temporary downloads; `concept-usage.json` keeps reported usage and request IDs to prevent repeat billing. Completed images are copied to Results. Removing a job deletes its prompt and temporary files; usage metadata remains. [Image data and deletion](docs/screen-previews.md#data-and-usage).
+- `concept-jobs/` holds image job metadata, prompts and Meshy temporary downloads; `concept-usage.json` keeps reported usage and request IDs to prevent repeat billing. Completed images use the existing local review storage. Removing a job deletes its prompt and temporary files; usage metadata remains. [Image data and deletion](docs/screen-previews.md#data-and-usage).
 - `settings.json`, `limits.json`, `events`, `sessions`: preferences, cached quotas and per-session tracking/configuration.
 - `projects.json`: project records, including the chosen color. `message-usage.json` retains up to 5,000 turn records with token counts, project IDs and reported quota changes; the desktop view shows the latest 200. A per-console `events/*.quota-start.json` file keeps the starting quota reading. These tracking fields contain no prompts, answers, key values or credit balances.
 
@@ -303,18 +298,27 @@ API prompts, responses and terminal scrollback stay in memory. Agent CLIs and co
 
 ## Development
 
+See [Module boundaries](docs/module-boundaries.md) for source ownership and
+controller contracts.
+
 ```powershell
 npm ci
 npm run prepare:runtime
 npm run build
 npm start
 npm test
-npm run test:desktop
+npm run test:linux
 ```
 
 This is a local development build, not a signed installer. It uses Electron, xterm.js and ConPTY. Each console, MCP server and WSL distribution adds its own resource usage. Background tool connections are opened on demand and reused. Terminal buffers and recent-log scans are bounded.
 
 After a build, `npm test` also checks the renderer bundle: xterm.js has its own chunk, the application chunk stays under 400 kB and no chunk exceeds 500 kB. Raise these limits in `tests/bundle-budget.test.cjs` deliberately, or move a page behind a dynamic import.
+
+`npm run build` checks generated theme data, phone provider profiles and desktop,
+backend and mobile import boundaries before bundling. See
+[Theme authoring](docs/theme-authoring.md) for palette and effect changes.
+`npm run test:linux` requires Docker and runs desktop checks on a virtual display.
+CI also runs native desktop checks on Windows and macOS.
 
 Validation includes real Windows encryption, nine live shell consoles, HUD/fullscreen persistence, installed agent startup, MCP subprocess/loopback integration, HTTP credential bindings, all three model tool loops with mocked responses, form failures and narrow layouts. Agent-specific checks depend on the CLIs installed on the test machine. Tests use temporary data and never submit paid model requests. Screenshots and reports are in `artifacts` and stay out of Git.
 

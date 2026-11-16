@@ -69,6 +69,24 @@ function inspectInterface() {
   }
   report('sibling-layout', mismatched, 'Elements that share a class and parent lay out their content differently.');
 
+  // Controls next to each other on one line: equal button heights, shared vertical centre and a real gap.
+  const buttonLike = el => el.matches('button,[role=button],input[type=button],input[type=submit],select');
+  const clickable = all.filter(el => el.matches('button,[role=button],a[href],input:not([type=hidden]),select') && !el.parentElement.closest('button,a[href],[role=button]'));
+  const misaligned = [], cramped = [];
+  for (let i = 0; i < clickable.length; i++) for (let j = i + 1; j < clickable.length; j++) {
+    const a = clickable[i], b = clickable[j], ra = a.getBoundingClientRect(), rb = b.getBoundingClientRect();
+    if (a.contains(b) || b.contains(a)) continue;
+    const overlap = Math.min(ra.bottom, rb.bottom) - Math.max(ra.top, rb.top), [left, right] = ra.left <= rb.left ? [ra, rb] : [rb, ra], gap = right.left - left.right;
+    // Same row and close neighbours only; distant controls on one line belong to separate groups.
+    if (overlap < Math.min(ra.height, rb.height) / 2 || gap < -1 || gap > 48) continue;
+    const centre = Math.abs((ra.top + ra.bottom) / 2 - (rb.top + rb.bottom) / 2);
+    const heights = buttonLike(a) && buttonLike(b) ? Math.abs(ra.height - rb.height) : 0;
+    if (centre > 2 || heights > 2) misaligned.push(`${name(a)} and ${name(b)}: heights ${Math.round(ra.height)}/${Math.round(rb.height)}px, centres ${Math.round(centre)}px apart`);
+    if (gap < 6) cramped.push(`${name(a)} and ${name(b)}: ${Math.max(0, Math.round(gap))}px apart`);
+  }
+  report('control-alignment', misaligned, 'Controls on the same line differ in height or sit at different heights. Align their centres and give buttons in a row one height.');
+  report('control-spacing', cramped, 'Neighbouring controls are under 6px apart. Space them with a gap.', 6);
+
   // Chrome share: how much of the viewport height never scrolls. Uses the largest scroll container, or fixed/sticky bars over the document.
   const scrollers = all.filter(el => /auto|scroll/.test(getComputedStyle(el).overflowY) && el.scrollHeight > el.clientHeight + 1)
     .sort((a, b) => b.clientWidth * b.clientHeight - a.clientWidth * a.clientHeight);

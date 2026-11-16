@@ -1,4 +1,5 @@
 'use strict';
+const { installStateTransport } = require('./state-test-transport.cjs');
 const { openPage } = require('./ui-navigation.cjs');
 const { _electron: electron, chromium, webkit, devices } = require('playwright');
 const fs = require('node:fs'), path = require('node:path'), http = require('node:http'), assert = require('node:assert/strict');
@@ -53,10 +54,11 @@ async function screenshot(page, name) {
     try{
       const context=await browser.newContext(options);
       await context.route('**/*',route=>route.request().url().startsWith(origin)?route.continue():route.abort());
-      await context.addInitScript(({state})=>{
-        const callbacks=[],value=structuredClone(state);window.fixtureCalls=[];
-        const emit=()=>callbacks.forEach(fn=>fn(structuredClone(value)));
-        window.dock={onState:fn=>callbacks.push(fn),onOutput:()=>{},onSelect:()=>{},onNotice:()=>{},call:async(method,payload)=>{
+      await installStateTransport(context);
+await context.addInitScript(({state})=>{
+        const value=structuredClone(state);window.fixtureCalls=[];
+        const emit=()=>window.fixtureState(structuredClone(value));
+        window.dock={get state() { return window.fixtureStateTransport; },onOutput:()=>{},onSelect:()=>{},onNotice:()=>{},call:async(method,payload)=>{
           window.fixtureCalls.push({method,payload});let result;
           if(method==='state')result=value;
           else if(method==='session.buffer')result={data:'\x1b[32mVerification fixture\x1b[0m\r\nNo AI request was submitted.\r\n',sequence:1};

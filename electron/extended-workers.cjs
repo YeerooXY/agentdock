@@ -86,9 +86,10 @@ function clineToolDecision(event, workFolder, review, readOnlyFiles = []) {
   return paths.every(within) ? {} : deny();
 }
 
-function extensionLaunch(provider, executable, { model, review = false, workFolder, promptFile } = {}) {
+function extensionLaunch(provider, executable, { model, review = false, workFolder, promptFile, images = [] } = {}) {
   if (!NATIVE_WORKERS.includes(provider)) throw Error(capabilities[provider]?.reason || 'This provider has no bounded worker adapter.');
   if (!promptFile || !workFolder) throw Error('This worker needs a private prompt folder and an assigned working folder.');
+  const cleanImages = Array.isArray(images) ? images.filter(img => typeof img === 'string' && img.trim()) : [];
   const temp = path.dirname(promptFile), chosen = model ? ['--model', model] : [];
   if (provider === 'droid') return programLaunch(executable, ['exec', '--output-format', 'json', '--file', promptFile,
     '--only-tools', [...readTools, ...(review ? [] : ['Edit', 'Create', 'ApplyPatch'])].join(','),
@@ -117,7 +118,8 @@ function extensionLaunch(provider, executable, { model, review = false, workFold
     const ownerConfig = process.env.CLINE_DIR || path.join(os.homedir(), '.cline');
     const ownerData = process.env.CLINE_DATA_DIR || path.join(ownerConfig, 'data');
     const providers = process.env.CLINE_PROVIDER_SETTINGS_PATH || path.join(ownerData, 'settings', 'providers.json');
-    privateWrite(hooks, 'PreToolUse.cjs', `'use strict';\nconst decide = ${clineToolDecision.toString()};\nlet input=''; process.stdin.on('data',c=>{input+=c;if(input.length>1048576)process.exit(2);}); process.stdin.on('end',()=>{try{const event=JSON.parse(input);const result=decide(event,${JSON.stringify(path.resolve(workFolder))},${review},${JSON.stringify([path.resolve(promptFile)])});require('node:fs').appendFileSync(${JSON.stringify(path.join(temp, 'guard-audit.jsonl'))},JSON.stringify({tool:event.tool_call?.name||event.preToolUse?.toolName,denied:result.cancel===true})+'\\n');console.log(JSON.stringify(result));}catch{console.log(JSON.stringify({cancel:true,errorMessage:'Worker tool guard could not validate this call.'}));}});\n`);
+    const readOnlyFiles = [path.resolve(promptFile), ...cleanImages.map(img => path.resolve(img))];
+    privateWrite(hooks, 'PreToolUse.cjs', `'use strict';\nconst decide = ${clineToolDecision.toString()};\nlet input=''; process.stdin.on('data',c=>{input+=c;if(input.length>1048576)process.exit(2);}); process.stdin.on('end',()=>{try{const event=JSON.parse(input);const result=decide(event,${JSON.stringify(path.resolve(workFolder))},${review},${JSON.stringify(readOnlyFiles)});require('node:fs').appendFileSync(${JSON.stringify(path.join(temp, 'guard-audit.jsonl'))},JSON.stringify({tool:event.tool_call?.name||event.preToolUse?.toolName,denied:result.cancel===true})+'\\n');console.log(JSON.stringify(result));}catch{console.log(JSON.stringify({cancel:true,errorMessage:'Worker tool guard could not validate this call.'}));}});\n`);
     const mcp = privateWrite(temp, 'mcp.json', JSON.stringify({ mcpServers: {} }));
     return { ...nativeLaunch(provider, executable, ['--json', '--yolo', '--compaction', 'off', '--retries', '1', '--timeout', '300',
       '--hooks-dir', hooks, '--cwd', workFolder, ...(review ? ['--plan'] : []), ...chosen, `Read the instruction file ${promptFile} and complete its assigned task.`]),

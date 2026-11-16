@@ -7,40 +7,7 @@ const ACTIVE = new Set(['planning', 'reviewing-plan', 'building', 'implementing'
 const SUB_ACTIVE = new Set(['implementing', 'checking', 'reviewing']);
 const idPattern = /^[a-z0-9-]{1,32}$/;
 
-// Globs deliberately have a small, explicit grammar. Both validation and the
-// ownership guard use this matcher, including **/, character classes and braces.
-function globRegex(pattern) {
-  let source = '', braces = 0;
-  for (let i = 0; i < pattern.length; i++) {
-    const c = pattern[i];
-    if (c === '*') {
-      if (pattern[i + 1] === '*') { i++; if (pattern[i + 1] === '/') { i++; source += '(?:.*/)?'; } else source += '.*'; }
-      else source += '[^/]*';
-    } else if (c === '?') source += '[^/]';
-    else if (c === '[') {
-      const end = pattern.indexOf(']', i + 1);
-      if (end < 0 || end === i + 1) throw new Error('Unclosed or empty character class.');
-      const value = pattern.slice(i + 1, end);
-      if (value.includes('/') || value.includes('[') || value.includes('\\')) throw new Error('Invalid character class.');
-      source += `(?!/)[${value.startsWith('!') ? '^' + value.slice(1) : value}]`; i = end;
-    } else if (c === '{') { braces++; source += '(?:'; }
-    else if (c === '}') { if (!braces--) throw new Error('Unmatched brace.'); source += ')'; }
-    else if (c === ',' && braces) source += '|';
-    else source += c.replace(/[.+^$()|\\\]]/g, '\\$&');
-  }
-  if (braces) throw new Error('Unclosed brace.');
-  return new RegExp(`^${source}$`, 'i');
-}
-function validGlob(value) {
-  if (typeof value !== 'string' || !value || value.length > 500 || value.includes('..') || /[\x00-\x1f\\:]/.test(value) || value.startsWith('/') || value.startsWith('-') || value.startsWith('!') || value.split('/').some(part => !part || part === '.' || part.toLowerCase() === '.git')) return false;
-  try { globRegex(value); return true; } catch { return false; }
-}
-function ownsFile(subtask, file) { return subtask.owns.some(pattern => globRegex(pattern).test(file.replaceAll('\\', '/'))); }
-function overlap(a, b) {
-  const prefix = value => value.split(/[*?[{]/, 1)[0].toLowerCase();
-  const left = prefix(a), right = prefix(b);
-  return left.startsWith(right) || right.startsWith(left);
-}
+const { validGlob, ownsFile, overlap } = require('./task-ownership.cjs');
 function sizeFromRating(difficulty, complexity) {
   const highest = Math.max(difficulty, complexity);
   if (highest <= 2) return 'small';
@@ -48,12 +15,13 @@ function sizeFromRating(difficulty, complexity) {
   return 'large';
 }
 const legacySizeMap = { small: 1, medium: 3, large: 5 };
-function validatePlan(value) {
+function validatePlan(value, { ownerMessage = false } = {}) {
   const errors = [];
   if (!value || typeof value !== 'object' || Array.isArray(value)) return { plan: null, errors: ['Return a JSON plan object.'] };
   if (typeof value.contracts !== 'string' || value.contracts.length > 12000 || value.contracts.includes('\0')) errors.push('Contracts must be text of at most 12,000 characters.');
-  if (!Array.isArray(value.subtasks) || value.subtasks.length < 2 || value.subtasks.length > 8) errors.push('Use 2 to 8 subtasks.');
-  const subtasks = Array.isArray(value.subtasks) ? value.subtasks.slice(0, 8) : [], ids = new Set();
+  const minimum = ownerMessage ? 1 : 2, maximum = ownerMessage ? 20 : 8;
+  if (!Array.isArray(value.subtasks) || value.subtasks.length < minimum || value.subtasks.length > maximum) errors.push(`Use ${minimum} to ${maximum} subtasks.`);
+  const subtasks = Array.isArray(value.subtasks) ? value.subtasks.slice(0, maximum) : [], ids = new Set();
   for (const [index, sub] of subtasks.entries()) {
     const label = `Subtask ${index + 1}`;
     if (!sub || typeof sub !== 'object' || Array.isArray(sub)) { errors.push(`${label} must be an object.`); continue; }
@@ -67,8 +35,12 @@ function validatePlan(value) {
       if (!Number.isInteger(sub.difficulty) || sub.difficulty < 1 || sub.difficulty > 5) errors.push(`${label}: difficulty must be a whole number from 1 to 5.`);
       if (!Number.isInteger(sub.complexity) || sub.complexity < 1 || sub.complexity > 5) errors.push(`${label}: complexity must be a whole number from 1 to 5.`);
     }
-    if (!Array.isArray(sub.owns) || sub.owns.length < 1 || sub.owns.length > 30 || sub.owns.some(pattern => !validGlob(pattern))) errors.push(`${label}: owns must contain 1 to 30 relative globs, without .., absolute paths or .git paths.`);
-    if (!Array.isArray(sub.dependsOn) || sub.dependsOn.length > 8 || sub.dependsOn.some(id => typeof id !== 'string' || !idPattern.test(id))) errors.push(`${label}: dependsOn must list subtask ids.`);
+    if (!Array.isArray(sub.owns) || sub.owns.length < (ownerMessage && sub.kind === 'question' ? 0 : 1) || sub.owns.length > 30 || sub.owns.some(pattern => !validGlob(pattern))) errors.push(`${label}: owns must contain 1 to 30 relative globs, without .., absolute paths or .git paths.`);
+    if (!Array.isArray(sub.dependsOn) || sub.dependsOn.length > maximum || sub.dependsOn.some(id => typeof id !== 'string' || !idPattern.test(id))) errors.push(`${label}: dependsOn must list subtask ids.`);
+    if (ownerMessage) {
+      if (!['build', 'design', 'question', 'bug'].includes(sub.kind)) errors.push(`${label}: kind must be build, design, question or bug.`);
+      if (sub.kind === 'question' && (typeof sub.answer !== 'string' || !sub.answer.trim() || sub.answer.length > 6000 || sub.answer.includes('\0'))) errors.push(`${label}: include an answer of up to 6,000 characters.`);
+    }
   }
   const dependencies = new Map(subtasks.filter(Boolean).map(sub => [sub.id, Array.isArray(sub.dependsOn) ? sub.dependsOn : []]));
   for (const [id, deps] of dependencies) for (const dep of deps) if (!ids.has(dep)) errors.push(`${id}: unknown dependency ${dep}.`);
@@ -82,10 +54,10 @@ function validatePlan(value) {
   for (const id of dependencies.keys()) visit(id);
   // Dependencies describe data flow. Scheduler file leases serialize ownership
   // overlap even when neither subtask depends on the other's output.
-  return { errors, plan: errors.length ? null : { contracts: value.contracts, subtasks: subtasks.map(({ id, title, criteria, owns, dependsOn, size, difficulty, complexity }) => {
+  return { errors, plan: errors.length ? null : { contracts: value.contracts, subtasks: subtasks.map(({ id, title, criteria, owns, dependsOn, size, difficulty, complexity, kind, answer, images }) => {
     const derivedDifficulty = difficulty ?? legacySizeMap[size];
     const derivedComplexity = complexity ?? legacySizeMap[size];
-    return { id, title: title.trim(), criteria: criteria.trim(), owns: [...owns], dependsOn: [...new Set(dependsOn)], size: sizeFromRating(derivedDifficulty, derivedComplexity), difficulty: derivedDifficulty, complexity: derivedComplexity };
+    return { id, title: title.trim(), criteria: criteria.trim(), owns: [...owns], dependsOn: [...new Set(dependsOn)], size: sizeFromRating(derivedDifficulty, derivedComplexity), difficulty: derivedDifficulty, complexity: derivedComplexity, ...(ownerMessage ? { kind, ...(kind === 'question' ? { answer: answer.trim() } : {}), images: images ?? [] } : {}) };
   }) } };
 }
 function parsePlan(text) {
@@ -114,7 +86,7 @@ function planReviewPrompt(job) {
   ].join('\n\n');
 }
 function contractPrompt(job) {
-  return `Shared contracts (changing these requires stopping and replying CONTRACT_CHANGE_REQUIRED with the reason):\n${job.contracts ?? job.plan?.contracts ?? ''}${job.owns ? `\nOwned files:\n${job.owns.join('\n')}\nEditing files outside this ownership is not allowed.` : `\nApproved plan:\n${JSON.stringify(job.plan)}`}`;
+  return `Shared contracts:\n${job.contracts ?? job.plan?.contracts ?? ''}${job.owns ? `\nOwned files:\n${job.owns.join('\n')}\nEditing files outside this ownership is not allowed.` : `\nApproved plan:\n${JSON.stringify(job.plan)}`}`;
 }
 function planReport(job, usageText) {
   if (!job.split) return [];
@@ -142,6 +114,10 @@ function planReport(job, usageText) {
     }
   }
   for (const round of job.rounds) for (const name of ['implement', 'review']) if (round[name]?.accountId) steps.push({ label: `Integration round ${round.number} ${name}`, step: round[name] });
+  for (const round of job.integrationRounds || []) {
+    lines.push('', `### Resolve ${round.subtaskId} merge`, `Files: ${round.conflicts.join(', ')}`, round.implement.summary || round.implement.error || '', `Status: ${round.implement.state}`);
+    if (round.implement.accountId) steps.push({ label: `Merge ${round.number}`, step: round.implement });
+  }
   lines.push('', '## Usage by account');
   const accounts = [...new Set(steps.map(({ step }) => step.accountId))];
   for (const id of accounts) { lines.push(`### ${id}`); for (const entry of steps.filter(({ step }) => step.accountId === id)) lines.push(`- ${entry.label}: ${usageText(entry.step.usage)}`); }
@@ -151,6 +127,22 @@ function planReport(job, usageText) {
 
 class SplitTasks {
   constructor(loop) { this.loop = loop; this.running = new Map(); this.merging = new Map(); }
+  useApprovedPlan(job, value) {
+    const validated = validatePlan(value, { ownerMessage: true });
+    if (validated.errors.length) throw Error(validated.errors.join(' '));
+    if (validated.plan.subtasks.some(sub => !['build', 'bug'].includes(sub.kind))) throw Error('Only approved build and bug lanes may start worktrees.');
+    job.plan = validated.plan; job.planRevision = 1; job.approvedAt = this.loop.now(); job.state = 'building';
+    job.planReview = { state: 'not-set', label: 'Approved message plan', findings: [] };
+    job.subtasks = job.plan.subtasks.map(sub => {
+      const source = value.subtasks.find(item => item.id === sub.id);
+      const implementer = this.loop.assignment(source.implementer, 'implementer');
+      const reviewer = source.reviewer ? this.loop.assignment(source.reviewer, 'reviewer') : null;
+      if (reviewer?.accountId === implementer.accountId) throw Error('Choose a lane reviewer different from its worker.');
+      return { ...sub, subtaskId: sub.id, id: `${job.id}-${sub.id}`, parentId: job.id, state: 'queued', implementer, reviewer,
+        assignmentReason: source.assignmentReason || 'Approved message routing.', why: { implementer: source.assignmentReason || 'Approved message routing.', reviewer: reviewer ? 'Independent lane review.' : 'No review selected.' },
+        rounds: [], unresolved: [], log: [], elapsedMs: 0, finalDiff: '', diffStat: '' };
+    });
+  }
   async plan(job) {
     const loop = this.loop; let feedback = job.planFeedback || [];
     job.planRounds ||= [];
@@ -218,10 +210,7 @@ class SplitTasks {
     if (main.accountId === job.reviewer?.accountId) throw new Error('Choose a main implementer different from the reviewer.');
     loop.ensureAvailable(job);
     const previous = loop.pending.get(job.id);
-    const reviewers = assignments.map(implementer => {
-      const suggestion = loop.choices(implementer.accountId).assignment;
-      return job.reviewer?.accountId !== implementer.accountId ? job.reviewer : suggestion.reviewer ? loop.assignment(suggestion.reviewer, 'reviewer') : null;
-    });
+    const reviewers = assignments.map(implementer => job.reviewer?.accountId !== implementer.accountId ? job.reviewer : null);
     job.parallelLimit = limit; job.implementer = main; job.approvedAt = loop.now(); job.state = 'building'; job.finishedAt = null;
     for (const [index, sub] of job.subtasks.entries()) {
       sub.implementer = assignments[index];
@@ -265,6 +254,7 @@ class SplitTasks {
         sub.state = 'queued'; sub.resumeRounds = true; sub.error = ''; sub.finishedAt = null;
       }
       job.state = 'building';
+      if (job.dispatchParallel) job.resumeIntegration = job.rounds.length > 0;
     }
     job.error = ''; job.finishedAt = null; job.verificationExpired = false; loop.changed(job); loop.startSplit(job, !job.approvedAt); return loop.view(job);
   }
@@ -308,12 +298,18 @@ class SplitTasks {
       try { await loop.git(job.workFolder, [...config, 'merge', '--no-ff', '--no-edit', sub.branch]); }
       catch (error) {
         let conflicts = [];
+        if (job.dispatchParallel) {
+          conflicts = (await loop.git(job.workFolder, ['diff', '--name-only', '--diff-filter=U', '-z'])).split('\0').filter(Boolean);
+          if (!conflicts.length) throw Error('The lane could not be merged. Inspect the integration worktree.');
+          if (!await require('./integration-conflict.cjs').resolveIntegrationConflict(loop, job, sub, conflicts, config)) return;
+        } else {
         try { conflicts = (await loop.git(job.workFolder, ['diff', '--name-only', '--diff-filter=U', '-z'])).split('\0').filter(Boolean); }
         finally {
           let merging = false; try { await loop.git(job.workFolder, ['rev-parse', '--verify', 'MERGE_HEAD']); merging = true; } catch {}
           if (merging) await loop.git(job.workFolder, ['merge', '--abort']);
         }
         throw new Error(conflicts.length ? `Merge conflict: ${conflicts.join(', ')}. The merge was aborted.` : 'The subtask could not be merged. The integration branch was kept.');
+        }
       }
       job.integrationHead = (await loop.git(job.workFolder, ['rev-parse', 'HEAD'])).trim(); sub.state = 'merged'; sub.error = ''; sub.unresolved = []; sub.mergedAt = loop.now(); loop.changed(sub);
     });
@@ -328,6 +324,7 @@ class SplitTasks {
         repository: job.repoKey || job.repo, owns: sub.owns,
         onQueued: (reason, position) => { sub.queueReason = reason; sub.queuePosition = position; loop.changed(sub); } });
       if (!release || !ACTIVE.has(job.state)) return;
+      if (job.dispatchParallel) loop.dispatcher.checkAssignments(sub);
       if (job.subtasks?.some(other => other !== sub && ['needs-you', 'failed', 'interrupted', 'stopped'].includes(other.state))) { sub.state = 'queued'; return; }
       sub.state = 'implementing'; loop.changed(sub);
       if (!sub.workFolder) {
@@ -339,10 +336,10 @@ class SplitTasks {
       if (!fs.existsSync(sub.workFolder)) {
         let existing = false; try { await loop.git(job.repo, ['rev-parse', '--verify', `refs/heads/${sub.branch}`]); existing = true; } catch {}
         await loop.git(job.repo, existing ? ['worktree', 'add', sub.workFolder, sub.branch] : ['worktree', 'add', sub.workFolder, '-b', sub.branch, sub.baseline]);
-        require('./task-loop.cjs').linkDependencies(job.repo, sub.workFolder);
+        require('./task-checkout.cjs').linkDependencies(job.repo, sub.workFolder);
       }
       if (!ACTIVE.has(job.state)) return;
-      Object.assign(sub, { repo: job.repo, workflow: 'worktree', contracts: job.plan.contracts, maxRounds: sub.implementer?.model === 'strata/local' && job.maxRoundsExplicit === false ? 1 : job.maxRounds, timeLimitMinutes: job.timeLimitMinutes, deadlineAt: job.deadlineAt, startedAt: sub.startedAt || started, baselineUntracked: [], baselineUntrackedState: {} });
+      Object.assign(sub, { repo: job.repo, workflow: 'worktree', contracts: job.plan.contracts, visualReview: job.visualReview, maxRounds: sub.implementer?.model === 'strata/local' && job.maxRoundsExplicit === false ? 1 : job.maxRounds, timeLimitMinutes: job.timeLimitMinutes, deadlineAt: job.deadlineAt, startedAt: sub.startedAt || started, baselineUntracked: [], baselineUntrackedState: {} });
       await this.assertBranch(sub);
       if (!sub.committed) await loop.runTask(sub, command, { additionalRounds: !!sub.resumeRounds, manageTime: false });
       sub.resumeRounds = false;
@@ -386,7 +383,10 @@ class SplitTasks {
     await Promise.all(pending.values());
     if (!ACTIVE.has(job.state)) return;
     if (job.subtasks.some(sub => sub.state !== 'merged')) return loop.finish(job, 'needs-you', job.subtasks.filter(sub => sub.state !== 'merged').map(sub => `${sub.subtaskId}: ${sub.error || sub.unresolved.join(' ') || 'Waiting for dependencies.'}`).join('\n'));
-    await loop.runTask(job, command, { verifyFirst: !job.rounds.length, manageTime: false });
+    if (job.dispatchParallel) loop.dispatcher.checkAssignments(job);
+    const additionalRounds = job.dispatchParallel && job.resumeIntegration === true;
+    delete job.resumeIntegration;
+    await loop.runTask(job, command, { verifyFirst: job.dispatchParallel ? false : !job.rounds.length, additionalRounds, manageTime: false });
   }
 }
 

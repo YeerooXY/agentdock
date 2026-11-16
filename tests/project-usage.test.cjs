@@ -36,7 +36,7 @@ test('Codex turn usage reads real snake_case quota fields, never invents a basel
 
 test('per-turn quota records deduplicate rescans, retain known readings and persist project attribution', t => {
   const store = new MessageUsage(temporary(t));
-  const session = { id:'session', provider:'codex', providerSessionId:'chat', name:'Console', model:'Original model', projectId:'project', projectName:'My project' };
+  const session = { id:'session', consoleKey:'lead-console', provider:'codex', providerSessionId:'chat', name:'Console', model:'Original model', projectId:'project', projectName:'My project' };
   const message = { id:'turn', at:1800000000000, finishedAt:1800000010000, quota:quotaChange([window(10)],[window(11)]), usage:{input:10,output:5,total:15}, status:'completed' };
   store.record(session, [message, message]);
   store.record(session, [{ ...message, quota:[] }]);
@@ -44,6 +44,7 @@ test('per-turn quota records deduplicate rescans, retain known readings and pers
   assert.equal(store.items.length,1); assert.equal(store.items[0].quota[0].changePercent,1);
   assert.equal(store.items[0].usage.total,15,'A truncated rescan must retain the previously measured counters');
   const saved = new MessageUsage(path.dirname(store.file)).items[0];
+  assert.equal(saved.consoleKey, 'lead-console');
   assert.equal(saved.model,'Original model'); assert.equal(saved.projectId,'project'); assert.equal(saved.projectName,'My project');
 });
 

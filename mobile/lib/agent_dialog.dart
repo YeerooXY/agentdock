@@ -1,4 +1,7 @@
 import 'agent_menu.dart' show clearHintArrow;
+import 'agent_profiles.dart';
+
+export 'agent_profiles.dart' show AgentDialogProfile;
 
 /// A choice dialog drawn by a CLI: its options and the active selection.
 ///
@@ -47,19 +50,9 @@ class AgentDialog {
       '$title\n${options.map((o) => '${o.number ?? ''}${o.label}').join('\n')}';
 }
 
-/// What one CLI draws, so another provider adds an entry rather than a branch.
-class AgentDialogProfile {
-  final Set<String> selectors;
-
-  /// The CLI's start-up banner, which is never part of a dialog's question.
-  final RegExp banner;
-  const AgentDialogProfile(this.selectors, this.banner);
-}
-
-final agentDialogProfiles = <String, AgentDialogProfile>{
-  'claude': AgentDialogProfile({'❯'}, RegExp(r'Claude Code v|^[▐▛▜▝▘█▀▌ ]+$')),
-  'codex': AgentDialogProfile({'›'}, RegExp(r'^>_ OpenAI Codex')),
-};
+/// Providers whose dialogs Paddock can read, from the active screen profiles.
+Map<String, AgentDialogProfile> get agentDialogProfiles =>
+    AgentProfiles.current.dialogs;
 
 final _rule = RegExp(r'^[\s─━═╌┄┈\-_▔▁]{8,}$');
 final _numbered = RegExp(r'^(\d{1,2})[.)]\s+(.*)$');
@@ -72,8 +65,12 @@ final _scrollHint = RegExp(r'^[↑↓]\s*\d+ more');
 final _escWord = RegExp(r'\besc(ape)?\b', caseSensitive: false);
 
 /// Reads [screen] (the viewport text) for [provider]'s dialog, or null.
-AgentDialog? parseAgentDialog(String screen, String provider) {
-  final profile = agentDialogProfiles[provider];
+AgentDialog? parseAgentDialog(
+  String screen,
+  String provider, {
+  AgentProfiles? profiles,
+}) {
+  final profile = (profiles ?? AgentProfiles.current).dialogs[provider];
   if (profile == null) return null;
   final lines = screen
       .split('\n')

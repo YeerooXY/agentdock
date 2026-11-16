@@ -40,15 +40,15 @@ test('live linking uses explicit project IDs and keeps context files isolated, i
   assert.equal(custom.projectId, null); assert.match(fs.readFileSync(f.file(custom), 'utf8'), /No saved project is linked/);
   f.sessions.assignProject(plain.id, a.id); assert.equal(f.sessions.items.get(plain.id).name, a.name);
   f.sessions.assignProject(custom.id, b.id); assert.equal(f.sessions.items.get(custom.id).nameMode, 'custom');
-  assert.match(fs.readFileSync(f.file(plain), 'utf8'), /FIRST_PROJECT_GOAL/); assert.doesNotMatch(fs.readFileSync(f.file(plain), 'utf8'), /SECOND_PROJECT_GOAL/);
-  assert.match(fs.readFileSync(f.file(custom), 'utf8'), /SECOND_PROJECT_GOAL/); assert.doesNotMatch(fs.readFileSync(f.file(custom), 'utf8'), /FIRST_PROJECT_GOAL/);
+  assert.match(fs.readFileSync(f.file(plain), 'utf8'), new RegExp(a.id)); assert.doesNotMatch(fs.readFileSync(f.file(plain), 'utf8'), new RegExp(b.id));
+  assert.match(fs.readFileSync(f.file(custom), 'utf8'), new RegExp(b.id)); assert.doesNotMatch(fs.readFileSync(f.file(custom), 'utf8'), new RegExp(a.id));
   f.hub.instructions('Use concise answers.'); assert.match(fs.readFileSync(f.file(plain), 'utf8'), /Use concise answers/);
   const before = { ...f.sessions.items.get(plain.id) };
   assert.throws(() => f.sessions.assignProject(plain.id, b.id, { useProjectName: 'yes' }), /whether/); assert.deepEqual(f.sessions.items.get(plain.id), before);
   f.sessions.assignProject(plain.id, b.id, { useProjectName: true });
-  assert.match(fs.readFileSync(f.file(plain), 'utf8'), /SECOND_PROJECT_GOAL/); assert.doesNotMatch(fs.readFileSync(f.file(plain), 'utf8'), /FIRST_PROJECT_GOAL/);
+  assert.match(fs.readFileSync(f.file(plain), 'utf8'), new RegExp(b.id)); assert.doesNotMatch(fs.readFileSync(f.file(plain), 'utf8'), new RegExp(a.id));
   f.projects.remove(b.id); assert.equal(f.sessions.items.get(plain.id).projectId, null); assert.equal(f.sessions.items.get(plain.id).name, path.basename(f.folder));
-  assert.match(fs.readFileSync(f.file(plain), 'utf8'), /No saved project is linked/); assert.doesNotMatch(fs.readFileSync(f.file(plain), 'utf8'), /SECOND_PROJECT_GOAL/);
+  assert.match(fs.readFileSync(f.file(plain), 'utf8'), /No saved project is linked/); assert.doesNotMatch(fs.readFileSync(f.file(plain), 'utf8'), new RegExp(b.id));
 });
 
 test('dock_context returns the live console or API project binding and never chooses by title', async t => {
@@ -57,10 +57,10 @@ test('dock_context returns the live console or API project binding and never cho
   const api = { id: 'api:test', projectId: b.id, cwd: f.folder, name: 'API', alive: true };
   f.hub.workbench = { projects: f.projects, turns: { begin: async () => null, session: id => id === api.id ? api : f.sessions.items.get(id), active: new Map() } };
   const context = async owner => (await f.hub.invoke('dock_context', {}, owner)).content[0].text;
-  assert.match(await context(console.id), /FIRST_ONLY/); assert.doesNotMatch(await context(console.id), /SECOND_ONLY/);
-  assert.match(await context(api.id), /SECOND_ONLY/); assert.doesNotMatch(await context(api.id), /FIRST_ONLY/);
-  f.sessions.assignProject(console.id, b.id); assert.match(await context(console.id), /SECOND_ONLY/); assert.doesNotMatch(await context(console.id), /FIRST_ONLY/);
-  f.sessions.assignProject(console.id, null); assert.match(await context(console.id), /"projectId": null/); assert.doesNotMatch(await context(console.id), /FIRST_ONLY|SECOND_ONLY/);
+  assert.match(await context(console.id), new RegExp(a.id)); assert.doesNotMatch(await context(console.id), new RegExp(b.id));
+  assert.match(await context(api.id), new RegExp(b.id)); assert.doesNotMatch(await context(api.id), new RegExp(a.id));
+  f.sessions.assignProject(console.id, b.id); assert.match(await context(console.id), new RegExp(b.id)); assert.doesNotMatch(await context(console.id), new RegExp(a.id));
+  f.sessions.assignProject(console.id, null); assert.match(await context(console.id), /"projectId": null/); assert.doesNotMatch(await context(console.id), new RegExp(a.id + "|" + b.id));
 });
 
 test('workspace saves title mode and resumes the same conversation after a project rename', async t => {

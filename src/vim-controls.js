@@ -7,22 +7,44 @@ export function vimControls({ context, focusSlot, action, onError }) {
   let slot = 1, pending = '', timer, busy = false, helpOpener;
   const help = document.createElement('dialog');
   help.id = 'vim-help'; help.setAttribute('aria-labelledby', 'vim-help-title');
-  help.innerHTML = `<div class="dialog-heading"><div><h2 id="vim-help-title">Vim controls</h2><p>Move around Paddock without the mouse.</p></div><button type="button" class="icon-button" aria-label="Close keyboard help">×</button></div>
-    <p class="vim-help-intro"><kbd>Ctrl Shift Space</kbd> returns control to Paddock. <kbd>i</kbd> puts you back in the terminal.</p>
-    <dl class="vim-shortcuts">
-      <div><dt><kbd>h j k l</kbd></dt><dd>Move left, down, up, right</dd></div>
-      <div><dt><kbd>1…9</kbd></dt><dd>Select a console slot</dd></div>
-      <div><dt><kbd>Enter</kbd></dt><dd>Expand a console, or open an empty slot</dd></div>
-      <div><dt><kbd>i</kbd></dt><dd>Type in the selected console</dd></div>
-      <div><dt><kbd>n</kbd> / <kbd>N</kbd></dt><dd>New console / choose agent and model</dd></div>
-      <div><dt><kbd>r</kbd></dt><dd>Rename the selected slot</dd></div>
-      <div><dt><kbd>g g</kbd> / <kbd>G</kbd></dt><dd>First / last slot, or top / bottom of a page</dd></div>
-      <div><dt><kbd>g c</kbd> <kbd>g u</kbd> <kbd>g a</kbd></dt><dd>Consoles · Usage · API settings</dd></div>
-      <div><dt><kbd>g v</kbd> <kbd>g t</kbd> <kbd>g i</kbd></dt><dd>Keys · Tools · Instructions</dd></div>
-      <div><dt><kbd>g s</kbd></dt><dd>Settings</dd></div>
-      <div><dt><kbd>b</kbd> <kbd>f</kbd> <kbd>d</kbd></dt><dd>Navigation · Fullscreen · Dock</dd></div>
-      <div><dt><kbd>?</kbd></dt><dd>This shortcut list</dd></div>
-    </dl><p class="vim-help-note">On other pages, j/k scroll; Ctrl+d/u move half a page. Terminal keys, including Escape and Ctrl+w, keep working while you type.</p>`;
+  help.innerHTML = `<div class="vim-modal-head"><div class="vim-title-group"><h2 id="vim-help-title">Vim controls</h2><span class="vim-mode-pill">Return to Paddock <kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>Space</kbd></span></div><button type="button" class="vim-close-btn" aria-label="Close keyboard help"><span>Close</span><kbd>Esc</kbd></button></div>
+    <div class="vim-modal-body">
+      <section class="vim-group" aria-label="Console grid">
+        <div class="vim-group-head"><h3 class="vim-group-title">Console grid</h3></div>
+        <div class="vim-list">
+          <div class="vim-row"><span class="vim-desc">Move across consoles</span><span class="key-seq"><kbd>h</kbd><kbd>j</kbd><kbd>k</kbd><kbd>l</kbd></span></div>
+          <div class="vim-row"><span class="vim-desc">Select console 1 to 9</span><span class="key-seq"><kbd>1</kbd><span class="key-sep">to</span><kbd>9</kbd></span></div>
+          <div class="vim-row"><span class="vim-desc">First or last console</span><span class="key-seq"><kbd>g</kbd><kbd>g</kbd><span class="key-sep">/</span><kbd>G</kbd></span></div>
+          <div class="vim-row"><span class="vim-desc">Expand or open console</span><span class="key-seq"><kbd>Enter</kbd></span></div>
+          <div class="vim-row"><span class="vim-desc">Type in console</span><span class="key-seq"><kbd>i</kbd></span></div>
+          <div class="vim-row"><span class="vim-desc">New console</span><span class="key-seq"><kbd>n</kbd></span></div>
+          <div class="vim-row"><span class="vim-desc">Choose agent and model</span><span class="key-seq"><kbd>N</kbd></span></div>
+          <div class="vim-row"><span class="vim-desc">Rename console</span><span class="key-seq"><kbd>r</kbd></span></div>
+        </div>
+      </section>
+      <section class="vim-group" aria-label="Go to page">
+        <div class="vim-group-head"><h3 class="vim-group-title">Go to page</h3></div>
+        <div class="vim-list">
+          <div class="vim-row"><span class="vim-desc">Consoles</span><span class="key-seq"><kbd>g</kbd><kbd>c</kbd></span></div>
+          <div class="vim-row"><span class="vim-desc">Usage</span><span class="key-seq"><kbd>g</kbd><kbd>u</kbd></span></div>
+          <div class="vim-row"><span class="vim-desc">Models and keys</span><span class="key-seq"><kbd>g</kbd><kbd>a</kbd></span></div>
+          <div class="vim-row"><span class="vim-desc">Tools</span><span class="key-seq"><kbd>g</kbd><kbd>t</kbd></span></div>
+          <div class="vim-row"><span class="vim-desc">Instructions</span><span class="key-seq"><kbd>g</kbd><kbd>i</kbd></span></div>
+          <div class="vim-row"><span class="vim-desc">Settings</span><span class="key-seq"><kbd>g</kbd><kbd>s</kbd></span></div>
+        </div>
+      </section>
+      <section class="vim-group full-span" aria-label="Window and scrolling">
+        <div class="vim-group-head"><h3 class="vim-group-title">Window and scrolling</h3></div>
+        <div class="vim-list two-col">
+          <div class="vim-row"><span class="vim-desc">Scroll page down or up</span><span class="key-seq"><kbd>j</kbd><span class="key-sep">/</span><kbd>k</kbd></span></div>
+          <div class="vim-row"><span class="vim-desc">Half page down or up</span><span class="key-seq"><kbd>Ctrl</kbd><kbd>d</kbd><span class="key-sep">/</span><kbd>u</kbd></span></div>
+          <div class="vim-row"><span class="vim-desc">Top or bottom of page</span><span class="key-seq"><kbd>g</kbd><kbd>g</kbd><span class="key-sep">/</span><kbd>G</kbd></span></div>
+          <div class="vim-row"><span class="vim-desc">Focus navigation</span><span class="key-seq"><kbd>b</kbd></span></div>
+          <div class="vim-row"><span class="vim-desc">Fullscreen</span><span class="key-seq"><kbd>f</kbd></span></div>
+          <div class="vim-row"><span class="vim-desc">Shortcut list</span><span class="key-seq"><kbd>?</kbd></span></div>
+        </div>
+      </section>
+    </div>`;
   document.querySelector('#app').append(help);
   help.querySelector('button').addEventListener('click', () => help.close());
   help.addEventListener('close', () => { if (helpOpener?.isConnected) helpOpener.focus({ preventScroll: true }); else focusSlot(slot); refresh(); });
@@ -36,11 +58,11 @@ export function vimControls({ context, focusSlot, action, onError }) {
     document.body.dataset.vimSlot = String(slot);
     for (const button of document.querySelectorAll('[data-action="vim-normal"]')) {
       button.hidden = !enabled;
-      button.textContent = normal ? `NORMAL · ${pending || String(slot).padStart(2, '0')}` : 'INSERT';
-      button.title = normal ? 'Dock controls · ? for shortcuts' : 'Return to Paddock controls · Ctrl+Shift+Space';
+      button.textContent = normal ? `NORMAL ${pending || String(slot).padStart(2, '0')}` : 'INSERT';
+      button.title = normal ? 'Dock controls (? for shortcuts)' : 'Return to Paddock controls (Ctrl+Shift+Space)';
       button.setAttribute('aria-label', normal ? `Dock controls, console ${slot}. Press ? for shortcuts.` : 'Return to Paddock controls (Ctrl+Shift+Space)');
     }
-    for (const panel of document.querySelectorAll('.session-card, .hud-slot')) {
+    for (const panel of document.querySelectorAll('.session-card')) {
       panel.classList.toggle('vim-selected', normal && Number(panel.dataset.slot) === slot);
     }
   }
@@ -87,7 +109,7 @@ export function vimControls({ context, focusSlot, action, onError }) {
     }
     // Capture only Paddock navigation. An embedded editor owns all its own keys.
     if (editing(event.target) || busy || current.busy) return;
-    const grid = ['consoles', 'overview', 'terminal', 'hud'].includes(current.view);
+    const grid = ['consoles', 'overview', 'terminal'].includes(current.view);
     if (event.ctrlKey && !event.shiftKey && !event.altKey && !event.metaKey && !grid && ['d', 'u'].includes(event.key)) {
       consume(); clearPending(); scroll(event.key === 'd' ? 1 : -1, true); refresh(); return;
     }
@@ -117,14 +139,14 @@ export function vimControls({ context, focusSlot, action, onError }) {
       const otherControl = event.target.closest('button, a, summary');
       if (!grid || otherControl) return;
       consume(); if (!event.repeat) run('open');
-    } else if (['i', 'r', 'n', 'N', 'b', 'f', 'd'].includes(key)) {
+    } else if (['i', 'r', 'n', 'N', 'b', 'f'].includes(key)) {
       consume(); if (event.repeat) return;
       if (key === 'n' || key === 'N') {
         const { columns, rows } = current.grid || { columns: 3, rows: 3 };
         const occupied = current.sessions.filter(x => x.alive || x.restoreError).flatMap(x => Array.from({ length: x.height || 1 }, (_, y) => Array.from({ length: x.width || 1 }, (_, dx) => x.slot + y * columns + dx)).flat());
         const empty = !occupied.includes(slot) ? slot : Array.from({ length: columns * rows }, (_, i) => i + 1).find(x => !occupied.includes(x));
         if (empty) select(empty); run(key === 'n' ? 'new' : 'choose', empty || 0);
-      } else run({ i: 'type', r: 'rename', b: 'navigation', f: 'fullscreen', d: 'dock' }[key]);
+      } else run({ i: 'type', r: 'rename', b: 'navigation', f: 'fullscreen' }[key]);
     }
   }, true);
   return { refresh, enterNormal, showHelp, get slot() { return slot; } };

@@ -17,7 +17,7 @@ async function checkToolsAndWindow({ app, page, invoke, eventually, capture, dat
   assert.match(require('../electron/website-guide.cjs').websiteGuide('checklist').content, /Data deletion requests/);
   await page.locator('#shared-instructions').fill(original);
   await capture('test-working-guides.png');
-  await openPage(page, 'tools');
+  await openPage(page, 'add-tools');
   assert.equal(await page.locator('.integrations [data-integration]').count(), 6, 'Blender, Unity, Meshy, REA, MiroFish and Upscayl');
   assert.match(await page.locator('[data-integration=upscayl]').textContent(), /Vulkan GPU/);
   assert.equal(await page.locator('[name=projectPath]').inputValue(), '');
@@ -33,7 +33,10 @@ async function checkToolsAndWindow({ app, page, invoke, eventually, capture, dat
   await page.locator('[data-integration-setup=meshy]').click();
   await eventually(async () => (await invoke('state')).shared.connections.some(x => x.integration === 'meshy'));
   assert.ok(!JSON.stringify(await invoke('state')).includes('TEST_ONLY_MESHY_KEY'));
+  await eventually(() => page.evaluate(() => document.activeElement !== document.body && !document.querySelector('[data-integration=meshy]')), 'Connecting a tool must preserve keyboard focus');
   assert.equal(await page.locator('#tool-form [name=name]').inputValue(), 'Unfinished custom tool');
+  assert.equal(await page.locator('[name=projectPath]').inputValue(), dataDir);
+  await openPage(page, 'tools');
   await page.locator('[data-browse-tool=meshy]').click({ timeout: 10000 }).catch(async error => {
     // CI logs are only readable as annotations, so name what the page shows instead.
     const connection = (await invoke('state')).shared.connections.find(x => x.integration === 'meshy');
@@ -67,15 +70,17 @@ async function checkToolsAndWindow({ app, page, invoke, eventually, capture, dat
   await invoke('mode', 'fullscreen'); await drag('.window-drag-handle');
   assert.equal((await invoke('state')).mode, 'dashboard');
   assert.equal(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isFullScreen()), false);
-  await invoke('mode', 'hud'); await drag('.hud-brand');
-  const hudBounds = await bounds();
-  await page.locator('#hud [data-action=tray]').click();
+  const dashboardBounds = await bounds();
+  await invoke('mode', 'fullscreen');
+  await invoke('mode', 'dashboard');
+  assert.deepEqual(await bounds(), dashboardBounds);
+  // macOS uses its own window buttons, so Paddock hides the tray button there.
+  if (process.platform === 'darwin') await invoke('tray'); else await page.locator('#dashboard [data-action=tray]').click();
   await eventually(async () => (await invoke('state')).trayHidden);
   await eventually(async () => !await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isVisible()), 'Tray hides the native window');
   assert.equal(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isMinimized()), false);
-  await invoke('show'); assert.deepEqual(await bounds(), hudBounds);
+  await invoke('show'); assert.deepEqual(await bounds(), dashboardBounds);
   await invoke('mode', 'fullscreen');
-  // macOS uses its own window buttons, so Paddock hides the tray button there.
   if (process.platform === 'darwin') await invoke('tray'); else await page.locator('#dashboard [data-action=tray]').click();
   await invoke('show');
   assert.equal(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isFullScreen()), true);

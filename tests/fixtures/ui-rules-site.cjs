@@ -30,11 +30,12 @@ body { margin: 0; font: 16px/1.5 system-ui, sans-serif; background: var(--bg); c
 header { ${bad ? 'position: fixed; top: 0; left: 0; right: 0; height: 140px;' : 'position: sticky; top: 0; height: 56px;'} display: flex; align-items: center; gap: 16px; padding: 0 16px; background: var(--surface); border-bottom: 1px solid var(--line); z-index: 2; }
 .checkout-bar { ${bad ? 'position: fixed; bottom: 0; left: 0; right: 0; height: 160px; background: var(--surface); border-top: 1px solid var(--line);' : 'display: none;'} }
 nav a { color: var(--ink); text-decoration: none; }
+${bad ? '' : 'nav { display: flex; gap: 16px; } .signup { display: flex; gap: 8px; } .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }'}
 a.more { color: var(--accent); }
 ${bad ? '' : 'button, label, nav, header, .tabs { -webkit-user-select: none; user-select: none; }'}
 a, button, input, select, textarea, summary, dialog, [role=tooltip] { ${bad ? '' : 'transition: background-color .15s ease-out, color .15s ease-out, opacity .2s ease-out, transform .15s ease-out;'} }
 ${bad ? 'button:focus, a:focus { outline: 2px solid var(--accent); }\na.more { outline: none; }' : ':focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }'}
-button { display: inline-flex; align-items: center; gap: 8px; font: 600 15px system-ui, sans-serif; padding: 10px 16px; border: 0; border-radius: 999px; background: var(--accent); color: white; cursor: pointer; }
+button { display: inline-flex; align-items: center; gap: 8px; ${bad ? '' : 'min-height: 40px;'} font: 600 15px system-ui, sans-serif; padding: 10px 16px; border: 0; border-radius: 999px; background: var(--accent); color: white; cursor: pointer; }
 button:hover { background: color-mix(in oklch, var(--accent), black 10%); }
 .hero { min-height: 100vh; ${bad ? '' : 'min-height: 100dvh;'} display: grid; place-items: center; padding: ${bad ? '160px' : '40px'} 24px; background: ${bad ? 'linear-gradient(90deg, blue, orange)' : 'linear-gradient(90deg in oklch, blue, orange)'}; color: white; }
 .hero h1 { font-size: 40px; margin: 0; animation: rise .6s ease-out both; }
@@ -70,8 +71,7 @@ function html(bad) {
 <main id="shop">
   <section class="panel"><article class="card"><div class="frame"><img src="product.png" alt="Loma One headphones"></div>
     <h2>Loma One</h2><p class="fine">Ships in 2 days. Free returns for 30 days.</p>
-    <button type="button">${icon(bad ? 1 : 2.4)}Add to bag</button> ${toggle}
-    <a class="more" href="#care">Care guide</a></article></section>
+    <div class="actions"><button type="button">${icon(bad ? 1 : 2.4)}Add to bag</button> ${toggle}<a class="more" href="#care">Care guide</a></div></article></section>
   <div class="choices"><label class="choice"><strong>Pickup</strong><small>Today</small></label><label class="choice${bad ? ' stacked' : ''}"><strong>Delivery</strong><small>Tomorrow</small></label></div>
   <form class="signup"><input id="email" type="email" placeholder="Email" aria-label="Email"> <input id="search" type="search" placeholder="Search" aria-label="Search"></form>
   <div class="rail" aria-label="More products">${Array.from({ length: 6 }, (_, i) => `<div class="item">Model ${i + 1}</div>`).join('')}</div>

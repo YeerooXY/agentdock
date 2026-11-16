@@ -9,13 +9,13 @@
 // CLI fails with `not-isolated` rather than showing the default account's numbers.
 const path = require('node:path');
 const { UsageError, usageEnvironment, readClaudeUsage, readCopilotUsage, readKiroUsage, readKimiUsage, readOpenCodeUsage, copilotExecutable } = require('./subscription-usage.cjs');
-const { readAntigravityUsage } = require('./antigravity-usage.cjs');
+const { readAntigravityUsage, readAntigravityModels } = require('./antigravity-usage.cjs');
 const { readCursorUsage } = require('./cursor-usage.cjs');
 const { readPiUsage } = require('./pi-usage.cjs');
 const { usageSource, usageProviders } = require('./providers/index.cjs');
 
 function buildUsageReaders({ executable, accounts, usageDirectory, getOpenCodeKey = () => null, codex, credentialSwitch = null, env = process.env, impl = {} }) {
-  const read = { readClaudeUsage, readCopilotUsage, readKiroUsage, readKimiUsage, readOpenCodeUsage, readAntigravityUsage, readCursorUsage, readPiUsage, ...impl };
+  const read = { readClaudeUsage, readCopilotUsage, readKiroUsage, readKimiUsage, readOpenCodeUsage, readAntigravityUsage, readAntigravityModels, readCursorUsage, readPiUsage, ...impl };
   const common = (choice, provider) => {
     if (choice.provider !== provider) throw new UsageError('unavailable', 'This account belongs to a different provider.');
     // Reject before building an environment: no other account's data may be read.
@@ -41,7 +41,17 @@ function buildUsageReaders({ executable, accounts, usageDirectory, getOpenCodeKe
   const sync = {
     codex: choice => codex(choice),
     claude: choice => read.readClaudeUsage({ executable: executable('claude'), cwd: usageDirectory, ...common(choice, 'claude') }),
-    antigravity: choice => switched(choice, 'antigravity', () => read.readAntigravityUsage({ executable: executable('antigravity'), cwd: usageDirectory, ...common(choice, 'antigravity') })),
+    antigravity: choice => switched(choice, 'antigravity', async () => {
+      const options = { executable: executable('antigravity'), cwd: usageDirectory, ...common(choice, 'antigravity') };
+      const readings = await read.readAntigravityUsage(options);
+      // Keep model discovery inside the same account lease as its quota reading.
+      try {
+        const models = await read.readAntigravityModels(options);
+        return readings.map(reading => ({ ...reading, models }));
+      } catch {
+        return readings.map(reading => ({ ...reading, models: [], modelMessage: 'Model discovery failed. Refresh usage to retry; quota remains available.' }));
+      }
+    }),
     copilot: choice => read.readCopilotUsage({ executable: copilotExecutable(executable('copilot')), cwd: usageDirectory, ...common(choice, 'copilot') }),
     cursor: choice => read.readCursorUsage({ executable: executable('cursor'), cwd: usageDirectory, ...common(choice, 'cursor') }),
     pi: choice => {

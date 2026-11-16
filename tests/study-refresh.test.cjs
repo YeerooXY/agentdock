@@ -97,7 +97,7 @@ test('light refresh preserves fresh, paused, stale, inactive and expired timer s
 
 test('unlinked lightweight reads create no turn, Git capture, completion, project touch or shared instructions', async t => {
   const f = fixture(t), wb = new Workbench(f.root, {}, { nativeImage: {} }, { getSessions: () => ({ items: new Map([[f.session.id, f.session]]) }), getProject: () => f.folder, onChange() {} });
-  wb.turns = new Turns(wb.results, { getSession: () => f.session });
+  wb.turns = new Turns({ getSession: () => f.session });
   wb.projects = { touch: () => assert.fail('Read-only refresh touched a project') };
   const hub = new SharedHub(f.root, { list: () => [] }, { workbench: wb }); t.after(() => hub.close());
   hub.studyRefresh = (session, options) => f.refresh(options, session);
@@ -106,7 +106,7 @@ test('unlinked lightweight reads create no turn, Git capture, completion, projec
   const compact = (await call({ sinceReflectionRevision: first.reflections.revision })).content[0].text;
   assert.equal(first.courseId, 'cpp'); assert.equal(first.projectId, null);
   assert.equal(wb.turns.active.size, 0); assert.equal(wb.turns.latest.size, 0); assert.equal(wb.turns.queues.size, 0);
-  assert.equal(fs.existsSync(wb.completion.dir), false);
+  assert.equal(fs.existsSync(path.join(f.root, 'turn-completions')), false);
   assert.doesNotMatch(compact, /Paddock shared instructions|Private functions|Current turnId/);
   assert.ok(compact.length < 650, compact.length);
   await assert.rejects(call({ sinceReflectionRevision: 'invalid' }), /sinceReflectionRevision/);
@@ -123,7 +123,7 @@ test('startup context and tool schema describe the same study cadence and revisi
   const f = fixture(t), text = studyContext(f.session, { semesterRoot: f.semesterRoot, now: NOW });
   const startup = JSON.parse(text.split('```json\n')[1].split('\n```')[0]);
   assert.equal(startup.reflections.revision, f.refresh().reflections.revision);
-  assert.match(text, /Ordinary answers need no context call/);
+  assert.doesNotMatch(text, /finish_turn|Completion check required/);
   assert.doesNotMatch(text, /start of every study turn/);
   const schema = DOCK_TOOLS.find(tool => tool.name === 'dock_context').inputSchema;
   assert.ok(schema.properties.detail.enum.includes('study'));
@@ -133,7 +133,7 @@ test('startup context and tool schema describe the same study cadence and revisi
 test('task snapshots separate stable course instructions from real timer and WAL reflection changes', t => {
   const f = fixture(t), options = { semesterRoot: f.semesterRoot, now: NOW };
   const first = studyContextSnapshot(f.session, options);
-  assert.match(first.instructions, /Ordinary answers need no context call/);
+  assert.doesNotMatch(first.instructions, /finish_turn|Completion check required/);
   assert.doesNotMatch(first.instructions, /Private functions|"remainingMs"|"observedAt"/);
   assert.equal(first.state.reflections.recent[0].text, 'Private functions');
   assert.equal(first.state.timer.remainingMs, 240000);

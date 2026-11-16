@@ -14,6 +14,10 @@ const eventFile = kind => path.join(root, 'events', `${session}.${launchId}.${ki
 async function accept(raw) {
   try {
     const input = JSON.parse(raw || '{}');
+    if (mode === 'PermissionRequest') {
+      const decision = require('./documentation-permissions.cjs').documentationPermission(input);
+      if (decision) { process.stdout.write(JSON.stringify(decision)); return; }
+    }
     if (mode === 'antigravity-session') {
       // This global vendor hook is inert outside a Paddock Antigravity launch.
       // Keep identity only; never ingest its transcript, prompt or tool data.
@@ -41,7 +45,7 @@ async function accept(raw) {
       const u = input.context_window;
       if (u && Number.isFinite(u.total_input_tokens) && Number.isFinite(u.total_output_tokens)) event.usage = { input: u.total_input_tokens, output: u.total_output_tokens, total: u.total_input_tokens + u.total_output_tokens };
       atomicJson(eventFile('usage'), event);
-      process.stdout.write(`Paddock | ${event.model || 'Claude'}${event.contextPercent === null ? '' : ` | context ${Math.round(event.contextPercent)}%`}`);
+      process.stdout.write(`Paddock | ${event.model || 'Claude'}${event.effort ? `, ${event.effort}` : ''}${event.contextPercent === null ? '' : ` | context ${Math.round(event.contextPercent)}%`}`);
     } else {
       const name = input.hook_event_name || mode;
       const statuses = { 'codex-notify': 'ready', SessionStart: 'open', Stop: 'ready', UserPromptSubmit: 'active', PermissionRequest: 'attention', Notification: 'attention', StopFailure: 'error', SessionEnd: 'ended' };
@@ -70,37 +74,6 @@ async function accept(raw) {
             event.messageUsage = { ...message, finishedAt: event.at, quota: matches ? quotaChange(before.windows, after.limits?.windows) : [], status: name === 'StopFailure' ? 'failed' : 'completed' };
           }
         } catch {}
-      }
-      // Normal work awaits its baseline. Study conversation callbacks leave work
-      // tracking to an explicit context/start call. No prompts or answers cross this bridge.
-      const tool = ['active', 'ready'].includes(event.state) ? 'dock/agent_response' : ['error', 'ended'].includes(event.state) ? 'dock/finish_turn' : null;
-      let completionPassed = event.state !== 'ready';
-      if (tool && process.env.PADDOCK_BRIDGE_URL && process.env.PADDOCK_BRIDGE_TOKEN) {
-        try {
-          const invoke = async (name, args) => {
-            const response = await fetch(process.env.PADDOCK_BRIDGE_URL, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + process.env.PADDOCK_BRIDGE_TOKEN }, body: JSON.stringify({ name: 'dock_call', arguments: { tool: name, arguments: args } }), signal: AbortSignal.timeout(12000) });
-            return response.ok ? response.json() : null;
-          };
-          let result = await invoke(tool, ['error', 'ended'].includes(event.state) ? { interrupted: true } : { event: event.state === 'active' ? 'start' : 'complete' });
-          // Development consoles run this helper from source. Preserve their
-          // existing completion contract until the running host is updated too.
-          if (tool === 'dock/agent_response' && result?.isError && result.content?.some(x => x.type === 'text' && /^Unknown Paddock tool\./.test(x.text))) {
-            result = await invoke(event.state === 'active' ? 'dock/start_turn' : 'dock/finish_turn', {});
-          }
-          if (result && event.state !== 'active') {
-            const value = !result.isError && JSON.parse(result.content?.find(x => x.type === 'text')?.text || '{}');
-            completionPassed = value?.completion === 'recorded';
-            if (/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(value?.turnId || '')) event.turnId = value.turnId;
-            if (event.state === 'ready' && value?.completion === 'study-continuation') {
-              event.state = 'open'; event.studyContinuation = true; event.turnId = value.turnId || null;
-              delete event.summary;
-            }
-          }
-        } catch {}
-      }
-      if (event.state === 'ready' && !completionPassed) {
-        event.state = 'attention'; event.summary = 'Completion check missing. Call dock/finish_turn with the current outcome, next step and saved outputs.';
-        if (name === 'Stop' && !input.stop_hook_active) process.stdout.write(JSON.stringify({ decision: 'block', reason: event.summary }));
       }
       if (event.state) atomicJson(eventFile('state'), event);
     }

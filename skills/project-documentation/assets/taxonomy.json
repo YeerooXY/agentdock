@@ -1,0 +1,966 @@
+{
+  "schemaVersion": 1,
+  "taxonomyVersion": 1,
+  "entries": [
+    {
+      "id": "cat_0",
+      "address": "0",
+      "title": "Application overview",
+      "parentId": null,
+      "extensible": false,
+      "status": "uninspected"
+    },
+    {
+      "id": "group_0_1",
+      "address": "0.1",
+      "title": "Purpose and scope",
+      "parentId": "cat_0",
+      "extensible": true,
+      "status": "uninspected"
+    },
+    {
+      "id": "topic_0_1_1",
+      "address": "0.1.1",
+      "title": "Application purpose",
+      "parentId": "group_0_1",
+      "extensible": false,
+      "status": "uninspected"
+    },
+    {
+      "id": "topic_0_1_2",
+      "address": "0.1.2",
+      "title": "Users and platforms",
+      "parentId": "group_0_1",
+      "extensible": false,
+      "status": "uninspected"
+    },
+    {
+      "id": "topic_0_1_3",
+      "address": "0.1.3",
+      "title": "Scope and limitations",
+      "parentId": "group_0_1",
+      "extensible": false,
+      "status": "uninspected"
+    },
+    {
+      "id": "group_0_2",
+      "address": "0.2",
+      "title": "System map",
+      "parentId": "cat_0",
+      "extensible": true,
+      "status": "uninspected"
+    },
+    {
+      "id": "topic_0_2_1",
+      "address": "0.2.1",
+      "title": "Entry points and repository layout",
+      "parentId": "group_0_2",
+      "extensible": false,
+      "status": "uninspected"
+    },
+    {
+      "id": "topic_0_2_2",
+      "address": "0.2.2",
+      "title": "Components and connections",
+      "parentId": "group_0_2",
+      "extensible": false,
+      "status": "uninspected"
+    },
+    {
+      "id": "topic_0_2_3",
+      "address": "0.2.3",
+      "title": "External dependencies",
+      "parentId": "group_0_2",
+      "extensible": false,
+      "status": "uninspected"
+    },
+    {
+      "id": "group_0_3",
+      "address": "0.3",
+      "title": "Project direction",
+      "parentId": "cat_0",
+      "extensible": true,
+      "status": "uninspected"
+    },
+    {
+      "id": "topic_0_3_1",
+      "address": "0.3.1",
+      "title": "Owner goals",
+      "parentId": "group_0_3",
+      "extensible": false,
+      "status": "uninspected"
+    },
+    {
+      "id": "topic_0_3_2",
+      "address": "0.3.2",
+      "title": "Approved decisions",
+      "parentId": "group_0_3",
+      "extensible": false,
+      "status": "uninspected"
+    },
+    {
+      "id": "topic_0_3_3",
+      "address": "0.3.3",
+      "title": "Planned work",
+      "parentId": "group_0_3",
+      "extensible": false,
+      "status": "uninspected"
+    },
+    {
+      "id": "cat_1",
+      "address": "1",
+      "title": "Backend and core logic",
+      "parentId": null,
+      "extensible": false,
+      "status": "uninspected"
+    },
+    {
+      "id": "group_1_1",
+      "address": "1.1",
+      "title": "Application lifecycle",
+      "parentId": "cat_1",
+      "extensible": true,
+      "status": "uninspected"
+    },
+    {
+      "id": "topic_1_1_1",
+      "address": "1.1.1",
+      "title": "Startup and initialization",
+      "parentId": "group_1_1",
+      "extensible": false,
+      "status": "uninspected"
+    },
+    {
+      "id": "topic_1_1_2",
+      "address": "1.1.2",
+      "title": "Runtime coordination",
+      "parentId": "group_1_1",
+      "extensible": false,
+      "status": "uninspected"
+    },
+    {
+      "id": "topic_1_1_3",
+      "address": "1.1.3",
+      "title": "Shutdown and recovery",
+      "parentId": "group_1_1",
+      "extensible": false,
+      "status": "uninspected"
+    },
+    {
+      "id": "group_1_2",
+      "address": "1.2",
+      "title": "Domain systems",
+      "parentId": "cat_1",
+      "extensible": true,
+      "status": "uninspected"
+    },
+    {
+      "id": "group_1_3",
+      "address": "1.3",
+      "title": "Execution and concurrency",
+      "parentId": "cat_1",
+      "extensible": true,
+      "status": "uninspected"
+    },
+    {
+      "id": "topic_1_3_1",
+      "address": "1.3.1",
+      "title": "Jobs queues and scheduling",
+      "parentId": "group_1_3",
+      "extensible": false,
+      "status": "uninspected"
+    },
+    {
+      "id": "topic_1_3_2",
+      "address": "1.3.2",
+      "title": "Workers and resource ownership",
+      "parentId": "group_1_3",
+      "extensible": false,
+      "status": "uninspected"
+    },
+    {
+      "id": "topic_1_3_3",
+      "address": "1.3.3",
+      "title": "Cancellation retries and timeouts",
+      "parentId": "group_1_3",
+      "extensible": false,
+      "status": "uninspected"
+    },
+    {
+      "id": "topic_1_3_4",
+      "address": "1.3.4",
+      "title": "Locks isolation and coordination",
+      "parentId": "group_1_3",
+      "extensible": false,
+      "status": "uninspected"
+    },
+    {
+      "id": "group_1_4",
+      "address": "1.4",
+      "title": "Interfaces and integrations",
+      "parentId": "cat_1",
+      "extensible": true,
+      "status": "uninspected"
+    },
+    {
+      "id": "topic_1_4_1",
+      "address": "1.4.1",
+      "title": "API and command handlers",
+      "parentId": "group_1_4",
+      "extensible": false,
+      "status": "uninspected"
+    },
+    {
+      "id": "topic_1_4_2",
+      "address": "1.4.2",
+      "title": "Messages events and protocols",
+      "parentId": "group_1_4",
+      "extensible": false,
+      "status": "uninspected"
+    },
+    {
+      "id": "topic_1_4_3",
+      "address": "1.4.3",
+      "title": "External service adapters",
+      "parentId": "group_1_4",
+      "extensible": false,
+      "status": "uninspected"
+    },
+    {
+      "id": "topic_1_4_4",
+      "address": "1.4.4",
+      "title": "Extensions plugins and tools",
+      "parentId": "group_1_4",
+      "extensible": false,
+      "status": "uninspected"
+    },
+    {
+      "id": "group_1_5",
+      "address": "1.5",
+      "title": "Access and trust",
+      "parentId": "cat_1",
+      "extensible": true,
+      "status": "uninspected"
+    },
+    {
+      "id": "topic_1_5_1",
+      "address": "1.5.1",
+      "title": "Identity and authentication",
+      "parentId": "group_1_5",
+      "extensible": false,
+      "status": "uninspected"
+    },
+    {
+      "id": "topic_1_5_2",
+      "address": "1.5.2",
+      "title": "Permissions and authorization",
+      "parentId": "group_1_5",
+      "extensible": false,
+      "status": "uninspected"
+    },
+    {
+      "id": "topic_1_5_3",
+      "address": "1.5.3",
+      "title": "Credentials and trust boundaries",
+      "parentId": "group_1_5",
+      "extensible": false,
+      "status": "uninspected"
+    },
+    {
+      "id": "cat_2",
+      "address": "2",
+      "title": "Frontend and interaction",
+      "parentId": null,
+      "extensible": false,
+      "status": "uninspected"
+    },
+    {
+      "id": "group_2_1",
+      "address": "2.1",
+      "title": "Interface structure",
+      "parentId": "cat_2",
+      "extensible": true,
+      "status": "uninspected"
+    },
+    {
+      "id": "topic_2_1_1",
+      "address": "2.1.1",
+      "title": "Screens routes and navigation",
+      "parentId": "group_2_1",
+      "extensible": false,
+      "status": "uninspected"
+    },
+    {
+      "id": "topic_2_1_2",
+      "address": "2.1.2",
+      "title": "Layouts and shared components",
+      "parentId": "group_2_1",
+      "extensible": false,
+      "status": "uninspected"
+    },
+    {
+      "id": "topic_2_1_3",
+      "address": "2.1.3",
+      "title": "Platform specific interfaces",
+      "parentId": "group_2_1",
+      "extensible": false,
+      "status": "uninspected"
+    },
+    {
+      "id": "group_2_2",
+      "address": "2.2",
+      "title": "User actions",
+      "parentId": "cat_2",
+      "extensible": true,
+      "status": "uninspected"
+    },
+    {
+      "id": "topic_2_2_1",
+      "address": "2.2.1",
+      "title": "Forms commands and validation",
+      "parentId": "group_2_2",
+      "extensible": false,
+      "status": "uninspected"
+    },
+    {
+      "id": "topic_2_2_2",
+      "address": "2.2.2",
+      "title": "Selection editing and bulk actions",
+      "parentId": "group_2_2",
+      "extensible": false,
+      "status": "uninspected"
+    },
+    {
+      "id": "topic_2_2_3",
+      "address": "2.2.3",
+      "title": "Files attachments and imports",
+      "parentId": "group_2_2",
+      "extensible": false,
+      "status": "uninspected"
+    },
+    {
+      "id": "group_2_3",
+      "address": "2.3",
+      "title": "Interface state",
+      "parentId": "cat_2",
+      "extensible": true,
+      "status": "uninspected"
+    },
+    {
+      "id": "topic_2_3_1",
+      "address": "2.3.1",
+      "title": "Local and shared state",
+      "parentId": "group_2_3",
+      "extensible": false,
+      "status": "uninspected"
+    },
+    {
+      "id": "topic_2_3_2",
+      "address": "2.3.2",
+      "title": "Synchronization and subscriptions",
+      "parentId": "group_2_3",
+      "extensible": false,
+      "status": "uninspected"
+    },
+    {
+      "id": "topic_2_3_3",
+      "address": "2.3.3",
+      "title": "Loading empty error and recovery states",
+      "parentId": "group_2_3",
+      "extensible": false,
+      "status": "uninspected"
+    },
+    {
+      "id": "group_2_4",
+      "address": "2.4",
+      "title": "Input and accessibility",
+      "parentId": "cat_2",
+      "extensible": true,
+      "status": "uninspected"
+    },
+    {
+      "id": "topic_2_4_1",
+      "address": "2.4.1",
+      "title": "Keyboard navigation and focus",
+      "parentId": "group_2_4",
+      "extensible": false,
+      "status": "uninspected"
+    },
+    {
+      "id": "topic_2_4_2",
+      "address": "2.4.2",
+      "title": "Pointer touch and other input",
+      "parentId": "group_2_4",
+      "extensible": false,
+      "status": "uninspected"
+    },
+    {
+      "id": "topic_2_4_3",
+      "address": "2.4.3",
+      "title": "Accessible names announcements and preferences",
+      "parentId": "group_2_4",
+      "extensible": false,
+      "status": "uninspected"
+    },
+    {
+      "id": "cat_3",
+      "address": "3",
+      "title": "Style and presentation",
+      "parentId": null,
+      "extensible": false,
+      "status": "uninspected"
+    },
+    {
+      "id": "group_3_1",
+      "address": "3.1",
+      "title": "Design foundations",
+      "parentId": "cat_3",
+      "extensible": true,
+      "status": "uninspected"
+    },
+    {
+      "id": "topic_3_1_1",
+      "address": "3.1.1",
+      "title": "Color and themes",
+      "parentId": "group_3_1",
+      "extensible": false,
+      "status": "uninspected"
+    },
+    {
+      "id": "topic_3_1_2",
+      "address": "3.1.2",
+      "title": "Typography and icons",
+      "parentId": "group_3_1",
+      "extensible": false,
+      "status": "uninspected"
+    },
+    {
+      "id": "topic_3_1_3",
+      "address": "3.1.3",
+      "title": "Spacing sizing and layout",
+      "parentId": "group_3_1",
+      "extensible": false,
+      "status": "uninspected"
+    },
+    {
+      "id": "group_3_2",
+      "address": "3.2",
+      "title": "Visual behavior",
+      "parentId": "cat_3",
+      "extensible": true,
+      "status": "uninspected"
+    },
+    {
+      "id": "topic_3_2_1",
+      "address": "3.2.1",
+      "title": "Responsive layouts",
+      "parentId": "group_3_2",
+      "extensible": false,
+      "status": "uninspected"
+    },
+    {
+      "id": "topic_3_2_2",
+      "address": "3.2.2",
+      "title": "Component appearance and states",
+      "parentId": "group_3_2",
+      "extensible": false,
+      "status": "uninspected"
+    },
+    {
+      "id": "topic_3_2_3",
+      "address": "3.2.3",
+      "title": "Motion and transitions",
+      "parentId": "group_3_2",
+      "extensible": false,
+      "status": "uninspected"
+    },
+    {
+      "id": "group_3_3",
+      "address": "3.3",
+      "title": "Presentation assets",
+      "parentId": "cat_3",
+      "extensible": true,
+      "status": "uninspected"
+    },
+    {
+      "id": "topic_3_3_1",
+      "address": "3.3.1",
+      "title": "Images illustrations and fonts",
+      "parentId": "group_3_3",
+      "extensible": false,
+      "status": "uninspected"
+    },
+    {
+      "id": "topic_3_3_2",
+      "address": "3.3.2",
+      "title": "Audio video and rendered scenes",
+      "parentId": "group_3_3",
+      "extensible": false,
+      "status": "uninspected"
+    },
+    {
+      "id": "topic_3_3_3",
+      "address": "3.3.3",
+      "title": "Asset processing and attribution",
+      "parentId": "group_3_3",
+      "extensible": false,
+      "status": "uninspected"
+    },
+    {
+      "id": "cat_4",
+      "address": "4",
+      "title": "Data and content",
+      "parentId": null,
+      "extensible": false,
+      "status": "uninspected"
+    },
+    {
+      "id": "group_4_1",
+      "address": "4.1",
+      "title": "Data model",
+      "parentId": "cat_4",
+      "extensible": true,
+      "status": "uninspected"
+    },
+    {
+      "id": "topic_4_1_1",
+      "address": "4.1.1",
+      "title": "Entities schemas and relationships",
+      "parentId": "group_4_1",
+      "extensible": false,
+      "status": "uninspected"
+    },
+    {
+      "id": "topic_4_1_2",
+      "address": "4.1.2",
+      "title": "Validation and serialization",
+      "parentId": "group_4_1",
+      "extensible": false,
+      "status": "uninspected"
+    },
+    {
+      "id": "topic_4_1_3",
+      "address": "4.1.3",
+      "title": "Schema versions and migrations",
+      "parentId": "group_4_1",
+      "extensible": false,
+      "status": "uninspected"
+    },
+    {
+      "id": "group_4_2",
+      "address": "4.2",
+      "title": "Storage",
+      "parentId": "cat_4",
+      "extensible": true,
+      "status": "uninspected"
+    },
+    {
+      "id": "topic_4_2_1",
+      "address": "4.2.1",
+      "title": "Databases and durable files",
+      "parentId": "group_4_2",
+      "extensible": false,
+      "status": "uninspected"
+    },
+    {
+      "id": "topic_4_2_2",
+      "address": "4.2.2",
+      "title": "Caches and temporary data",
+      "parentId": "group_4_2",
+      "extensible": false,
+      "status": "uninspected"
+    },
+    {
+      "id": "topic_4_2_3",
+      "address": "4.2.3",
+      "title": "Transactions consistency and recovery",
+      "parentId": "group_4_2",
+      "extensible": false,
+      "status": "uninspected"
+    },
+    {
+      "id": "group_4_3",
+      "address": "4.3",
+      "title": "Data lifecycle",
+      "parentId": "cat_4",
+      "extensible": true,
+      "status": "uninspected"
+    },
+    {
+      "id": "topic_4_3_1",
+      "address": "4.3.1",
+      "title": "Creation import and ingestion",
+      "parentId": "group_4_3",
+      "extensible": false,
+      "status": "uninspected"
+    },
+    {
+      "id": "topic_4_3_2",
+      "address": "4.3.2",
+      "title": "Synchronization and export",
+      "parentId": "group_4_3",
+      "extensible": false,
+      "status": "uninspected"
+    },
+    {
+      "id": "topic_4_3_3",
+      "address": "4.3.3",
+      "title": "Retention deletion and backup",
+      "parentId": "group_4_3",
+      "extensible": false,
+      "status": "uninspected"
+    },
+    {
+      "id": "group_4_4",
+      "address": "4.4",
+      "title": "Content",
+      "parentId": "cat_4",
+      "extensible": true,
+      "status": "uninspected"
+    },
+    {
+      "id": "topic_4_4_1",
+      "address": "4.4.1",
+      "title": "Authored and generated content",
+      "parentId": "group_4_4",
+      "extensible": false,
+      "status": "uninspected"
+    },
+    {
+      "id": "topic_4_4_2",
+      "address": "4.4.2",
+      "title": "Localization and translations",
+      "parentId": "group_4_4",
+      "extensible": false,
+      "status": "uninspected"
+    },
+    {
+      "id": "topic_4_4_3",
+      "address": "4.4.3",
+      "title": "Search and indexing",
+      "parentId": "group_4_4",
+      "extensible": false,
+      "status": "uninspected"
+    },
+    {
+      "id": "cat_5",
+      "address": "5",
+      "title": "Build deployment and operations",
+      "parentId": null,
+      "extensible": false,
+      "status": "uninspected"
+    },
+    {
+      "id": "group_5_1",
+      "address": "5.1",
+      "title": "Development environment",
+      "parentId": "cat_5",
+      "extensible": true,
+      "status": "uninspected"
+    },
+    {
+      "id": "topic_5_1_1",
+      "address": "5.1.1",
+      "title": "Prerequisites and installation",
+      "parentId": "group_5_1",
+      "extensible": false,
+      "status": "uninspected"
+    },
+    {
+      "id": "topic_5_1_2",
+      "address": "5.1.2",
+      "title": "Configuration and environment",
+      "parentId": "group_5_1",
+      "extensible": false,
+      "status": "uninspected"
+    },
+    {
+      "id": "topic_5_1_3",
+      "address": "5.1.3",
+      "title": "Local development commands",
+      "parentId": "group_5_1",
+      "extensible": false,
+      "status": "uninspected"
+    },
+    {
+      "id": "group_5_2",
+      "address": "5.2",
+      "title": "Build and distribution",
+      "parentId": "cat_5",
+      "extensible": true,
+      "status": "uninspected"
+    },
+    {
+      "id": "topic_5_2_1",
+      "address": "5.2.1",
+      "title": "Compilation and generated files",
+      "parentId": "group_5_2",
+      "extensible": false,
+      "status": "uninspected"
+    },
+    {
+      "id": "topic_5_2_2",
+      "address": "5.2.2",
+      "title": "Packaging and platform targets",
+      "parentId": "group_5_2",
+      "extensible": false,
+      "status": "uninspected"
+    },
+    {
+      "id": "topic_5_2_3",
+      "address": "5.2.3",
+      "title": "Releases installation and updates",
+      "parentId": "group_5_2",
+      "extensible": false,
+      "status": "uninspected"
+    },
+    {
+      "id": "group_5_3",
+      "address": "5.3",
+      "title": "Deployment",
+      "parentId": "cat_5",
+      "extensible": true,
+      "status": "uninspected"
+    },
+    {
+      "id": "topic_5_3_1",
+      "address": "5.3.1",
+      "title": "Hosting and infrastructure",
+      "parentId": "group_5_3",
+      "extensible": false,
+      "status": "uninspected"
+    },
+    {
+      "id": "topic_5_3_2",
+      "address": "5.3.2",
+      "title": "CI CD and deployment configuration",
+      "parentId": "group_5_3",
+      "extensible": false,
+      "status": "uninspected"
+    },
+    {
+      "id": "topic_5_3_3",
+      "address": "5.3.3",
+      "title": "Rollback and disaster recovery",
+      "parentId": "group_5_3",
+      "extensible": false,
+      "status": "uninspected"
+    },
+    {
+      "id": "group_5_4",
+      "address": "5.4",
+      "title": "Operations",
+      "parentId": "cat_5",
+      "extensible": true,
+      "status": "uninspected"
+    },
+    {
+      "id": "topic_5_4_1",
+      "address": "5.4.1",
+      "title": "Logs metrics and diagnostics",
+      "parentId": "group_5_4",
+      "extensible": false,
+      "status": "uninspected"
+    },
+    {
+      "id": "topic_5_4_2",
+      "address": "5.4.2",
+      "title": "Performance and resource limits",
+      "parentId": "group_5_4",
+      "extensible": false,
+      "status": "uninspected"
+    },
+    {
+      "id": "topic_5_4_3",
+      "address": "5.4.3",
+      "title": "Operational troubleshooting",
+      "parentId": "group_5_4",
+      "extensible": false,
+      "status": "uninspected"
+    },
+    {
+      "id": "cat_6",
+      "address": "6",
+      "title": "Cross system flows",
+      "parentId": null,
+      "extensible": false,
+      "status": "uninspected"
+    },
+    {
+      "id": "group_6_1",
+      "address": "6.1",
+      "title": "User journeys",
+      "parentId": "cat_6",
+      "extensible": true,
+      "status": "uninspected"
+    },
+    {
+      "id": "group_6_2",
+      "address": "6.2",
+      "title": "Execution flows",
+      "parentId": "cat_6",
+      "extensible": true,
+      "status": "uninspected"
+    },
+    {
+      "id": "topic_6_2_1",
+      "address": "6.2.1",
+      "title": "Startup through readiness",
+      "parentId": "group_6_2",
+      "extensible": false,
+      "status": "uninspected"
+    },
+    {
+      "id": "topic_6_2_2",
+      "address": "6.2.2",
+      "title": "Request through completion",
+      "parentId": "group_6_2",
+      "extensible": false,
+      "status": "uninspected"
+    },
+    {
+      "id": "topic_6_2_3",
+      "address": "6.2.3",
+      "title": "Cancellation and failure recovery",
+      "parentId": "group_6_2",
+      "extensible": false,
+      "status": "uninspected"
+    },
+    {
+      "id": "group_6_3",
+      "address": "6.3",
+      "title": "Data flows",
+      "parentId": "cat_6",
+      "extensible": true,
+      "status": "uninspected"
+    },
+    {
+      "id": "topic_6_3_1",
+      "address": "6.3.1",
+      "title": "Input through storage and presentation",
+      "parentId": "group_6_3",
+      "extensible": false,
+      "status": "uninspected"
+    },
+    {
+      "id": "topic_6_3_2",
+      "address": "6.3.2",
+      "title": "Synchronization across components",
+      "parentId": "group_6_3",
+      "extensible": false,
+      "status": "uninspected"
+    },
+    {
+      "id": "topic_6_3_3",
+      "address": "6.3.3",
+      "title": "Trust boundary crossings",
+      "parentId": "group_6_3",
+      "extensible": false,
+      "status": "uninspected"
+    },
+    {
+      "id": "cat_7",
+      "address": "7",
+      "title": "Verification and known gaps",
+      "parentId": null,
+      "extensible": false,
+      "status": "uninspected"
+    },
+    {
+      "id": "group_7_1",
+      "address": "7.1",
+      "title": "Verification map",
+      "parentId": "cat_7",
+      "extensible": true,
+      "status": "uninspected"
+    },
+    {
+      "id": "topic_7_1_1",
+      "address": "7.1.1",
+      "title": "Unit and component checks",
+      "parentId": "group_7_1",
+      "extensible": false,
+      "status": "uninspected"
+    },
+    {
+      "id": "topic_7_1_2",
+      "address": "7.1.2",
+      "title": "Integration and protocol checks",
+      "parentId": "group_7_1",
+      "extensible": false,
+      "status": "uninspected"
+    },
+    {
+      "id": "topic_7_1_3",
+      "address": "7.1.3",
+      "title": "End to end and manual checks",
+      "parentId": "group_7_1",
+      "extensible": false,
+      "status": "uninspected"
+    },
+    {
+      "id": "group_7_2",
+      "address": "7.2",
+      "title": "Quality requirements",
+      "parentId": "cat_7",
+      "extensible": true,
+      "status": "uninspected"
+    },
+    {
+      "id": "topic_7_2_1",
+      "address": "7.2.1",
+      "title": "Security and privacy",
+      "parentId": "group_7_2",
+      "extensible": false,
+      "status": "uninspected"
+    },
+    {
+      "id": "topic_7_2_2",
+      "address": "7.2.2",
+      "title": "Accessibility and compatibility",
+      "parentId": "group_7_2",
+      "extensible": false,
+      "status": "uninspected"
+    },
+    {
+      "id": "topic_7_2_3",
+      "address": "7.2.3",
+      "title": "Performance and reliability",
+      "parentId": "group_7_2",
+      "extensible": false,
+      "status": "uninspected"
+    },
+    {
+      "id": "group_7_3",
+      "address": "7.3",
+      "title": "Evidence and gaps",
+      "parentId": "cat_7",
+      "extensible": true,
+      "status": "uninspected"
+    },
+    {
+      "id": "topic_7_3_1",
+      "address": "7.3.1",
+      "title": "Recorded verification results",
+      "parentId": "group_7_3",
+      "extensible": false,
+      "status": "uninspected"
+    },
+    {
+      "id": "topic_7_3_2",
+      "address": "7.3.2",
+      "title": "Known defects and technical debt",
+      "parentId": "group_7_3",
+      "extensible": false,
+      "status": "uninspected"
+    },
+    {
+      "id": "topic_7_3_3",
+      "address": "7.3.3",
+      "title": "Uninspected areas and uncertainty",
+      "parentId": "group_7_3",
+      "extensible": false,
+      "status": "uninspected"
+    }
+  ]
+}

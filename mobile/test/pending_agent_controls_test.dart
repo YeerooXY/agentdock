@@ -162,6 +162,27 @@ void main() {
     );
     expect(c.inputs, isEmpty);
   });
+  for (final completionMissing in [true, false, null]) {
+    testWidgets('attention blocks settings with legacy completion flag: '
+        '$completionMissing', (tester) async {
+      final c = SettingsDock();
+      addTearDown(c.dispose);
+      c.state['sessions'][0]['state'] = 'attention';
+      if (completionMissing != null) {
+        c.state['sessions'][0]['completionMissing'] = completionMissing;
+      }
+      await open(tester, c);
+      await effort(tester);
+      expect(
+        find.text('Wait until this chat is idle before applying settings.'),
+        findsOneWidget,
+      );
+      final button = find.widgetWithText(FilledButton, 'Apply');
+      expect(tester.widget<FilledButton>(button).onPressed, isNull);
+      expect(c.calls.where((x) => x == 'console.settings'), isEmpty);
+      expect(c.inputs, isEmpty);
+    });
+  }
   testWidgets('failed resume preserves pending choices and permits recovery', (
     tester,
   ) async {

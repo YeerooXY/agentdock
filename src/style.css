@@ -2,6 +2,8 @@
 
 :root { font-family:"Segoe UI Variable Text","Segoe UI",sans-serif; color:#e5e7ef; background:#050508; font-synthesis:none; font-size:13px; --muted:#9a9db0; --line:#242838; --accent:#82aaff; --surface:#0b0d13; --soft:#131725; color-scheme:dark }
 * { box-sizing:border-box }
+/* Screen-reader-only text: announced, never drawn. */
+.sr-only { position:absolute!important; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; border:0 }
 body { margin:0 }
 button,input,textarea,select { font:inherit }
 button { color:inherit; cursor:pointer }
@@ -233,45 +235,13 @@ dialog::backdrop { background:#08090cba; backdrop-filter:blur(3px) }
 .folder-input svg { width:17px }
 .dialog-footer { display:flex; align-items:center; justify-content:space-between; margin-top:24px; gap:15px }
 .dialog-footer>span { font-size:10px; color:#838da9 }
-#toast { position:fixed; bottom:45px; left:50%; transform:translate(-50%,8px); padding:12px 18px; border:1px solid #575e71; border-radius:7px; background:#202330; color:#c5d5ff; font-size:12px; z-index:1102; opacity:0; pointer-events:none; transition:opacity .15s,transform .15s; max-width:90vw; box-shadow:0 6px 25px #0005 }
+#toast { position:fixed; bottom:24px; left:50%; transform:translate(-50%,8px); padding:14px 18px; border:1px solid var(--line); border-left:3px solid var(--accent); border-radius:10px; background:var(--soft); color:#f0edf7; font:500 14px/1.5 "Segoe UI Variable Text","Segoe UI",sans-serif; z-index:11020; opacity:0; pointer-events:none; transition:opacity .15s,transform .15s; width:max-content; min-width:min(240px,90vw); max-width:min(520px,90vw); white-space:pre-line; overflow-wrap:anywhere; box-shadow:0 8px 28px #0008 }
 #toast.visible { opacity:1; transform:translate(-50%,0) }
-#toast.error { background:#3c2925; border-color:#916a55; color:#efc5b3 }
+#toast.error { border-left-color:#ff9aac; color:#ffe0e7 }
+@media(prefers-reduced-motion:reduce) { #toast { transition:none } }
 .terminal-instance { position:absolute; inset:12px 10px 10px 15px }
 .terminal-instance .xterm { height:100% }
 .xterm-viewport::-webkit-scrollbar { width:7px }
-#hud { height:100vh; overflow:hidden; background:linear-gradient(155deg,#161922,#0f1117 75%); border:1px solid #2e3345; padding:15px 17px; display:flex; flex-direction:column; gap:13px }
-.hud-title { display:flex; justify-content:space-between; align-items:center; -webkit-app-region:drag; margin:-3px -3px 0 0 }
-.hud-title>div { display:flex; gap:3px }
-.hud-brand { display:flex; align-items:center; gap:8px; font-size:14px; font-weight:600; letter-spacing:-.5px; color:#bfcff8 }
-.hud-brand svg { width:16px; color:#82aaff }
-.hud-summary { text-align:left; padding:0 }
-.hud-summary .eyebrow { font-size:8px; color:#828da9; letter-spacing:1.6px; margin:0 }
-.hud-summary>div { display:flex; align-items:center; justify-content:space-between; margin-top:7px }
-.hud-summary strong { font-size:21px; font-weight:490; letter-spacing:-.6px }
-.hud-summary svg { width:16px; color:#95a0c1 }
-.hud-slots { display:grid; grid-template-columns:repeat(3,1fr); gap:6px }
-.hud-slot { height:39px; border:1px solid #2c3143; border-radius:5px; background:#1b1e29; display:grid; grid-template-columns:1fr auto; align-items:center; gap:2px; padding:5px 8px; text-align:left; min-width:0 }
-.hud-slot:hover { background:#2a2f40; border-color:#6b748b }
-.hud-slot>span { font-size:10px; font-family:Consolas,monospace; color:#9da9cb }
-.hud-slot small { font-size:8px; color:#8d98b7; max-width:80px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; grid-column:1/-1 }
-.hud-slot.empty { border-style:dashed; background:#14161e }
-.hud-slot.empty i { display:none }
-.hud-slot.empty small { grid-column:2; grid-row:1/3; font-size:16px; color:#6d758d }
-.hud-slot.current { border-color:#818ba7 }
-.hud-slot.ready { background:#2a2f3f; border-color:#78819b }
-.hud-slot.ready i { background:var(--accent) }
-.hud-slot.attention i { background:#efbf71 }
-.hud-slot.active i { background:#8eb9e4 }
-.hud-console { border:1px solid #2b3041; border-radius:6px; text-align:left; background:#0d0e14; padding:10px 11px; flex:1; min-height:73px; overflow:hidden }
-.hud-console:hover { border-color:#828ca8 }
-.hud-console>div { display:flex; align-items:center; justify-content:space-between; gap:10px; color:#a2afd2; font-size:10px }
-.hud-console>div>span { display:flex; gap:6px; align-items:center; white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
-.hud-console svg { width:12px; height:12px }
-.hud-console pre { font-family:Consolas,monospace; font-size:10px; line-height:1.7; color:#687187; margin:8px 0 0; overflow:hidden; white-space:pre-wrap; overflow-wrap:anywhere; max-height:50px }
-.hud-usage>span { display:flex; justify-content:space-between; color:#7a849e; font-size:8px; letter-spacing:1px }
-.hud-usage>span small { font-size:8px; letter-spacing:0; color:#656d83 }
-.hud-usage>div { display:flex; justify-content:space-between; margin-top:7px; font-size:9px; color:#858fac }
-.hud-usage b { font-weight:500; color:#b4c3ea; margin-left:5px }
 @media(min-width:1500px) {
   #content { padding:40px 48px }
   .page-heading { margin-bottom:36px }
@@ -358,8 +328,6 @@ dialog::backdrop { background:#08090cba; backdrop-filter:blur(3px) }
 .quota-heading .connection { font-size:9px }
 .session-card.empty small { font-size:10px }
 .section-note { font-size:11px }
-.hud-console pre { color:#b3bcd6; max-height:56px }
-.hud-usage>div { font-size:10px }
 .api-form>label { margin-top:15px }
 .api-form textarea[name=prompt] { height:125px; min-height:95px }
 @media(min-width:851px) and (max-width:1080px) {
@@ -407,10 +375,10 @@ input::placeholder,textarea::placeholder { color:#7f849b }
 .session-card .session-name strong { font-size:14px }
 .session-card.empty strong { color:#b9bfd4 }
 .session-card.empty small { color:#8b91a9 }
-.session-card.ready,.hud-slot.ready { border-color:#8d517b; background:#180f1a }
+.session-card.ready { border-color:#8d517b; background:#180f1a }
 .status.ready,.status.ready .dot,.dot.ready,.grid-caption .dot.ready { color:var(--pink); background-color:transparent }
 .status.ready .dot,.dot.ready,.grid-caption .dot.ready { background:var(--pink) }
-.session-card.active,.hud-slot.active { border-color:#4a6597; background:#0d1525 }
+.session-card.active { border-color:#4a6597; background:#0d1525 }
 .status.active { color:#a5c3ff }
 .dot.active,.status.active .dot { background:var(--accent) }
 .status.open { color:#afb7d1 }
@@ -431,17 +399,6 @@ input::placeholder,textarea::placeholder { color:#7f849b }
 .pricing-details.surface { margin-top:22px }
 .pricing-details form { margin-top:18px }
 .pricing-details summary { cursor:pointer }
-#hud { background:#050508 }
-.hud-title { border-color:var(--line) }
-.hud-brand svg { color:#c7a5f4 }
-.hud-console { background:#030305; border-color:#293044 }
-.hud-console pre { color:#a8b8df }
-.hud-slot { background:#0d101b; border-color:#283046 }
-.hud-slot.current { border-color:#b795d3 }
-.hud-slot.empty { background:#080a10 }
-.hud-usage { border-color:var(--line) }
-.hud-usage>div { justify-content:flex-start; gap:35px }
-.hud-usage b { color:#bacfff }
 .vault-status { border-color:var(--line); background:#0c1020 }
 .vault-icon,.empty-illustration { color:#c3abed; background:#1b1a32 }
 .saved-key { border-color:var(--line) }
@@ -507,7 +464,6 @@ input::placeholder,textarea::placeholder { color:#7f849b }
 .window-drag-handle:hover span { background:#ac8fd6; opacity:1 }
 [data-window-drag]:active { cursor:grabbing }
 [data-window-drag] { -webkit-app-region:no-drag; touch-action:none; user-select:none }
-.hud-brand[data-window-drag] { cursor:grab; flex:1; align-self:stretch }
 #app { opacity:1; transition:opacity 140ms ease }
 .window-moving #app { opacity:0; transition-duration:70ms; pointer-events:none }
 #sidebar { --sidebar-width:206px; width:var(--sidebar-width); margin-left:0; opacity:1; visibility:visible }
@@ -530,17 +486,13 @@ input::placeholder,textarea::placeholder { color:#7f849b }
 .session-card.empty>.icon { width:27px; height:27px; color:#78839f; stroke-width:1.4 }
 .consoles-only .session-card.empty:hover { border-color:#676bb0; background:#080912 }
 .session-card.empty:hover>.icon { color:#b5b9ef }
-.consoles-only .session-card.active,.hud-slot.active,.hud-console.active { border:1px solid transparent; background:linear-gradient(#010103,#010103) padding-box,linear-gradient(130deg,#659bff,#aa76f3) border-box; box-shadow:0 0 12px #8266ff1a }
-.consoles-only .session-card.ready,.hud-slot.ready,.hud-console.ready { border:1px solid #62d99a; background:#010504; box-shadow:0 0 12px #62d99a16 }
+.consoles-only .session-card.active { border:1px solid transparent; background:linear-gradient(#010103,#010103) padding-box,linear-gradient(130deg,#659bff,#aa76f3) border-box; box-shadow:0 0 12px #8266ff1a }
+.consoles-only .session-card.ready { border:1px solid #62d99a; background:#010504; box-shadow:0 0 12px #62d99a16 }
 .status.ready { color:#83e5ad; background:none }
 .status.ready .dot,.dot.ready { background:#62d99a }
 .status.active { color:#b2b2ff }
 .status.active .dot,.dot.active { background:#9787f5 }
 .consoles-only .session-card.attention { border-color:#c9a05d; background:#0c0b08 }
-.hud-slot.empty,.hud-console.empty { display:grid; place-items:center }
-.hud-slot.empty>.icon { width:18px; height:18px; color:#8c96b0 }
-.hud-console.empty { height:88px }
-.hud-console.empty>.icon { color:#8c96b0; width:25px; height:25px }
 #console-defaults-form label { margin-top:17px }
 #console-defaults-form>.primary { margin-top:18px }
 #default-provider-hint:empty { display:none }
@@ -557,9 +509,6 @@ input::placeholder,textarea::placeholder { color:#7f849b }
 .surface,.tool-card,.settings-layout .surface,.usage-grid .quota-card { background:var(--surface) }
 input:not([type="checkbox"]),textarea,select { background:#030407!important }
 .terminal-instance { background:#010103 }
-#hud { background:#020305 }
-.hud-console { background:#010103 }
-.hud-slot { background:#050710 }
 .launch-folder { display:flex; align-items:center; gap:8px; max-width:min(40vw,360px); padding:5px 9px; border-radius:5px; color:#9ca3bc; font-size:11px; text-align:left }
 .file-preview { width:min(920px,calc(100vw - 36px)); max-height:calc(100vh - 48px); display:none; flex-direction:column; gap:14px }
 .file-preview[open] { display:flex }
@@ -682,14 +631,6 @@ button[data-action="new"]:is(:hover,:focus-visible)::before { opacity:1; transfo
 button[data-action="new"]:is(:hover,:focus-visible) .new-console-label { grid-template-columns:1fr; opacity:1; transform:translateX(0) }
 button[data-action="new"]:is(:hover,:focus-visible) .new-console-mark>.icon { color:#bea7f0; filter:drop-shadow(0 0 7px #9a7de85c) }
 button[data-action="new"].is-holding .new-console-mark>.icon { transform:scale(1.15); color:#e1b7ff; filter:drop-shadow(0 0 10px #ad87ffa0) }
-.hud-slot.empty { grid-template-columns:1fr; padding:4px; transition:border-color 460ms ease,background-color 460ms ease }
-.hud-slot.empty:hover { border-color:#7666b1; background:#080811 }
-.hud-slot.empty .new-console-mark>.icon { width:17px; height:17px }
-.hud-slot.empty .new-console-label>span { font-size:9px }
-.hud-slot.empty .new-console-label>span::before { width:4px }
-.hud-slot.empty .hud-slot-name { grid-column:1; grid-row:auto; margin:0; max-width:100%; font-size:9px; color:#aeb5d0; line-height:11px }
-.hud-slot.empty.named { gap:0 }
-.hud-slot.empty.named .new-console-mark>.icon { width:14px; height:14px }
 @media(hover:none) {
   .empty-panel-header input.console-name::placeholder { color:#8990ad!important }
 }
@@ -769,24 +710,28 @@ button[data-action="new"].is-holding .new-console-mark>.icon { transform:scale(1
 }
 .vim-mode:hover { background:#13101f; border-color:#8372b6 }
 [data-vim-mode=insert] .vim-mode { border-color:#293247; color:#99aac7 }
-.session-card.vim-selected,.hud-slot.vim-selected { outline:2px solid #b7a1f0; outline-offset:-4px }
+.session-card.vim-selected { outline:2px solid #b7a1f0; outline-offset:-4px }
 .session-card:focus:not(.vim-selected) { outline:none }
-.hud-title .vim-mode { margin-left:auto; margin-right:8px }
-#vim-help { width:590px; max-height:calc(100dvh - 28px); max-width:calc(100vw - 28px); overflow:auto; background:#05060b; border-color:#6761a4; padding:24px }
-#vim-help h2 { margin:0; font-size:23px }
-#vim-help .dialog-heading p { font-size:12px; margin-top:7px }
-#vim-help .icon-button { font-size:24px; flex-shrink:0 }
-.vim-help-intro { font-size:12px; margin:22px 0 18px; line-height:2.3 }
-.vim-shortcuts { margin:0 }
-.vim-shortcuts>div { display:grid; grid-template-columns:160px minmax(0,1fr); gap:12px; padding:10px 0; border-bottom:1px solid #191c28; align-items:center }
-.vim-shortcuts dt { white-space:nowrap }
-.vim-shortcuts dd { margin:0; font-size:11px; color:#b7bdd2; line-height:1.5 }
-#vim-help kbd { font-family:Consolas,monospace; font-size:10px; padding:3px 5px; background:#0c0b14; border-color:#3b3454; color:#cec0ef }
-.vim-help-note { font-size:11px; margin-top:18px; line-height:1.8 }
-@media(max-width:500px) {
-  #vim-help { padding:18px }
-  .vim-shortcuts>div { grid-template-columns:130px minmax(0,1fr); gap:8px }
-  #vim-help kbd { font-size:9px }
+#vim-help { width:min(820px,calc(100vw - 28px)); max-height:calc(100dvh - 28px); max-width:calc(100vw - 28px); overflow:auto; background:#0c0f1a; border:1px solid #2b324b; border-radius:14px; padding:0; box-shadow:0 28px 80px rgba(0,0,0,.78) }
+#vim-help .vim-modal-head { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:20px 24px 16px; border-bottom:1px solid #1d2233; background:#0e1220 }
+#vim-help .vim-title-group { display:flex; align-items:center; gap:14px; flex-wrap:wrap }
+#vim-help h2 { margin:0; font-size:20px; font-weight:650; letter-spacing:-.015em; color:#f1f3fa }
+#vim-help .vim-mode-pill { display:inline-flex; align-items:center; gap:6px; padding:4px 10px; border-radius:99px; background:rgba(137,180,255,.12); border:1px solid rgba(137,180,255,.34); color:#eef2ff; font-size:12px; font-weight:550 }
+#vim-help .vim-close-btn { display:inline-flex; align-items:center; gap:8px; min-height:36px; padding:6px 12px; border-radius:8px; border:1px solid #272d42; background:#141827; color:#eef0fa; font-size:12.5px; font-weight:550; flex-shrink:0 }
+#vim-help .vim-modal-body { padding:20px 24px 24px; display:grid; grid-template-columns:1fr 1fr; gap:16px }
+#vim-help .vim-group { background:#090b14; border:1px solid #1c2132; border-radius:10px; padding:14px 16px; display:flex; flex-direction:column; gap:10px; margin:0 }
+#vim-help .vim-group.full-span { grid-column:1 / -1 }
+#vim-help .vim-group-head { padding-bottom:6px; border-bottom:1px solid #171c2b }
+#vim-help .vim-group-title { margin:0; font-size:13.5px; font-weight:650; color:#eef1fb }
+#vim-help .vim-list { display:flex; flex-direction:column; gap:7px }
+#vim-help .vim-list.two-col { display:grid; grid-template-columns:1fr 1fr; gap:7px 24px }
+#vim-help .vim-row { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:3px 0 }
+#vim-help .vim-desc { font-size:13px; color:#dce1f0; font-weight:450 }
+#vim-help .key-seq { display:inline-flex; align-items:center; gap:4px; flex-shrink:0 }
+#vim-help kbd { display:inline-flex; align-items:center; justify-content:center; min-width:26px; height:26px; padding:0 8px; border-radius:6px; background:#151a2b; border:1px solid #2e3652; box-shadow:inset 0 -2px 0 #0a0d17; font-family:var(--font-mono,Consolas,monospace); font-size:12.5px; font-weight:600; color:#f4f6ff; line-height:1 }
+#vim-help .key-sep { color:#8f98b4; font-size:11.5px; padding:0 2px }
+@media(max-width:680px) {
+  #vim-help .vim-modal-body, #vim-help .vim-list.two-col { grid-template-columns:1fr }
 }
 /* Settings categories share the existing form and surface components. */
 .settings-workspace { max-width: 1480px }
@@ -852,6 +797,7 @@ button[data-action="new"].is-holding .new-console-mark>.icon { transform:scale(1
 .skill-pack:first-of-type { border-top:0 }
 .skill-pack-heading { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap }
 .skill-pack h3 { margin:0 }
+.skill-pack h4 { margin:0; font-size:1.17em }
 .skill-pack-heading small,.skill-targets small { display:block; color:#b7b1ca; font-size:12px; margin-top:4px }
 .skill-pack p { color:#c5bfd4; font-size:13px; line-height:1.6; margin:10px 0 }
 .skill-pack summary { font-size:12px; color:#c5b6ed; cursor:pointer }

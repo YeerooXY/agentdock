@@ -1,6 +1,15 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { workerCheckCommand, checkLaunch } from './worker-checks.cjs';
+import { execFile } from 'node:child_process';
+import { redactText } from './delegation.cjs';
+
+async function runWorkerChecks(command, cwd, signal) {
+  const launch = checkLaunch(command);
+  return new Promise(resolve => execFile(launch.executable, launch.args, { cwd, signal, timeout: 120000, maxBuffer: 1024 * 1024, windowsHide: true },
+    (error, stdout, stderr) => resolve({ code: error ? error.code ?? null : 0, output: redactText(String(stdout || '') + String(stderr || ''), process.env).slice(-8000) })));
+}
 
 // Run the installed Pi SDK with native authentication and in-memory settings.
 // This avoids modifying project or user settings to disable hidden retries.
@@ -19,9 +28,13 @@ try {
   const resourceLoader = { getExtensions: () => ({ extensions: [], errors: [], runtime: pi.createExtensionRuntime() }),
     getSkills: () => ({ skills: [], diagnostics: [] }), getPrompts: () => ({ prompts: [], diagnostics: [] }),
     getThemes: () => ({ themes: [], diagnostics: [] }), getAgentsFiles: () => ({ agentsFiles: [] }),
-    getSystemPrompt: () => 'Complete the assigned bounded file task. Follow the supplied project rules. Use only the supplied file tools. Never delegate. Return a concise result and actual verification limits.',
+    getSystemPrompt: () => 'Complete the assigned bounded file task. Follow the supplied project rules. Use supplied file tools and run_checks when provided. Never delegate. Return a concise result and actual verification limits.',
     getSystemPromptSource: () => undefined, getAppendSystemPrompt: () => [], getAppendSystemPromptSources: () => [], extendResources: () => {}, reload: async () => {} };
-  const created = await pi.createAgentSession({ cwd: options.workFolder, model, modelRuntime, settingsManager, resourceLoader,
+  const checks = workerCheckCommand(options.checks, { review: options.review });
+  const customTools = checks ? [{ name: 'run_checks', label: 'Run task checks', description: 'Run the configured task checks in the assigned folder. The command and folder are fixed.',
+    parameters: { type: 'object', properties: {}, additionalProperties: false },
+    execute: async (_id, _params, signal) => { const result = await runWorkerChecks(checks, options.workFolder, signal); return { content: [{ type: 'text', text: `Exit code: ${result.code}\n${result.output}` }], details: { exitCode: result.code } }; } }] : [];
+  const created = await pi.createAgentSession({ cwd: options.workFolder, model, modelRuntime, settingsManager, resourceLoader, customTools,
     thinkingLevel: options.effort || 'off', tools: options.review ? ['read'] : ['read','write','edit'], excludeTools: ['mcp__*'], sessionManager: pi.SessionManager.inMemory(options.workFolder) });
   session = created.session;
   if (created.modelFallbackMessage) throw Error('The selected route was unavailable; fallback refused.');

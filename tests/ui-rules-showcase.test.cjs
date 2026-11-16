@@ -4,7 +4,7 @@ const fs = require('node:fs'), os = require('node:os'), path = require('node:pat
 const { main } = require('../scripts/ui-rules-showcase.cjs');
 
 // Every rule that a single snapshot can check. The bad page breaks each once; the good page follows all of them.
-const RULES = ['carousel-edge-fade', 'chrome-share', 'covered-content', 'dark-depth', 'focus-lost', 'focus-without-visible', 'gradient-interpolation', 'hsl-palette',
+const RULES = ['carousel-edge-fade', 'chrome-share', 'control-alignment', 'control-spacing', 'covered-content', 'dark-depth', 'focus-lost', 'focus-without-visible', 'gradient-interpolation', 'hsl-palette',
   'icon-stroke-weight', 'input-style-outliers', 'mixed-tooltips', 'mouse-focus-ring', 'nested-boxes', 'nested-radius', 'no-focus-indicator', 'opaque-borders',
   'reduced-motion-missing', 'selectable-controls', 'sibling-layout', 'small-font', 'touching-text', 'unanimated-controls', 'unanimated-overlays', 'viewport-height', 'white-image-background'];
 

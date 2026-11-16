@@ -8,6 +8,21 @@ const { prepareCli, saveManagedMcp } = require('../electron/cli-launch.cjs');
 const { Sessions, validateConsoleDefaults } = require('../electron/sessions.cjs');
 const { SetupRequests } = require('../electron/setup-requests.cjs');
 const parent = path.resolve(__dirname, '../test-data');
+test('background executable reads do not repeat discovery, including missing agents', t => {
+  const { root, runtime } = fixture(t); let detections = 0, found = false;
+  const setup = new CliSetup(root, runtime, { deferDetection: true, detect: id => { detections++; return found && id === 'opencode' ? 'opencode.exe' : null; } });
+  assert.equal(setup.executable('opencode', { cached: true }), null);
+  assert.equal(detections, 0);
+  setup.refresh(); const initial = detections;
+  for (let i = 0; i < 14; i++) assert.equal(setup.executable('opencode', { cached: true }), null);
+  assert.equal(detections, initial);
+  found = true; setup.refresh(); const refreshed = detections;
+  assert.equal(setup.executable('opencode', { cached: true }), 'opencode.exe');
+  assert.equal(detections, refreshed);
+  found = false;
+  assert.equal(setup.executable('opencode'), null, 'explicit launch lookup remains fresh');
+  assert.equal(setup.executable('opencode', { cached: true }), null);
+});
 function fixture(t) {
   fs.mkdirSync(parent, { recursive: true }); const root = fs.mkdtempSync(path.join(parent, 'cli-setup-'));
   t.after(() => { assert.equal(path.dirname(fs.realpathSync(root)), fs.realpathSync(parent)); fs.rmSync(root, { recursive: true, force: true }); });
@@ -70,6 +85,7 @@ test('Grok per-user detection and Kimi install avoid shared PATH changes', async
   assert.equal(setup.executable('cursor'), null, 'Grok agent.exe is not Cursor; Cursor resolves by its own directory or cursor-agent command');
   const cursorAgent = path.join(root, 'LocalAppData', 'cursor-agent', 'agent.exe');
   fs.mkdirSync(path.dirname(cursorAgent), { recursive: true }); fs.writeFileSync(cursorAgent, 'fake Cursor');
+  setup.refresh(); // detection results are cached briefly; Check again clears them
   assert.equal(setup.executable('cursor'), cursorAgent, 'Cursor may use its agent.exe alias inside its own install directory');
   await setup.install(['kimi']);
   assert.equal(setup.executable('kimi'), path.join(home, '.kimi-code', 'bin', 'kimi.exe'));

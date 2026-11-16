@@ -17,40 +17,8 @@ function fixture(t) {
   const trash = async file => { assert.ok(file.startsWith(root + path.sep)); fs.rmSync(file,{recursive:true}); };
   return { root, project, results:new Results(root,{trash}), alerts:new AlertEvents(), trash };
 }
-test('gallery copies project artifacts, rejects private/outside files, and deletes only owned copies', async t => {
-  const { root,project,results } = fixture(t), source=path.join(project,'test.md'); fs.writeFileSync(source,'Verified: keyboard works');
-  fs.writeFileSync(path.join(root,'vault.json'),'PRIVATE');
-  assert.throws(()=>results.add({file:path.join(root,'vault.json')},{project}),/project/);
-  const item=results.add({file:source,title:'Keyboard test',kind:'test',status:'passed'},{project,sessionId:'one'});
-  assert.equal(results.preview(item.id).text,'Verified: keyboard works');
-  fs.writeFileSync(source,'changed in project'); assert.equal(results.preview(item.id).text,'Verified: keyboard works');
-  const loaded=new Results(root,{trash:results.trash}); assert.equal(loaded.list()[0].title,'Keyboard test');
-  const savedDir = loaded.directory(item.id);
-  assert.deepEqual(await loaded.remove([item.id]),{deleted:[item.id],failed:[]});
-  assert.equal(fs.existsSync(savedDir), false); assert.deepEqual(new Results(root).list(), []);
-  assert.equal(fs.readFileSync(source,'utf8'),'changed in project'); assert.equal(loaded.list().length,0);
-  assert.throws(()=>loaded.path('../../vault.json'));
-});
-
-test('saved report revisions expose same-length updates without changing the original save date', t => {
-  const { results, root } = fixture(t);
-  const item = results.add({ text: 'Before', status: 'needs-review' });
-  const changed = results.updateText(item.id, { text: 'After!', status: 'needs-review' });
-  assert.equal(changed.size, item.size);
-  assert.equal(changed.at, item.at);
-  assert.ok(changed.updatedAt >= item.at);
-  assert.equal(changed.contentRevision, 1);
-  results.updateText(item.id, { text: 'Latest', status: 'passed' });
-  const loaded = new Results(root);
-  assert.equal(loaded.list()[0].contentRevision, 2);
-  assert.equal(loaded.preview(item.id).text, 'Latest');
-  const data = results.add({ text: '{"a":1}', ext: '.json' });
-  results.updateReport(data.id, { a: 2 });
-  assert.equal(results.list().find(x => x.id === data.id).contentRevision, 1);
-});
-
 test('deletion reports failure if the saved files are still on disk', async t => {
-  const { results } = fixture(t); const item = results.add({ text: 'Keep me until deletion succeeds' });
+  const { results } = fixture(t); const item = results.add({ text: 'Keep me until deletion succeeds', ext: '.json', kind: 'review' });
   results.trash = async () => {};
   assert.deepEqual(await results.remove([item.id]), { deleted: [], failed: [item.id] });
   assert.equal(results.list().length, 1); assert.ok(fs.existsSync(results.path(item.id)));
@@ -60,7 +28,7 @@ test('full image previews retain intrinsic pixels while thumbnails stay bounded'
   const { results } = fixture(t), sizes = [];
   const source = { isEmpty: () => false, getSize: () => ({ width: 4000, height: 2000 }), toDataURL: () => 'full', resize: size => { sizes.push(size); return { toDataURL: () => 'thumbnail' }; } };
   results.nativeImage = { createFromPath: () => source };
-  const item = results.add({ buffer: Buffer.from('fixture'), ext: '.png', kind: 'screenshot' }, { trusted: true });
+  const item = results.add({ buffer: Buffer.from('fixture'), ext: '.png', kind: 'concept' }, { trusted: true });
   assert.equal(results.preview(item.id, false, null, true).image, 'full'); assert.deepEqual(sizes, []);
   assert.equal(results.preview(item.id, true).image, 'thumbnail'); assert.deepEqual(sizes, [{ width: 360, height: 180 }]);
   results.preview(item.id); assert.deepEqual(sizes[1], { width: 1440, height: 720 });
@@ -76,38 +44,9 @@ test('image fit and actual size clamp pan independently on each axis', async () 
   assert.deepEqual(imageGeometry(1000, 1600, 1358, 752, 'actual', 100, 1000), { width: 1000, height: 1600, x: 0, y: 424 });
 });
 
-test('old capture reports hide dependency noise without deleting the saved original or source files', t => {
-  const { root, results } = fixture(t);
-  const noise = { file: 'ice-age-village-research/.deps/package.dist-info/INSTALLER', type: 'modified', patch: null };
-  const empty = results.add({ text: JSON.stringify({ changes: [noise] }), kind: 'code', ext: '.json', title: '1 changed file' });
-  const mixed = results.add({ text: JSON.stringify({ changes: [noise, { file: 'src/main.js', type: 'modified', patch: '+code' }] }), kind: 'code', ext: '.json', title: '2 changed files' });
-  const loaded = new Results(root);
-  assert.deepEqual(loaded.list().map(x => [x.id, x.title, x.changeCount]), [[mixed.id, '1 changed file', 1]]);
-  assert.equal(loaded.unreadGroups(), 1);
-  assert.deepEqual(loaded.preview(mixed.id).diff.changes.map(x => x.file), ['src/main.js']);
-  assert.equal(JSON.parse(fs.readFileSync(loaded.path(empty.id), 'utf8')).changes.length, 1, 'Stored evidence remains available');
-});
-test('result notifications count batches, remember names and preserve unread state across launches', async t => {
-  const { root, results, project } = fixture(t);
-  const context = { project, sessionId: 'live-id', consoleKey: 'persistent-console', consoleName: 'Trader' };
-  const first = Array.from({ length: 3 }, () => results.add({ title: 'Screen', text: 'fixture', groupId: 'verification-one' }, context));
-  const second = Array.from({ length: 5 }, () => results.add({ title: 'Check', text: 'fixture', groupId: 'verification-two' }, context));
-  assert.equal(results.unreadGroups(), 2);
-  results.markSeen(first.map(x => x.id)); assert.equal(results.unreadGroups(), 1);
-  results.renameConsole(context.consoleKey, 'Robonslaught');
-  const loaded = new Results(root, { trash: results.trash });
-  assert.equal(loaded.unreadGroups(), 1); assert.ok(loaded.list().every(x => x.consoleName === 'Trader'), 'Renaming a reused console must not relabel earlier results');
-  loaded.markSeen(second.map(x => x.id)); assert.equal(loaded.unreadGroups(), 0);
-  loaded.add({ title: 'Late screen', text: 'fixture', groupId: 'verification-two' }, { ...context, sessionId: 'restored-id' });
-  assert.equal(loaded.unreadGroups(), 1);
-  loaded.add({ title: 'Different console', text: 'fixture', groupId: 'verification-two' }, { ...context, consoleKey: 'other-console' });
-  assert.equal(loaded.unreadGroups(), 2);
-  await loaded.remove(loaded.list().map(x => x.id)); assert.equal(loaded.unreadGroups(), 0);
-});
-
 test('bulk deletion keeps failed items and a redirected result directory cannot be read or deleted', async t => {
   const { root,project,results }=fixture(t);
-  const one=results.add({text:'one'}),two=results.add({text:'two'});
+  const one=results.add({text:'one',ext:'.json'}),two=results.add({text:'two',ext:'.json'});
   const trash=results.trash; results.trash=async file=>{if(file.endsWith(two.id))throw Error('busy'); return trash(file);};
   assert.deepEqual(await results.remove([one.id,two.id]),{deleted:[one.id],failed:[two.id]});
   const dir=results.directory(two.id); fs.rmSync(dir,{recursive:true}); fs.symlinkSync(project,dir,'junction');
@@ -165,7 +104,7 @@ test('local assistance is discoverable, receives caller context and validates br
 test('dock/start_task forwards task arguments, defaults to the caller folder and validates bridge input without launching agents', async t => {
   const { root, project } = fixture(t), calls = [];
   const callerFolder = path.join(project, 'caller'); fs.mkdirSync(callerFolder);
-  const sessions = { items: new Map([['live', { id: 'live', alive: true, cwd: callerFolder }]]) };
+  const sessions = { items: new Map([['live', { id: 'live', consoleKey: 'stable-console', alive: true, cwd: callerFolder }]]) };
   let tasks;
   const workbench = new Workbench(root, {}, { nativeImage: {} }, { testMode: true, onChange() {}, getSessions: () => sessions, getProject: () => project, getTasks: () => tasks });
   const tool = workbench.tools().find(tool => tool.name === 'dock/start_task');
@@ -178,9 +117,9 @@ test('dock/start_task forwards task arguments, defaults to the caller folder and
   const invoke = async arguments_ => (await fetch(grant.PADDOCK_BRIDGE_URL, { method: 'POST', headers: { Authorization: 'Bearer ' + grant.PADDOCK_BRIDGE_TOKEN }, body: JSON.stringify({ name: 'dock_call', arguments: { tool: tool.name, arguments: arguments_ } }) })).json();
   const reply = await invoke(args);
   assert.equal(reply.isError, undefined); assert.deepEqual(JSON.parse(reply.content[0].text), { id: 'task-1' });
-  assert.deepEqual(calls[0], { ...args, repo: callerFolder, originConsoleId: 'live' });
+  assert.deepEqual(calls[0], { ...args, repo: callerFolder, originConsoleId: 'live', originConsoleKey: 'stable-console' });
   const split = { ...args, repo: project, split: true, planner: { accountId: 'codex:default' }, reviewer: null, workflow: 'worktree' };
-  assert.equal((await invoke(split)).isError, undefined); assert.deepEqual(calls[1], { ...split, originConsoleId: 'live' });
+  assert.equal((await invoke(split)).isError, undefined); assert.deepEqual(calls[1], { ...split, originConsoleId: 'live', originConsoleKey: 'stable-console' });
   await workbench.invoke(tool.name, args); assert.equal(calls[2].repo, project); assert.equal(calls[2].originConsoleId, null);
   for (const invalid of [{ ...args, split: 'yes' }, { ...args, maxRounds: 6 }, { ...args, sessionId: 'someone-else' }, { criteria: 'Missing title' }]) assert.equal((await invoke(invalid)).isError, true);
   assert.equal(calls.length, 3, 'Invalid input never reaches the task loop');
@@ -194,7 +133,7 @@ test('agents discover Strata, start an implementation and read its status over t
   const sessions = { items: new Map([['live', { id: 'live', alive: true, cwd: project }]]) };
   const implementer = { accountId: 'opencode:strata', model: 'strata/local' };
   const tasks = {
-    choices: () => ({ implementers: [{ id: implementer.accountId, provider: 'opencode', label: 'Strata (local)', model: implementer.model, local: true }] }),
+    choices: () => { const account = { id: implementer.accountId, provider: 'opencode', label: 'Strata (local)', model: implementer.model, local: true, allowance: { status: 'local', windows: [] } }; return { accounts: [account], implementers: [account], reviewers: [] }; },
     start: async args => { calls.push(args); return { id: 'local-task' }; },
     status: async (id, repo) => { calls.push({ id, repo }); return { id, state: 'passed', diffStat: 'app.js | 2 +-' }; }
   };
@@ -203,7 +142,9 @@ test('agents discover Strata, start an implementation and read its status over t
   const grant = hub.grant('live');
   const invoke = async (tool, args = {}) => (await fetch(grant.PADDOCK_BRIDGE_URL, { method: 'POST', headers: { Authorization: 'Bearer ' + grant.PADDOCK_BRIDGE_TOKEN }, body: JSON.stringify({ name: 'dock_call', arguments: { tool, arguments: args } }) })).json();
   const choices = await invoke('dock/task_candidates');
-  assert.equal(JSON.parse(choices.content[0].text).implementers[0].id, implementer.accountId);
+  assert.equal(JSON.parse(choices.content[0].text).implementers[0], implementer.accountId);
+  const detail = await invoke('dock/task_candidates', { accountId: implementer.accountId });
+  assert.equal(JSON.parse(detail.content[0].text).account.model, implementer.model);
   const start = await invoke('dock/start_task', { title: 'Fix app', criteria: 'Return 2.', implementer, reviewer: null });
   assert.equal(JSON.parse(start.content[0].text).id, 'local-task');
   assert.equal(calls[0].repo, project); assert.deepEqual(calls[0].implementer, implementer);
@@ -260,10 +201,8 @@ test('Dock bridge validates native tool schemas and scopes file access to the ca
   const hub=new SharedHub(root,{list:()=>[]},{workbench}); await hub.start(); t.after(()=>hub.close());
   const grant=hub.grant('live');
   const invoke=async args => (await fetch(grant.PADDOCK_BRIDGE_URL,{method:'POST',headers:{Authorization:'Bearer '+grant.PADDOCK_BRIDGE_TOKEN},body:JSON.stringify({name:'dock_call',arguments:args})})).json();
-  const saved=await invoke({tool:'dock/save_result',arguments:{file,title:'Verification',kind:'test'}}); assert.equal(saved.isError,undefined);
-  assert.equal(workbench.results.items[0].sessionId,'live'); assert.equal(workbench.results.items[0].project,project);
-  const blocked=await invoke({tool:'dock/save_result',arguments:{file:outside,title:'Private'}}); assert.equal(blocked.isError,true);assert.ok(!JSON.stringify(workbench.snapshot()).includes('DO_NOT_COPY'));
-  const invalid=await invoke({tool:'dock/save_result',arguments:{title:'No spoofing',text:'test',sessionId:'someone-else'}}); assert.equal(invalid.isError,true);
+  const removed=await invoke({tool:'dock/save_result',arguments:{file,title:'Verification'}}); assert.equal(removed.isError,true);
+  assert.ok(!JSON.stringify(workbench.snapshot()).includes('DO_NOT_COPY'));
   hub.revoke('live'); const response=await fetch(grant.PADDOCK_BRIDGE_URL,{method:'POST',headers:{Authorization:'Bearer '+grant.PADDOCK_BRIDGE_TOKEN},body:'{}'});assert.equal(response.status,403);
 });
 test('Meshy device sign-in exposes only the user code and verification URL', async t=>{
@@ -304,4 +243,24 @@ test('Meshy fallback requires an agent attempt, preserves accepted IDs and resum
   await restored.remove(id); assert.equal(restored.items.length,0);
   assert.equal(new Concepts(root,{},results,reviews,alerts,{run}).usage[0].credits,9,'Deleting a job keeps the usage ledger');
   const disabled=new Concepts(root,{},results,reviews,alerts,{run,testMode:true}); await assert.rejects(disabled.start({reviewId:'review',nativeStatus:'failed'}),/disabled/);
+});
+
+test('task ownership survives a console restart and keyed tasks never fall back to session IDs', async t => {
+  const { root, project } = fixture(t), dismissed = [];
+  const session = { id: 'restarted', consoleKey: 'stable-owner', alive: true, cwd: project };
+  const sessions = { items: new Map([[session.id, session]]) };
+  let job = { id: 'job', state: 'needs-you', originConsoleId: 'old-session', originConsoleKey: 'stable-owner' };
+  const tasks = { status: async () => job, dismiss: id => dismissed.push(id) };
+  const wb = new Workbench(root, {}, { nativeImage: {} }, { testMode: true, onChange() {}, getSessions: () => sessions, getProject: () => project, getTasks: () => tasks });
+  const close = () => wb.invoke('dock/close_task', { id: 'job', reason: 'Completed directly.' }, session.id);
+  assert.deepEqual(await close(), { id: 'job', closed: true });
+  job = { ...job, originConsoleId: session.id, originConsoleKey: 'someone-else' };
+  await assert.rejects(close(), /Only the console/);
+  session.consoleKey = null;
+  await assert.rejects(close(), /Only the console/);
+  delete job.originConsoleKey;
+  assert.deepEqual(await close(), { id: 'job', closed: true }, 'legacy tasks retain session ownership');
+  job.originConsoleId = 'old-session';
+  await assert.rejects(close(), /Only the console/);
+  assert.equal(dismissed.length, 2);
 });

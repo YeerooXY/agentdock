@@ -2,9 +2,8 @@
 
 // Headless ladder routing. The caller owns dispatch and supplies a fresh snapshot
 // of active work, including owner work; this module never opens or stops consoles.
-const { modelFamily } = require('./task-routing.cjs');
+const { modelFamily, accountAllowance } = require('./task-routing.cjs');
 const { admissionReason, resourceProfile } = require('./scheduler.cjs');
-const FRESH_MS = 30 * 60_000;
 const LEVELS = new Set(['L1', 'L2', 'L3']);
 const STRATA_URL = 'http://127.0.0.1:8080/v1';
 
@@ -42,9 +41,9 @@ function registryFromRouting({ routing, candidates = [], profiles = {} }) {
     definitions.push({ id: `${level}:${index}:${entry.accountId}:${entry.model}`, accountId: entry.accountId,
       launcher: account?.provider || entry.accountId.split(':')[0], model: entry.model, family: entry.family,
       familyConfirmed: !!entry.family && profile.confirmedFamilies?.[entry.model] === entry.family,
-      level, quotaGroupId: profile.quotaGroupId || entry.accountId, concurrency: profile.concurrency ?? 1,
-      unknownAllowance: profile.unknownAllowance ?? 1, roles: { builder: true, reviewer: true }, canEdit: true,
-      available: !!account && account.installed !== false && account.signedIn !== false,
+      level, quotaGroupId: profile.quotaGroupId || entry.accountId, concurrency: profile.concurrency ?? Number.MAX_SAFE_INTEGER,
+      unknownAllowance: profile.unknownAllowance ?? 0, roles: { builder: true, reviewer: true }, canEdit: true,
+      available: !!account && account.installed !== false && account.signedIn !== false && account.available !== false,
       needsSetup: entry.needsSetup === true, local: profile.local === true, endpoint: profile.endpoint, cost: profile.cost });
   }
   return workerRegistry({ workers: definitions, excludedModels: routing.excludedModels || [], claudeRoles: routing.roles?.claude || { builder: !routing.claudeReviewsOnly, reviewer: true } });
@@ -53,24 +52,11 @@ function registryFromRouting({ routing, candidates = [], profiles = {} }) {
 // A newer missing value supersedes an older reading. Keep every stale/unknown
 // window visible, and apply the conservative allowance if any window is unknown.
 function groupHeadroom(limits, accountIds, now = Date.now()) {
-  const latest = new Map();
-  for (const reading of limits || []) {
-    if (!accountIds.includes(reading.accountId) || !Number.isFinite(reading.observedAt) || reading.observedAt > now) continue;
-    for (const window of Array.isArray(reading.windows) ? reading.windows : []) {
-      const key = JSON.stringify([reading.accountId, window.key ?? `${window.label || ''}:${window.minutes ?? ''}`]);
-      const prior = latest.get(key);
-      if (!prior || reading.observedAt > prior.observedAt || (reading.observedAt === prior.observedAt && (!Number.isFinite(window.usedPercent) || window.usedPercent > prior.usedPercent))) latest.set(key, { ...window, accountId: reading.accountId, observedAt: reading.observedAt });
-    }
-  }
-  const windows = [...latest.values()].map(window => {
-    const valid = Number.isFinite(window.usedPercent) && window.usedPercent >= 0 && window.usedPercent <= 100;
-    const status = !valid ? 'unknown' : now - window.observedAt > FRESH_MS ? 'stale' : 'fresh';
-    return { ...window, status };
-  });
-  const fresh = windows.filter(window => window.status === 'fresh');
-  return { status: !windows.length || accountIds.some(id => !windows.some(window => window.accountId === id)) || windows.some(window => window.status === 'unknown') ? 'unknown' : windows.some(window => window.status === 'stale') ? 'stale' : 'fresh',
-    left: fresh.length ? Math.min(...fresh.map(window => 100 - window.usedPercent)) : null,
-    blocked: fresh.some(window => window.usedPercent >= 90), windows };
+  const allowances = accountIds.map(id => ({ id, ...accountAllowance(id, limits, now) }));
+  const windows = allowances.flatMap(usage => usage.windows.map(window => ({ ...window, accountId: usage.id })));
+  return { status: !allowances.length || allowances.some(usage => usage.status === 'unknown') ? 'unknown' : allowances.some(usage => usage.status === 'stale') ? 'stale' : 'fresh',
+    left: windows.filter(window => window.status === 'fresh').reduce((left, window) => Math.min(left ?? 100, 100 - window.usedPercent), null),
+    blocked: allowances.some(usage => usage.blocked), windows };
 }
 
 function routeWorker({ workers, role = 'builder', level, builderFamily, limits = [], active = [], now = Date.now(), rotation = 0, owners, automatic = true } = {}) {
@@ -122,4 +108,4 @@ async function refreshAndRoute(options, refresh) {
   return routeWorker({ ...options, limits });
 }
 
-module.exports = { workerRegistry, registryFromRouting, groupHeadroom, routeWorker, refreshAndRoute, STRATA_URL, FRESH_MS };
+module.exports = { workerRegistry, registryFromRouting, groupHeadroom, routeWorker, refreshAndRoute, STRATA_URL };

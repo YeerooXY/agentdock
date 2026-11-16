@@ -1,9 +1,15 @@
 
-export function taskLoopUI({ call, getState, getPage, escape: e, renderPage, toast, openResult }) {
+import { openExecutionReport } from './ui/execution-report.js';
+import { messagePlanUI } from './message-plan-ui.js';
+
+export function taskLoopUI({ call, getState, getPage, escape: e, renderPage, toast }) {
   let choices = null, selected = '', detailStamp = '', listStamp = '', announcement = '', request = 0, bucket = '';
   const planDrafts = new Map();
   const running = job => ['planning', 'reviewing-plan', 'building', 'implementing', 'checking', 'reviewing'].includes(job.state);
   const jobs = () => getState()?.tasks || [];
+  const messages = messagePlanUI({ call, escape: e, getChoices: () => choices, toast, selectJob(job) {
+    getState().tasks = [...jobs().filter(item => item.id !== job.id), job]; selected = job.id; bucket = 'active'; renderPage();
+  } });
   const historic = job => ['accepted', 'stopped', 'failed'].includes(job.state);
   const finished = job => ['passed', 'accepted', 'needs-you', 'failed', 'interrupted', 'stopped'].includes(job.state);
   const visibleJobs = () => jobs().filter(job => historic(job) === (bucket === 'history'));
@@ -17,9 +23,7 @@ export function taskLoopUI({ call, getState, getPage, escape: e, renderPage, toa
     .replace(new RegExp(`</?(${toolTags})\\b[^>]*>`, 'gi'), ' ')
     .replace(/\s+/g, ' ').trim();
   const outcomeFor = job => {
-    const results = getState()?.workbench?.results || [];
-    const linked = results.find(item => item.id === job.resultId && item.outcome?.type === 'task' && item.outcome.taskId === job.id);
-    return (linked || results.find(item => item.taskId === job.id && item.outcome?.type === 'task'))?.outcome || null;
+    if (Object.hasOwn(job, 'outcome')) return job.outcome?.type === 'task' && job.outcome.taskId === job.id ? job.outcome : null;
   };
   const verdict = (job, outcome) => {
     const value = outcome?.verdict || ({ passed: 'ready', accepted: 'ready', 'needs-you': 'needs-decision', interrupted: 'interrupted', stopped: 'interrupted', failed: 'failed' }[job.state]);
@@ -103,7 +107,7 @@ export function taskLoopUI({ call, getState, getPage, escape: e, renderPage, toa
   function result(job) {
     const outcome = outcomeFor(job), files = outcome?.changedFiles, checks = outcome?.checks;
     const openItems = (outcome?.unresolved || []).map(clean).filter(Boolean);
-    const outcomeText = clean(outcome?.outcome || (job.reportError ? 'The outcome could not be saved.' : job.resultId ? 'No structured outcome was saved for this task.' : 'The outcome is being saved.'));
+    const outcomeText = clean(outcome?.outcome || (job.reportError ? 'The outcome could not be saved.' : 'The outcome is being saved.'));
     const checkLabels = { passed: 'Passed', failed: 'Failed', stale: 'Out of date', 'not-run': 'Not run', none: 'No checks' };
     const checkState = { passed: 'passed', failed: 'failed', stale: 'stale', 'not-run': 'not-set', none: 'not-set' }[checks?.status] || 'not-set';
     const withIssues = openItems.length > 0 || checks?.status === 'failed' || (!outcome && job.unresolved?.length);
@@ -116,18 +120,19 @@ export function taskLoopUI({ call, getState, getPage, escape: e, renderPage, toa
       ${job.reportError ? `<p class="form-error">${e(clean(job.reportError))}</p>` : ''}${job.error ? `<p class="form-error">${e(clean(job.error))}</p>` : ''}
       <details class="task-result-details" data-task-details="result-details"><summary>Details</summary>
         ${job.repo !== job.workFolder ? `<p>Repository: <span class="task-folder">${e(job.repo)}</span></p>` : ''}<p class="task-folder">${e(job.workFolder)}</p><p>${job.workflow === 'worktree' ? 'Separate worktree' : 'Current branch'}${job.branch ? `, ${e(job.branch)}` : ''}</p><p class="field-hint">Revision: <code>${e(job.sourceRevision)}</code></p>
-        ${job.resultId ? `<div class="task-actions"><button type="button" data-task-action="report" data-id="${e(job.id)}">Open markdown report</button></div>` : ''}${technical(job)}
+        ${job.executionHistory ? `<div class="task-actions"><button type="button" data-task-action="report" data-id="${e(job.id)}">Open report</button></div>` : ''}${technical(job)}
       </details>
     </article>`;
   }
   function detail(job) {
     if (!job) return '';
+    if (job.kind === 'owner-message') return messages.plan(job);
     if (finished(job)) return result(job);
     return `<article class="surface task-detail" aria-labelledby="task-detail-title"><header class="task-detail-heading"><h2 id="task-detail-title" tabindex="-1">${e(job.title)}</h2>${chip(job.state)}</header>
       ${job.repo !== job.workFolder ? `<p>Repository: <span class="task-folder">${e(job.repo)}</span></p>` : ''}
       <p class="task-folder">${e(job.workFolder)}</p><p>${job.workflow === 'worktree' ? 'Separate worktree' : 'Current branch'}${job.branch ? `, ${e(job.branch)}` : ''}</p>
       <p class="field-hint">Revision: <code>${e(job.sourceRevision)}</code></p>
-      <div class="task-actions">${running(job) || job.state === 'plan-ready' ? `<button type="button" data-task-action="stop" data-id="${e(job.id)}">Stop</button>` : ''}${job.resultId ? `<button type="button" data-task-action="report" data-id="${e(job.id)}">Open markdown report</button>` : ''}</div>
+      <div class="task-actions">${running(job) || job.state === 'plan-ready' ? `<button type="button" data-task-action="stop" data-id="${e(job.id)}">Stop</button>` : ''}${job.executionHistory || job.resultId ? `<button type="button" data-task-action="report" data-id="${e(job.id)}">Open report</button>` : ''}</div>
       ${job.reportError ? `<p class="form-error">${e(clean(job.reportError))}</p>` : ''}${job.error ? `<p class="form-error">${e(clean(job.error))}</p>` : ''}${technical(job)}
     </article>`;
   }
@@ -135,14 +140,14 @@ export function taskLoopUI({ call, getState, getPage, escape: e, renderPage, toa
     if (!bucket) bucket = jobs().length && jobs().every(historic) ? 'history' : 'active';
     if (!visibleJobs().some(job => job.id === selected)) selected = visibleJobs()[0]?.id || '';
     detailStamp = ''; listStamp = ''; announcement = '';
-    return `<div class="task-page"><header class="page-heading"><h1>Tasks</h1><div class="task-actions"><button type="button" data-task-action="refresh">Refresh</button></div></header>${tabs()}<p id="task-announcement" class="task-announcement" role="status" aria-live="polite" aria-atomic="true"></p><p class="task-empty field-hint" ${visibleJobs().length ? 'hidden' : ''}>${bucket === 'history' ? 'No finished tasks.' : 'No active tasks. Start a task from a console.'}</p><div class="task-layout" ${visibleJobs().length ? '' : 'hidden'}><nav aria-label="Repository tasks"><ul class="task-list">${list()}</ul></nav><div id="task-content">${detail(jobs().find(job => job.id === selected))}</div></div></div>`;
+    return `<div class="task-page"><header class="page-heading"><h1>Worker history</h1><div class="task-actions"><button type="button" data-task-action="refresh">Refresh</button></div></header>${messages.composer()}${tabs()}<p id="task-announcement" class="task-announcement" role="status" aria-live="polite" aria-atomic="true"></p><p class="task-empty field-hint" ${visibleJobs().length ? 'hidden' : ''}>${bucket === 'history' ? 'No finished tasks.' : 'No active tasks. Start a task from a console.'}</p><div class="task-layout" ${visibleJobs().length ? '' : 'hidden'}><nav aria-label="Repository tasks"><ul class="task-list">${list()}</ul></nav><div id="task-content">${detail(jobs().find(job => job.id === selected))}</div></div></div>`;
   }
   async function loadChoices() {
     const version = ++request;
     try {
       const next = await call('tasks.candidates', { split: true });
       if (version !== request) return;
-      choices = next; detailStamp = ''; sync();
+      choices = next; messages.updateRepos(); detailStamp = ''; sync();
     } catch (failure) { if (version === request) toast(failure.message, true); }
   }
   function sync() {
@@ -225,7 +230,7 @@ export function taskLoopUI({ call, getState, getPage, escape: e, renderPage, toa
       (document.querySelector(`[data-task-action=select][data-id="${CSS.escape(selected)}"]`) || document.querySelector(`[data-task-action=filter][data-id="${bucket}"]`))?.focus({ preventScroll: true });
       return;
     }
-    const names = { accept: ['seen', 'close'], seen: ['close'], stop: ['accept', 'resume', 'seen', 'close'], resume: ['stop'], approvePlan: ['stop'] }[action] || [];
+    const names = { accept: ['seen', 'close'], seen: ['close'], stop: ['accept', 'resume', 'seen', 'close'], resume: ['stop'], approvePlan: ['stop'], approveMessage: ['stop', 'close'] }[action] || [];
     for (const name of names) {
       const target = document.querySelector(`#task-content [data-task-action="${name}"]:not(:disabled)`);
       if (target) { target.focus({ preventScroll: true }); return; }
@@ -240,11 +245,15 @@ export function taskLoopUI({ call, getState, getPage, escape: e, renderPage, toa
     if (action === 'select') {
       selected = id; renderPage(); document.querySelector('#task-detail-title')?.focus(); return;
     }
-    button.disabled = true;
+    if (action === 'approveMessage') {
+      if (messages.isApproving(id)) return;
+      messages.setApproving(id, true);
+    } else button.disabled = true;
     try {
       if (action === 'refresh') { await call('tasks.list'); await loadChoices(); sync(); }
-      if (['stop', 'accept', 'resume', 'approvePlan'].includes(action)) {
-        const job = await call(`tasks.${action}`, { id, ...(action === 'approvePlan' ? planDraft(jobs().find(job => job.id === id)) : {}) });
+      if (['stop', 'accept', 'resume', 'approvePlan', 'approveMessage'].includes(action)) {
+        const current = jobs().find(job => job.id === id);
+        const job = await call(`tasks.${action}`, { id, ...(action === 'approvePlan' ? planDraft(current) : action === 'approveMessage' ? messages.approval(current) : {}) });
         getState().tasks = jobs().map(item => item.id === job.id ? job : item);
         if (historic(job)) { bucket = 'history'; selected = job.id; detailStamp = ''; listStamp = ''; }
         sync(); if (!button.isConnected) focusSuccessor(action);
@@ -259,9 +268,16 @@ export function taskLoopUI({ call, getState, getPage, escape: e, renderPage, toa
         getState().tasks = jobs().filter(item => item.id !== id); sync();
         if (!button.isConnected) focusSuccessor(action);
       }
-      if (action === 'report') { const job = jobs().find(item => item.id === id); if (job?.resultId) await openResult(job.resultId); }
+      if (action === 'report') { const job = jobs().find(item => item.id === id);
+        if (job?.executionHistory) await openExecutionReport(page => call('execution.report', { kind: 'task', id, ...page }), button, () => document.querySelector(`[data-task-action="select"][data-id="${id}"]`));
+ }
     } catch (failure) { toast(failure.message, true); }
-    finally { if (button.isConnected) { button.disabled = false; if (document.activeElement === document.body) button.focus({ preventScroll: true }); } }
+    finally {
+      if (action === 'approveMessage') messages.setApproving(id, false);
+      if (button.isConnected) { button.disabled = false; if (document.activeElement === document.body) button.focus({ preventScroll: true }); }
+    }
   });
-  return { render, sync, mount() { if (getPage() === 'tasks') { if (!choices) loadChoices(); sync(); } } };
+  // Select a job from outside the Tasks page; the caller navigates.
+  function open(job) { getState().tasks = [...jobs().filter(item => item.id !== job.id), job]; selected = job.id; bucket = 'active'; }
+  return { render, sync, open, mount() { if (getPage() === 'tasks') { if (!choices) loadChoices(); sync(); } } };
 }

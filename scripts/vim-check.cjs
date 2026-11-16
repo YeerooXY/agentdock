@@ -119,17 +119,7 @@ async function checkVimControls({ page, app, invoke, eventually, capture }) {
   await key('Control+d'); assert.ok(await page.locator('.settings-stage').evaluate(el => el.scrollTop > 0));
   await key('Control+u'); await eventually(async () => await page.locator('.settings-stage').evaluate(el => el.scrollTop) === 0);
   await sequence('gc'); await eventually(async () => await page.locator('#consoles-page').isVisible());
-  await key('d'); await eventually(async () => (await invoke('state')).mode === 'hud' && !(await invoke('state')).transitioning);
-  await key('1'); await key('l'); assert.equal(await slot(), '2');
-  assert.equal(await page.locator('.hud-slot[data-slot="2"]').evaluate(el => el === document.activeElement && el.classList.contains('vim-selected')), true);
-  await key('1'); await key('Enter');
-  await eventually(async () => (await invoke('state')).mode === 'fullscreen' && !(await invoke('state')).transitioning && await mode() === 'insert');
-  await normal(); await key('d');
-  await eventually(async () => (await invoke('state')).mode === 'hud' && !(await invoke('state')).transitioning);
-  await key('?'); await page.locator('#vim-help[open]').waitFor();
-  assert.equal(await page.locator('#vim-help').evaluate(el => el.scrollWidth <= el.clientWidth), true);
-  await capture('test-vim-hud-help.png');
-  await key('Escape'); await sequence('gc');
+  await invoke('mode', 'dashboard');
   await eventually(async () => (await invoke('state')).mode === 'dashboard' && !(await invoke('state')).transitioning);
 
   await page.reload(); await page.waitForSelector('.session-grid');

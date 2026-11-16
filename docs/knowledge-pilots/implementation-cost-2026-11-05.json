@@ -1,0 +1,809 @@
+{
+  "scope": "Knowledge/task/Projects feature implementation, integration and focused reviews. Not a documentation-only benchmark.",
+  "workers": {
+    "calls": 11,
+    "input": 7388096,
+    "cached": 6549492,
+    "output": 184540,
+    "failed": 3
+  },
+  "workerRecords": [
+    {
+      "id": "0933313d-83d4-4a24-97b4-e6334bf12264",
+      "title": "Knowledge: bounded JavaScript and TypeScript declaration extractor",
+      "state": "needs-you",
+      "dismissedAt": 1793889633945,
+      "startedAt": 1793888987630,
+      "finishedAt": 1793889587669,
+      "rounds": [
+        {
+          "implement": {
+            "elapsedMs": 790071,
+            "usage": {
+              "inputTokens": 5615646,
+              "outputTokens": 73009,
+              "cachedInputTokens": 5328425,
+              "turns": 1
+            }
+          },
+          "review": {}
+        }
+      ],
+      "usageSummary": {
+        "cloud": {
+          "calls": 1,
+          "input": 5615646,
+          "output": 73009,
+          "cached": 5328425,
+          "unknown": 0,
+          "unknownCached": 0,
+          "failed": 1
+        },
+        "local": {
+          "calls": 0,
+          "input": 0,
+          "output": 0,
+          "cached": 0,
+          "unknown": 0,
+          "unknownCached": 0,
+          "failed": 0
+        },
+        "byFunding": {
+          "free": {
+            "calls": 0,
+            "input": 0,
+            "output": 0,
+            "cached": 0,
+            "unknown": 0,
+            "unknownCached": 0,
+            "failed": 0
+          },
+          "included": {
+            "calls": 0,
+            "input": 0,
+            "output": 0,
+            "cached": 0,
+            "unknown": 0,
+            "unknownCached": 0,
+            "failed": 0
+          },
+          "metered": {
+            "calls": 0,
+            "input": 0,
+            "output": 0,
+            "cached": 0,
+            "unknown": 0,
+            "unknownCached": 0,
+            "failed": 0
+          },
+          "unknown": {
+            "calls": 1,
+            "input": 5615646,
+            "output": 73009,
+            "cached": 5328425,
+            "unknown": 0,
+            "unknownCached": 0,
+            "failed": 1
+          }
+        },
+        "scope": "workers",
+        "cloudComplete": false,
+        "note": "Includes recorded planning, implementation, review and failed attempts. Coordinating chat usage must be added before comparing savings."
+      }
+    },
+    {
+      "id": "23838008-c39d-49fc-b7fb-84ee7f753708",
+      "title": "Sonnet review: immutable source snapshot access",
+      "state": "passed",
+      "dismissedAt": 1793889982616,
+      "startedAt": 1793889771724,
+      "finishedAt": 1793889813889,
+      "rounds": [
+        {
+          "implement": {
+            "elapsedMs": 31619,
+            "usage": {
+              "inputTokens": 34763,
+              "outputTokens": 2870,
+              "cachedInputTokens": 16342,
+              "turns": 4
+            }
+          },
+          "review": {
+            "elapsedMs": 0
+          }
+        }
+      ],
+      "usageSummary": {
+        "cloud": {
+          "calls": 1,
+          "input": 34763,
+          "output": 2870,
+          "cached": 16342,
+          "unknown": 0,
+          "unknownCached": 0,
+          "failed": 0
+        },
+        "local": {
+          "calls": 0,
+          "input": 0,
+          "output": 0,
+          "cached": 0,
+          "unknown": 0,
+          "unknownCached": 0,
+          "failed": 0
+        },
+        "byFunding": {
+          "free": {
+            "calls": 0,
+            "input": 0,
+            "output": 0,
+            "cached": 0,
+            "unknown": 0,
+            "unknownCached": 0,
+            "failed": 0
+          },
+          "included": {
+            "calls": 1,
+            "input": 34763,
+            "output": 2870,
+            "cached": 16342,
+            "unknown": 0,
+            "unknownCached": 0,
+            "failed": 0
+          },
+          "metered": {
+            "calls": 0,
+            "input": 0,
+            "output": 0,
+            "cached": 0,
+            "unknown": 0,
+            "unknownCached": 0,
+            "failed": 0
+          },
+          "unknown": {
+            "calls": 0,
+            "input": 0,
+            "output": 0,
+            "cached": 0,
+            "unknown": 0,
+            "unknownCached": 0,
+            "failed": 0
+          }
+        },
+        "scope": "workers",
+        "cloudComplete": false,
+        "note": "Includes recorded planning, implementation, review and failed attempts. Coordinating chat usage must be added before comparing savings."
+      }
+    },
+    {
+      "id": "8ee909f4-f6fc-425d-bc5e-c68f2b7dbb6a",
+      "title": "Knowledge upkeep: durable bounded obligation queue",
+      "state": "needs-you",
+      "dismissedAt": 1793890944746,
+      "startedAt": 1793890159997,
+      "finishedAt": 1793890761200,
+      "rounds": [
+        {
+          "implement": {
+            "elapsedMs": 576205,
+            "usage": {
+              "inputTokens": 940697,
+              "outputTokens": 68580,
+              "cachedInputTokens": 696940,
+              "turns": 1
+            }
+          },
+          "review": {
+            "elapsedMs": 21261,
+            "usage": {
+              "inputTokens": 114714,
+              "outputTokens": 2355,
+              "cachedInputTokens": 84882,
+              "turns": 5
+            }
+          }
+        }
+      ],
+      "usageSummary": {
+        "cloud": {
+          "calls": 2,
+          "input": 1055411,
+          "output": 70935,
+          "cached": 781822,
+          "unknown": 0,
+          "unknownCached": 0,
+          "failed": 1
+        },
+        "local": {
+          "calls": 0,
+          "input": 0,
+          "output": 0,
+          "cached": 0,
+          "unknown": 0,
+          "unknownCached": 0,
+          "failed": 0
+        },
+        "byFunding": {
+          "free": {
+            "calls": 0,
+            "input": 0,
+            "output": 0,
+            "cached": 0,
+            "unknown": 0,
+            "unknownCached": 0,
+            "failed": 0
+          },
+          "included": {
+            "calls": 1,
+            "input": 114714,
+            "output": 2355,
+            "cached": 84882,
+            "unknown": 0,
+            "unknownCached": 0,
+            "failed": 1
+          },
+          "metered": {
+            "calls": 0,
+            "input": 0,
+            "output": 0,
+            "cached": 0,
+            "unknown": 0,
+            "unknownCached": 0,
+            "failed": 0
+          },
+          "unknown": {
+            "calls": 1,
+            "input": 940697,
+            "output": 68580,
+            "cached": 696940,
+            "unknown": 0,
+            "unknownCached": 0,
+            "failed": 0
+          }
+        },
+        "scope": "workers",
+        "cloudComplete": false,
+        "note": "Includes recorded planning, implementation, review and failed attempts. Coordinating chat usage must be added before comparing savings."
+      }
+    },
+    {
+      "id": "ad1eac19-8bd3-4639-a909-49919a7f7fb9",
+      "title": "Phone project workspace: bounded read-only views",
+      "state": "passed",
+      "dismissedAt": 1793891908810,
+      "startedAt": 1793891016444,
+      "finishedAt": 1793891263894,
+      "rounds": [
+        {
+          "implement": {
+            "elapsedMs": 244724,
+            "usage": {
+              "inputTokens": 392138,
+              "outputTokens": 29355,
+              "cachedInputTokens": 219948,
+              "turns": 1
+            }
+          },
+          "review": {
+            "elapsedMs": 0
+          }
+        }
+      ],
+      "usageSummary": {
+        "cloud": {
+          "calls": 1,
+          "input": 392138,
+          "output": 29355,
+          "cached": 219948,
+          "unknown": 0,
+          "unknownCached": 0,
+          "failed": 0
+        },
+        "local": {
+          "calls": 0,
+          "input": 0,
+          "output": 0,
+          "cached": 0,
+          "unknown": 0,
+          "unknownCached": 0,
+          "failed": 0
+        },
+        "byFunding": {
+          "free": {
+            "calls": 0,
+            "input": 0,
+            "output": 0,
+            "cached": 0,
+            "unknown": 0,
+            "unknownCached": 0,
+            "failed": 0
+          },
+          "included": {
+            "calls": 0,
+            "input": 0,
+            "output": 0,
+            "cached": 0,
+            "unknown": 0,
+            "unknownCached": 0,
+            "failed": 0
+          },
+          "metered": {
+            "calls": 0,
+            "input": 0,
+            "output": 0,
+            "cached": 0,
+            "unknown": 0,
+            "unknownCached": 0,
+            "failed": 0
+          },
+          "unknown": {
+            "calls": 1,
+            "input": 392138,
+            "output": 29355,
+            "cached": 219948,
+            "unknown": 0,
+            "unknownCached": 0,
+            "failed": 0
+          }
+        },
+        "scope": "workers",
+        "cloudComplete": false,
+        "note": "Includes recorded planning, implementation, review and failed attempts. Coordinating chat usage must be added before comparing savings."
+      }
+    },
+    {
+      "id": "d7ec6a13-0671-470c-9586-0b2f9675a939",
+      "title": "Sonnet review: automatic knowledge turn and commit boundary",
+      "state": "passed",
+      "dismissedAt": 1793892042974,
+      "startedAt": 1793891909527,
+      "finishedAt": 1793891946275,
+      "rounds": [
+        {
+          "implement": {
+            "elapsedMs": 34067,
+            "usage": {
+              "inputTokens": 108928,
+              "outputTokens": 2686,
+              "cachedInputTokens": 86676,
+              "turns": 9
+            }
+          },
+          "review": {
+            "elapsedMs": 0
+          }
+        }
+      ],
+      "usageSummary": {
+        "cloud": {
+          "calls": 1,
+          "input": 108928,
+          "output": 2686,
+          "cached": 86676,
+          "unknown": 0,
+          "unknownCached": 0,
+          "failed": 0
+        },
+        "local": {
+          "calls": 0,
+          "input": 0,
+          "output": 0,
+          "cached": 0,
+          "unknown": 0,
+          "unknownCached": 0,
+          "failed": 0
+        },
+        "byFunding": {
+          "free": {
+            "calls": 0,
+            "input": 0,
+            "output": 0,
+            "cached": 0,
+            "unknown": 0,
+            "unknownCached": 0,
+            "failed": 0
+          },
+          "included": {
+            "calls": 1,
+            "input": 108928,
+            "output": 2686,
+            "cached": 86676,
+            "unknown": 0,
+            "unknownCached": 0,
+            "failed": 0
+          },
+          "metered": {
+            "calls": 0,
+            "input": 0,
+            "output": 0,
+            "cached": 0,
+            "unknown": 0,
+            "unknownCached": 0,
+            "failed": 0
+          },
+          "unknown": {
+            "calls": 0,
+            "input": 0,
+            "output": 0,
+            "cached": 0,
+            "unknown": 0,
+            "unknownCached": 0,
+            "failed": 0
+          }
+        },
+        "scope": "workers",
+        "cloudComplete": false,
+        "note": "Includes recorded planning, implementation, review and failed attempts. Coordinating chat usage must be added before comparing savings."
+      }
+    },
+    {
+      "id": "9f78e045-4855-418f-8ddd-25d62f41601a",
+      "title": "Sonnet review: automatic task disposition and publication",
+      "state": "passed",
+      "dismissedAt": 1793892398511,
+      "startedAt": 1793892216780,
+      "finishedAt": 1793892242923,
+      "rounds": [
+        {
+          "implement": {
+            "elapsedMs": 23390,
+            "usage": {
+              "inputTokens": 89908,
+              "outputTokens": 2471,
+              "cachedInputTokens": 73286,
+              "turns": 7
+            }
+          },
+          "review": {
+            "elapsedMs": 0
+          }
+        }
+      ],
+      "usageSummary": {
+        "cloud": {
+          "calls": 1,
+          "input": 89908,
+          "output": 2471,
+          "cached": 73286,
+          "unknown": 0,
+          "unknownCached": 0,
+          "failed": 0
+        },
+        "local": {
+          "calls": 0,
+          "input": 0,
+          "output": 0,
+          "cached": 0,
+          "unknown": 0,
+          "unknownCached": 0,
+          "failed": 0
+        },
+        "byFunding": {
+          "free": {
+            "calls": 0,
+            "input": 0,
+            "output": 0,
+            "cached": 0,
+            "unknown": 0,
+            "unknownCached": 0,
+            "failed": 0
+          },
+          "included": {
+            "calls": 1,
+            "input": 89908,
+            "output": 2471,
+            "cached": 73286,
+            "unknown": 0,
+            "unknownCached": 0,
+            "failed": 0
+          },
+          "metered": {
+            "calls": 0,
+            "input": 0,
+            "output": 0,
+            "cached": 0,
+            "unknown": 0,
+            "unknownCached": 0,
+            "failed": 0
+          },
+          "unknown": {
+            "calls": 0,
+            "input": 0,
+            "output": 0,
+            "cached": 0,
+            "unknown": 0,
+            "unknownCached": 0,
+            "failed": 0
+          }
+        },
+        "scope": "workers",
+        "cloudComplete": false,
+        "note": "Includes recorded planning, implementation, review and failed attempts. Coordinating chat usage must be added before comparing savings."
+      }
+    },
+    {
+      "id": "fa8a96b4-6220-4fd1-ade3-d6a7d4cbb19f",
+      "title": "Sonnet review: phone project workspace scope and stale replies",
+      "state": "passed",
+      "dismissedAt": 1793894030656,
+      "startedAt": 1793893753825,
+      "finishedAt": 1793893785036,
+      "rounds": [
+        {
+          "implement": {
+            "elapsedMs": 28506,
+            "usage": {
+              "inputTokens": 50250,
+              "outputTokens": 2079,
+              "cachedInputTokens": 32841,
+              "turns": 5
+            }
+          },
+          "review": {
+            "elapsedMs": 0
+          }
+        }
+      ],
+      "usageSummary": {
+        "cloud": {
+          "calls": 1,
+          "input": 50250,
+          "output": 2079,
+          "cached": 32841,
+          "unknown": 0,
+          "unknownCached": 0,
+          "failed": 0
+        },
+        "local": {
+          "calls": 0,
+          "input": 0,
+          "output": 0,
+          "cached": 0,
+          "unknown": 0,
+          "unknownCached": 0,
+          "failed": 0
+        },
+        "byFunding": {
+          "free": {
+            "calls": 0,
+            "input": 0,
+            "output": 0,
+            "cached": 0,
+            "unknown": 0,
+            "unknownCached": 0,
+            "failed": 0
+          },
+          "included": {
+            "calls": 1,
+            "input": 50250,
+            "output": 2079,
+            "cached": 32841,
+            "unknown": 0,
+            "unknownCached": 0,
+            "failed": 0
+          },
+          "metered": {
+            "calls": 0,
+            "input": 0,
+            "output": 0,
+            "cached": 0,
+            "unknown": 0,
+            "unknownCached": 0,
+            "failed": 0
+          },
+          "unknown": {
+            "calls": 0,
+            "input": 0,
+            "output": 0,
+            "cached": 0,
+            "unknown": 0,
+            "unknownCached": 0,
+            "failed": 0
+          }
+        },
+        "scope": "workers",
+        "cloudComplete": false,
+        "note": "Includes recorded planning, implementation, review and failed attempts. Coordinating chat usage must be added before comparing savings."
+      }
+    },
+    {
+      "id": "8c01dbb7-c68f-4e37-95fe-236198bdc08d",
+      "title": "Semantic notes pilot: one knowledge-policy module",
+      "state": "needs-you",
+      "dismissedAt": 1793894470566,
+      "startedAt": 1793894236740,
+      "finishedAt": 1793894255164,
+      "rounds": [
+        {
+          "implement": {
+            "elapsedMs": 10382,
+            "usage": {
+              "inputTokens": 11742,
+              "outputTokens": 343,
+              "cachedInputTokens": 0,
+              "turns": 1
+            }
+          },
+          "review": {
+            "elapsedMs": 5025,
+            "usage": {
+              "inputTokens": 14186,
+              "outputTokens": 223,
+              "cachedInputTokens": 4784,
+              "turns": 1
+            }
+          }
+        }
+      ],
+      "usageSummary": {
+        "cloud": {
+          "calls": 2,
+          "input": 25928,
+          "output": 566,
+          "cached": 4784,
+          "unknown": 0,
+          "unknownCached": 0,
+          "failed": 1
+        },
+        "local": {
+          "calls": 0,
+          "input": 0,
+          "output": 0,
+          "cached": 0,
+          "unknown": 0,
+          "unknownCached": 0,
+          "failed": 0
+        },
+        "byFunding": {
+          "free": {
+            "calls": 0,
+            "input": 0,
+            "output": 0,
+            "cached": 0,
+            "unknown": 0,
+            "unknownCached": 0,
+            "failed": 0
+          },
+          "included": {
+            "calls": 1,
+            "input": 14186,
+            "output": 223,
+            "cached": 4784,
+            "unknown": 0,
+            "unknownCached": 0,
+            "failed": 1
+          },
+          "metered": {
+            "calls": 0,
+            "input": 0,
+            "output": 0,
+            "cached": 0,
+            "unknown": 0,
+            "unknownCached": 0,
+            "failed": 0
+          },
+          "unknown": {
+            "calls": 1,
+            "input": 11742,
+            "output": 343,
+            "cached": 0,
+            "unknown": 0,
+            "unknownCached": 0,
+            "failed": 0
+          }
+        },
+        "scope": "workers",
+        "cloudComplete": false,
+        "note": "Includes recorded planning, implementation, review and failed attempts. Coordinating chat usage must be added before comparing savings."
+      }
+    },
+    {
+      "id": "1fb2bca8-7697-426f-8300-f61f4811890a",
+      "title": "Sonnet semantic review: actual bounded JSON note",
+      "state": "passed",
+      "dismissedAt": 1793894930929,
+      "startedAt": 1793894471294,
+      "finishedAt": 1793894482562,
+      "rounds": [
+        {
+          "implement": {
+            "elapsedMs": 8805,
+            "usage": {
+              "inputTokens": 15124,
+              "outputTokens": 569,
+              "cachedInputTokens": 5368,
+              "turns": 1
+            }
+          },
+          "review": {
+            "elapsedMs": 0
+          }
+        }
+      ],
+      "usageSummary": {
+        "cloud": {
+          "calls": 1,
+          "input": 15124,
+          "output": 569,
+          "cached": 5368,
+          "unknown": 0,
+          "unknownCached": 0,
+          "failed": 0
+        },
+        "local": {
+          "calls": 0,
+          "input": 0,
+          "output": 0,
+          "cached": 0,
+          "unknown": 0,
+          "unknownCached": 0,
+          "failed": 0
+        },
+        "byFunding": {
+          "free": {
+            "calls": 0,
+            "input": 0,
+            "output": 0,
+            "cached": 0,
+            "unknown": 0,
+            "unknownCached": 0,
+            "failed": 0
+          },
+          "included": {
+            "calls": 1,
+            "input": 15124,
+            "output": 569,
+            "cached": 5368,
+            "unknown": 0,
+            "unknownCached": 0,
+            "failed": 0
+          },
+          "metered": {
+            "calls": 0,
+            "input": 0,
+            "output": 0,
+            "cached": 0,
+            "unknown": 0,
+            "unknownCached": 0,
+            "failed": 0
+          },
+          "unknown": {
+            "calls": 0,
+            "input": 0,
+            "output": 0,
+            "cached": 0,
+            "unknown": 0,
+            "unknownCached": 0,
+            "failed": 0
+          }
+        },
+        "scope": "workers",
+        "cloudComplete": false,
+        "note": "Includes recorded planning, implementation, review and failed attempts. Coordinating chat usage must be added before comparing savings."
+      }
+    }
+  ],
+  "lead": {
+    "scope": "Coordinating chat development/integration/review since all-features request; not documentation-only. Pre-final lower bound.",
+    "start": "2026-11-05T14:28:31.412Z",
+    "lastCounterAt": "2026-11-05T16:17:18.838Z",
+    "usage": {
+      "input_tokens": 48034000,
+      "cached_input_tokens": 47797376,
+      "cache_write_input_tokens": 0,
+      "output_tokens": 174438,
+      "reasoning_output_tokens": 95447,
+      "total_tokens": 48208438
+    },
+    "cachedInputIsSubsetOfInput": true,
+    "savingsEstablished": false
+  },
+  "notes": [
+    "Cached input is included in input, not added to it. Reasoning output is included in output.",
+    "Parser timeout and failed review attempts are included.",
+    "Local Strata was offline. Antigravity funding reported unknown; owner selected native allowance; G1 credits disabled. No paid fallback.",
+    "One Flash Low draft: 11742 input, 0 cached, 343 output, 10382ms. Actual Sonnet review requested corrections. Lead amended against source; isolated structural acceptance passed, semanticVerified=false.",
+    "Not a controlled comparison; no dollar cost, credit conversion or savings inferred. Lead counter is a pre-final lower bound."
+  ]
+}

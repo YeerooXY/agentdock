@@ -31,6 +31,16 @@ function atomicJson(file, data) {
   }
   finally { try { fs.unlinkSync(temp); } catch {} }
 }
+async function atomicJsonAsync(file, data) {
+  await fs.promises.mkdir(path.dirname(file), { recursive: true });
+  const temp = `${file}.${crypto.randomUUID()}.tmp`;
+  try {
+    const handle = await fs.promises.open(temp, 'wx', 0o600);
+    try { await handle.writeFile(JSON.stringify(data, null, 2)); await handle.sync(); }
+    finally { await handle.close(); }
+    await fs.promises.rename(temp, file);
+  } finally { await fs.promises.unlink(temp).catch(error => { if (error.code !== 'ENOENT') throw error; }); }
+}
 class Vault {
   constructor(file, safeStorage) { this.file = file; this.crypto = safeStorage; this.entries = readJson(file, {}); }
   available() {
@@ -57,4 +67,4 @@ function validateKeyId(id) {
   if (!/^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/.test(id || '') || ['constructor', 'prototype', '__proto__'].includes(id)) throw new Error('Use a key ID with letters, numbers, dashes or underscores.');
   return id;
 }
-module.exports = { readJson, atomicJson, Vault, validateKeyId };
+module.exports = { readJson, atomicJson, atomicJsonAsync, Vault, validateKeyId };

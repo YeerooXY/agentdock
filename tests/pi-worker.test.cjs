@@ -9,6 +9,32 @@ const argv = launch => launch.executable.toLowerCase().endsWith('powershell.exe'
 const assistant = (text, usage, extra = {}) => ({ type: 'message_end', message: { role: 'assistant', content: [{ type: 'text', text }], stopReason: 'stop', usage, ...extra } });
 const usage = (input, output, cacheRead = 0, cacheWrite = 0, cost = 0) => ({ input, output, cacheRead, cacheWrite, totalTokens: input + output + cacheRead + cacheWrite, cost: { total: cost } });
 
+test('Pi runs the fixed checks tool in its assigned folder without exposing a shell command argument', t => {
+  const { spawnSync } = require('node:child_process');
+  const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'paddock-pi-checks-'));
+  t.after(() => fs.rmSync(folder, { recursive: true, force: true }));
+  const sdk = path.join(folder, 'mock.mjs'), config = path.join(folder, 'config.json');
+  fs.writeFileSync(path.join(folder, 'check.cjs'), 'console.log("configured checks passed");');
+  fs.writeFileSync(path.join(folder, 'prompt.txt'), 'Run configured checks.');
+  fs.writeFileSync(sdk, `
+    import assert from 'node:assert/strict';
+    export const SettingsManager={inMemory:x=>x};
+    export const ModelRuntime={create:async()=>({getAvailable:async()=>[{id:'test',provider:'mock'}]})};
+    export const SessionManager={inMemory:()=>({})}; export const createExtensionRuntime=()=>({});
+    export async function createAgentSession(options){
+      const tool=options.customTools[0];assert.equal(tool.name,'run_checks');assert.deepEqual(tool.parameters.properties,{});
+      assert.ok(!options.tools.includes('bash'));
+      return {session:{thinkingLevel:'off',dispose(){},subscribe(){},waitForIdle:async()=>{},prompt:async()=>{
+        const result=await tool.execute('id',{});assert.equal(result.details.exitCode,0);
+        assert.match(result.content[0].text,/configured checks passed/);console.log('FIXED_CHECKS_PASSED');
+      }}};
+    }
+  `);
+  fs.writeFileSync(config, JSON.stringify({ route: { provider: 'mock', model: 'test' }, workFolder: folder, promptFile: path.join(folder, 'prompt.txt'), checks: 'node check.cjs' }));
+  const result = spawnSync(process.execPath, [path.resolve(__dirname, '../electron/pi-worker-runner.mjs'), sdk, config], { encoding: 'utf8', windowsHide: true });
+  assert.equal(result.status, 0, result.stdout + result.stderr); assert.match(result.stdout, /FIXED_CHECKS_PASSED/);
+});
+
 test('SDK effort downgrade stops before inference; omitted effort preserves adapter default', t => {
   const { spawnSync } = require('node:child_process');
   const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'paddock-pi-effort-'));

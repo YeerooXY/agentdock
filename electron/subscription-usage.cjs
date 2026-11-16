@@ -147,6 +147,7 @@ async function readKiroUsage({ executable, accountId = 'kiro:default', cwd, env,
 
 function kimiReading(raw, accountId, at = Date.now()) {
   if (raw?.kind !== 'ok') throw responseError(`${raw?.status || ''} ${raw?.message || ''}`);
+  if (!Object.keys(raw.quota?.usages || {}).length) throw new UsageError('unavailable', 'Kimi Code returned an empty subscription quota list.');
   const windows = [];
   for (const [key, minutes, name] of [['limit5h', 300, '5-hour'], ['limit7d', 10080, 'Weekly'], ['monthTotal', null, 'Monthly'], ['monthCode', null, 'Monthly Code']]) {
     const item = raw.quota?.usages?.[key];
@@ -213,8 +214,9 @@ async function readClaudeUsage({ executable, accountId = 'claude:default', env, 
   const transport = new UsageTransport(executable, ['--print', '--verbose', '--input-format', 'stream-json', '--output-format', 'stream-json', '--restricted', '--no-session-persistence', '--settings', '{"disableAllHooks":true}'], { env, cwd, spawnProcess, timeoutMs });
   try {
     // No user messages, model prompts, tools, transcript scans or login-file reads.
-    await transport.request('initialize', { hooks: {}, sdkMcpServers: [], agents: {} });
-    return claudeReading(await transport.request('get_usage', { skip_behaviors: true }), accountId);
+    const initialized = await transport.request('initialize', { hooks: {}, sdkMcpServers: [], agents: {} });
+    const models = require('./model-selection.cjs').normalizeClaudeModels(initialized).map(model => ({ ...model, available: true, source: 'Claude account initialize' }));
+    return claudeReading(await transport.request('get_usage', { skip_behaviors: true }), accountId).map(value => models.length ? { ...value, models } : value);
   } finally { transport.close(); }
 }
 async function readClaudeModels({ executable, env, cwd, spawnProcess, timeoutMs } = {}) {
@@ -266,7 +268,7 @@ function opencodeReading(raw, accountId = 'opencode:default', at = Date.now()) {
     windows.push({ key, label: name, minutes, usedPercent: valid ? (item.status === 'rate-limited' ? 100 : item.percent) : null, resetsAt: date(item?.resetsAt) });
   }
   if (windows.every(window => window.usedPercent === null)) throw new UsageError('unavailable', 'OpenCode returned no readable account limits.');
-  return [{ id: accountId, accountId, provider: 'opencode', name: 'OpenCode', source: 'OpenCode Go account service', observedAt: at, windows }];
+  return [{ id: accountId, accountId, provider: 'opencode', name: 'OpenCode', source: 'OpenCode Go account service', plan: 'Go', funding: 'included', observedAt: at, windows }];
 }
 function opencodeStats(raw) {
   const text = String(raw).replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '');
@@ -308,6 +310,13 @@ async function readOpenCodeUsage({ executable, accountId = 'opencode:default', c
   } catch (cause) {
     error = cause instanceof UsageError ? cause : new UsageError(['sign-in', 'unsupported'].includes(cause?.code) ? cause.code : 'unavailable', cause?.code === 'sign-in' ? 'Refresh your OpenCode sign-in, then check allowance again.' : cause?.code === 'unsupported' ? 'This OpenCode Console server has no connected allowance reader.' : 'OpenCode allowance could not be read. Open OpenCode and refresh.');
   }
+  if (values?.length && executable) {
+    try {
+      const text = await runUsageCommand(executable, ['models', 'opencode-go'], { cwd, env, run, timeoutMs });
+      values[0].models = require('./opencode-documentation.cjs').parseGoModels(text);
+      if (!values[0].models.length) values[0].modelMessage = 'OpenCode returned no Go models. Check the installed CLI.';
+    } catch { values[0].modelMessage = 'OpenCode Go model discovery failed. Account limits remain available.'; }
+  }
   const [week, day] = await stats;
   return { values, error, missing, localSpending: { week, day } };
 }
@@ -335,8 +344,16 @@ class SubscriptionUsage {
       this.states.set(id, { accountId: id, provider: values[0].provider, checkedAt: 0, observedAt: Math.max(...values.map(value => value.observedAt)), status: 'stale', message: 'Not checked since Paddock started.', lastReadings: values });
     }
   }
-  async refresh(accounts) {
-    const queue = accounts.filter((account, index) => accounts.findIndex(other => other.id === account.id) === index);
+  async refresh(accounts, { background = false } = {}) {
+    const queue = accounts.filter((account, index) => accounts.findIndex(other => other.id === account.id) === index).filter(account => {
+      // These readers open a full interactive CLI in a PTY. Never do that on a timer.
+      if (!background || !['cursor', 'antigravity'].includes(account.provider)) return true;
+      if (!this.states.has(account.id)) {
+        this.states.set(account.id, { accountId: account.id, provider: account.provider, checkedAt: 0, observedAt: null, status: 'limited', message: 'Refresh manually to read this interactive CLI allowance. Automatic checks do not launch it.', lastReadings: [] });
+        this.onChange();
+      }
+      return false;
+    });
     // Bound native helper concurrency on large account lists.
     const worker = async () => { let account; while ((account = queue.shift())) await this.refreshOne(account); };
     await Promise.all(Array.from({ length: Math.min(3, queue.length) }, worker));
@@ -385,6 +402,7 @@ class SubscriptionUsage {
 }
 function usageHelp(provider) {
   const source = usageSource(provider);
+  if (['cursor', 'antigravity'].includes(provider)) return 'Use Refresh to read this interactive CLI allowance. Automatic checks keep the last reading without launching the CLI.';
   // A CLI with a reader is read in the background; a native command is not the answer.
   if (source?.reader) return 'This CLI’s limits are read in the background. Refresh to check them.';
   if (source?.state === 'no-quota') return 'Local model. It has no account quota.';

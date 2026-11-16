@@ -26,7 +26,10 @@ test('Codex and Claude adapters preserve defaults and record requested dispatche
   const copilot = workerLaunch('copilot', 'copilot.exe', { effort: 'medium' });
   assert.ok(copilot.args.includes('--reasoning-effort'));
   assert.equal(copilot.effortDispatch.requested, 'medium');
-  assert.throws(() => workerLaunch('antigravity', 'agy.exe', { effort: 'high' }), /not available/);
+  const antigravity = workerLaunch('antigravity', 'agy.exe', { model: 'claude-sonnet-4-6', effort: 'high' });
+  assert.ok(antigravity.args.includes('--effort') && antigravity.args.includes('high'));
+  assert.ok(antigravity.args.includes('claude-sonnet-4-6'));
+  assert.equal(antigravity.effortDispatch.requested, 'high');
 });
 
 test('planner and reviewer assignments retain provider-valid requested effort', () => {

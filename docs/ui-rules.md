@@ -14,6 +14,8 @@ Run before the review disables animations, so motion is measured as shipped.
 | `selectable-controls` | Text inside buttons, labels, tabs, menus, navigation and toolbars that the user can highlight | any |
 | `touching-text` | Neighbouring text elements with no gap, such as "Choose songsOne song" | gap under 1.5 px on the same line |
 | `sibling-layout` | Elements sharing a class and parent whose content stacks differently | any difference |
+| `control-alignment` | Buttons, links and fields side by side on one line whose centres differ, or neighbouring buttons with different heights | over 2 px |
+| `control-spacing` | Neighbouring controls on one line closer than 6 px | under 6 px |
 | `chrome-share` | Viewport height taken by fixed or sticky bars, or outside the main scroll area | over 35% |
 | `covered-content` | After scrolling to the end, the last content is still under a fixed bar | any |
 | `input-style-outliers` | Text fields whose border, radius, background or font size differ from the most common field style | any |

@@ -1,0 +1,11 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Shared effects</title><link rel="stylesheet" href="gallery.css"></head>
+<body><main>
+  <header><h1>Shared effects</h1><div class="actions"><button id="content" aria-pressed="true">Console content</button><button id="motion" aria-pressed="true">Motion</button><button id="replay">Replay opening</button></div></header>
+  <nav aria-label="Themes" id="themes"></nav>
+  <section id="stage" aria-label="Effect preview">
+    <canvas id="background" aria-hidden="true"></canvas>
+    <div class="console" id="console"><div class="console-bar"><span id="theme-title">Paddock</span><span class="status">Console</span></div>
+      <div class="terminal"><p class="prompt">› Refine the shared visual effects.</p><p>Checking the star field and opening animation.</p><p class="muted">Renderer ready.</p><p>The background stays visible around the console.</p><p>The text stays readable while the effect runs.</p><span class="cursor" aria-hidden="true"></span></div>
+    </div><canvas id="foreground" aria-hidden="true"></canvas>
+  </section><footer><h2 id="name">Paddock</h2><p id="note"></p></footer>
+</main><script type="module" src="gallery.js"></script></body></html>

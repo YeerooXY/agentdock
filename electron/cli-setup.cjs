@@ -191,6 +191,7 @@ class CliSetup {
     return null;
   }
   refresh() {
+    this.located?.clear();
     let jobsChanged = false;
     for (const agent of catalog) {
       let file = null;
@@ -203,7 +204,16 @@ class CliSetup {
     if (jobsChanged) atomicJson(this.file, this.jobs);
     return this.snapshot();
   }
-  executable(id) { const agent = byId.get(id); if (!agent) return null; const file = this.locate(agent); this.installed.set(id, file); return file; }
+  executable(id, { cached = false } = {}) {
+    // Background account selection uses discovery from startup, installation or
+    // Check again. Launches still resolve the executable afresh.
+    if (cached) return this.installed.get(id) || null;
+    const agent = byId.get(id); if (!agent) return null;
+    // Lookups spawn where.exe synchronously on the main process; reuse a fresh result for 30 s.
+    const recent = (this.located ||= new Map()).get(id);
+    if (recent && Date.now() - recent.at < 30_000 && (!recent.file || fs.existsSync(recent.file))) return recent.file;
+    const file = this.locate(agent); this.installed.set(id, file); this.located.set(id, { file, at: Date.now() }); return file;
+  }
   snapshot() {
     const windows = this.platform === 'win32';
     return catalog.map(({ script, shScript, installArgs, npm, ignoreScripts, aliases, args, mcp, ...agent }) => ({ ...agent,

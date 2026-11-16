@@ -1,4 +1,5 @@
 'use strict';
+const { installStateTransport } = require('./state-test-transport.cjs');
 // Phone setup in Tailscale mode, synthetic state, on the four browser profiles.
 const { chromium, webkit, devices } = require('playwright');
 const fs = require('node:fs'), path = require('node:path'), http = require('node:http');
@@ -24,7 +25,8 @@ const profiles = [['pc', chromium, { viewport: { width: 1440, height: 900 } }], 
         if (method === 'mobile.status') return { ok: true, value: state.mobile };
         return { ok: true, value: [] };
       });
-      await context.addInitScript(() => { window.dock = { call: (m, p) => window.fixtureCall(m, p), onState: fn => window.fixtureState = fn, onOutput: () => {}, onSelect: () => {}, onNotice: () => {} }; });
+      await installStateTransport(context);
+await context.addInitScript(() => { window.dock = { call: (m, p) => window.fixtureCall(m, p), get state() { return window.fixtureStateTransport; }, onOutput: () => {}, onSelect: () => {}, onNotice: () => {} }; });
       page = await context.newPage(); page.on('pageerror', e => errors.push(`${name}: ${e.message}`));
       await page.goto(`http://127.0.0.1:${server.address().port}`); await page.locator('.session-grid').waitFor();
       await page.locator('.sidebar-bottom [data-page=settings]').click(); await page.locator('.settings-navigation [data-page=devices]').click();

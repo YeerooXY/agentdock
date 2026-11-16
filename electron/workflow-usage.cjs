@@ -1,12 +1,22 @@
 'use strict';
 // Initial aggregation drafted by Strata; verified and repaired by the caller.
-module.exports = { summarizeUsage, taskUsage };
+module.exports = { summarizeUsage, taskUsage, leadUsage };
+
+function leadUsage(job, messages = []) {
+  const end = job.finishedAt || Date.now();
+  const rows = messages.filter(row => job.originConsoleKey && row.consoleKey === job.originConsoleKey && row.at <= end &&
+    (row.finishedAt ?? row.at) >= job.startedAt);
+  const unique = [...new Map(rows.map(row => [row.id, row])).values()];
+  const usage = summarizeUsage(unique.map(row => ({ status: row.status, usage: row.usage }))).cloud;
+  return { ...usage, status: unique.length ? 'recorded' : 'unavailable', turnIds: unique.map(row => row.id),
+    attribution: 'Whole lead turns overlapping the task window. Shared turns can cover multiple tasks. Planning before this window and later integration are excluded; active turns may arrive after completion.' };
+}
 
 function taskUsage(job) {
   const entries = [], seen = new Set();
   function visit(task) {
-    for (const round of [...(task.planRounds || []), ...(task.rounds || [])]) {
-      for (const name of ['planner', 'repair', 'implement', 'review']) {
+    for (const round of [...(task.planRounds || []), ...(task.integrationRounds || []), ...(task.rounds || [])]) {
+      for (const name of ['planner', 'repair', 'implement', 'review', 'visualReview']) {
         const step = round[name];
         if (!step?.accountId || step.state === 'reused' || seen.has(step)) continue;
         seen.add(step);
@@ -19,8 +29,10 @@ function taskUsage(job) {
   }
   visit(job);
   const byFunding = Object.fromEntries(['free', 'included', 'metered', 'unknown'].map(kind => [kind, summarizeUsage(entries.filter(entry => !entry.local && entry.funding === kind)).cloud]));
-  return { ...summarizeUsage(entries), byFunding, scope: 'workers', cloudComplete: false,
-    note: 'Includes recorded planning, implementation, review and failed attempts. Coordinating chat usage must be added before comparing savings.' };
+  const workers = summarizeUsage(entries), lead = job.leadUsage || { status: 'unavailable', calls: 0, input: 0, output: 0, cached: 0, unknown: 0, unknownCached: 0, failed: 0 };
+  const total = Object.fromEntries(Object.keys(workers.cloud).map(key => [key, workers.cloud[key] + (lead[key] || 0)]));
+  return { ...workers, lead, totalCloud: total, byFunding, scope: 'workers-and-recorded-lead-turns', cloudComplete: false,
+    note: 'Worker totals include planning, implementation, review and failed attempts. Lead measurements are separate whole turns; coverage and shared-turn attribution must be checked before comparing savings.' };
 }
 
 function summarizeUsage(entries) {

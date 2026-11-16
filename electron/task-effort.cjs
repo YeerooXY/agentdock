@@ -3,6 +3,8 @@
 // Keep this list tied to native command surfaces. It describes what Paddock can
 // request, not an effort level a provider has confirmed it used.
 const PROVIDERS = Object.freeze({
+  antigravity: Object.freeze({ label: 'Antigravity effort', levels: Object.freeze(['low', 'medium', 'high', 'xhigh', 'max']),
+    dispatch: effort => ({ requested: effort, method: 'flag', flag: '--effort', value: effort }) }),
   codex: Object.freeze({ label: 'Codex reasoning effort', levels: Object.freeze(['minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra']),
     dispatch: effort => ({ requested: effort, method: 'config', key: 'model_reasoning_effort', value: effort }) }),
   claude: Object.freeze({ label: 'Claude effort', levels: Object.freeze(['low', 'medium', 'high', 'xhigh', 'max']),

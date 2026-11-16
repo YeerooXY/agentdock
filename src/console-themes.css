@@ -16,7 +16,7 @@
   --theme-glow:color-mix(in srgb,var(--frame-b) 22%,transparent);
 }
 [data-frame=normal] {
-  --frame-a:#b9c6d8; --frame-b:#8392a8; --theme-surface:#090b10; --theme-header:#131720;
+  --theme-surface:#090b10; --theme-header:#131720;
   --frame-border:linear-gradient(#4c5668,#343d50); --theme-glow:transparent; --theme-pattern:none;
   --frame-shape:inset(0 round 7px); --inner-shape:inset(0 round 6px);
 }
@@ -38,15 +38,15 @@
   --theme-glow:color-mix(in srgb,var(--frame-b) calc(var(--redline-glow) * 1%),transparent);
 }
 [data-frame=cyber] {
-  --frame-a:#00e1ff; --frame-b:#cc55ff; --theme-surface:#080b17; --theme-header:rgb(14 22 41 / .94);
+  --theme-surface:#080b17; --theme-header:rgb(14 22 41 / .94);
   --theme-pattern:linear-gradient(#00e1ff09 1px,transparent 1px) 0 0 / 32px 32px,linear-gradient(90deg,#00e1ff09 1px,transparent 1px) 0 0 / 32px 32px,radial-gradient(ellipse at 100% 100%,#ac00f323,transparent 60%);
 }
 [data-frame=icy] {
-  --frame-a:#00e5ff; --frame-b:#80b8ff; --theme-surface:#05121e; --theme-header:rgb(11 34 53 / .94); --theme-text:#edfaff;
+  --theme-surface:#05121e; --theme-header:rgb(11 34 53 / .94); --theme-text:#edfaff;
   --theme-pattern:linear-gradient(135deg,#e1faff14 0 1px,transparent 1px 18px) left top/22px 22px no-repeat,linear-gradient(225deg,#d8f8ff12 0 1px,transparent 1px 18px) right top/22px 22px no-repeat,linear-gradient(45deg,#8fdcff10 0 1px,transparent 1px 18px) left bottom/22px 22px no-repeat,linear-gradient(315deg,#d8f8ff10 0 1px,transparent 1px 18px) right bottom/22px 22px no-repeat,linear-gradient(135deg,#e1faff09 0 8%,transparent 8% 88%,#50a0ff0c 88%),radial-gradient(ellipse at 0 0,#1ab9e31b,transparent 60%);
 }
 [data-frame=fiery] {
-  --frame-a:#ff773e; --frame-b:#ffb700; --theme-surface:#160906; --theme-header:rgb(43 18 9 / .94); --theme-text:#fff2ec;
+  --theme-surface:#160906; --theme-header:rgb(43 18 9 / .94); --theme-text:#fff2ec;
   --theme-pattern:radial-gradient(ellipse at 30% 120%,#ff45002b,transparent 65%),radial-gradient(ellipse at 95% 100%,#ffb70015,transparent 45%),repeating-linear-gradient(110deg,transparent 0 97px,#ff9a1308 98px 99px);
 }
 [data-frame=gamer] {
@@ -149,8 +149,8 @@ body[data-ambient=off],body[data-visual-paused=true] { animation-play-state:paus
    repeatedly repainting a full-window modal backdrop in WebKit. */
 body:has(dialog[open]) { animation-play-state:paused }
 body:has(dialog[open]) .session-grid :is(.panel-stars i,.theme-trace,.theme-wave) { animation-play-state:paused }
-body[data-ambient=off] :is(.panel-stars i,.theme-trace,.status .dot,.dot.ready,.hud-slot.ready,.hud-console.ready),
-body[data-visual-paused=true] :is(.panel-stars i,.theme-trace,.status .dot,.dot.ready,.hud-slot.ready,.hud-console.ready) { animation-play-state:paused!important }
+body[data-ambient=off] :is(.panel-stars i,.theme-trace,.status .dot,.dot.ready),
+body[data-visual-paused=true] :is(.panel-stars i,.theme-trace,.status .dot,.dot.ready) { animation-play-state:paused!important }
 body.console-expanded .sidebar-edge,
 body.console-expanded .sidebar-edge::before,
 body.console-expanded .sidebar-edge::after { animation-play-state:paused!important }
@@ -171,7 +171,6 @@ body[data-opening-motion=off] .launch-burst { display:none }
 .launch-burst { position:absolute; inset:0; display:grid; place-items:center; overflow:hidden; pointer-events:none; border-radius:10px; clip-path:var(--inner-shape); z-index:3; opacity:1 }
 canvas.console-state-effect { position:absolute; inset:0; display:block; width:100%; height:100%; pointer-events:none; border-radius:inherit; clip-path:var(--inner-shape); z-index:6 }
 .console-panel-header>canvas.console-state-effect { clip-path:none; border-radius:inherit }
-:is(.hud-console>div) { position:relative }
 body[data-opening-motion=off] canvas.console-state-effect { display:none }
 body[data-opening-motion=off] .session-card[data-frame=fiery]::after { display:none }
 .launch-burst i { position:absolute; transform:none; border-radius:0; width:auto; height:auto }

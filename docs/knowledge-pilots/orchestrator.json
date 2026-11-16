@@ -1,0 +1,320 @@
+{
+  "schemaVersion": 1,
+  "project": "Agent workflow / Orchestrator",
+  "profile": "file-backed CLI orchestration",
+  "sourceSnapshot": null,
+  "assurance": "Pilot observations and proposed responsibility boundaries. No source snapshot, runtime verification or binding-complete graph.",
+  "inventoryId": "950ff3514cae653f3078eedef1736f6a588a0ed423601347639cb1db5a1375c1",
+  "observations": {
+    "parser": "Python 3.13.15 ast",
+    "sourceSnapshot": null,
+    "files": [
+      {
+        "path": "next.py",
+        "sha256": "7cc9e01c81ea24e58a9d40b527d1164e028da997cde47eeed717f141e7cb9b19",
+        "representation": "Python AST syntax observations, unresolved call binding",
+        "imports": [
+          "import json",
+          "import os",
+          "import sys",
+          "import time",
+          "from datetime import datetime, timezone",
+          "from urllib.parse import urlencode",
+          "from urllib.request import urlopen"
+        ],
+        "symbolDefinitions": 20,
+        "testFunctionDefinitions": 0,
+        "hashedBytes": 17695,
+        "parsedBytes": 17695,
+        "inspectedBytes": null,
+        "inspectionCoverage": "Selected semantic excerpts; byte count unknown. Hashing and AST parsing are counted separately."
+      },
+      {
+        "path": "record.py",
+        "sha256": "fce93f17862564d43d7cba9b43e9f260d915c00c4b381906c87ddcc4a6a8c20f",
+        "representation": "Python AST syntax observations, unresolved call binding",
+        "imports": [
+          "import json",
+          "import os",
+          "import sys",
+          "import tempfile",
+          "import hashlib",
+          "import time",
+          "from next import parse_status, time_value, validate"
+        ],
+        "symbolDefinitions": 4,
+        "testFunctionDefinitions": 0,
+        "hashedBytes": 11485,
+        "parsedBytes": 11485,
+        "inspectedBytes": null,
+        "inspectionCoverage": "Selected semantic excerpts; byte count unknown. Hashing and AST parsing are counted separately."
+      },
+      {
+        "path": "watch_tasks.py",
+        "sha256": "3a3620227fa7c4403c5ca4331d65fcf46e8b6f8130bde4fa3138982a8a54159f",
+        "representation": "Python AST syntax observations, unresolved call binding",
+        "imports": [
+          "import argparse",
+          "import json",
+          "import os",
+          "from pathlib import Path",
+          "import re",
+          "import time"
+        ],
+        "symbolDefinitions": 4,
+        "testFunctionDefinitions": 0,
+        "hashedBytes": 3174,
+        "parsedBytes": 3174,
+        "inspectedBytes": null,
+        "inspectionCoverage": "Selected semantic excerpts; byte count unknown. Hashing and AST parsing are counted separately."
+      },
+      {
+        "path": "test_next.py",
+        "sha256": "cec21a78bdf5ae9a6af2802f77c9a13fe1c6192ae03c4c5dae145264c6d7f23c",
+        "representation": "Python AST syntax observations, unresolved call binding",
+        "imports": [
+          "import json",
+          "import io",
+          "import os",
+          "import subprocess",
+          "import sys",
+          "import contextlib",
+          "import shutil",
+          "import uuid",
+          "import unittest",
+          "from pathlib import Path",
+          "from unittest.mock import patch",
+          "import next as engine",
+          "import record"
+        ],
+        "symbolDefinitions": 52,
+        "testFunctionDefinitions": 47,
+        "hashedBytes": 33467,
+        "parsedBytes": 33467,
+        "inspectedBytes": null,
+        "inspectionCoverage": "Selected semantic excerpts; byte count unknown. Hashing and AST parsing are counted separately."
+      },
+      {
+        "path": "test_watch_tasks.py",
+        "sha256": "1091ed0a4f5c39d42cc09562d5fdf58902c9632870fba06335bbf89b54e000d4",
+        "representation": "Python AST syntax observations, unresolved call binding",
+        "imports": [
+          "import json",
+          "from pathlib import Path",
+          "import subprocess",
+          "import sys",
+          "import tempfile",
+          "import unittest",
+          "from watch_tasks import observe"
+        ],
+        "symbolDefinitions": 5,
+        "testFunctionDefinitions": 5,
+        "hashedBytes": 2999,
+        "parsedBytes": 2999,
+        "inspectedBytes": null,
+        "inspectionCoverage": "Selected semantic excerpts; byte count unknown. Hashing and AST parsing are counted separately."
+      }
+    ]
+  },
+  "sections": [
+    {
+      "id": "sec_orch_decisions",
+      "title": "Queue decisions and routing",
+      "responsibility": "Validate queue state and select the next action, worker and reviewer. Includes ordering, retry/escalation and parallelism rules. CLI side effects belong to the integration section.",
+      "claimStatus": "proposed-interpretation",
+      "sourceHints": [
+        {
+          "path": "next.py",
+          "line": 68,
+          "symbol": "validate"
+        },
+        {
+          "path": "next.py",
+          "line": 135,
+          "symbol": "worker_for"
+        },
+        {
+          "path": "next.py",
+          "line": 139,
+          "symbol": "reviewer_for"
+        },
+        {
+          "path": "next.py",
+          "line": 184,
+          "symbol": "decide"
+        }
+      ]
+    },
+    {
+      "id": "sec_orch_records",
+      "title": "Outcome recording and queue persistence",
+      "responsibility": "Translate worker statuses, reviews and Paddock task observations into queue state. The record CLI writes the queue through a temporary file and replacement.",
+      "claimStatus": "proposed-interpretation",
+      "sourceHints": [
+        {
+          "path": "record.py",
+          "line": 20,
+          "symbol": "update"
+        },
+        {
+          "path": "record.py",
+          "line": 76,
+          "symbol": "task_update"
+        },
+        {
+          "path": "record.py",
+          "line": 181,
+          "symbol": "main"
+        }
+      ]
+    },
+    {
+      "id": "sec_orch_monitor",
+      "title": "Progress and stall observations",
+      "responsibility": "Compare task progress observations and distinguish finished, capacity-waiting and stalled work. The watcher reads task records and emits status; it does not itself stop a worker.",
+      "claimStatus": "proposed-interpretation",
+      "sourceHints": [
+        {
+          "path": "watch_tasks.py",
+          "line": 10,
+          "symbol": "progress_signature"
+        },
+        {
+          "path": "watch_tasks.py",
+          "line": 24,
+          "symbol": "observe"
+        },
+        {
+          "path": "watch_tasks.py",
+          "line": 48,
+          "symbol": "main"
+        }
+      ]
+    },
+    {
+      "id": "sec_orch_bridge",
+      "title": "CLI and Paddock integration",
+      "responsibility": "Adapt decisions into Paddock tool-call text, append event logs and optionally notify through a configured bridge. The default CLI executor and Paddock mode differ; emitting a tool call is not executing it.",
+      "claimStatus": "proposed-interpretation",
+      "sourceHints": [
+        {
+          "path": "next.py",
+          "line": 262,
+          "symbol": "paddock_line"
+        },
+        {
+          "path": "next.py",
+          "line": 309,
+          "symbol": "log_action"
+        },
+        {
+          "path": "next.py",
+          "line": 318,
+          "symbol": "notify"
+        },
+        {
+          "path": "next.py",
+          "line": 332,
+          "symbol": "main"
+        }
+      ]
+    }
+  ],
+  "flows": [
+    {
+      "id": "flow_orch_round",
+      "sequence": [
+        "sec_orch_decisions",
+        "sec_orch_bridge",
+        "external_worker_or_paddock",
+        "sec_orch_records",
+        "sec_orch_decisions"
+      ],
+      "status": "proposed from source syntax; external execution unresolved"
+    },
+    {
+      "id": "flow_orch_watch",
+      "sequence": [
+        "external_paddock_task_records",
+        "sec_orch_monitor",
+        "external_coordinator"
+      ],
+      "status": "source-observed input/output, coordinator behavior unresolved"
+    }
+  ],
+  "lookupExamples": [
+    {
+      "question": "Change which pending task is selected or its retry ceiling",
+      "sections": [
+        "sec_orch_decisions"
+      ],
+      "start": "next.py:184 decide; validation and routing helpers"
+    },
+    {
+      "question": "Change mapping from a Paddock task outcome to queue state",
+      "sections": [
+        "sec_orch_records"
+      ],
+      "start": "record.py:76 task_update"
+    },
+    {
+      "question": "Capacity waits should not look like stalled execution",
+      "sections": [
+        "sec_orch_monitor"
+      ],
+      "start": "watch_tasks.py:24 observe"
+    },
+    {
+      "question": "Change the task arguments emitted for Paddock",
+      "sections": [
+        "sec_orch_bridge",
+        "sec_orch_decisions"
+      ],
+      "start": "next.py:262 paddock_line and reviewer_for"
+    }
+  ],
+  "checks": {
+    "declarations": [
+      "test_next.py uses unittest; 47 test_ function definitions observed",
+      "test_watch_tasks.py uses unittest; 5 test_ function definitions observed"
+    ],
+    "executed": false,
+    "testMapping": "file and syntax-level only; no runtime coverage claim"
+  },
+  "gaps": [
+    "The source has multiple responsibilities in next.py; folder-only grouping would miss this.",
+    "Queue JSON and Paddock task records are external inputs, not durable source snapshots.",
+    "PID/log probes and optional notifications require runtime context.",
+    "SPEC.md describes scripts as pure; next.main logs/notifies and record.main writes queue state. That description needs qualification.",
+    "Source observations hash whole files but do not preserve reconstructible content objects."
+  ],
+  "observedAt": "2026-11-05T12:18:44.584Z",
+  "policy": "default-exclusions-only-v1:4f2e9c4f196a8bc91dfc257509173e5d26267c661bf72f28c273ac47f9c7955f",
+  "coverage": {
+    "complete": true,
+    "truncated": false,
+    "reasons": [],
+    "examined": 27,
+    "lookaheadEntries": 0,
+    "excluded": 3,
+    "excludedByRule": {
+      "private-name": 1,
+      "directory-name-hint": 2
+    },
+    "excludedDirectories": [
+      {
+        "path": ".git",
+        "rule": "directory-name-hint"
+      },
+      {
+        "path": "__pycache__",
+        "rule": "directory-name-hint"
+      }
+    ],
+    "unreadable": 0,
+    "symlinks": 0
+  },
+  "inventoryReport": "inventory-summary.json",
+  "unmappedSource": [],
+  "unmappedSourceDefinition": "Source-role paths lacking a section anchor. Data, assets, docs and tests are not claimed semantically covered by this list."
+}

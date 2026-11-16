@@ -1,6 +1,5 @@
 'use strict';
 const fs = require('node:fs/promises');
-const path = require('node:path');
 const { promisify } = require('node:util');
 const exec = promisify(require('node:child_process').execFile);
 const commitPattern = /^[a-f0-9]{40,64}$/i;
@@ -20,7 +19,7 @@ async function gitInfo(folder, { run = exec } = {}) {
   if (!folder) return null;
   try {
     // One status observation supplies HEAD, branch and working-tree state together.
-    // Disable optional locks so recording a result never refreshes Git's index.
+    // Disable optional locks so reading status never refreshes Git's index.
     const options = { windowsHide: true, maxBuffer: 1024 * 1024, timeout: 3000 };
     // Both processes must settle even outside a repository. Returning after the
     // first rejection can leave the other process holding a folder on Windows.
@@ -38,20 +37,4 @@ async function gitInfo(folder, { run = exec } = {}) {
   } catch { return null; }
 }
 
-async function resultGitContext(raw, context, storeRoot) {
-  let folder = context.project;
-  if (raw.file) {
-    const source = await fs.realpath(String(raw.file));
-    if (!context.trusted) {
-      const project = context.project && await fs.realpath(context.project), store = await fs.realpath(storeRoot);
-      const inside = (root, target) => { const r = path.relative(root, target); return r && r !== '..' && !r.startsWith('..' + path.sep) && !path.isAbsolute(r); };
-      if (!project || !inside(project, source) || source === store || inside(store, source)) throw new Error('Save the result inside this console’s project first.');
-    }
-    folder = path.dirname(source);
-  }
-  // A saved file identifies its repository even when the console started in a
-  // parent workspace. Never search sibling folders or infer a repo from its name.
-  return { ...context, git: await gitInfo(folder) };
-}
-
-module.exports = { gitInfo, cleanGit, resultGitContext };
+module.exports = { gitInfo, cleanGit };

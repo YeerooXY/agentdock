@@ -21,3 +21,21 @@ test('copy checks are bounded and repeatable', () => {
   assert.equal(checkWebsiteCopy('Demo website\n'.repeat(200)).truncated, true);
   assert.equal(checkWebsiteCopy('Demo website').findings.length, 1);
 });
+
+test('more-than promotional headings are flagged while numeric quantities remain usable', () => {
+  assert.equal(checkWebsiteCopy('More than coffee').findings[0].rule, 'promotional-comparison');
+  assert.equal(checkWebsiteCopy('More\nthan a planner.').findings[0].rule, 'promotional-comparison');
+  assert.deepEqual(checkWebsiteCopy('Export more than 20 files. Keep backups for more than one year.').findings, []);
+});
+
+test('owner-reported slogans and prefix-free promotional reversals retain original multiline evidence', () => {
+  for (const text of ["Unlock your potential. Not just a planner, it's a lifestyle.", "Unlock your potential.\nNot\njust a planner, it’s a lifestyle.", "Unlock your potential.\nIt is not just a planner, it is a lifestyle."]) {
+    const result = checkWebsiteCopy(text);
+    assert.deepEqual(result.findings.map(item => item.rule), ['generic-slogan', 'promotional-reversal']);
+    for (const item of result.findings) {
+      assert.equal(text.slice(item.offset, item.offset + item.text.length), item.text);
+      assert.equal(item.line, text.slice(0, item.offset).split('\n').length);
+    }
+  }
+  assert.deepEqual(checkWebsiteCopy('This planner exports PDF files. It is useful for weekly schedules.').findings, []);
+});
