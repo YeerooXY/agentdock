@@ -5,12 +5,12 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:agent_dock_mobile/main.dart';
 import 'package:agent_dock_mobile/terminal_keys.dart';
 
-import 'widget_test.dart' show FakeDock, enterChat;
+import 'widget_test.dart' show FakeDock, enterChat, composerAction;
 
 Future<void> openKeys(WidgetTester tester, FakeDock c) async {
   await tester.pumpWidget(DockApp(client: c));
   await tester.pumpAndSettle();
-  await tester.tap(find.byTooltip('Terminal keys'));
+  await composerAction(tester, 'Terminal keys');
   await tester.pumpAndSettle();
 }
 
@@ -67,7 +67,7 @@ void main() {
       await tester.pumpWidget(DockApp(client: c));
       await enterChat(tester);
       await tester.enterText(find.byType(TextField).last, 'Keep my draft');
-      await tester.tap(find.byTooltip('Terminal keys'));
+      await composerAction(tester, 'Terminal keys');
       await tester.pumpAndSettle();
       await tester.enterText(find.widgetWithText(TextField, 'Reply text'), 'y');
       await tester.pumpAndSettle();

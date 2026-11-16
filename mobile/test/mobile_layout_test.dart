@@ -5,7 +5,7 @@ import 'package:agent_dock_mobile/main.dart';
 import 'package:agent_dock_mobile/dock_style.dart';
 import 'package:agent_dock_mobile/live_agent_controls.dart';
 
-import 'widget_test.dart' show FakeDock;
+import 'widget_test.dart' show FakeDock, composerAction;
 
 void main() {
   for (final width in [320.0, 393.0]) {
@@ -30,24 +30,30 @@ void main() {
         await tester.pumpAndSettle();
         final field = find.byType(TextField).last;
         expect(tester.widget<TextField>(field).minLines, 1);
-        expect(tester.getSize(field).width, lessThan(width / 2));
+        // One field: + at the bottom left, text in the middle, microphone at the
+        // right until something is typed, then Send in its place.
+        expect(tester.getSize(field).width, greaterThan(width / 2));
         expect(tester.getSize(field).height, lessThan(90));
         expect(tester.testTextInput.isVisible, isFalse);
         expect(find.byKey(const ValueKey('enter-chat')), findsNothing);
         expect(find.byTooltip('Collapse chat'), findsNothing);
         expect(find.byTooltip('Queue'), findsNothing);
-        expect(find.byTooltip('Model and effort'), findsOneWidget);
+        expect(find.byType(DockSendButton), findsNothing);
         final box = tester.getRect(find.byKey(const ValueKey('reply-box')));
-        final send = tester.getRect(find.byType(DockSendButton));
-        final keys = tester.getRect(find.byTooltip('Terminal keys'));
-        expect(send.center.dy, closeTo(keys.center.dy, 1));
-        expect(send.left, greaterThanOrEqualTo(box.right));
-        expect(send.bottom, lessThanOrEqualTo(box.bottom + 1));
-        expect(keys.center.dx, lessThan(send.center.dx));
+        final more = tester.getRect(find.byTooltip('More actions'));
+        final mic = tester.getRect(find.byTooltip('Dictate'));
+        for (final control in [more, mic]) {
+          expect(box.contains(control.center), isTrue);
+        }
+        expect(more.center.dy, closeTo(mic.center.dy, 1));
+        expect(more.center.dx, lessThan(mic.center.dx));
         await tester.enterText(field, 'Draft stays here');
-        await tester.pump();
-        await tester.tap(find.byTooltip('Terminal keys'));
         await tester.pumpAndSettle();
+        expect(find.byTooltip('Dictate'), findsNothing);
+        final send = tester.getRect(find.byType(DockSendButton));
+        expect(box.contains(send.center), isTrue);
+        expect(send.center.dy, closeTo(more.center.dy, 1));
+        await composerAction(tester, 'Terminal keys');
         await tester.tap(find.byTooltip('Close terminal keys'));
         await tester.pumpAndSettle();
         expect(
@@ -55,14 +61,19 @@ void main() {
           'Draft stays here',
         );
         expect(c.inputs, isEmpty);
-        final model = find.byIcon(Icons.tune);
-        Focus.of(tester.element(model)).requestFocus();
+        // The + button opens the menu from the keyboard; the model chooser opens
+        // from it and Escape returns without dropping focus to the page.
+        final plus = find.byTooltip('More actions');
+        Focus.of(tester.element(find.byIcon(Icons.add_circle_outline))).requestFocus();
         await tester.pump();
         for (final key in [
           LogicalKeyboardKey.enter,
           LogicalKeyboardKey.space,
         ]) {
           await tester.sendKeyEvent(key);
+          await tester.pumpAndSettle();
+          expect(find.text('Model and effort'), findsOneWidget);
+          await tester.tap(find.text('Model and effort'));
           await tester.pumpAndSettle();
           expect(find.byType(LiveAgentControls), findsOneWidget);
           await tester.sendKeyEvent(LogicalKeyboardKey.escape);
@@ -71,12 +82,10 @@ void main() {
             FocusManager.instance.primaryFocus,
             isNot(isA<FocusScopeNode>()),
           );
-          await tester.sendKeyEvent(LogicalKeyboardKey.tab);
-          await tester.sendKeyDownEvent(LogicalKeyboardKey.shift);
-          await tester.sendKeyEvent(LogicalKeyboardKey.tab);
-          await tester.sendKeyUpEvent(LogicalKeyboardKey.shift);
+          Focus.of(tester.element(find.byIcon(Icons.add_circle_outline))).requestFocus();
           await tester.pump();
         }
+        expect(plus, findsOneWidget);
         expect(c.inputs, isEmpty);
         expect(tester.takeException(), isNull);
       });
@@ -94,7 +103,7 @@ void main() {
     expect(tester.getSize(field).height, greaterThan(initial));
     expect(
       tester.getSize(field).height,
-      lessThanOrEqualTo(16 * 1.4 * 8.5 + 24),
+      lessThanOrEqualTo(16 * 1.4 * 4 + 24),
     );
   });
 }

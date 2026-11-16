@@ -5,7 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:agent_dock_mobile/main.dart';
 
-import 'widget_test.dart' show FakeDock;
+import 'widget_test.dart' show FakeDock, composerAction;
 
 void main() {
   const channel = MethodChannel('agentdock/dictation');
@@ -45,7 +45,7 @@ void main() {
     await tester.enterText(field, 'hello old world');
     final editor = tester.widget<TextField>(field).controller!;
     editor.selection = const TextSelection(baseOffset: 6, extentOffset: 9);
-    await tester.tap(find.byTooltip('Dictate'));
+    await composerAction(tester, 'Dictate');
     await tester.pump();
     await tester.runAsync(() async {
       result.complete('new');
@@ -65,7 +65,7 @@ void main() {
       final c = await open(tester);
       final field = find.byType(TextField).last;
       await tester.enterText(field, 'original');
-      await tester.tap(find.byTooltip('Dictate'));
+      await composerAction(tester, 'Dictate');
       await tester.pump();
       if (mode == 'edit') await tester.enterText(field, 'edited');
       if (mode == 'console') {
@@ -98,11 +98,17 @@ void main() {
             : 'original',
       );
       expect(c.inputs, isEmpty);
+      // Dictation is available again once the pending request ends. A failure
+      // notice may cover the field; dismiss it first.
+      ScaffoldMessenger.of(
+        tester.element(find.byType(TextField).last),
+      ).removeCurrentSnackBar();
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('More actions').last);
+      await tester.pumpAndSettle();
       expect(
-        tester
-            .widget<IconButton>(find.widgetWithIcon(IconButton, Icons.mic_none))
-            .onPressed,
-        isNotNull,
+        tester.widget<ListTile>(find.widgetWithText(ListTile, 'Dictate')).enabled,
+        isTrue,
       );
     });
   }

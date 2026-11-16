@@ -10,7 +10,7 @@ import 'package:agent_dock_mobile/dock_client.dart';
 import 'package:agent_dock_mobile/agent_selection.dart';
 import 'package:agent_dock_mobile/terminal_styles.dart';
 
-import 'widget_test.dart' show FakeDock, enterChat;
+import 'widget_test.dart' show FakeDock, enterChat, composerAction;
 import 'mobile_actions_test.dart' show ActionsDock;
 
 class ProjectDock extends ActionsDock {
@@ -295,16 +295,19 @@ void main() {
     await tester.pumpWidget(DockApp(client: c));
     await enterChat(tester);
     await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('More actions').last);
+    await tester.pumpAndSettle();
     expect(
-      find.byTooltip('Model and effort'),
+      find.text('Model and effort'),
       findsNothing,
       reason: 'the PC cannot apply a change for this console',
     );
+    await tester.tapAt(const Offset(10, 30));
+    await tester.pumpAndSettle();
     session['switchMethod'] = 'resume';
     c.notifyListeners();
     await tester.pumpAndSettle();
-    expect(find.byTooltip('Model and effort'), findsOneWidget);
-    await tester.tap(find.byTooltip('Model and effort'));
+    await composerAction(tester, 'Model and effort');
     await tester.pumpAndSettle();
     expect(find.text('Model & effort'), findsOneWidget);
   });
@@ -315,7 +318,7 @@ void main() {
     await tester.pumpWidget(DockApp(client: c));
     await enterChat(tester);
     await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip('Model and effort'));
+    await composerAction(tester, 'Model and effort');
     await tester.pumpAndSettle();
     await tester.pumpAndSettle();
     c.generation++;
@@ -342,7 +345,7 @@ void main() {
     await tester.pumpWidget(DockApp(client: c));
     await enterChat(tester);
     await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip('Model and effort'));
+    await composerAction(tester, 'Model and effort');
     await tester.pumpAndSettle();
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);

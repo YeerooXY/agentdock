@@ -28,6 +28,7 @@ import '../pair_page.dart';
 import '../projects_page.dart';
 import '../settings_page.dart';
 import 'home_chrome.dart';
+import '../update_panel.dart';
 
 /// Composes pages and console controllers. Drafts, transport, command guards
 /// and terminal lifetimes belong to their feature services.
@@ -57,6 +58,7 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    unawaited(AppUpdates.instance.checkQuietly());
     composer = ComposerController(c, releaseTerminal: typing.stop);
     attachments = AttachmentController(
       c,
@@ -118,6 +120,7 @@ class _DockHomeState extends State<DockHome> with WidgetsBindingObserver {
     if (state == AppLifecycleState.resumed) {
       c.setForeground(true);
       unawaited(attachments.checkLatestImage(run));
+      unawaited(AppUpdates.instance.checkQuietly());
     }
     if ([
       AppLifecycleState.paused,

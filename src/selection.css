@@ -1,0 +1,6 @@
+/* Like a desktop app: labels, headings, buttons and plan text do not highlight
+   when clicked or dragged. Text people type, read as output or copy stays
+   selectable: fields, code, terminals, editors and error messages. */
+body { -webkit-user-select:none; user-select:none; }
+input,textarea,[contenteditable]:not([contenteditable=false]),pre,code,kbd,samp,
+.xterm,.cm-editor,.cm-content,.form-error,[role=alert],[data-selectable] { -webkit-user-select:text; user-select:text; }

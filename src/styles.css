@@ -27,6 +27,7 @@
 @import './usage-glass.css';
 @import './settings-system.css';
 @import './routing-controls.css';
+@import './selection.css';
 
 /* Project workspace uses the existing surfaces and controls. */
 .project-workspace { padding: clamp(16px, 3vw, 32px); }

@@ -1,7 +1,7 @@
 name: agent_dock_mobile
 description: A private Android companion for Paddock terminals.
 publish_to: 'none'
-version: 0.6.0-preview.45+45
+version: 0.6.0-preview.46+46
 
 environment:
   sdk: ^3.13.5

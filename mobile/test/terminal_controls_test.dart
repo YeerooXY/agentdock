@@ -110,7 +110,7 @@ void main() {
     expect(c.screen!.terminal.viewWidth, 80);
     await enterChat(tester);
     expect(
-      tester.getRect(find.byTooltip('Send to console')).bottom,
+      tester.getRect(find.byKey(const ValueKey('reply-box'))).bottom,
       lessThanOrEqualTo(tester.getRect(find.byType(NavigationBar)).top),
     );
     expect(tester.takeException(), isNull);

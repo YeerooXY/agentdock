@@ -5,6 +5,7 @@ import '../dock_client.dart';
 import '../dock_style.dart';
 import '../image_jobs_page.dart';
 import '../tasks_page.dart';
+import '../update_panel.dart';
 
 /// Home page indexes. Index 1 is unused; remaining values stay stable.
 abstract final class HomePages {
@@ -157,7 +158,20 @@ class HomeNavigationBar extends StatelessWidget {
           label: 'Usage',
         ),
         NavigationDestination(
-          icon: Icon(Icons.settings_outlined, color: blue),
+          icon: ListenableBuilder(
+            listenable: AppUpdates.instance,
+            builder: (context, _) => AppUpdates.instance.available
+                ? Semantics(
+                    label: 'Update available',
+                    child: Badge(
+                      key: const ValueKey('update-badge'),
+                      smallSize: 9,
+                      backgroundColor: pink,
+                      child: Icon(Icons.settings_outlined, color: blue),
+                    ),
+                  )
+                : Icon(Icons.settings_outlined, color: blue),
+          ),
           label: 'Settings',
         ),
       ],

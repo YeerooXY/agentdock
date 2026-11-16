@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:agent_dock_mobile/update_panel.dart';
 import 'package:agent_dock_mobile/main.dart';
@@ -15,6 +16,26 @@ class UnreachablePC extends DockClient {
 }
 
 void main() {
+  setUp(() => AppUpdates.instance.reset());
+  tearDown(() => AppUpdates.instance.reset());
+
+  testWidgets('the Settings tab shows a badge while a newer release is available', (
+    tester,
+  ) async {
+    final client = UnreachablePC()..pairing = {'name': 'PC'};
+    addTearDown(client.dispose);
+    await tester.pumpWidget(DockApp(client: client));
+    await tester.pumpAndSettle();
+    final badge = find.byKey(const ValueKey('update-badge'));
+    expect(badge, findsNothing);
+    AppUpdates.instance
+      ..release = {'version': '0.6.0-preview.99', 'url': 'https://example.invalid', 'size': 1}
+      ..notifyListeners();
+    await tester.pump();
+    expect(badge, findsOneWidget);
+    expect(find.bySemanticsLabel(RegExp('Update available')), findsOneWidget);
+  });
+
   for (final paired in [false, true]) {
     testWidgets('updates are reachable with no PC connection, paired=$paired', (
       tester,

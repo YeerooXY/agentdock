@@ -12,7 +12,7 @@ import 'package:agent_dock_mobile/agent_selection.dart';
 import 'package:agent_dock_mobile/live_agent_controls.dart';
 
 import 'pending_agent_controls_test.dart' show SettingsDock, effort;
-import 'widget_test.dart' show enterChat;
+import 'widget_test.dart' show enterChat, composerAction;
 
 const capture = bool.fromEnvironment('CAPTURE_MODEL_SETTINGS');
 
@@ -110,7 +110,7 @@ void main() {
         find.byType(TextField).last,
         'Keep this phone draft',
       );
-      await tester.tap(find.byTooltip('Model and effort'));
+      await composerAction(tester, 'Model and effort');
       await tester.pumpAndSettle();
       await tester.pumpAndSettle();
       expect(find.byType(LiveAgentControls), findsOneWidget);

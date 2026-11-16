@@ -60,6 +60,11 @@ void main() {
         .setMockMethodCallHandler(channel, null),
   );
 
+  Future<void> openMenu(WidgetTester tester) async {
+    await tester.tap(find.byTooltip('More actions').last);
+    await tester.pumpAndSettle();
+  }
+
   Future<AttachDock> open(WidgetTester tester) async {
     final c = AttachDock();
     addTearDown(c.dispose);
@@ -76,6 +81,7 @@ void main() {
     (tester) async {
       final c = await open(tester);
       final chip = find.byKey(const ValueKey('latest-image'));
+      await openMenu(tester);
       expect(chip, findsOneWidget);
       // Re-resolve on tap, even if the thumbnail was loaded earlier.
       recent = {'permission': true, 'id': 43};
@@ -91,11 +97,11 @@ void main() {
         ),
         findsOneWidget,
       );
-      expect(chip, findsOneWidget);
       expect(c.inputs, isEmpty);
       // The shortcut stays available for another message.
       returnToApp(tester);
       await tester.pumpAndSettle();
+      await openMenu(tester);
       expect(chip, findsOneWidget);
     },
   );
@@ -106,6 +112,7 @@ void main() {
     recent = {'permission': false};
     await open(tester);
     expect(calls.where((x) => x.method == 'allowRecent'), isEmpty);
+    await openMenu(tester);
     expect(find.byKey(const ValueKey('latest-image')), findsOneWidget);
     recent = {'permission': true, 'id': 73};
     await tester.tap(find.byKey(const ValueKey('latest-image')));
@@ -123,6 +130,7 @@ void main() {
       recent = {'permission': false};
       final c = await open(tester);
       expect(c.attached, isEmpty);
+      await openMenu(tester);
       await tester.tap(find.byKey(const ValueKey('latest-image')));
       await tester.pumpAndSettle();
       expect(calls.where((x) => x.method == 'pick'), hasLength(1));

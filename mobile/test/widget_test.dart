@@ -155,12 +155,17 @@ Future<void> useGrid(WidgetTester tester) async {
   await tester.pumpAndSettle();
 }
 
+/// Opens the composer's + menu and chooses [item].
+Future<void> composerAction(WidgetTester tester, String item) async {
+  await tester.tap(find.byTooltip('More actions').last);
+  await tester.pumpAndSettle();
+  await tester.tap(find.text(item).last);
+  await tester.pumpAndSettle();
+}
+
 Future<void> chooseFile(WidgetTester tester) async {
   await enterChat(tester);
-  await tester.tap(find.byTooltip('Attach'));
-  await tester.pumpAndSettle();
-  await tester.tap(find.text('Files'));
-  await tester.pumpAndSettle();
+  await composerAction(tester, 'Files');
 }
 
 void main() {
