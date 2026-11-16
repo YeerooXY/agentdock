@@ -77,6 +77,17 @@ function freeAlternatives(catalog, limit = 12) {
   return out;
 }
 
+// Pi loads models only from its own catalog, which can lag OpenRouter's live list.
+// Returns the free OpenRouter model IDs Pi lists, or null when the listing is unreadable.
+async function piFreeModels(executable, options) {
+  try {
+    const out = await runUsageCommand(executable, ['--list-models', ':free'], options);
+    const ids = new Set(String(out).split(/\r?\n/).map(line => line.trim().split(/\s+/))
+      .filter(([provider, model]) => provider === 'openrouter' && model && SAFE_ID.test(model)).map(([, model]) => model));
+    return ids.size ? ids : null;
+  } catch { return null; }
+}
+
 async function readPiUsage({ executable, accountId = 'pi:default', cwd, env, run, fetchImpl = fetch, timeoutMs = 20000, model, settingsPath, now = Date.now } = {}) {
   if (!executable) throw new UsageError('not-installed', 'Install Pi to read its OpenRouter allowance.');
   const stdout = await runUsageCommand(executable, ['auth', 'check', '--provider', 'openrouter', '--json', '--credentials', '--no-refresh'], { cwd, env, run, timeoutMs });
@@ -93,6 +104,7 @@ async function readPiUsage({ executable, accountId = 'pi:default', cwd, env, run
   // The public catalog needs no credential.
   try { catalog = (await getJson(fetchImpl, BASE + '/models', { timeoutMs, limit: CATALOG }))?.data; } catch { catalog = null; }
   if (!Array.isArray(catalog)) catalog = null;
+  const piKnown = catalog ? await piFreeModels(executable, { cwd, env, run, timeoutMs }) : null;
   const observedAt = now();
   const keyData = record(key?.data), creditsData = record(credits?.data);
   if (!keyData) throw new UsageError('unavailable', 'OpenRouter returned no readable allowance.');
@@ -107,6 +119,6 @@ async function readPiUsage({ executable, accountId = 'pi:default', cwd, env, run
     route: route ? { provider: route.provider, model: route.model } : null,
     funding: selected.funding, modelAllowed: selected.modelAllowed, remainingCredits: selected.remainingCredits,
     creditsKnown: !!creditsData, catalogKnown: !!catalog,
-    freeAlternatives: catalog ? freeAlternatives(catalog) : [] }];
+    freeAlternatives: catalog ? freeAlternatives(piKnown ? catalog.filter(item => piKnown.has(item?.id)) : catalog) : [] }];
 }
 module.exports = { readPiUsage, authCredential, selectedRoute, freeAlternatives };

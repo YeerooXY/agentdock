@@ -123,3 +123,15 @@ test('settings reader uses only whitelisted provider and model fields', t => {
   assert.equal(selectedRoute({ settingsPath: settings(t, 'x'.repeat(300 * 1024)) }), null);
   assert.deepEqual(freeAlternatives(CATALOG, 0), []);
 });
+
+test('free routes keep only models that Pi itself lists, so a model missing from Pi is never offered', async () => {
+  const f = fixture();
+  const listing = 'provider    model                        context\nopenrouter  cohere/north-mini-code:free  256K\n';
+  const run = (file, args, options, done) => { f.commands.push({ file, args }); queueMicrotask(() => done(null, args.includes('--list-models') ? listing : JSON.stringify({ provider: 'openrouter', status: 'ready', credentials: SECRET }), '')); return { stdin: { end() {} } }; };
+  const [r] = await read({ ...f, run });
+  assert.ok(f.commands.some(c => c.args.includes('--list-models')));
+  assert.deepEqual(r.freeAlternatives.map(m => m.route), ['openrouter/cohere/north-mini-code:free']);
+  const none = (file, args, options, done) => { queueMicrotask(() => done(null, args.includes('--list-models') ? 'provider model\n' : JSON.stringify({ provider: 'openrouter', status: 'ready', credentials: SECRET }), '')); return { stdin: { end() {} } }; };
+  const [unfiltered] = await read({ ...f, run: none });
+  assert.ok(unfiltered.freeAlternatives.length >= 1, 'an unreadable listing leaves the catalog list unfiltered');
+});
