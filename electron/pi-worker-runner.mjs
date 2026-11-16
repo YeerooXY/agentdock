@@ -61,7 +61,9 @@ try {
   await session.prompt(fs.readFileSync(options.promptFile, 'utf8'));
   await session.waitForIdle();
   if (budgetHit) process.exitCode = 1;
-} catch {
+} catch (error) {
+  // Report why Pi stopped (for example an unavailable model) without paths or secrets.
+  emit({ type: 'worker_failure', reason: redactText(String(error?.message || error), process.env).replace(/[A-Za-z]:\\[^\s'"]*/g, '<path>').slice(0, 200) });
   emit({ type: 'message_end', message: { role: 'assistant', stopReason: 'error', errorMessage: 'The bounded Pi worker could not complete its selected route.', content: [] } });
   emit({ type: 'agent_settled', aborted: true }); process.exitCode = 1;
 } finally { session?.dispose(); }

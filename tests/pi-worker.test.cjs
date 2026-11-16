@@ -169,3 +169,12 @@ test('worker budget failure has a fixed diagnostic and remains failed after fina
   assert.equal(state.error, true);
   assert.equal(state.failureReason, 'Pi reached its bounded worker response or tool-call limit.');
 });
+
+test('a Pi start failure reports its reason, with an unavailable model explained', () => {
+  const missing = piEvent(piState(), { type: 'worker_failure', reason: 'Selected native model is unavailable.' });
+  assert.equal(missing.error, true);
+  assert.match(missing.failureReason, /does not offer the selected model.*Settings > Agents/);
+  const other = piEvent(piState(), { type: 'worker_failure', reason: 'Network timed out' });
+  assert.equal(other.failureReason, 'Pi could not run: Network timed out');
+  assert.equal(piEvent(piState(), { type: 'worker_failure', reason: '' }).failureReason, undefined);
+});

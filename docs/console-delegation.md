@@ -1,6 +1,6 @@
 # Console delegation field
 
-Each owner console has a one-line field under its terminal. Type a task and press Enter to delegate it; Shift+Enter adds a line.
+Each owner console has a **Plan mode** button in its header. It opens a field under the terminal; type a longer task and press Enter to delegate it (Shift+Enter adds a line, Escape closes the field and returns to the button). The field stays closed until opened, so it is not mistaken for the console's own input. While a plan is being made or waits for approval, the button shows a dot.
 
 1. The message goes to the dispatcher chosen in Settings > Agents (`tasks.planMessage`). Without a choice, the Small routing default plans it. The dispatcher must have local, free or included funding, so planning never uses metered credits.
 2. The dispatcher splits the message into tasks and routes each one by size, using the same routing as the Tasks page. Questions are answered in the plan instead of becoming tasks.
@@ -12,6 +12,10 @@ The default dispatcher is the Small routing tier, chosen from the user's own con
 
 The console's own agent is not involved, so delegation costs one dispatcher call plus the workers.
 
+If the dispatcher cannot start, the field shows the reason. For Pi this includes "Pi does not offer the selected model" when routing picked a model Pi no longer lists; choose a dispatcher in Settings > Agents or refresh accounts.
+
 Behaviour kept from the worker composer: the field and its draft survive terminal output and status re-renders; a failed plan keeps the message and shows the dispatcher's error; worker consoles, review panels and closed consoles show no field. Focus stays in the field after planning, Approve is the next Tab stop, and focus returns to the field when the plan is handled.
+
+The field uses the console theme colours (`--frame-a`, `--theme-header`, `--theme-surface`, `--theme-text`).
 
 Code: `src/delegate-composer.js`, `src/delegate-composer.css`; tests: `tests/delegate-composer.test.cjs`.

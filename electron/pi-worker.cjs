@@ -81,6 +81,12 @@ function piEvent(state, event) {
     state.error = true;
     state.failureReason = 'Pi reached its bounded worker response or tool-call limit.';
   }
+  if (event.type === 'worker_failure' && typeof event.reason === 'string' && event.reason.trim()) {
+    state.error = true;
+    state.failureReason = /model is unavailable/i.test(event.reason)
+      ? 'Pi does not offer the selected model. Refresh accounts in Settings > Agents or choose another route.'
+      : `Pi could not run: ${event.reason.trim()}`;
+  }
   if (event.type === 'worker_effort' && ['off','minimal','low','medium','high','xhigh','max'].includes(event.effective)) state.effortEffective = { value: event.effective, source: 'Pi SDK' };
   if (event.type === 'message_end' && event.message?.role === 'assistant') {
     const message = event.message;

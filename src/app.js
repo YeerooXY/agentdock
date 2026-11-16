@@ -90,7 +90,7 @@ function toast(message, error = false) {
 const { providerName, consoleProviders } = providerNames(getState);
 const { shellMark, readyIcon } = consoleMarks(providerName);
 const workerComposers = workerComposer({ call, escape, toast });
-const delegateComposers = delegateComposer({ call, escape, toast, openTask: job => { taskLoops.open(job); navigatePage('tasks'); } });
+const delegateComposers = delegateComposer({ call, escape, toast, icon, openTask: job => { taskLoops.open(job); navigatePage('tasks'); } });
 mountShell($('#app'), { consoleProviders, providerName });
 const submitForm = formSubmitter(toast);
 const lights = lighting();
