@@ -872,6 +872,31 @@ test('mobile idle settings and model choices stay pinned to the selected launch 
   assert.deepEqual(f.sessions.writes, []);
 });
 
+test('phones plan a message from the selected console and approve ready plans', async t => {
+  const f = await fixture(t), paired = await f.pair(), c = client(f, paired.data.token);
+  t.after(() => c.ws.terminate()); await once(c.ws, 'open');
+  const session = f.sessions.items.get('console-1'); session.cwd = f.root; session.accountId = 'claude:default';
+  const created = [], approved = [];
+  const jobs = new Map([['split-1', { split: true, state: 'plan-ready' }], ['msg-1', { kind: 'owner-message', state: 'plan-ready' }], ['done', { state: 'passed' }]]);
+  const tasks = { jobs,
+    dispatcher: { create: async args => { created.push(args); jobs.set('new', { kind: 'owner-message', state: 'planning' }); return new Promise(() => {}); },
+      approve: async ({ id }) => { approved.push(['message', id]); } },
+    approvePlan: async ({ id }) => { approved.push(['split', id]); } };
+  f.m.getTasks = () => tasks;
+  assert.ok((await c.call('state')).capabilities.includes('tasks.plan'));
+  await assert.rejects(c.call('tasks.plan', { consoleId: session.id, text: 'Do it' }), /Select an open console/);
+  await c.call('subscribe', { id: session.id });
+  await assert.rejects(c.call('tasks.plan', { consoleId: session.id, text: '  ' }), /Enter what/);
+  assert.deepEqual(await c.call('tasks.plan', { consoleId: session.id, text: 'Split this work' }), { id: 'new' }, 'returns while planning continues');
+  assert.deepEqual(created, [{ text: 'Split this work', repo: f.root, executionMode: 'serial', accountId: 'claude:default' }]);
+  assert.equal(await c.call('tasks.approve', { id: 'msg-1' }), true);
+  assert.equal(await c.call('tasks.approve', { id: 'split-1' }), true);
+  assert.deepEqual(approved, [['message', 'msg-1'], ['split', 'split-1']]);
+  await assert.rejects(c.call('tasks.approve', { id: 'done' }), /no longer waiting/);
+  tasks.dispatcher.create = async () => { throw Error('No eligible Small dispatcher route.'); };
+  await assert.rejects(c.call('tasks.plan', { consoleId: session.id, text: 'Again' }), /No eligible/);
+});
+
 test('heartbeat pings phones and terminates a socket after about two minutes of missed pongs', () => {
   const companion = Object.create(MobileCompanion.prototype);
   const socket = () => { const ws = new EventEmitter(); ws.pings = 0; ws.terminated = false; ws.ping = () => { ws.pings++; }; ws.terminate = () => { ws.terminated = true; }; return ws; };

@@ -47,7 +47,19 @@ function phoneTask(job) {
     implementer: assignment(job.implementer), reviewer: assignment(job.reviewer),
     error: text(job.error) || '', resultId: job.resultId || null, unresolved: Array.isArray(job.unresolved) ? job.unresolved.length : 0,
     acknowledgedAt: job.acknowledgedAt ?? null, dismissedAt: job.dismissedAt ?? null, supersededBy: job.supersededBy || null,
+    kind: job.kind === 'owner-message' ? 'plan' : job.split === true ? 'split' : 'task', plan: phonePlan(job),
   };
+}
+// The plan's items, so a phone can read a plan before approving it.
+function phonePlan(job) {
+  const items = Array.isArray(job.plan?.subtasks) ? job.plan.subtasks : null;
+  if (!items) return null;
+  const split = new Map((job.subtasks || []).map(sub => [sub.subtaskId, sub]));
+  const clip = (value, max) => { const out = text(value) || ''; return out.length > max ? out.slice(0, max - 1) + '…' : out; };
+  return { contracts: clip(job.plan.contracts, 1200), items: items.slice(0, 20).map(sub => ({
+    id: String(sub.id || ''), title: clip(sub.title, 200), kind: sub.kind || 'build', size: sub.size || null,
+    criteria: clip(sub.criteria, 1500), answer: clip(sub.answer, 1500),
+    worker: assignment(sub.implementer || split.get(sub.id)?.implementer), reviewer: assignment(sub.reviewer || split.get(sub.id)?.reviewer) })) };
 }
 function phoneProject(project) {
   return { id: project.id, name: project.name || '', color: project.color || null, status: project.status || 'active',

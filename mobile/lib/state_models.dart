@@ -161,6 +161,12 @@ class Task {
   final int round, maxRounds, unresolved;
   final String error;
   final TaskWorker? implementer, reviewer;
+
+  /// `plan` (Plan mode message), `split` or `task`.
+  final String kind;
+
+  /// The plan's items, present once a plan exists.
+  final TaskPlan? plan;
   const Task({
     required this.id,
     required this.title,
@@ -181,6 +187,8 @@ class Task {
     this.error = '',
     this.implementer,
     this.reviewer,
+    this.kind = 'task',
+    this.plan,
   });
   factory Task.fromJson(Map<String, dynamic> j) => Task(
     id: _str(j['id']) ?? '',
@@ -201,6 +209,51 @@ class Task {
     unresolved: _int(j['unresolved']) ?? 0,
     error: _str(j['error']) ?? '',
     implementer: TaskWorker.fromJson(j['implementer']),
+    reviewer: TaskWorker.fromJson(j['reviewer']),
+    kind: _str(j['kind']) ?? 'task',
+    plan: TaskPlan.fromJson(j['plan']),
+  );
+}
+
+class TaskPlan {
+  final String contracts;
+  final List<TaskPlanItem> items;
+  const TaskPlan({this.contracts = '', this.items = const []});
+  static TaskPlan? fromJson(Object? raw) {
+    if (raw is! Map) return null;
+    final items = raw['items'];
+    return TaskPlan(
+      contracts: _str(raw['contracts']) ?? '',
+      items: (items is List ? items : const [])
+          .whereType<Map>()
+          .map((item) => TaskPlanItem.fromJson(Map<String, dynamic>.from(item)))
+          .toList(),
+    );
+  }
+}
+
+class TaskPlanItem {
+  final String id, title, kind, criteria, answer;
+  final String? size;
+  final TaskWorker? worker, reviewer;
+  const TaskPlanItem({
+    required this.id,
+    required this.title,
+    this.kind = 'build',
+    this.criteria = '',
+    this.answer = '',
+    this.size,
+    this.worker,
+    this.reviewer,
+  });
+  factory TaskPlanItem.fromJson(Map<String, dynamic> j) => TaskPlanItem(
+    id: _str(j['id']) ?? '',
+    title: _str(j['title']) ?? '',
+    kind: _str(j['kind']) ?? 'build',
+    criteria: _str(j['criteria']) ?? '',
+    answer: _str(j['answer']) ?? '',
+    size: _str(j['size']),
+    worker: TaskWorker.fromJson(j['worker']),
     reviewer: TaskWorker.fromJson(j['reviewer']),
   );
 }

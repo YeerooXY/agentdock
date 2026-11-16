@@ -669,7 +669,12 @@ class TaskLoop extends EventEmitter {
       // whole run on a refusal, so the brief states the one permitted command.
       if (job.kind !== 'knowledge-maintenance') {
         const check = require('./worker-checks.cjs').workerCheckCommand(job.checks, { review });
-        brief += check ? `\n\nShell access: the only command you may run is exactly \`${check}\`. Any other shell command is refused and can end the run; use the file read and search tools instead.`
+        // Codex has no separate file tools: it reads through the shell. Its sandbox enforces read-only
+        // while planning and reviewing, so forbidding all commands there leaves it planning blind.
+        if (step.provider === 'codex') brief += review
+          ? '\n\nShell access: the sandbox is read-only. Use shell commands only to read and search files (for example rg, rg --files, Get-Content); do not try to change files or run builds.'
+          : `\n\nShell access: use shell commands to read and search files (for example rg, rg --files, Get-Content) and edit with apply_patch.${check ? ` The only other command you may run is exactly \`${check}\`.` : ' Run no other commands; Paddock runs the checks after you finish.'}`;
+        else brief += check ?`\n\nShell access: the only command you may run is exactly \`${check}\`. Any other shell command is refused and can end the run; use the file read and search tools instead.`
           : '\n\nShell access: no shell commands are permitted. Use the file read and search tools; Paddock runs the checks after you finish.';
       }
       let launch, before;

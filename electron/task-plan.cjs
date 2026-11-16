@@ -32,6 +32,8 @@ function validatePlan(value, { ownerMessage = false } = {}) {
     if (sub.difficulty === undefined && sub.complexity === undefined) {
       if (!['small', 'medium', 'large'].includes(sub.size)) errors.push(`${label}: size must be small, medium or large.`);
     } else {
+      // Models often quote numbers ("2"); a quoted whole number is the same rating.
+      for (const key of ['difficulty', 'complexity']) if (typeof sub[key] === 'string' && /^\s*[1-5]\s*$/.test(sub[key])) sub[key] = Number(sub[key]);
       if (!Number.isInteger(sub.difficulty) || sub.difficulty < 1 || sub.difficulty > 5) errors.push(`${label}: difficulty must be a whole number from 1 to 5.`);
       if (!Number.isInteger(sub.complexity) || sub.complexity < 1 || sub.complexity > 5) errors.push(`${label}: complexity must be a whole number from 1 to 5.`);
     }
@@ -72,7 +74,7 @@ function planPrompt(job, feedback = []) {
   return [
     'Plan this repository task read-only. Do not edit files or change Git state. Read the repository to establish interfaces, data shapes, timing, units, limits and exact product wording.',
     `Task: ${job.title}\nAcceptance criteria:\n${job.criteria}`,
-    'Return one fenced ```json block with {"contracts":"shared interfaces, data shapes, timings and wording", "subtasks":[{"id":"short-id","title":"title","criteria":"acceptance criteria","owns":["src/foo/**"],"dependsOn":[],"difficulty":"1-5","complexity":"1-5"}]}.',
+    'Return one fenced ```json block with {"contracts":"shared interfaces, data shapes, timings and wording", "subtasks":[{"id":"short-id","title":"title","criteria":"acceptance criteria","owns":["src/foo/**"],"dependsOn":[],"difficulty":2,"complexity":3}]}. difficulty and complexity are whole numbers from 1 to 5, not strings.',
     'Rate difficulty and complexity relative to the other subtasks. Do not estimate hours.',
     'Use 2 to 8 subtasks, unique ids matching [a-z0-9-]{1,32}, 1 to 30 relative ownership globs per subtask, criteria up to 4,000 characters each and contracts up to 12,000 characters. No .., absolute or .git paths. Dependencies must exist and be acyclic. Overlapping ownership runs in sequence through file leases. Cover all task criteria. Contracts must agree across every subtask.',
     feedback.length ? `Repair the plan using these exact validation errors or confirmed review findings:\n${feedback.join('\n')}\nPrevious plan:\n${job.plan ? JSON.stringify(job.plan) : job.planAnswer || '(invalid JSON)'}` : ''

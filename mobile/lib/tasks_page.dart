@@ -114,7 +114,13 @@ class _TasksPageState extends State<TasksPage> {
               padding: const EdgeInsets.only(top: 4),
               child: Text(task.error, maxLines: 3, overflow: TextOverflow.ellipsis),
             ),
-            if (actions && !taskRunning(task)) Wrap(spacing: 8, children: [
+            if (task.plan case final plan? when plan.items.isNotEmpty) _PlanItems(plan: plan, open: task.state == 'plan-ready'),
+            if (actions && !taskRunning(task)) Wrap(spacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
+              if (task.state == 'plan-ready' && task.plan != null) FilledButton(
+                key: ValueKey('approve-${task.id}'),
+                onPressed: busy.contains(task.id) || !widget.client.connected ? null : () => run(task.id, 'tasks.approve'),
+                child: Text('Approve and start', semanticsLabel: 'Approve and start ${task.title}'),
+              ),
               if (taskNeedsAttention(task)) TextButton(
                 onPressed: busy.contains(task.id) || !widget.client.connected ? null : () => run(task.id, 'tasks.seen'),
                 child: Text('Mark as seen', semanticsLabel: 'Mark ${task.title} as seen'),
@@ -129,6 +135,61 @@ class _TasksPageState extends State<TasksPage> {
       ]);
     }),
   );
+}
+
+/// A plan's items, readable before approval: each shows its kind, size and
+/// worker, and expands to the acceptance criteria or a question's answer.
+class _PlanItems extends StatelessWidget {
+  final TaskPlan plan;
+  final bool open;
+  const _PlanItems({required this.plan, required this.open});
+
+  String _worker(TaskWorker? worker) => [
+    if (worker?.label != null) worker!.label!,
+    if (worker?.model != null) worker!.model!,
+  ].join(', ');
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final muted = theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant);
+    final work = plan.items.where((item) => item.kind != 'question').length;
+    return Theme(
+      data: theme.copyWith(dividerColor: Colors.transparent),
+      child: ExpansionTile(
+        key: PageStorageKey('plan-${plan.items.first.id}'),
+        initiallyExpanded: open,
+        tilePadding: EdgeInsets.zero,
+        childrenPadding: EdgeInsets.zero,
+        title: Text(work == 1 ? 'Plan: 1 task' : 'Plan: $work tasks'),
+        children: [
+          for (final (index, item) in plan.items.indexed) ExpansionTile(
+            tilePadding: const EdgeInsets.only(left: 4),
+            childrenPadding: const EdgeInsets.fromLTRB(4, 0, 4, 12),
+            expandedCrossAxisAlignment: CrossAxisAlignment.start,
+            leading: CircleAvatar(radius: 14, child: Text('${index + 1}', style: const TextStyle(fontSize: 12))),
+            title: Text(item.title.isEmpty ? item.id : item.title),
+            subtitle: Text([
+              item.kind == 'question' ? 'Question' : item.kind[0].toUpperCase() + item.kind.substring(1),
+              if (item.size != null) item.size!,
+              if (_worker(item.worker).isNotEmpty) _worker(item.worker),
+            ].join(', '), style: muted),
+            children: [
+              Text(item.kind == 'question' && item.answer.isNotEmpty ? item.answer : item.criteria),
+              if (item.reviewer?.label != null) Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Text('Reviewed by ${_worker(item.reviewer)}', style: muted),
+              ),
+            ],
+          ),
+          if (plan.contracts.isNotEmpty) Padding(
+            padding: const EdgeInsets.only(top: 4, bottom: 8),
+            child: Text(plan.contracts, style: muted, maxLines: 6, overflow: TextOverflow.ellipsis),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 /// Asks for the reason before a task is closed. It owns its text controller,

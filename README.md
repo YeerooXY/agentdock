@@ -4,12 +4,12 @@
 
 | Device | Download |
 | --- | --- |
-| Windows 10/11 (64-bit Intel or AMD) | **[Windows installer](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.48/Paddock-0.6.0-preview.48-Setup-x64.exe)** |
-| Android (ARM64, most phones) | **[Android APK](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.48/Paddock-0.6.0-preview.48-Android-arm64.apk)** |
-| Android (ARMv7, older 32-bit phones) | [Android ARMv7 APK](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.48/Paddock-0.6.0-preview.48-Android-armv7.apk) |
-| Android (x64) | [Android x64 APK](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.48/Paddock-0.6.0-preview.48-Android-x64.apk) |
+| Windows 10/11 (64-bit Intel or AMD) | **[Windows installer](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.49/Paddock-0.6.0-preview.49-Setup-x64.exe)** |
+| Android (ARM64, most phones) | **[Android APK](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.49/Paddock-0.6.0-preview.49-Android-arm64.apk)** |
+| Android (ARMv7, older 32-bit phones) | [Android ARMv7 APK](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.49/Paddock-0.6.0-preview.49-Android-armv7.apk) |
+| Android (x64) | [Android x64 APK](https://github.com/YeerooXY/agentdock/releases/download/v0.6.0-preview.49/Paddock-0.6.0-preview.49-Android-x64.apk) |
 
-[Preview.43 release notes](https://github.com/YeerooXY/agentdock/releases/tag/v0.6.0-preview.48)
+[Preview.43 release notes](https://github.com/YeerooXY/agentdock/releases/tag/v0.6.0-preview.49)
 
 A desktop app for Windows, Linux and macOS: agent consoles, projects, shared tools and usage tracking. Linux and macOS installers come from the next release; until then, run Paddock from source on those systems.
 

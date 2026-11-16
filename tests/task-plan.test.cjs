@@ -21,6 +21,13 @@ test('rejects out-of-range relative ratings', () => {
   assert.match(errors(value), /complexity must be a whole number from 1 to 5/);
 });
 
+test('accepts quoted whole-number ratings, which models copy from JSON examples, but not ranges', () => {
+  const validated = validatePlan(plan(rated('one', '2', ' 5 '), rated('two', 1, 1)));
+  assert.deepEqual(validated.errors, []);
+  assert.deepEqual([validated.plan.subtasks[0].difficulty, validated.plan.subtasks[0].complexity, validated.plan.subtasks[0].size], [2, 5, 'large']);
+  assert.match(errors(plan(rated('one', '1-5', '2.5'), rated('two', 1, 1))), /difficulty must be a whole number[\s\S]*complexity must be a whole number/);
+});
+
 test('accepts a legacy size-only plan and derives ratings', () => {
   const value = plan({ id: 'legacy', title: 'legacy', criteria: 'Implement the criteria.', owns: ['src/legacy/**'], dependsOn: [], size: 'medium' }, rated('other', 1, 2));
   const validated = validatePlan(value);

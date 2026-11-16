@@ -69,6 +69,35 @@ function mobileContentCommands(h) {
       if (!reason || reason.length > 300) throw new Error('Enter a reason up to 300 characters.');
       return tasks.dismiss(payload.id, { reason, by: 'owner' });
     },
+    // Plan mode from the phone: the selected console's folder and account plan the message, like
+    // the desktop Plan mode field. Planning runs on; the task appears in Tasks as it progresses.
+    'tasks.plan': async (client, payload) => {
+      const tasks = h.tasks();
+      if (!tasks?.dispatcher) throw new Error('Plan mode is unavailable on this PC.');
+      if (typeof payload.consoleId !== 'string' || client.selected !== payload.consoleId) throw new Error('Select an open console first.');
+      const session = h.sessions.items.get(payload.consoleId);
+      if (!session?.cwd || session.remoteHostId) throw new Error('Plan mode needs a local console folder.');
+      if (typeof payload.text !== 'string' || !payload.text.trim()) throw new Error('Enter what you want planned.');
+      const before = new Set(tasks.jobs.keys());
+      const planning = tasks.dispatcher.create({ text: payload.text, repo: session.cwd, executionMode: 'serial',
+        ...(session.accountId ? { accountId: session.accountId } : {}), ...(session.projectId ? { projectId: session.projectId } : {}) });
+      planning.catch(() => {});
+      // create() records the job before the model request starts; an early error (bad folder,
+      // no planner route) rejects before that, so report it instead of a silent no-op.
+      const started = await Promise.race([planning.then(job => job.id), new Promise(resolve => setImmediate(() => resolve(null)))]);
+      const id = started || [...tasks.jobs.keys()].find(key => !before.has(key));
+      if (!id) await planning;
+      return { id };
+    },
+    'tasks.approve': async (_client, payload) => {
+      const tasks = h.tasks();
+      if (!tasks) throw new Error('Tasks are unavailable on this PC.');
+      const job = typeof payload.id === 'string' ? tasks.jobs?.get(payload.id) : null;
+      if (!job || job.state !== 'plan-ready') throw new Error('This plan is no longer waiting for approval.');
+      if (job.kind === 'owner-message') await tasks.dispatcher.approve({ id: payload.id });
+      else await tasks.approvePlan({ id: payload.id });
+      return true;
+    },
     'usage.turns': async (_client, payload) => {
       const getUsageTurns = h.usageTurns();
       if (typeof getUsageTurns !== 'function') throw new Error('Turn usage is unavailable on this host.');

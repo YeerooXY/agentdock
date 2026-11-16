@@ -201,9 +201,10 @@ test('each builder and reviewer turn receives current shared guidance', async t 
   assert.equal((await f.done(await f.start())).state, 'passed');
 });
 
-test('builder briefs name the one permitted shell command and reviewers get none', async t => {
+test('Codex builder briefs allow reading through the shell plus the one check command; Claude reviewers get file tools only', async t => {
   const f = fixture(t, [{ type: 'implement', edit, inspect: invocation => {
-    assert.match(invocation.prompt, /the only command you may run is exactly `user-check-command`/);
+    assert.match(invocation.prompt, /The only other command you may run is exactly `user-check-command`/);
+    assert.match(invocation.prompt, /use shell commands to read and search files/);
   } }, { type: 'check' }, { type: 'review', inspect: invocation => {
     assert.match(invocation.prompt, /no shell commands are permitted/);
   } }]);
@@ -1020,6 +1021,8 @@ test('split planning is read-only, repairs exact errors once and never builds be
   const job = await readyPlan(f);
   assert.equal(f.spawned.length, 2); assert.equal(job.rounds.length, 0); assert.equal(job.planRepairUsed, true);
   assert.ok(f.spawned.every(invocation => invocation.args.includes('read-only')));
+  // Codex reads only through the shell; a planner told "no shell commands" planned without the code.
+  assert.ok(f.spawned.every(invocation => /the sandbox is read-only\. Use shell commands only to read and search files/.test(invocation.prompt) && !/no shell commands are permitted/.test(invocation.prompt)));
   assert.ok(job.subtasks.every(sub => !sub.workFolder)); assert.equal(job.workflow, 'worktree');
   assert.equal(job.planReview.state, 'not-set'); assert.match(f.loop.report(job), /Plan not reviewed/);
   const failed = fixture(t, [planned(invalid), planned(invalid)]);

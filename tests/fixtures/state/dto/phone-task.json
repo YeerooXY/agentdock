@@ -61,6 +61,8 @@
     "unresolved": 1,
     "acknowledgedAt": 1762000100000,
     "dismissedAt": null,
-    "supersededBy": "t2"
+    "supersededBy": "t2",
+    "kind": "task",
+    "plan": null
   }
 }

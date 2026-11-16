@@ -190,6 +190,13 @@ class _ComposerField extends StatelessWidget {
       if (selection.effort != null) effortLabel(selection.effort!),
       if (selection.pending) '(selected)',
     ].join('  ');
+    final planText = composer.editor.text.trim();
+    final canPlan =
+        local &&
+        session.taskId == null &&
+        (client.state['capabilities'] as List? ?? const []).contains(
+          'tasks.plan',
+        );
     final choice = await showModalBottomSheet<String>(
       context: context,
       showDragHandle: true,
@@ -261,6 +268,17 @@ class _ComposerField extends StatelessWidget {
                   'Dictate',
                   enabled: onDictate != null,
                 ),
+                if (canPlan)
+                  item(
+                    'plan',
+                    const Icon(Icons.account_tree_outlined),
+                    'Plan this',
+                    enabled: planText.isNotEmpty && modelEnabled,
+                    subtitle: planText.isEmpty
+                        ? 'Type what you want done first'
+                        : 'Split into tasks you approve in Tasks',
+                    key: const ValueKey('composer-plan'),
+                  ),
                 if (_canSwitchModel(sessionMap))
                   item(
                     'model',
@@ -286,6 +304,28 @@ class _ComposerField extends StatelessWidget {
         onDictate?.call();
       case 'model':
         onLiveControls('Model');
+      case 'plan':
+        if (context.mounted) await _plan(context, planText);
+    }
+  }
+
+  /// Plan mode: the PC splits the message into tasks with this console's
+  /// account, and the plan waits in Tasks for approval.
+  Future<void> _plan(BuildContext context, String text) async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await client.request('tasks.plan', {
+        'consoleId': sessionMap['id'],
+        'text': text,
+      });
+      if (composer.editor.text.trim() == text) composer.editor.clear();
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Planning. Approve the plan in Tasks.')),
+      );
+    } catch (error) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('$error'.replaceFirst('Bad state: ', ''))),
+      );
     }
   }
 
