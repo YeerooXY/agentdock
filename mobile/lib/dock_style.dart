@@ -60,7 +60,7 @@ class DockSendButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) => DecoratedBox(
     decoration: BoxDecoration(
-      borderRadius: BorderRadius.circular(compact ? 10 : 14),
+      borderRadius: BorderRadius.circular(compact ? 18 : 14),
       gradient: onPressed != null || sending ? dockGradient : null,
       color: const Color(0xff292637),
     ),
@@ -70,10 +70,11 @@ class DockSendButton extends StatelessWidget {
       style: IconButton.styleFrom(
         foregroundColor: ink,
         disabledForegroundColor: muted,
-        minimumSize: compact ? const Size(36, 36) : const Size(48, 48),
-        fixedSize: compact ? const Size(36, 36) : null,
+        minimumSize: compact ? const Size(48, 36) : const Size(48, 48),
+        fixedSize: compact ? const Size(48, 36) : null,
+        maximumSize: compact ? const Size(48, 36) : null,
         padding: compact ? EdgeInsets.zero : null,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(compact ? 10 : 14)),
+        shape: compact ? const StadiumBorder() : RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       ),
       icon: sending
           ? const SizedBox(

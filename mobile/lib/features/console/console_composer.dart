@@ -368,7 +368,7 @@ class _ComposerField extends StatelessWidget {
                   child: showSend
                       ? SizedBox(
                           key: const ValueKey('composer-send'),
-                          width: 40,
+                          width: 48,
                           height: 40,
                           child: Center(
                             child: DockSendButton(
