@@ -15,6 +15,7 @@ import io.flutter.plugin.common.MethodChannel
 import java.io.ByteArrayOutputStream
 
 class DockMedia(private val activity: MainActivity, private val channel: MethodChannel) {
+    companion object { const val MAX_IMAGES = 10 }
     private var pending: MethodChannel.Result? = null
     private var permission: MethodChannel.Result? = null
     private val readPermissions = when {
@@ -28,14 +29,21 @@ class DockMedia(private val activity: MainActivity, private val channel: MethodC
     fun listen() {
         channel.setMethodCallHandler { call, result ->
             when (call.method) {
-                "pick" -> {
+                "pickMany" -> {
                     if (pending != null) { result.error("busy", "Finish choosing the current image.", null); return@setMethodCallHandler }
                     pending = result
                     try {
                         val intent = if (Build.VERSION.SDK_INT >= 33) Intent(MediaStore.ACTION_PICK_IMAGES).setType("image/*")
-                            else Intent(Intent.ACTION_OPEN_DOCUMENT).setType("image/*").addCategory(Intent.CATEGORY_OPENABLE)
-                        activity.startActivityForResult(intent, 7410)
+                            .putExtra(MediaStore.EXTRA_PICK_IMAGES_MAX, minOf(MAX_IMAGES, MediaStore.getPickImagesMaxLimit()))
+                            else Intent(Intent.ACTION_OPEN_DOCUMENT).setType("image/*").addCategory(Intent.CATEGORY_OPENABLE).putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+                        activity.startActivityForResult(intent, 7411)
                     } catch (_: Exception) { pending = null; result.error("picker", "No image picker is available.", null) }
+                }
+                "imageUri" -> {
+                    // Only URIs returned by this activity's picker carry a read grant.
+                    val uri = call.argument<String>("uri")?.let(Uri::parse)
+                    if (uri == null || uri.scheme != "content") { result.error("image", "The image is no longer available.", null); return@setMethodCallHandler }
+                    deliver(uri, result)
                 }
                 "latest" -> {
                     if (!canRead()) { result.success(mapOf("permission" to false)); return@setMethodCallHandler }
@@ -70,12 +78,12 @@ class DockMedia(private val activity: MainActivity, private val channel: MethodC
         captureCallback = null
     }
     fun result(request: Int, code: Int, data: Intent?): Boolean {
-        if (request != 7410) return false
+        if (request != 7411) return false
         val reply = pending ?: return true
         pending = null
-        val uri = data?.data
-        if (code != Activity.RESULT_OK || uri == null) { reply.success(null); return true }
-        deliver(uri, reply)
+        val clip = data?.clipData
+        val uris = if (clip != null) (0 until clip.itemCount).map { clip.getItemAt(it).uri } else listOfNotNull(data?.data)
+        reply.success(if (code == Activity.RESULT_OK) uris.take(MAX_IMAGES).map { it.toString() } else emptyList<String>())
         return true
     }
     fun permissionResult(request: Int): Boolean {

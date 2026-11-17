@@ -71,27 +71,37 @@ class AttachmentController extends ChangeNotifier {
     }
   }
 
-  Future<void> attachLatestImage(RunAction run) => attachImage(run, () async {
+  Future<void> attachLatestImage(RunAction run) => attachImages(run, () async {
     // Resolve again on tap: another app may have saved a newer image.
     if (await media.invokeMethod<bool>('allowRecent') != true) {
-      return media.invokeMethod<Uint8List>('pick');
+      return _picked();
     }
     final found = await media.invokeMethod<Map>('latest');
     final id = found?['id'] as int?;
-    if (id == null) return media.invokeMethod<Uint8List>('pick');
+    if (id == null) return _picked();
     if (!_disposed) {
       latestImage = found;
       _changed();
     }
-    return media.invokeMethod<Uint8List>('recentImage', {'id': id});
+    return [() => media.invokeMethod<Uint8List>('recentImage', {'id': id})];
   });
 
-  Future<void> pickImage(RunAction run) =>
-      attachImage(run, () => media.invokeMethod<Uint8List>('pick'));
+  /// Opens the photo picker for up to ten images.
+  Future<void> pickImage(RunAction run) => attachImages(run, _picked);
 
-  Future<void> attachImage(
+  /// The picker returns image addresses; each image is read and uploaded in
+  /// turn, so several large photos are never held in memory together.
+  Future<List<Future<Uint8List?> Function()>> _picked() async {
+    final uris = await media.invokeListMethod<String>('pickMany') ?? const [];
+    return [
+      for (final uri in uris)
+        () => media.invokeMethod<Uint8List>('imageUri', {'uri': uri}),
+    ];
+  }
+
+  Future<void> attachImages(
     RunAction run,
-    Future<Uint8List?> Function() source,
+    Future<List<Future<Uint8List?> Function()>> Function() choose,
   ) async {
     if (attaching || composer.sending || composer.dictating) return;
     if (!supported) {
@@ -109,26 +119,29 @@ class AttachmentController extends ChangeNotifier {
     attaching = true;
     _changed();
     await run(() async {
-      final bytes = await source();
+      final images = await choose();
       // The Android picker backgrounds the activity. It can reconnect, but a
-      // changed PC/console must never receive the selected image.
-      if (bytes == null) return;
-      if (changed()) {
-        throw StateError('Console changed. Choose the image again.');
+      // changed PC/console must never receive the selected images.
+      for (final read in images) {
+        if (changed()) {
+          throw StateError('Console changed. Choose the image again.');
+        }
+        for (
+          var i = 0;
+          i < 40 && (!client.foreground || !client.connected);
+          i++
+        ) {
+          await Future<void>.delayed(const Duration(milliseconds: 250));
+        }
+        final bytes = await read();
+        if (bytes == null) continue;
+        if (changed()) {
+          throw StateError('Console changed. Choose the image again.');
+        }
+        final file = await client.attachImage(bytes);
+        if (_disposed || composer.draftKey != key) return;
+        composer.appendAttachment(file);
       }
-      for (
-        var i = 0;
-        i < 40 && (!client.foreground || !client.connected);
-        i++
-      ) {
-        await Future<void>.delayed(const Duration(milliseconds: 250));
-      }
-      if (changed()) {
-        throw StateError('Console changed. Choose the image again.');
-      }
-      final file = await client.attachImage(bytes);
-      if (_disposed || composer.draftKey != key) return;
-      composer.appendAttachment(file);
     });
     if (!_disposed) {
       attaching = false;

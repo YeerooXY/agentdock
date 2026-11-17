@@ -35,9 +35,11 @@ void main() {
   final calls = <MethodCall>[];
   Map<String, Object?>? recent;
   bool allowed = true;
+  var picked = <String>['content://media/1'];
   setUp(() {
     calls.clear();
     allowed = true;
+    picked = ['content://media/1'];
     recent = {
       'permission': true,
       'id': 42,
@@ -48,7 +50,10 @@ void main() {
           calls.add(call);
           if (call.method == 'latest') return recent;
           if (call.method == 'allowRecent') return allowed;
-          if (call.method == 'pick') return Uint8List.fromList([4, 5, 6]);
+          if (call.method == 'pickMany') return picked;
+          if (call.method == 'imageUri') {
+            return Uint8List.fromList([4, 5, picked.indexOf(call.arguments['uri']) + 6]);
+          }
           if (call.method == 'recentImage') {
             return Uint8List.fromList([1, 2, 3]);
           }
@@ -133,10 +138,39 @@ void main() {
       await openMenu(tester);
       await tester.tap(find.byKey(const ValueKey('latest-image')));
       await tester.pumpAndSettle();
-      expect(calls.where((x) => x.method == 'pick'), hasLength(1));
+      expect(calls.where((x) => x.method == 'pickMany'), hasLength(1));
       expect(calls.where((x) => x.method == 'recentImage'), isEmpty);
       expect(c.attached.single, [4, 5, 6]);
       expect(c.inputs, isEmpty);
+    },
+  );
+
+  testWidgets(
+    'several photos attach in one pick and the reply box shows the last one',
+    (tester) async {
+      picked = ['content://media/1', 'content://media/2', 'content://media/3'];
+      final c = await open(tester);
+      await tester.enterText(find.byType(TextField).last, 'Look at these');
+      await openMenu(tester);
+      await tester.tap(find.text('Image'));
+      await tester.pumpAndSettle();
+      expect(calls.where((x) => x.method == 'pickMany'), hasLength(1));
+      expect(c.attached, [
+        [4, 5, 6],
+        [4, 5, 7],
+        [4, 5, 8],
+      ]);
+      final field = tester.widget<TextField>(find.byType(TextField).last);
+      expect(
+        'Inspect the attached image file'
+            .allMatches(field.controller!.text)
+            .length,
+        3,
+      );
+      expect(c.inputs, isEmpty);
+      final scroll = field.scrollController!;
+      expect(scroll.position.maxScrollExtent, greaterThan(0));
+      expect(scroll.offset, scroll.position.maxScrollExtent);
     },
   );
 }

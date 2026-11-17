@@ -220,6 +220,13 @@ class ComposerController extends ChangeNotifier {
         offset: editor.text.length + suffix.length,
       ),
     );
+    // The field is usually unfocused after the picker, so it does not scroll
+    // to the caret itself. Show the newly added line once it is laid out.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_disposed && scroll.hasClients) {
+        scroll.jumpTo(scroll.position.maxScrollExtent);
+      }
+    });
   }
 
   /// Picks up draft edits made on another page, such as Code.
