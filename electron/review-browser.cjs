@@ -1,7 +1,7 @@
 'use strict';
 const path = require('node:path');
 const fs = require('node:fs');
-const { inspectInterface, probeInteraction } = require('./ui-rules.cjs');
+const { inspectInterface, probeInteraction, inspectMotion, motionFindings } = require('./ui-rules.cjs');
 const { inspectCraft } = require('./ui-craft-rules.cjs');
 
 function inspectPage() {
@@ -93,6 +93,10 @@ async function reviewBrowserProfiles({ url, axeSource, signal, onView, onStage, 
         await page.goto(url, { waitUntil: 'load', timeout: 15000 });
         // Measure motion before the review freezes animations for stable screenshots.
         const ui = await page.evaluate(inspectInterface), craft = await page.evaluate(inspectCraft);
+        const motion = await page.evaluate(inspectMotion);
+        await page.emulateMedia({ reducedMotion: 'reduce' });
+        ui.findings.push(...motionFindings(motion, await page.evaluate(inspectMotion)));
+        await page.emulateMedia({ reducedMotion: null });
         await page.addStyleTag({ content: '*,*::before,*::after { animation:none!important; transition:none!important; caret-color:transparent!important; }' });
         await page.evaluate(() => Promise.race([document.fonts.ready, new Promise(resolve => setTimeout(resolve, 1500))]));
         const inspected = await page.evaluate(inspectPage);

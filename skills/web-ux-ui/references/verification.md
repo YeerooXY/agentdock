@@ -12,6 +12,17 @@ Test keyboard order, visible/unobscured focus, menu escape and focus restoration
 
 Preserve keyboard focus after toggles, edits and rerenders. Update the existing control or restore focus to its replacement. If a focused item is removed, focus the next logical control, previous item or list's add control. Close dialogs back to the opener when it remains available. Test repeated actions with Tab, Shift+Tab, Enter and Space; assert the intended active element after each update. Focus falling to the page body is a failed check, even when the action and persistence work.
 
+## Motion
+
+Static screenshots cannot verify motion. Record the reduced-motion setting with every capture. For each affected screen:
+
+- List running animations with reduced motion off and on, for example `document.getAnimations()` or computed `animation-name`/`transition`. Under reduced motion, only instant changes or short fades should remain.
+- Check every reduced-motion override against the selectors it is meant to cover. An override must match every animated selector, including pseudo-elements and modifier variants, with at least equal specificity.
+- Record a short clip or frame sequence of each state transition. Interrupt it (back, second tap, refresh) and confirm it lands on the final state.
+- Find every looping animation. Remove it from reading and inventory surfaces, or give movement over five seconds beside other content a pause control (WCAG 2.2.2). Stop loops in hidden tabs.
+- Confirm input feedback within 400 ms and transition durations of 150–300 ms, following [visual](visual.md), Motion and pointers.
+
+Update the project's coverage ledger (SKILL.md, Review coverage) with the result.
 ## Performance
 
 As reviewed 23 October 2026, good Core Web Vitals thresholds are LCP <= 2.5 seconds, INP <= 200 milliseconds and CLS <= 0.1 at the 75th percentile, assessed separately for mobile and desktop. Recheck definitions before reporting. Lab scores and localhost timings are not field performance; Lighthouse navigation TBT is not field INP.

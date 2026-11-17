@@ -180,4 +180,20 @@ async function probeInteraction(page) {
   return { findings, checked: { buttons: checked } };
 }
 
-module.exports = { inspectInterface, probeInteraction };
+// Running animations, for comparing normal and reduced-motion rendering. Runs inside the page.
+function inspectMotion() {
+  const name = el => !el ? 'script' : el.tagName.toLowerCase() + (el.id ? '#' + el.id : [...el.classList].slice(0, 2).map(c => '.' + c).join(''));
+  const moving = a => { try { return a.effect.getKeyframes().some(k => ['transform', 'translate', 'scale', 'rotate', 'top', 'left', 'offsetDistance'].some(p => p in k && k[p] !== 'none')); } catch { return false; } };
+  return document.getAnimations().filter(a => a.playState === 'running').map(a => ({
+    target: name(a.effect?.target) + (a.effect?.pseudoElement || ''), infinite: a.effect?.getTiming().iterations === Infinity, moving: moving(a) }));
+}
+
+// Turn the two motion samples into interface findings.
+function motionFindings(normal, reduced) {
+  const findings = [], report = (id, items, message) => { if (items.length) findings.push({ id, count: items.length, message, samples: [...new Set(items)].slice(0, 8) }); };
+  report('looping-animation', normal.filter(a => a.infinite).map(a => a.target), 'Animations loop indefinitely. Remove them from reading surfaces or give movement longer than five seconds a pause control (WCAG 2.2.2).');
+  report('reduced-motion-running', reduced.filter(a => a.infinite || a.moving).map(a => a.target), 'With reduced motion requested, moving or looping animations still run. Replace them with an instant change or a short fade.');
+  return findings;
+}
+
+module.exports = { inspectInterface, probeInteraction, inspectMotion, motionFindings };

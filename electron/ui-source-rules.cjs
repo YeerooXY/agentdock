@@ -62,7 +62,68 @@ function cssFindings(file, text) {
     }
   }
   if (/(?:transition|animation)(?:-duration)?\s*:\s*(?!none)[^;}]*\d/.test(css) && !css.includes('prefers-reduced-motion')) found.push({ id: 'reduced-motion-missing', line: 1, detail: 'transitions or animations without a prefers-reduced-motion block' });
+  else found.push(...motionFindings(css));
   return found.map(f => ({ ...f, file }));
+}
+
+// Style rules with whether they sit inside a reduced-motion media block; keyframe steps are skipped.
+function styleRules(css) {
+  const rules = [], stack = [];
+  let start = 0;
+  for (let i = 0; i < css.length; i++) {
+    if (css[i] === '{') { stack.push({ prelude: css.slice(start, i).trim(), open: i }); start = i + 1; }
+    else if (css[i] === '}') {
+      const block = stack.pop(); start = i + 1;
+      if (!block || block.prelude.startsWith('@')) continue;
+      const parents = stack.map(b => b.prelude);
+      if (parents.some(p => /^@(?:-\w+-)?keyframes\b/i.test(p))) continue;
+      rules.push({ selector: block.prelude, body: css.slice(block.open + 1, i), index: block.open,
+        reduce: parents.some(p => /^@media\b/i.test(p) && /prefers-reduced-motion\s*:\s*reduce/i.test(p)) });
+    } else if (css[i] === ';' && !stack.length) start = i + 1;
+  }
+  return rules;
+}
+
+const splitSelectors = text => { const parts = []; let depth = 0, from = 0;
+  for (let i = 0; i < text.length; i++) { if (text[i] === '(') depth++; else if (text[i] === ')') depth--; else if (text[i] === ',' && !depth) { parts.push(text.slice(from, i).trim()); from = i + 1; } }
+  return [...parts, text.slice(from).trim()].filter(Boolean); };
+const LEGACY_PSEUDO = /^:(?:before|after|first-line|first-letter)$/i;
+function selectorParts(selector) {
+  const simple = [], pseudo = [];
+  for (const [token] of selector.matchAll(/#[\w-]+|\.[\w-]+|\[[^\]]*\]|::?[\w-]+(?:\([^)]*\))?|(?<![\w#.:\-[])[a-z][\w-]*|\*/gi)) {
+    if (token.startsWith('::') || LEGACY_PSEUDO.test(token)) pseudo.push('::' + token.replace(/^::?/, '').toLowerCase()); else simple.push(token);
+  }
+  const ids = simple.filter(t => t.startsWith('#')).length, classes = simple.filter(t => /^[.[:]/.test(t)).length;
+  const elements = simple.filter(t => /^[a-z]/i.test(t)).length + pseudo.length;
+  return { simple: simple.filter(t => t !== '*'), pseudo: pseudo.join(''), specificity: ids * 10000 + classes * 100 + elements };
+}
+const seconds = value => { const m = String(value).match(/([\d.]+)(m?s)/); return m ? parseFloat(m[1]) / (m[2] === 'ms' ? 1000 : 1) : 0; };
+// An override stops motion with none, display:none or a duration of at most 50 ms.
+function stops(body, kind) {
+  if (/(?:^|;)\s*display\s*:\s*none\b/i.test(body)) return true;
+  if (new RegExp(`(?:^|;)\\s*${kind}(?:-name|-property)?\\s*:\\s*none\\b`, 'i').test(body)) return true;
+  const duration = body.match(new RegExp(`(?:^|;)\\s*${kind}-duration\\s*:\\s*([\\d.]+m?s)`, 'i'));
+  return !!duration && seconds(duration[1]) <= 0.05;
+}
+
+// Each animated selector needs a reduced-motion override that matches it with equal specificity or !important.
+function motionFindings(css) {
+  const found = [], rules = styleRules(css);
+  const overrides = rules.filter(r => r.reduce).flatMap(r => ['animation', 'transition'].filter(kind => stops(r.body, kind))
+    .flatMap(kind => splitSelectors(r.selector).map(selector => ({ kind, important: /!important/.test(r.body), ...selectorParts(selector) }))));
+  for (const rule of rules.filter(r => !r.reduce)) {
+    const line = lineOf(css, rule.index);
+    const kinds = [/(?:^|;)\s*animation(?:-name)?\s*:\s*(?!none\b)[^;]*[a-z]/i.test(rule.body) && 'animation',
+      /(?:^|;)\s*transition(?:-property)?\s*:[^;]*\b(?:transform|translate|scale|rotate)\b/i.test(rule.body) && 'transition'].filter(Boolean);
+    if (/(?:^|;)\s*animation(?:-iteration-count)?\s*:[^;]*\binfinite\b/i.test(rule.body)) found.push({ id: 'looping-animation', line, detail: rule.selector.slice(0, 120) });
+    if (!overrides.length) continue;
+    for (const selector of splitSelectors(rule.selector)) {
+      const target = selectorParts(selector);
+      const covered = kind => overrides.some(o => o.kind === kind && o.pseudo === target.pseudo && o.simple.every(t => target.simple.includes(t)) && (o.important || o.specificity >= target.specificity));
+      for (const kind of kinds) if (!covered(kind)) found.push({ id: 'reduced-motion-uncovered', line, detail: `${kind} on ${selector.slice(0, 100)}` });
+    }
+  }
+  return found;
 }
 
 function windowFindings(file, text, mauiHasMinimum) {
@@ -81,6 +142,8 @@ const MESSAGES = {
   'focus-without-visible': 'A :focus rule draws an outline or shadow without :focus-visible, so mouse clicks show a ring.',
   'small-font': 'Font size is below 12 px.',
   'reduced-motion-missing': 'Stylesheet animates without a prefers-reduced-motion override.',
+  'reduced-motion-uncovered': 'An animation or moving transition has no reduced-motion override that matches it. The override must name the same element, pseudo-element and modifiers with equal specificity, or use !important.',
+  'looping-animation': 'Animation loops indefinitely. Remove it from reading and inventory surfaces, or give movement longer than five seconds a pause control (WCAG 2.2.2), and stop it in hidden tabs.',
   'window-min-size': 'Window is created without a minimum size, so the layout can be squeezed until it breaks.',
   'viewport-height': 'Uses 100vh without 100dvh. Mobile Safari counts its toolbars in vh, so full-height sections overflow.',
   'hsl-palette': 'Palette colours are defined in HSL, where equal lightness does not look equally light. Define them in OKLCH.',

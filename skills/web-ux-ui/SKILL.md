@@ -30,12 +30,22 @@ Go deeper when a decision needs it:
 - [sources](references/sources.md) and the [source register](references/source-register.md): provenance, access depth and limitations.
 - `assets/`: layout diagrams, palette specimens and `palette-contrast.csv`.
 
-A button repair does not need a full audit. Keep the scope the user asked for.
+A button repair does not need a full audit. Keep your edits to the scope the user asked for, and still report unreviewed coverage (below).
+
+## Review coverage
+
+Each project keeps a coverage ledger at `docs/verification/ux-coverage.md`. It has one row per screen or state and one column per dimension: layout, visual, motion, focus and keyboard, accessibility, wording, and states (empty, loading, error, success). Each cell holds the date, revision and visual direction it was reviewed against, or `never`.
+
+- Read the ledger at the start of any interface task. If it is missing, create it from existing review notes and mark everything else `never`.
+- Scope limits what you change, not what you report. In your reply, name every `never` or outdated cell for the screens you touched and give a count for the rest.
+- Selecting or changing a visual direction makes the visual and motion cells of every existing screen outdated. Plan a re-review of all of them. Screens built before the direction are not approved by default.
+- Mark a cell reviewed only with evidence that fits the dimension. Static screenshots cover layout and visual only; motion needs the checks in the Motion section of [verification](references/verification.md); focus needs keyboard runs.
+- Motion is a core dimension. Treat an automated hint about missing or excessive animation as a finding to resolve or justify in the ledger, not as noise.
 
 ## Work method
 
 1. Establish audience, entry route, immediate task, main action, evidence and success condition. Ask only when a missing fact changes the work.
-2. Define the complete journey, including empty, waiting, error and success states, before polishing a screen.
+2. Define the complete journey, including empty, waiting, error and success states, before polishing a screen. For every state change, specify the motion (purpose, trigger, duration, easing, interruption, reduced-motion alternative), where focus goes next and what assistive technology announces. A plan or design without these is incomplete.
 3. Choose the composition from the information relationship. A shipped competitor pattern is a hypothesis, not proof.
 4. Build with real content, semantic color roles and existing components. Every visible control needs a real outcome.
 5. Verify the rendered journey at phone, tablet and desktop widths. State which checks were emulated and which still need real devices.

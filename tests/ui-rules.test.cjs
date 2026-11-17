@@ -100,6 +100,32 @@ test('source rules find focus rings, small fonts, missing reduced motion and win
   assert.deepEqual(inspectSources(root).findings.find(f => f.id === 'window-min-size').locations.map(l => l.file), ['main.cjs']);
 });
 
+test('reduced-motion overrides must match each animated selector and loops are reported', () => {
+  const { cssFindings } = require('../electron/ui-source-rules.cjs');
+  const css = [
+    '.tile.r4.todo::after,.tile.r5.todo::after{animation:sheen 3s infinite}',
+    '.card.r6{animation:pop .4s}',
+    '.dot.on{animation:ping 2s infinite}',
+    '.sheet{transition:transform .2s}',
+    '.fade{transition:opacity .2s}',
+    '@keyframes sheen{to{transform:none}}',
+    '@media (prefers-reduced-motion:reduce){.tile.r4::after,.card{animation:none}.dot{animation:none!important}.sheet{transition:none}}'
+  ].join('\n');
+  const found = cssFindings('a.css', css), at = id => found.filter(f => f.id === id).map(f => [f.line, f.detail]);
+  assert.deepEqual(at('reduced-motion-uncovered'), [[1, 'animation on .tile.r4.todo::after'], [1, 'animation on .tile.r5.todo::after'], [2, 'animation on .card.r6']]);
+  assert.deepEqual(at('looping-animation').map(([line]) => line), [1, 3]);
+  const fixed = css.replace('.tile.r4::after,.card{', '.tile.r4.todo::after,.tile.r5.todo::after,.card.r6{');
+  assert.deepEqual(cssFindings('a.css', fixed).filter(f => f.id === 'reduced-motion-uncovered'), []);
+});
+
+test('motion findings compare normal and reduced-motion samples', () => {
+  const { motionFindings } = require('../electron/ui-rules.cjs');
+  const normal = [{ target: 'div.dot', infinite: true, moving: false }, { target: 'dialog', infinite: false, moving: true }];
+  const reduced = [{ target: 'div.dot', infinite: true, moving: false }, { target: 'span.fade', infinite: false, moving: false }];
+  assert.deepEqual(motionFindings(normal, reduced).map(f => [f.id, f.samples]), [['looping-animation', ['div.dot']], ['reduced-motion-running', ['div.dot']]]);
+  assert.deepEqual(motionFindings([], []), []);
+});
+
 test('gradient rule ignores fades between greys and flags fades between hues', t => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ui-grey-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));

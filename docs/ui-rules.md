@@ -11,6 +11,8 @@ Run before the review disables animations, so motion is measured as shipped.
 | `nested-boxes` | Visible bordered, outlined or ringed boxes stacked inside each other | 3 or more levels |
 | `unanimated-controls` | Buttons, links, tabs and inputs with no transition or animation | any |
 | `unanimated-overlays` | Dialogs, popovers and menus that appear with no transition or animation | any |
+| `looping-animation` | Running animations with infinite iterations after load | any |
+| `reduced-motion-running` | Moving or looping animations still running after reduced motion is emulated | any |
 | `selectable-controls` | Text inside buttons, labels, tabs, menus, navigation and toolbars that the user can highlight | any |
 | `touching-text` | Neighbouring text elements with no gap, such as "Choose songsOne song" | gap under 1.5 px on the same line |
 | `sibling-layout` | Elements sharing a class and parent whose content stacks differently | any difference |
@@ -53,6 +55,8 @@ The mouse check presses and moves away before releasing, so no click fires.
 | `focus-without-visible` | A `:focus` rule that draws an outline or shadow without `:focus-visible` | any |
 | `small-font` | Font sizes below 12 px (0.75 rem/em) | under 12 px |
 | `reduced-motion-missing` | A stylesheet with transitions or animations and no `prefers-reduced-motion` block | any |
+| `reduced-motion-uncovered` | An animation or transform transition whose selector has no matching reduced-motion override (same pseudo-element and modifiers, equal specificity or `!important`) | any |
+| `looping-animation` | An `infinite` animation outside a reduced-motion block | any |
 | `window-min-size` | An Electron `BrowserWindow` or MAUI `Window` created without a minimum width and height | any |
 
 | `viewport-height` | `100vh` without a `100dvh` fallback in the same rule | any |
