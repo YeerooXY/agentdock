@@ -33,14 +33,19 @@ class _ConsoleSwitcherState extends State<ConsoleSwitcher> {
   String pc = '';
   int generation = -1;
 
-  String? projectName(Map<String, dynamic> session) {
+  String? activeProjectName(Map<String, dynamic> session) {
     final id = session['projectId'];
     if (id == null) return null;
     return (widget.client.state['projects'] as List? ?? [])
         .whereType<Map>()
         .where((project) => project['id'] == id)
-        .firstOrNull?['name'] as String? ?? 'Archived project';
+        .firstOrNull?['name'] as String?;
   }
+  String? projectName(Map<String, dynamic> session) =>
+      session['projectId'] == null
+          ? null
+          : activeProjectName(session) ?? 'Archived project';
+
   @override
   Widget build(BuildContext context) => PopupMenuButton<String>(
     tooltip: 'Switch console',
@@ -91,7 +96,10 @@ class _ConsoleSwitcherState extends State<ConsoleSwitcher> {
         ),
         const PopupMenuDivider(),
       ],
-      for (final session in widget.client.sessions)
+      for (final session in widget.client.sessions.where(
+        (session) =>
+            session['projectId'] == null || activeProjectName(session) != null,
+      ))
         PopupMenuItem(
           value: session['id'] as String,
           child: Padding(

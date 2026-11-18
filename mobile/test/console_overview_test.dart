@@ -365,6 +365,24 @@ void main() {
     },
   );
 
+  testWidgets('phone switcher hides archived project consoles', (tester) async {
+    viewport(tester, const Size(360, 800));
+    final client = consoles();
+    addTearDown(client.dispose);
+    client.sessions[1]['projectId'] = 'archived';
+    client.sessions[2].remove('projectId');
+
+    await tester.pumpWidget(DockApp(client: client));
+    await tester.tap(find.byType(ConsoleSwitcher));
+    await tester.pumpAndSettle();
+
+    final values = tester
+        .widgetList<PopupMenuItem<String>>(find.byType(PopupMenuItem<String>))
+        .map((item) => item.value);
+    expect(values, containsAll(['one', 'three', ConsoleSwitcher.allConsoles]));
+    expect(values, isNot(contains('two')));
+  });
+
   testWidgets(
     'tablet switcher omits All consoles and resize keeps the terminal visible',
     (tester) async {
