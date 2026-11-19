@@ -36,7 +36,9 @@ async function until(check) { const end = Date.now() + 15000; while (Date.now() 
   for (const action of ['minimize', 'tray']) {
     await call('mode', 'dashboard'); await call(action);
     await activate({ sessionId: session.id, title: 'Notification console is ready' });
-    await until(async () => (await call('state')).mode === 'fullscreen' && await page.locator(`.session-card.console-expanded[data-console-id="${session.id}"]`).isVisible());
+    await until(async () => (await call('state')).mode === 'dashboard' && await page.evaluate(id =>
+      !document.querySelector('.session-card.console-expanded') &&
+      document.activeElement.closest('[data-console-id]')?.dataset.consoleId === id, session.id));
     assert.equal(await page.locator(`.session-card[data-console-id="${session.id}"] .console-name`).inputValue(), session.name);
     assert.ok(await app.evaluate(({ BrowserWindow }) => { const w = BrowserWindow.getAllWindows()[0]; return w.isVisible() && !w.isMinimized(); }));
     assert.equal((await call('state')).trayHidden, false);
@@ -51,6 +53,6 @@ async function until(check) { const end = Date.now() + 15000; while (Date.now() 
   assert.equal((await call('state')).mode, 'dashboard'); assert.equal('inbox' in (await call('state')).workbench, false);
   fs.mkdirSync(path.join(root, 'artifacts', 'notifications'), { recursive: true });
   await page.screenshot({ path: path.join(root, 'artifacts', 'notifications', 'windows-result-activation.png') });
-  console.log('PASS native-click handler restores tray/minimized windows, expands fullscreen, selects the console, opens Markdown Results');
+  console.log('PASS native-click handler restores tray/minimized windows, shows the console in the dashboard, opens Markdown Results');
   await call('quit');
 })().catch(error => { console.error(error); process.exitCode = 1; }).finally(async () => { await app?.close().catch(() => {}); assert.equal(path.dirname(fs.realpathSync(profile)), fs.realpathSync(parent)); fs.rmSync(profile, { recursive: true, force: true }); });

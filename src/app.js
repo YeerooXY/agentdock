@@ -118,15 +118,14 @@ const store = createStateClient();
 connectStateV2({ transport: window.dock.state, read: method => call(method), onSnapshot: receive,
   onError: error => toast('State updates stopped: ' + error.message, true) });
 const chooser = consoleChooser({ call, getState, view: readView, providerName, consoleProviders, shellMark, openSetup: () => setup.open(), projects: () => projects, openNew });
-// Title bar search: jump to a console (focus its terminal) or a page.
-const commandSearch = installCommandSearch({ getState, providerName,
-  openConsole: async id => {
-    if (!['consoles', 'overview'].includes(view.page) || view.expandedId) navigatePage('consoles');
-    view.selectedId = id;
-    await new Promise(resolve => setTimeout(resolve));
-    document.querySelector(`.session-card[data-console-id="${CSS.escape(id)}"]`)?.scrollIntoView({ block: 'nearest' });
-    await focusTerminal(id);
-  },
+async function focusConsoleInGrid(id) {
+  if (!['consoles', 'overview'].includes(view.page) || view.expandedId) navigatePage('consoles');
+  view.selectedId = id;
+  await new Promise(resolve => setTimeout(resolve));
+  document.querySelector(`.session-card[data-console-id="${CSS.escape(id)}"]`)?.scrollIntoView({ block: 'nearest' });
+  await focusTerminal(id);
+}
+const commandSearch = installCommandSearch({ getState, providerName, openConsole: focusConsoleInGrid,
   openPage: page => { navigatePage(page); setTimeout(() => document.querySelector('#content:not([hidden])')?.focus({ preventScroll: true })); } });
 const names = slotNames({ call, toast, getState });
 const accountMenuActions = installAccountMenus({ call, toast });
@@ -540,7 +539,12 @@ windowDragging(call, getState);
 layoutMotion = consoleMotion({ render: grid.render, fit: terminals.scheduleFits });
 consoleDragging({ call, toast, motion: layoutMotion });
 consoleLayoutUI({ call, getState, motion: layoutMotion, toast });
-workbench = workbenchUI({ call, getState, getPage, renderPage, escape, toast, selectSession, navigate: navigatePage });
+workbench = workbenchUI({ call, getState, getPage, renderPage, escape, toast, navigate: navigatePage,
+  async openNoticeConsole(id) {
+    await focusConsoleInGrid(id);
+    await acknowledgeSession(id);
+  }
+});
 taskLoops = taskLoopUI({ call, getState, getPage, renderPage, escape, toast });
 toolFeatures({ call, getState, navigate: navigatePage, render: tools.refreshSections, toast, escape });
 try { state = await call('state'); receive(state); renderPage(); } catch (error) { $('#content').textContent = error.message; }

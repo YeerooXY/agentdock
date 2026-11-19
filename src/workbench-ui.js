@@ -1,6 +1,6 @@
 import { imageGeometry } from './image-viewer-geometry.js';
 
-export function workbenchUI({ call, getState, escape: e, toast, selectSession, navigate }) {
+export function workbenchUI({ call, getState, escape: e, toast, openNoticeConsole, navigate }) {
   const api = (method, value) => call('workbench.' + method, value);
   const previews = new Map();
   let detail = null, modalVersion = 0;
@@ -43,7 +43,7 @@ export function workbenchUI({ call, getState, escape: e, toast, selectSession, n
     const id = item.id, version = ++modalVersion;
     detail = { type: 'result', id, entry: null }; imageZoom = 'fit'; imagePan = { x: 0, y: 0 }; imageDrag = null;
     dialog.classList.add('image-gallery');
-    show(`<div id="result-preview" class="image-stage" tabindex="0" aria-label="Image viewer" aria-live="polite">Loading…</div><div id="image-navigation"></div><details class="image-details"><summary>Details</summary><div class="image-details-content"><h2>${e(item.title)}</h2><div class="result-detail-meta">${e(consoleName(item))}, ${e(item.status.replaceAll('-', ' '))}. ${date(item.at)}</div></div></details>`, false);
+    show(`<div id="result-preview" class="image-stage" tabindex="0" aria-label="Image viewer" aria-live="polite">Loadingâ€¦</div><div id="image-navigation"></div><details class="image-details"><summary>Details</summary><div class="image-details-content"><h2>${e(item.title)}</h2><div class="result-detail-meta">${e(consoleName(item))}, ${e(item.status.replaceAll('-', ' '))}. ${date(item.at)}</div></div></details>`, false);
     updateImageNavigation(id);
     dialog.querySelector('.image-filmstrip').open = stripOpen;
     dialog.querySelector('.image-details').open = detailsOpen;
@@ -148,7 +148,7 @@ export function workbenchUI({ call, getState, escape: e, toast, selectSession, n
     if (['usage', 'tools', 'projects'].includes(item.destination)) { navigate(item.destination); return; }
     const image = data().results.find(x => x.image && (x.id === item.resultId || item.reviewId && x.reviewId === item.reviewId));
     if (image) await preview(image.id);
-    else if (getState().sessions.some(x => x.id === item.sessionId)) await selectSession(item.sessionId);
+    else if (getState().sessions.some(x => x.id === item.sessionId)) await openNoticeConsole(item.sessionId);
   }
   return {
     openNotice,

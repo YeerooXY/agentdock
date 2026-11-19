@@ -8,17 +8,15 @@ function isForeground(window) {
 // Keep native notifications alive until they close, including while Paddock is in
 // the tray. The same activation path handles Windows toast and balloon clicks.
 class DockNotifications {
-  constructor({ Notification, getTray, getWindow, getMode, setMode, reveal, publish, getSessions, icon }) {
-    Object.assign(this, { Notification, getTray, getWindow, getMode, setMode, reveal, publish, getSessions, icon });
+  constructor({ Notification, getTray, getWindow, setMode, reveal, publish, icon }) {
+    Object.assign(this, { Notification, getTray, getWindow, setMode, reveal, publish, icon });
     this.live = new Set(); this.balloonClick = null;
   }
   async open(item) {
     const window = this.getWindow();
     if (!window || window.isDestroyed()) return;
     this.reveal();
-    const hasConsole = item.sessionId && this.getSessions().some(x => x.id === item.sessionId);
-    const destination = item.destination || item.resultId || item.reviewId || item.turnId || item.kind === 'ready';
-    await this.setMode(hasConsole && !destination ? 'fullscreen' : 'dashboard');
+    await this.setMode('dashboard');
     if (window.isDestroyed()) return;
     this.reveal(); this.publish();
     window.webContents.send('dock:notice', item);

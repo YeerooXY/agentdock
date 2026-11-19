@@ -713,8 +713,8 @@ app.whenReady().then(() => guardStartup(async () => {
     tray.on('click', revealWindow); tray.on('double-click', revealWindow);
     tray.on('balloon-click', () => notifications?.balloonClick?.());
   } }, { optional: true, skipInSafeMode: false });
-  notifications = new DockNotifications({ Notification, getTray: () => tray, getWindow: () => window, getMode: () => modeTarget || mode,
-    setMode, reveal: revealWindow, publish, getSessions: () => sessions.list(), icon: iconFile });
+  notifications = new DockNotifications({ Notification, getTray: () => tray, getWindow: () => window,
+    setMode, reveal: revealWindow, publish, icon: iconFile });
   workbench.alerts.on('notification', item => { if (settings.notifications && !testMode) notifications.show(item); });
   await startupStep('Keyboard shortcuts', () => {
     shortcutAvailable = !testMode && globalShortcut.register('CommandOrControl+Alt+Space', () => trayHidden ? revealWindow() : hideToTray());
