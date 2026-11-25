@@ -17,6 +17,10 @@ class TerminalKeys extends StatefulWidget {
 }
 
 class _TerminalKeysState extends State<TerminalKeys> {
+  static final keyShape = RoundedRectangleBorder(
+    borderRadius: BorderRadius.circular(10),
+  );
+
   DockClient get c => widget.client;
   late final pc = c.activePC, id = c.selected, generation = c.generation;
   late final session = c.sessions.where((s) => s['id'] == id).firstOrNull;
@@ -82,15 +86,60 @@ class _TerminalKeysState extends State<TerminalKeys> {
     }
   }
 
-  Widget keyButton(String label, String value) => OutlinedButton(
-    onPressed: current && !busy ? () => send(withModifiers(value)) : null,
-    child: Text(label),
-  );
-
-  Widget arrow(String label, String value) => OutlinedButton(
-    onPressed: current && !busy ? () => send(withModifiers(value)) : null,
-    child: FittedBox(fit: BoxFit.scaleDown, child: Text(label)),
-  );
+  Widget keycap(
+    String label, {
+    String? input,
+    IconData? icon,
+    bool primary = false,
+  }) {
+    final isModifier = input == null;
+    final selected = mods.contains(label);
+    final style =
+        OutlinedButton.styleFrom(
+          minimumSize: const Size(48, 48),
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          shape: keyShape,
+          backgroundColor: selected
+              ? pink
+              : primary
+              ? blue.withValues(alpha: .22)
+              : const Color(0xff171822),
+          foregroundColor: selected ? ink : Colors.white,
+          disabledBackgroundColor: const Color(0xff171822),
+        ).copyWith(
+          side: WidgetStateProperty.resolveWith((states) {
+            if (states.contains(WidgetState.focused)) {
+              return BorderSide(color: selected ? ink : Colors.white, width: 2);
+            }
+            if (states.contains(WidgetState.disabled)) {
+              return BorderSide(color: muted.withValues(alpha: .18));
+            }
+            return BorderSide(
+              color: selected || primary ? pink : muted.withValues(alpha: .30),
+            );
+          }),
+        );
+    final button = OutlinedButton(
+      style: style,
+      onPressed: current
+          ? () {
+              if (busy) return;
+              if (input != null) {
+                send(withModifiers(input));
+              } else {
+                setState(() => selected ? mods.remove(label) : mods.add(label));
+              }
+            }
+          : null,
+      child: icon == null
+          ? FittedBox(fit: BoxFit.scaleDown, child: Text(label))
+          : Icon(icon, size: 20, semanticLabel: label),
+    );
+    if (isModifier) return Semantics(toggled: selected, child: button);
+    return icon == null
+        ? button
+        : Tooltip(message: label, excludeFromSemantics: true, child: button);
+  }
 
   /// xterm encoding: arrows carry 1+Shift(1)+Alt(2)+Ctrl(4); Alt prefixes Esc.
   String withModifiers(String value) {
@@ -172,50 +221,90 @@ class _TerminalKeysState extends State<TerminalKeys> {
                     ),
                   ),
                 ),
-              const SizedBox(height: 12),
-              if (busy) const LinearProgressIndicator(),
-              // Keyboard order: Esc, Tab, modifiers, Space, Enter. A modifier
-              // applies to the next key only; choosing one sends nothing.
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  keyButton('Esc', '\x1b'),
-                  keyButton('Tab', '\t'),
-                  for (final m in const ['Ctrl', 'Shift', 'Alt'])
-                    FilterChip(
-                      label: Text(m),
-                      selected: mods.contains(m),
-                      onSelected: current && !busy
-                          ? (on) => setState(
-                              () => on ? mods.add(m) : mods.remove(m),
-                            )
-                          : null,
-                    ),
-                  keyButton('Space', ' '),
-                  keyButton('Enter', '\r'),
-                  keyButton('Ctrl+C', '\x03'),
-                ],
+              const SizedBox(height: 4),
+              SizedBox(
+                height: 4,
+                child: busy
+                    ? Semantics(
+                        liveRegion: true,
+                        child: const LinearProgressIndicator(
+                          semanticsLabel: 'Sending terminal input',
+                        ),
+                      )
+                    : null,
+              ),
+              const SizedBox(height: 4),
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  const gap = 6.0;
+                  final keyWidth =
+                      MediaQuery.textScalerOf(context).scale(48) + 8;
+                  final columns = constraints.maxWidth >= keyWidth * 4 + gap * 3
+                      ? 4
+                      : 2;
+                  final width =
+                      ((constraints.maxWidth - gap * (columns - 1)) / columns)
+                          .floorToDouble();
+                  return Wrap(
+                    spacing: gap,
+                    runSpacing: gap,
+                    children: [
+                      for (final key in [
+                        keycap('Esc', input: '\x1b'),
+                        keycap('Tab', input: '\t'),
+                        keycap('Space', input: ' '),
+                        keycap('Enter', input: '\r', primary: true),
+                        keycap('Ctrl'),
+                        keycap('Shift'),
+                        keycap('Alt'),
+                        keycap('Ctrl+C', input: '\x03'),
+                      ])
+                        SizedBox(width: width, child: key),
+                    ],
+                  );
+                },
               ),
               const SizedBox(height: 12),
               // Arrows as an inverted T.
               Center(
                 child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 300),
+                  constraints: const BoxConstraints(maxWidth: 180),
                   child: Column(
                     children: [
                       SizedBox(
-                        width: 100,
-                        child: arrow('Up', '${prefix}A'),
+                        width: 56,
+                        child: keycap(
+                          'Up',
+                          input: '${prefix}A',
+                          icon: Icons.keyboard_arrow_up,
+                        ),
                       ),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 6),
                       Row(
                         children: [
-                          Expanded(child: arrow('Left', '${prefix}D')),
-                          const SizedBox(width: 8),
-                          Expanded(child: arrow('Down', '${prefix}B')),
-                          const SizedBox(width: 8),
-                          Expanded(child: arrow('Right', '${prefix}C')),
+                          Expanded(
+                            child: keycap(
+                              'Left',
+                              input: '${prefix}D',
+                              icon: Icons.keyboard_arrow_left,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: keycap(
+                              'Down',
+                              input: '${prefix}B',
+                              icon: Icons.keyboard_arrow_down,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: keycap(
+                              'Right',
+                              input: '${prefix}C',
+                              icon: Icons.keyboard_arrow_right,
+                            ),
+                          ),
                         ],
                       ),
                     ],
@@ -225,7 +314,8 @@ class _TerminalKeysState extends State<TerminalKeys> {
               const SizedBox(height: 16),
               TextField(
                 controller: reply,
-                enabled: current && !busy,
+                enabled: current,
+                readOnly: busy,
                 maxLength: 2000,
                 autocorrect: false,
                 enableSuggestions: false,
@@ -240,21 +330,32 @@ class _TerminalKeysState extends State<TerminalKeys> {
               ),
               const SizedBox(height: 8),
               const Text(
-                'Type text sends only the text. Use Enter if the terminal asks you to submit it.',
+                'Press Enter if the terminal asks you to submit.',
                 style: TextStyle(color: muted),
               ),
-              TextButton(
-                onPressed: current && !busy && reply.text.isNotEmpty
-                    ? () => send(reply.text)
-                    : null,
-                child: const Text('Type text'),
+              Align(
+                alignment: Alignment.centerRight,
+                child: FilledButton(
+                  style: FilledButton.styleFrom(shape: keyShape),
+                  onPressed: current && reply.text.isNotEmpty
+                      ? () => send(reply.text)
+                      : null,
+                  child: const Text('Send text'),
+                ),
               ),
               if (!current)
-                Text(
-                  'Connection or console changed. Close and reopen Terminal keys.',
-                  style: TextStyle(color: pink),
+                Semantics(
+                  liveRegion: true,
+                  child: Text(
+                    'Connection or console changed. Close and reopen Terminal keys.',
+                    style: TextStyle(color: pink),
+                  ),
                 ),
-              if (error.isNotEmpty) Text(error, style: TextStyle(color: pink)),
+              if (error.isNotEmpty)
+                Semantics(
+                  liveRegion: true,
+                  child: Text(error, style: TextStyle(color: pink)),
+                ),
             ],
           ),
         ),

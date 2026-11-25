@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:agent_dock_mobile/main.dart';
 import 'package:agent_dock_mobile/terminal_keys.dart';
@@ -38,7 +39,7 @@ void main() {
           findsOneWidget,
         );
         expect(c.inputs, isEmpty);
-        await tester.tap(find.text('Down'));
+        await tester.tap(find.byTooltip('Down'));
         await tester.pumpAndSettle();
         await tester.tap(find.text('Enter'));
         await tester.pumpAndSettle();
@@ -71,8 +72,8 @@ void main() {
       await tester.pumpAndSettle();
       await tester.enterText(find.widgetWithText(TextField, 'Reply text'), 'y');
       await tester.pumpAndSettle();
-      await tester.ensureVisible(find.text('Type text'));
-      await tester.tap(find.text('Type text'));
+      await tester.ensureVisible(find.text('Send text'));
+      await tester.tap(find.text('Send text'));
       await tester.pumpAndSettle();
       expect(c.inputs, [
         {'id': 'one', 'data': 'y'},
@@ -153,7 +154,7 @@ void main() {
         ),
         findsOneWidget,
       );
-      await tester.tap(find.text('Up'));
+      await tester.tap(find.byTooltip('Up'));
       await tester.pumpAndSettle();
       expect(c.inputs.single['data'], '\x1bOA');
     },
@@ -165,10 +166,10 @@ void main() {
     final c = FakeDock();
     addTearDown(c.dispose);
     await openKeys(tester, c);
-    final up = tester.getCenter(find.text('Up')),
-        left = tester.getCenter(find.text('Left')),
-        down = tester.getCenter(find.text('Down')),
-        right = tester.getCenter(find.text('Right'));
+    final up = tester.getCenter(find.byTooltip('Up')),
+        left = tester.getCenter(find.byTooltip('Left')),
+        down = tester.getCenter(find.byTooltip('Down')),
+        right = tester.getCenter(find.byTooltip('Right'));
     expect(up.dy, lessThan(down.dy));
     expect(left.dy, down.dy);
     expect(right.dy, down.dy);
@@ -179,15 +180,72 @@ void main() {
     await tester.tap(find.text('Shift'));
     await tester.pumpAndSettle();
     expect(c.inputs, isEmpty);
-    await tester.tap(find.text('Up'));
+    await tester.tap(find.byTooltip('Up'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Up'));
+    await tester.tap(find.byTooltip('Up'));
     await tester.pumpAndSettle();
     expect(c.inputs.map((x) => x['data']), ['\x1b[1;6A', '\x1b[A']);
     await tester.tap(find.text('Shift'));
     await tester.tap(find.text('Tab'));
     await tester.pumpAndSettle();
     expect(c.inputs.last['data'], '\x1b[Z');
+  });
+
+  testWidgets('phone keycaps align and keep focus through keyboard input', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(320, 740);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final c = FakeDock();
+    addTearDown(c.dispose);
+    final done = Completer<void>();
+    c.onInput = (_) => done.future;
+    await openKeys(tester, c);
+
+    Rect keyRect(String label) =>
+        tester.getRect(find.widgetWithText(OutlinedButton, label));
+    for (final (top, bottom) in [
+      ('Esc', 'Ctrl'),
+      ('Tab', 'Shift'),
+      ('Space', 'Alt'),
+      ('Enter', 'Ctrl+C'),
+    ]) {
+      expect(keyRect(top).left, closeTo(keyRect(bottom).left, .01));
+      expect(keyRect(top).top, keyRect('Esc').top);
+      expect(keyRect(bottom).top, keyRect('Ctrl').top);
+      expect(keyRect(top).height, greaterThanOrEqualTo(48));
+      expect(keyRect(bottom).width, greaterThanOrEqualTo(48));
+    }
+
+    FocusNode focus(String label) => Focus.of(tester.element(find.text(label)));
+    focus('Ctrl').requestFocus();
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.space);
+    await tester.pumpAndSettle();
+    expect(focus('Ctrl').hasPrimaryFocus, isTrue);
+    expect(c.inputs, isEmpty);
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await tester.pumpAndSettle();
+    expect(focus('Shift').hasPrimaryFocus, isTrue);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.pumpAndSettle();
+    expect(focus('Ctrl').hasPrimaryFocus, isTrue);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.pumpAndSettle();
+    expect(focus('Enter').hasPrimaryFocus, isTrue);
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pump();
+    expect(focus('Enter').hasPrimaryFocus, isTrue);
+    expect(c.inputs.single['data'], '\r');
+    done.complete();
+    await tester.pumpAndSettle();
+    expect(focus('Enter').hasPrimaryFocus, isTrue);
   });
 
   for (final size in [const Size(320, 740), const Size(852, 393)]) {
@@ -207,7 +265,7 @@ void main() {
       final c = FakeDock();
       addTearDown(c.dispose);
       await openKeys(tester, c);
-      for (final text in ['Enter', 'Esc', 'Type text']) {
+      for (final text in ['Enter', 'Esc', 'Send text']) {
         await tester.ensureVisible(find.text(text));
         await tester.pumpAndSettle();
         final rect = tester.getRect(find.text(text));
